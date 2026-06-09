@@ -14,14 +14,16 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 
 
-class ROLE(UserMixin, db.Model):
+class Role(db.Model):
+    __tablename__ = "ROLE"
     RoleID: so.Mapped[int] = so.mapped_column(primary_key=True)
     Role_Name: so.Mapped[str] = so.mapped_column(sa.String(50))
     Description: so.Mapped[Optional[str]] = so.mapped_column(sa.String(150))
     Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
 
-class USER(UserMixin, db.Model):
+class User(UserMixin, db.Model):
+    __tablename__ = "USER"
     UserID: so.Mapped[int] = so.mapped_column(primary_key=True)
     Firstname: so.Mapped[str] = so.mapped_column(sa.String(120))
     Lastname: so.Mapped[str] = so.mapped_column(sa.String(120))
@@ -32,19 +34,22 @@ class USER(UserMixin, db.Model):
     Updated_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
 
-class ACTIVITY_LOG(UserMixin, db.Model):
+class ActivityLog(db.Model):
+    __tablename__ = "ACTIVITY_LOG"
     LogID: so.Mapped[int] = so.mapped_column(primary_key=True)
     Action_Type: so.Mapped[str] = so.mapped_column(sa.String(255))
     Performmed_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc)) 
 
 
-class DEPLOYMENT_HISTORY(UserMixin, db.Model):
+class DeploymentHistory( db.Model):
+    __tablename__ = "DEPLOYMENT_HISTORY"
     DeployemntID: so.Mapped[int] = so.mapped_column(primary_key=True)
     Notes: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
     Deployed_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Updated_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
-class CONFIGURATION_CHANGES(UserMixin, db.Model):
+class ConfigurationChanges( db.Model):
+    __tablename__ = "CONFIGURATION_CHANGES"
     ConfChangesID: so.Mapped[int] = so.mapped_column(primary_key=True)
     Conf_Type: so.Mapped[str] = so.mapped_column(sa.String(25))
     Parameter_Name: so.Mapped[str] = so.mapped_column(sa.String(50))
@@ -52,14 +57,16 @@ class CONFIGURATION_CHANGES(UserMixin, db.Model):
     New_Value: so.Mapped[str] = so.mapped_column(sa.String(100))
     Changed_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
-class EXPORT_LOG(UserMixin, db.model):
+class ExportLog( db.Model):
+    __tablename__ = "EXPORT_LOG"
     ExportID: so.Mapped[int] = so.mapped_column(primary_key=True)
     Report_Type: so.Mapped[str] = so.mapped_column(sa.String(25))
     Start_Date: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc)) 
     End_Date: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Exported_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
-class NETWORK_DISCOVERY(UserMixin, db.model):
+class NetworkDiscovery(db.Model):
+    __tablename__ = "NETWORK_DISCOVERY"
     NetDiscoveryID:  so.Mapped[int]  = so.mapped_column(primary_key=True)
     Hostname: so.Mapped[str] = so.mapped_column(sa.String(25))
     IP_Address: so.Mapped[str] = so.mapped_column(sa.String(16))
@@ -70,14 +77,16 @@ class NETWORK_DISCOVERY(UserMixin, db.model):
     Scan_Status: so.Mapped[str] = so.mapped_column(sa.String(20))
     Scanned_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
-class SSH_CREDENTIALS(UserMixin, db.Model):
+class SSHCredentials(db.Model):
+    __tablename__ = "SSH_CREDENTIALS"
     SSHID: so.Mapped[int] = so.mapped_column(primary_key=True)
     SSH_Username: so.Mapped[str] = so.mapped_column(sa.String(50))
     SSH_Password: so.Mapped[str] = so.mapped_column(sa.String(256))
     SSH_Port: so.Mapped[int] = so.mapped_column(sa.Integer())
     Created_Art: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
-class NRPE_DEPLOYEMENT(UserMixin, db.Model):
+class NRPEDeployment(db.Model):
+    __tablename__ = "NRPE_DEPLOYMENT"
     NRPEID: so.Mapped[int] = so.mapped_column(primary_key=True)
     NRPE_Port: so.Mapped[int] = so.mapped_column(sa.Integer())
     Plugin_Installed: so.Mapped[str] = so.mapped_column(sa.String(150))
