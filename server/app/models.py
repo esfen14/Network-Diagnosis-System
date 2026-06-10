@@ -33,6 +33,8 @@ class User(UserMixin, db.Model):
     Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Updated_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
+    RoleID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(Role.RoleID), index=True)
+
 
 class ActivityLog(db.Model):
     __tablename__ = "ACTIVITY_LOG"
@@ -40,6 +42,7 @@ class ActivityLog(db.Model):
     Action_Type: so.Mapped[str] = so.mapped_column(sa.String(255))
     Performmed_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc)) 
 
+    UserID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(User.UserID), index=True)
 
 class DeploymentHistory( db.Model):
     __tablename__ = "DEPLOYMENT_HISTORY"
@@ -47,6 +50,8 @@ class DeploymentHistory( db.Model):
     Notes: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
     Deployed_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Updated_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+
+    LogID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(ActivityLog.LogID), index=True)
 
 class ConfigurationChanges( db.Model):
     __tablename__ = "CONFIGURATION_CHANGES"
@@ -65,6 +70,8 @@ class ExportLog( db.Model):
     End_Date: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Exported_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
+    LogID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(ActivityLog.LogID), index=True)
+
 class NetworkDiscovery(db.Model):
     __tablename__ = "NETWORK_DISCOVERY"
     NetDiscoveryID:  so.Mapped[int]  = so.mapped_column(primary_key=True)
@@ -77,6 +84,8 @@ class NetworkDiscovery(db.Model):
     Scan_Status: so.Mapped[str] = so.mapped_column(sa.String(20))
     Scanned_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
+    LogID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(ActivityLog.LogID), index=True)
+
 class SSHCredentials(db.Model):
     __tablename__ = "SSH_CREDENTIALS"
     SSHID: so.Mapped[int] = so.mapped_column(primary_key=True)
@@ -85,9 +94,14 @@ class SSHCredentials(db.Model):
     SSH_Port: so.Mapped[int] = so.mapped_column(sa.Integer())
     Created_Art: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
+    NetworkDiscoveryID = so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True)
+
 class NRPEDeployment(db.Model):
     __tablename__ = "NRPE_DEPLOYMENT"
     NRPEID: so.Mapped[int] = so.mapped_column(primary_key=True)
     NRPE_Port: so.Mapped[int] = so.mapped_column(sa.Integer())
     Plugin_Installed: so.Mapped[str] = so.mapped_column(sa.String(150))
     Agent_Status: so.Mapped[str] = so.mapped_column(sa.String(150))
+
+    NetworkDiscoveryID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True)
+    DeploymentID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(DeploymentHistory.DeployemntID), index=True)
