@@ -94,7 +94,7 @@ class SSHCredentials(db.Model):
     SSH_Port: so.Mapped[int] = so.mapped_column(sa.Integer())
     Created_Art: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
-    NetworkDiscoveryID = so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True)
+    NetworkDiscoveryID:  so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True)
 
 class NRPEDeployment(db.Model):
     __tablename__ = "NRPE_DEPLOYMENT"
