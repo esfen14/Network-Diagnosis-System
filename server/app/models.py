@@ -72,7 +72,19 @@ class User(UserMixin, db.Model):
     back_populate sepcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
     """
     Role: so.Mapped['Role'] = so.relationship(back_populates='Users')
-
+    
+    """
+    This is to set the password, it uses Flask Login forgenerating password hashes
+    """
+    def set_password(self, password):
+        self.Hashed_Password = generate_password_hash(password)
+    
+    """
+    This is used to check the input password to the password of the user
+    This uses Flask login for checking the hash
+    """
+    def check_password(self, password):
+        return check_password_hash(self.Hashed_Password, password)
 
 class ActivityLog(db.Model):
     # Table Name
@@ -245,8 +257,8 @@ class SSHCredentials(db.Model):
     # Table Fields
     SSHID: so.Mapped[int] = so.mapped_column(primary_key=True)
     SSH_Username: so.Mapped[str] = so.mapped_column(sa.String(50))
-    SSH_Password: so.Mapped[str] = so.mapped_column(sa.String(256))
     SSH_Port: so.Mapped[int] = so.mapped_column(sa.Integer())
+    Key_Installed: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)
     Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
     # Foreign Key Field
