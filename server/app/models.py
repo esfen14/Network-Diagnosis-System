@@ -73,6 +73,13 @@ class User(UserMixin, db.Model):
     """
     Role: so.Mapped['Role'] = so.relationship(back_populates='Users')
     
+
+    """
+    Override for the get_id in Flask Login, this is to get the UserID of the user
+    rather than call the default id for the user's id
+    """
+    def get_id(self):
+        return str(self.UserID)
     """
     This is to set the password, it uses Flask Login forgenerating password hashes
     """
@@ -86,6 +93,10 @@ class User(UserMixin, db.Model):
     def check_password(self, password):
         return check_password_hash(self.Hashed_Password, password)
 
+@login.user_loader
+def load_user(id):
+    return db.session.get(User, int(id))
+    
 class ActivityLog(db.Model):
     # Table Name
     __tablename__ = "ACTIVITY_LOG"
