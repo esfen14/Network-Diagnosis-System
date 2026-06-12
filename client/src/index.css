@@ -1,13 +1,29 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --color-pinpoint-dark: #0d1117;
+  --color-pinpoint-card: #232323;
+  --color-pinpoint-sidebar: #f5f5f6;
+  --color-pinpoint-green: #30d158;
+  --color-pinpoint-green-bright: #00f546;
+  --color-pinpoint-gray-300: #d1d5db;
+  --color-pinpoint-gray-50: #f9fafb;
+  --color-pinpoint-slate-400: #94a3b8;
+  --color-pinpoint-input-border: #424242;
+  --color-pinpoint-input-dark: #100f0f;
+  --color-pinpoint-btn: #212121;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
