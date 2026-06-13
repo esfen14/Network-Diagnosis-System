@@ -13,6 +13,15 @@ from app import db
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
+class Permission(db.Model):
+    # Table Name
+    __tablename__ = "PERMISSION"
+    
+    # Table Fields
+    PermissionID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Permission: so.Mapped[str] = so.mapped_column(sa.String(50))
+    description: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
+
 class Role(db.Model):
     # Table Name
     __tablename__ = "ROLE"
@@ -24,13 +33,32 @@ class Role(db.Model):
     Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
     """
-    Relationship with User table
-    WriteOnlyMappped linkes each role to many users
+    Relationship with User and RolePermission table
+    WriteOnlyMappped links each role to many users and many permissions
     WriteOnlyMapped is to explicity load only that is queried
     back_populate spcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
     """
     Users: so.WriteOnlyMapped['User'] = so.relationship(back_populates='Role')
+    RolePermissions: so.WriteOnlyMapped['RolePermission'] = so.relationship(back_populates='Role')
 
+
+class RolePermission(db.Model):
+    # Table Name
+    __tablename__ = "ROLE_PERMISSION"
+    # Table Fields
+    RolePermissionID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Has_Permission: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)
+    
+    # Foreign Key Fields
+    RoleID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(Role.RoleID), index=True)
+    PermissionID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(Permission.PermissionID), index=True)
+
+    """
+    Relationship with Role and Permission table
+    back_populate spcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
+    """
+    Role: so.Mapped['Role'] = so.relationship(back_populates='RolePermissions')
+   
 """
 UserStatus Enum so that Status is consistent
 To call use "User.Status = UserStatus.ACTIVE"
@@ -53,7 +81,7 @@ class User(UserMixin, db.Model):
     Hashed_Password: so.Mapped[str] = so.mapped_column(sa.String(120))
     Status: so.Mapped[UserStatus] = so.mapped_column(sa.Enum(UserStatus))
     Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
-    Updated_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+    Updated_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
     # Foreign Key Field
     RoleID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(Role.RoleID), index=True)
@@ -72,6 +100,7 @@ class User(UserMixin, db.Model):
     back_populate sepcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
     """
     Role: so.Mapped['Role'] = so.relationship(back_populates='Users')
+    UserPermissions: so.WriteOnlyMapped['UserPermission'] = so.relationship(back_populates='User')
     
 
     """
@@ -92,6 +121,24 @@ class User(UserMixin, db.Model):
     """
     def check_password(self, password):
         return check_password_hash(self.Hashed_Password, password)
+
+class UserPermission(db.Model):
+    # Table Name
+    __tablename__ = "USER_PERMISSION"
+
+    # Table Fields
+    UserPermissionID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Has_Permission: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)
+
+    # Foreign Key Field
+    UserID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(User.UserID), index=True)
+    PermissionID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(Permission.PermissionID), index=True)
+
+    """
+    Gets one instance of the User and Permission Table
+    back_populate sepcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
+    """ 
+    User: so.Mapped['User'] = so.relationship(back_populates='UserPermissions')
 
 @login.user_loader
 def load_user(id):
@@ -234,9 +281,10 @@ class NetworkDiscovery(db.Model):
     
     # Table Fields
     NetDiscoveryID:  so.Mapped[int]  = so.mapped_column(primary_key=True)
-    Hostname: so.Mapped[str] = so.mapped_column(sa.String(25))
-    IP_Address: so.Mapped[str] = so.mapped_column(sa.String(16))
-    Subnet_Mask: so.Mapped[str] = so.mapped_column(sa.String(16))
+    Hostname: so.Mapped[Optional[str]] = so.mapped_column(sa.String(25))
+    IP_Address: so.Mapped[str] = so.mapped_column(sa.String(16), index=True)
+    Subnet_Mask: so.Mapped[str] = so.mapped_column(sa.String(16), index=True)
+    MAC_Address: so.Mapped[Optional[str]] = so.mapped_column(sa.String(17), index=True)
     OS_Type: so.Mapped[Optional[str]] = so.mapped_column(sa.String(25))
     Device_Type: so.Mapped[Optional[str]] = so.mapped_column(sa.String(25))
     NRPE_Eligible: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)

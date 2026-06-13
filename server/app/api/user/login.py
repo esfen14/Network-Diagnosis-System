@@ -3,7 +3,7 @@ from flask_login import login_user, logout_user
 from flask import request
 import sqlalchemy as sa
 from app import db
-from app.models import User
+from app.system_models import User
 
 login_bp = Blueprint('login', __name__)
 

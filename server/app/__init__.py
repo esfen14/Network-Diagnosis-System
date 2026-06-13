@@ -21,7 +21,7 @@ migrate = Migrate(app, db)
 login = LoginManager(app)
 login.login_view = 'login'
 
-from app import models
+from app import system_models
 
 #where the bluprints are called and registered
 from app.api.user.login import login_bp
