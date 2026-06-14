@@ -4,6 +4,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 import { DeviceInventoryPage } from './pages/DeviceInventoryPage'
 import { NetworkHealthPage } from './pages/NetworkHealthPage'
+import { TopologyPage } from './pages/TopologyPage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
 
 export default function App() {
@@ -15,14 +16,9 @@ export default function App() {
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="network-health" element={<NetworkHealthPage />} />
         <Route path="device-inventory" element={<DeviceInventoryPage />} />
-        <Route
+       <Route
           path="topology"
-          element={
-            <PlaceholderPage
-              title="Topology View"
-              description="Visual map of your network infrastructure."
-            />
-          }
+            element={<TopologyPage />}
         />
         <Route
           path="reports"
