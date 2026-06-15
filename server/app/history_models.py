@@ -64,7 +64,7 @@ class HostLog(db.Model):
     State_Type: so.Mapped[ConnectionStateType] = so.mapped_column(sa.Enum(ConnectionStateType))
     Attempt_Count: so.Mapped[int] = so.mapped_column()
     Plugin_Status: so.Mapped[PluginStatusType] = so.mapped_column(sa.Enum(PluginStatusType))
-    Plugin_Output: so.Mapped[str] = so.mapped_column(sa.String(100))
+    Plugin_Output: so.Mapped[str] = so.mapped_column(sa.String(255))
 
     # Foreign Key Field
     NagiosLogID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NagiosLog.NagiosLogID), index=True, unique=True)
@@ -84,7 +84,7 @@ class ServiceLog(db.Model):
     Service: so.Mapped[str] = so.mapped_column(sa.String(150), index=True)
     Service_State: so.Mapped[ServiceStateType] = so.mapped_column(sa.Enum(ServiceStateType))
     State_Type: so.Mapped[ConnectionStateType] = so.mapped_column(sa.Enum(ConnectionStateType))
-    Attempt_count: so.Mapped[int] = so.mapped_column()
+    Attempt_Count: so.Mapped[int] = so.mapped_column()
     Plugin_Status: so.Mapped[PluginStatusType] = so.mapped_column(sa.Enum(PluginStatusType))
     Plugin_Output: so.Mapped[str] = so.mapped_column(sa.String(255))
 
@@ -117,7 +117,11 @@ class NetworkStatus(db.Model):
     # Table Fields    
     StatusID:  so.Mapped[int] = so.mapped_column(primary_key=True)
     Timestamp:  so.Mapped[datetime] = so.mapped_column(index=True)
-    Entry_Type: so.Mapped[str] = so.mapped_column(sa.String(20))
+    Version: so.Mapped[Optional[str]] = so.mapped_column(sa.String(20))
+    Update_Available: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)
+    New_Version: so.Mapped[Optional[str]] = so.mapped_column(sa.String(20))
+    Last_Update_Check: so.Mapped[datetime] = so.mapped_column()
+
 
     # Relationships
     HostsInfo: so.WriteOnlyMapped['HostStatus'] = so.relationship(back_populates='StatusInfo')
@@ -243,6 +247,7 @@ class ProgramStatus(db.Model):
     
     # Table Fields
     ProgramStatusID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    NagiosPID: so.Mapped[Optional[int]] = so.mapped_column()
     Enable_Notifications:  so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)
     Enable_Flap_Detection: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)
     Daemon_Mode: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=True)
