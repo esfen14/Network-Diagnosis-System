@@ -19,8 +19,8 @@ class Permission(db.Model):
     
     # Table Fields
     PermissionID: so.Mapped[int] = so.mapped_column(primary_key=True)
-    Permission: so.Mapped[str] = so.mapped_column(sa.String(50))
-    description: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
+    Name: so.Mapped[str] = so.mapped_column(sa.String(50), unique=True)
+    Description: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
 
 class Role(db.Model):
     # Table Name
@@ -46,16 +46,20 @@ class Role(db.Model):
 class RolePermission(db.Model):
     # Table Name
     __tablename__ = "ROLE_PERMISSION"
+    
+    # Forces rows to be unique 
+    __table_args__= (
+        sa.UniqueConstraint('RoleID', 'PermissionID', name='uq_role_permission'),
+    )
     # Table Fields
     RolePermissionID: so.Mapped[int] = so.mapped_column(primary_key=True)
-    Has_Permission: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)
     
     # Foreign Key Fields
     RoleID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(Role.RoleID), index=True)
     PermissionID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(Permission.PermissionID), index=True)
 
     """
-    Relationship with Role and Permission table
+    Relationship with Role
     back_populate spcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
     """
     Role: so.Mapped['Role'] = so.relationship(back_populates='RolePermissions')
@@ -100,9 +104,7 @@ class User(UserMixin, db.Model):
     Gets one instance of the Role Table
     back_populate sepcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
     """
-    Role: so.Mapped['Role'] = so.relationship(back_populates='Users')
-    UserPermissions: so.WriteOnlyMapped['UserPermission'] = so.relationship(back_populates='User')
-    
+    Role: so.Mapped['Role'] = so.relationship(back_populates='Users')  
 
     """
     Override for the get_id in Flask Login, this is to get the UserID of the user
@@ -122,24 +124,6 @@ class User(UserMixin, db.Model):
     """
     def check_password(self, password):
         return check_password_hash(self.Hashed_Password, password)
-
-class UserPermission(db.Model):
-    # Table Name
-    __tablename__ = "USER_PERMISSION"
-
-    # Table Fields
-    UserPermissionID: so.Mapped[int] = so.mapped_column(primary_key=True)
-    Has_Permission: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)
-
-    # Foreign Key Field
-    UserID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(User.UserID), index=True)
-    PermissionID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(Permission.PermissionID), index=True)
-
-    """
-    Gets one instance of the User and Permission Table
-    back_populate sepcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
-    """ 
-    User: so.Mapped['User'] = so.relationship(back_populates='UserPermissions')
 
 @login.user_loader
 def load_user(id):
