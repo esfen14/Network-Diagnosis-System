@@ -29,6 +29,7 @@ class Role(db.Model):
     # Table Fields
     RoleID: so.Mapped[int] = so.mapped_column(primary_key=True)
     Role_Name: so.Mapped[str] = so.mapped_column(sa.String(50))
+    Role_Status: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=True)
     Description: so.Mapped[Optional[str]] = so.mapped_column(sa.String(150))
     Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
