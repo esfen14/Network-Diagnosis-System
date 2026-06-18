@@ -4,7 +4,7 @@ from flask_login import current_user
 from app.system_models import Permission, RolePermission
 from functools import wraps
 
-def has_permission(permission_name):
+def _has_permission(permission_name):
     # Get the permission id of the input
     permission_id = db.session.scalar(sa.select(Permission.PermissionID)
         .where(Permission.Name == permission_name)
@@ -60,7 +60,7 @@ def require_permission(permission_name):
         # Runs on requests
         def wrapper(*args, **kwargs):
             # Runs the check first
-            error = has_permission(permission_name)
+            error = _has_permission(permission_name)
             if error is not None:
                 return error
             
@@ -68,3 +68,24 @@ def require_permission(permission_name):
             return func(*args, **kwargs)
         return wrapper
     return decorator
+
+# ============ Checks From Database ===================
+def exists_permission_by_id(permission_id):
+    return db.session.scalar(
+        sa.select(
+            sa.exists() 
+            .where(
+                Permission.PermissionID == permission_id
+            )
+        )
+    )
+
+def exists_permission_by_name(permission_name):
+    return db.session.scalar(
+        sa.select(
+            sa.exists() 
+            .where(
+                Permission.Name == permission_name
+            )
+        )
+    )

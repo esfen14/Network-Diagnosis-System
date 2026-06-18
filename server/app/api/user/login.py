@@ -1,12 +1,12 @@
-from flask import Blueprint
-from flask_login import login_user, logout_user, current_user
+from flask_login import login_user, logout_user, current_user, login_required
 from flask import request
-import sqlalchemy as sa
-from app import db
-from app.system_models import User
-from app.api.helper.validation import valid_json, require_fields
-from email_validator import validate_email, EmailNotValidError
-
+from app.api.helper import(
+    validate_json_data,
+    validate_json_fields,
+    validate_user_email,
+    get_user_by_email,
+    normalize_email
+)
 from app.api.user import user_bp
 
 @user_bp.post('/login')
@@ -30,7 +30,7 @@ def login():
     
     data = request.get_json()
     
-    error = valid_json(data)
+    error = validate_json_data(data)
 
     if error is not None:
         return error
@@ -40,24 +40,20 @@ def login():
         "password": str
     }
     
-    error = require_fields(data, fields)
-
+    error = validate_json_fields(data, fields)
     if error is not None:
         return error
 
     email = data.get("email")
     password = data.get("password")
     
-    try:
-       validate_email(email, check_deliverability=False) 
-    except EmailNotValidError:
-        return {"message": "Invalid email."}
+    error = validate_user_email(email)
+    if error is not None:
+        return error
    
-    normalized_email = validate_email(email)
+    normalized_email = normalize_email(email)
      
-    user = db.session.scalar(
-        sa.select(User).where(User.Email == normalized_email)
-    )
+    user = get_user_by_email(normalized_email)
     
     if user is None or not user.check_password(password):
         return{
@@ -70,6 +66,7 @@ def login():
     }, 200
 
 @user_bp.post('/logout')
+@login_required
 def logout():
     logout_user()
     return {

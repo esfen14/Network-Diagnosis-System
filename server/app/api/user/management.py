@@ -1,11 +1,9 @@
 from flask import request
-from flask_login import login_user, logout_user, login_required, current_user
-from app.system_models import Permission, User, Role, RolePermission
+from flask_login import login_required, current_user
 from datetime import datetime, timezone
-from api.helper.validation import user_exists, valid_json, require_fields, permission_exists, role_exists, check_email, check_user_status
-from api.helper.converter import convert_user_status
-from api.helper.permissions import require_permission
-from email_validator import validate_email
+from server.app.api.helper.database_access.permissions import require_permission
+from app.system_models import Permission, User, Role, RolePermission
+from app.api.helper import *
 
 import sqlalchemy as sa
 from app import db
@@ -81,7 +79,7 @@ def create_role():
     """
     data = request.get_json()
     
-    error = valid_json(data)
+    error = validate_json_data(data)
     if error is not None:
         return error
 
@@ -90,7 +88,7 @@ def create_role():
         "description": str,
         "permissions": list,
     }
-    error = require_fields(data, fields)
+    error = validate_json_fields(data, fields)
     if error is not None:
         return error
     
@@ -98,13 +96,12 @@ def create_role():
     description = data.get("description")
     permission_list = list(set(data.get("permissions")))
 
-    error = role_exists(role_name)
-    
+    error = validate_role_not_exists(role_name)
     if error is not None:
         return error
 
     for permission_id in permission_list:
-        error = permission_exists(permission_id)
+        error = validate_permission_exists(permission_id)
         if error is not None:
             return error
         
@@ -125,7 +122,9 @@ def create_role():
         db.session.rollback()
         return {"message": "An error occurred."}, 500
     
-    return {"message": "Role successfully created."}, 201
+    return {
+        "message": "Role successfully created."
+        }, 201
 
 @user_bp.get('/roles')
 @login_required
@@ -143,7 +142,6 @@ def roles():
     # return the data:
     # items, page, per_page, pages, total, has_next, has_prev
     page = request.args.get("page", default=1, type=int)
-    pages = request.args.get("pages", default=1, type=int)
     per_page = request.args.get("per_page", default=10, type=int)
     sort_by = request.args.get("sort_by", default="name", type=str)
     order = request.args.get("order", default="asc", type=str)
@@ -156,7 +154,6 @@ def roles():
     }
     
     sort_column = allowed_sorts.get(sort_by)
-    
     if sort_column is None:
         return {"message": "Invalid sort field"}, 400
     
@@ -193,7 +190,8 @@ def roles():
                 "id": role.RoleID,
                 "name": role.Name,
                 "description": role.Description,
-                "is_active": role.Is_Active
+                "is_active": role.Is_Active,
+                "created_at": role.Created_At.isoformat()
             }
         )
     
@@ -201,6 +199,7 @@ def roles():
         "items": items,
         "page": roles.page,
         "per_page": roles.per_page,
+        "pages": roles.pages,
         "total": roles.total,
         "has_next": roles.has_next,
         "has_prev": roles.has_prev
@@ -246,11 +245,11 @@ def role_info(id):
     # check if that id exists
     # if not give an error
     # else give the data
-    error = role_exists(id)
+    error = validate_role_exists(id)
     if error is not None:
         return error
 
-    role = db.session.get(Role, id)
+    role = get_role_by_id(id)
 
     permission_list = []
     
@@ -296,30 +295,28 @@ def edit_role(id):
     """
     JSON Format
     {
-        "id": number,
         "name": "name",
         "description": "description",
         "permissions": [1,2,4,5,..]
     }
     """
     
-    error = role_exists(id)
+    error = validate_role_exists(id)
     if error is not None:
         return error
 
     data = request.get_json()
     
-    error = valid_json(data)
+    error = validate_json_data(data)
     if error is not None:
         return error
 
     fields = {
-        "id": int,
         "name": str,
         "description": str,
         "permissions": list,
     }
-    error = require_fields(data, fields)
+    error = validate_json_fields(data, fields)
     if error is not None:
         return error
     
@@ -328,13 +325,13 @@ def edit_role(id):
     permission_list = data.get("permissions")
 
     for permission_id in permission_list:
-        error = permission_exists(permission_id)
+        error = validate_permission_exists(permission_id)
         if error is not None:
             return error
      
     try:
 
-        role = db.session.get(Role,id)
+        role = get_role_by_id(id)
         
         role.Name = name
         role.Description = description
@@ -376,11 +373,11 @@ def roles_status(id):
     # if not change the status
     # commit changes
     
-    error = role_exists(id)
+    error = validate_role_exists(id)
     if error is not None:
         return error
     
-    role = db.session.get(Role, id)
+    role = get_role_by_id(id)
     old_status = role.Is_Active
     try:
         
@@ -392,7 +389,7 @@ def roles_status(id):
         db.session.rollback()
         return {"message": "An error occurred."}, 500
     
-    return {"message": "User status updated sucessfully.",
+    return {"message": "Role status updated sucessfully.",
             "previous_status": old_status,
             "current_status": role.Is_Active
         },200
@@ -423,14 +420,15 @@ def create_account():
         "first_name": "first name",
         "last_name": "last_name",
         "email": "email@email",
-        "passowrd": "password",
+        "password": "password",
+        "confirm_password": "password",
         "status": "status",
         "role": 1
     }
     """
 
     data = request.get_json()
-    error = valid_json(data)
+    error = validate_json_data(data)
     if error is not None:
         return error
 
@@ -439,11 +437,12 @@ def create_account():
         "last_name": str,
         "email": str,
         "password": str,
+        "confirm_password": str,
         "status": str,
-        "role": int 
+        "role_id": int
     }
 
-    error = require_fields(data, fields)
+    error = validate_json_fields(data, fields)
     if error is not None:
         return error
     
@@ -451,27 +450,44 @@ def create_account():
     last_name = data.get('last_name')
     email = data.get('email')
     password = data.get('password')
+    confirm_password = data.get('confirm_password')
     status = data.get('status')
-    role = data.get('role')
-
-    error = check_email(email)
+    role = data.get('role_id')
+    
+    error  = validate_role_exists(role)
     if error is not None:
         return error
 
-    error = check_user_status(status)
+    error = is_user_status_valid(status)
+    if error is not None:
+        return error
+    
+    error =  validate_password_is_same(password, confirm_password)
+    if error is not None:
+        return error
+    
+    error = validate_password(password)
+    if error is not None:
+        return error
+    
+    error = validate_user_email(email)
+    if error is not None:
+        return error
+    
+    error = validate_email_not_exists(email)
     if error is not None:
         return error
     
     normalized_status = convert_user_status(status)
     
-    normalized_email = validate_email(email)
+    normalized_email = normalize_email(email)
     try:
         user = User(
             First_name=first_name,
             Last_name=last_name,
             Email= normalized_email,
             Status= normalized_status,
-            Role= role
+            RoleID= role
         )
         user.set_password(password)
 
@@ -481,7 +497,7 @@ def create_account():
         db.session.rollback()
         return {"message": "An error occurred."}, 500
     
-    return {"message": "Placeholder"},200
+    return {"message": "Account successfully created."},201
 
 @user_bp.get('/accounts')
 @login_required
@@ -498,13 +514,91 @@ def available_accounts():
     #
     # return the data:
     # items, page, per_page, pages, total, has_next, has_prev
+    page = request.args.get("page", default=1, type=int)
+    per_page = request.args.get("per_page", default=10, type=int)
+    sort_by = request.args.get("sort_by", default="first_name", type=str)
+    order = request.args.get("order", default="asc", type=str)
+    search =  request.args.get("search", default= "", type=str).strip()
     
-    return {"message": "Placeholder"},200
+    allowed_sorts = {
+        "id": User.UserID,
+        "first_name": User.First_name,
+        "last_name": User.Last_name, 
+        "email": User.Email,
+        "role": Role.Name,
+        "status": User.Status,
+        "created_at": User.Created_At,
+        "updated_at": User.Updated_At
+    }
+    
+    sort_column = allowed_sorts.get(sort_by)
+    
+    if sort_column is None:
+        return {"message": "Invalid sort field"}, 400
+    
+    query = sa.select(User).join(Role)
+    
+    if page < 1:
+        return {"message": "Page must be greater than 0"}, 400
+    
+    if per_page < 1 or per_page > 100:
+        return {"message": "per_page must be between 1 and 100"}, 400
+    
+    if order == 'desc':
+        query = query.order_by(sort_column.desc())
+    elif order == 'asc':
+        query = query.order_by(sort_column.asc())
+    else:
+        return {"message": "Invalid order."}, 400
+    
+    if search:
+        query = query.where(
+            sa.or_(
+                User.First_name.ilike(f"%{search}%"),
+                User.Last_name.ilike(f"%{search}%"),
+                User.Email.ilike(f"%{search}%"),
+                User.Status.cast(sa.String).ilike(f"%{search}%"),
+                Role.Name.ilike(f"%{search}%"),
+            )
+        )
+    
+    users = db.paginate(
+        query,
+        page=page,
+        per_page=per_page,
+        error_out=False
+    )
+
+    items = []
+    
+    for user in users.items:
+        items.append(
+            {
+                "id": user.UserID,
+                "first_name": user.First_name,
+                "last_name": user.Last_name,
+                "email": user.Email,
+                "role": user.Role.Name,
+                "status": user.Status.value,
+                "created_at": user.Created_At.isoformat(),
+                "updated_at": user.Updated_At.isoformat()
+            }
+        )
+     
+    return {
+        "items": items,
+        "page": users.page,
+        "per_page": users.per_page,
+        "pages": users.pages,
+        "total": users.total,
+        "has_next": users.has_next,
+        "has_prev": users.has_prev
+        },200
 
 @user_bp.get('/accounts/<int:id>')
 @login_required
 @require_permission("Placeholder")
-def account_info():
+def account_info(id):
     # check if the user has the permission or the user's role has the permission (function)
     # if not give an error
     # get the id argument of the url
@@ -512,8 +606,22 @@ def account_info():
     # check if that id exists
     #  if not give an erorr
     # else give the data
+    error = validate_user_exists(id)
+    if error is not None:
+        return error
+
+    user = get_user_by_id(id)
     
-    return {"message": "Placeholder"},200
+    return {
+        "id": user.UserID,
+        "first_name": user.First_name,
+        "last_name": user.Last_name,
+        "email": user.Email,
+        "role": user.Role.Name,
+        "status": user.Status.value,
+        "created_at": user.Created_At.isoformat(),
+        "updated_at": user.Updated_At.isoformat()
+        },200
 
 @user_bp.put('/accounts/<int:id>')
 @login_required
@@ -529,24 +637,78 @@ def edit_account(id):
     # update the info of the given id
     # commit changes
     
-    error = user_exists(id)
+    error = validate_user_exists(id)
     if error is not None:
         return error
     
     data = request.get_json()
-    error = valid_json(data)
     
+    error = validate_json_data(data)
     if error is not None:
         return error
     
-    fields = ["first_name", "last_name", "password", "role_name","permissions"]
-    error = require_fields(data, fields)
+    fields = {
+        "first_name": str, 
+        "last_name":  str,
+        "email": str,
+        "password": str,
+        "confirm_password": str,
+        "role_id": int,
+        "status": str,
+        }
+    error = validate_json_fields(data, fields)
     if error is not None:
         return error
 
+    first_name = data.get('first_name')
+    last_name = data.get('last_name')
+    email = data.get('email')
+    password = data.get('password')
+    confirm_password = data.get('confirm_password')
+    role = data.get('role_id')
+    status = data.get('status')
+
+    error = is_user_status_valid(status)
+    if error is not None:
+        return error
     
+    error =  validate_password_is_same(password, confirm_password)
+    if error is not None:
+        return error
     
-    return {"message": "Placeholder"},200
+    error = validate_password(password)
+    if error is not None:
+        return error
+    
+    error = validate_email(email)
+    if error is not None:
+        return error
+    
+    error = validate_email_not_exists(email)
+    if error is not None:
+        return error
+    
+    user_info = get_user_by_id(id)
+    role_info = get_role_by_id(role)
+
+    normalized_status = convert_user_status(status)
+    
+    normalized_email = normalize_email(email)
+
+    try:
+        user_info.First_name = first_name
+        user_info.Last_name = last_name
+        user_info.Email = normalized_email 
+        user_info.set_password(password)
+        user_info.RoleID = role_info
+        user_info.Status = normalized_status
+
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return {"message": "An error occurred."}, 400
+    
+    return {"message": "Sucessfully updated user."},200
 
 @user_bp.get('/me')
 @login_required
@@ -578,13 +740,8 @@ def user_permission():
     )
         
     return {
-        "first_name": current_user.Firstname,
-        "last_name": current_user.Lastname,
+        "first_name": current_user.First_name,
+        "last_name": current_user.Last_name,
         "role": role_name,
         "permissions": permission_array
             },200
-
-# Possible functions to make for a helper module
-# data input checker, user permission checker
-# user id exists, role id exists, password creation rules checker
-# json data format checker function

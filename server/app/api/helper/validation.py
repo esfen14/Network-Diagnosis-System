@@ -1,9 +1,16 @@
-import sqlalchemy as sa
-from app import db
-from app.system_models import User, Role, Permission, UserStatus
+from app.system_models import UserStatus
 from email_validator import validate_email, EmailNotValidError
+from .database_access import \
+    exists_user_by_id,\
+    exists_user_by_email,\
+    exists_role_by_id,\
+    exists_role_by_name,\
+    exists_permission_by_id,\
+    exists_permission_by_name,\
+    exists_email
 
-def valid_password(password):
+# ================= PASSWORD  =====================
+def validate_password(password):
     MIN_PASSWORD_LENGTH = 12
     password = password.strip()
     if password.isspace():
@@ -20,36 +27,21 @@ def valid_password(password):
         return {"message":"Password must contain a special character."}, 400
     return None
 
-def find_user_id(user_id):
-    exists = db.session.scalar(
-        sa.select(
-            sa.exists()
-            .where(
-                User.UserID == user_id
-            )
-        )
-    )
-    return exists
+def validate_password_is_same(password, confirm_password):
+    if not password == confirm_password:
+        return {"message": "Password is not the same."}, 400
+    return None
 
-def find_user_email(user_email):
-    exists = db.session.scalar(
-        sa.select(
-            sa.exists()
-            .where(
-                sa.func.lower(User.Email) == user_email.lower()
-            )
-        )
-    )
-    return exists
-
-def user_exists(user):
+# ================= USER  =========================
+def validate_user_exists(user):
+    
     exists = True
     if isinstance(user, int):
-        exists = find_user_id(user)
+        exists = exists_user_by_id(user)
 
-    elif isinstance(user, str):
-        exists = find_user_email(user)  
-
+    elif isinstance(user, str) and not user.isnumeric():
+        exists = exists_user_by_email(user) 
+    
     else:
         return {"message": "Invalid Datatype."}, 400
     
@@ -58,101 +50,67 @@ def user_exists(user):
     
     return None
 
-
-def find_role_id(role_id):
-    exists = db.session.scalar(
-        sa.select(
-            sa.exists()
-            .where(
-                Role.RoleID == role_id
-            )
-        )
-    ) 
-
-    return exists
+def validate_user_not_exists(user):
     
-def find_role_name(role_name):
-    exists = db.session.scalar(
-        sa.select(
-            sa.exists()
-            .where(
-                sa.func.lower(Role.Name) == role_name.lower()
-            )
-        )
-    ) 
-    return exists
-
-def role_exists(role):
     exists = True
-    if isinstance(role, int):
-        exists = find_role_id(role)
+    if isinstance(user, int):
+        exists = exists_user_by_id(user)
 
-    elif isinstance(role, str):
-        exists = find_role_name(role)  
-
+    elif isinstance(user, str) and not user.isnumeric():
+        exists = exists_user_by_email(user) 
+    
     else:
         return {"message": "Invalid Datatype."}, 400
-
-    if not exists:
-        return {"message": "Role does not exist."}, 404
-
-    return None
-
-def check_email(email):
-    try:
-        validate_email(email, check_deliverability=False)
-
-    except EmailNotValidError:
-        return {"message": "Not a valid email."}, 400
-    
-    exists = db.session.scalar(
-            sa.select(
-                sa.exists()
-                .where(
-                    User.Email == email
-                )
-            )
-        )
     
     if exists:
-        return {"message": "That email is already taken."}, 400
-        
+        return {"message": "User alredy exists."}, 404
+    
     return None
+
+# ================= ROLE  ========================
+def validate_role_exists(role):
     
+    exists = True
+    if isinstance(role, int):
+        exists = exists_role_by_id(role)
 
-def find_permission_id(permission_id):
-    exists = db.session.scalar(
-        sa.select(
-            sa.exists() 
-            .where(
-                Permission.PermissionID == permission_id
-            )
-        )
-    )
+    elif isinstance(role, str) and not role.isnumeric():
+        exists = exists_role_by_name(role)  
     
-    return exists
-
-def find_permission_name(permission_name):
-    exists = db.session.scalar(
-        sa.select(
-            sa.exists() 
-            .where(
-                Permission.Name == permission_name
-            )
-        )
-    )
+    else:
+        return {"message": "Invalid Datatype."}, 400
     
-    return exists
+    if not exists:
+        return {"message": "Role does not exist."}, 404
+    
+    return None
 
+def validate_role_not_exists(role):
+    
+    exists = True
+    if isinstance(role, int):
+        exists = exists_role_by_id(role)
 
-def permission_exists(permission):
+    elif isinstance(role, str) and not role.isnumeric():
+        exists = exists_role_by_name(role)  
+    
+    else:
+        return {"message": "Invalid Datatype."}, 400
+    
+    if exists:
+        return {"message": "Role already exists."}, 404
+    
+    return None
+
+# ================= PERMISSION  ==================
+def validate_permission_exists(permission):
     
     exists = True
     if isinstance(permission, int):
-        exists = find_permission_id(permission)
+        exists = exists_permission_by_id(permission)
 
-    elif isinstance(permission, str):
-        exists = find_permission_name(permission)  
+    elif isinstance(permission, str) and not permission.isnumeric():
+        exists = exists_permission_by_name(permission)  
     
     else:
         return {"message": "Invalid Datatype."}, 400
@@ -162,7 +120,8 @@ def permission_exists(permission):
     
     return None
 
-def valid_json(data):
+# ================== JSON  =======================
+def validate_json_data(data):
     if data is None:
         return {"message": "No JSON data provided"}, 400
 
@@ -174,7 +133,7 @@ def valid_json(data):
     
     return None
 
-def require_fields(data, required_fields):
+def validate_json_fields(data, required_fields):
     """_summary_
 
     Args:
@@ -210,10 +169,23 @@ def require_fields(data, required_fields):
 
     return None
 
-
-def check_user_status(status):
+# ================ USERSTATUS ====================
+def is_user_status_valid(status):
     status = status.strip().lower()
     for main_status in UserStatus:
         if status == main_status.value.lower():
             return None
     return {"message": "Not a valid status"}, 400
+
+# =================== EMAIL ======================
+def validate_user_email(email):
+    try:
+        validate_email(email, check_deliverability=False)
+        return None
+    except EmailNotValidError:
+        return {"message": "Not a valid email."}, 400
+
+def validate_email_not_exists(email):
+    if exists_email(email):
+        return {"message", "Email already exists."}, 400
+    return None
