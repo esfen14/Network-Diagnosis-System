@@ -24,6 +24,6 @@ login.login_view = 'login'
 from app import system_models, history_models
 
 #where the bluprints are called and registered
-from app.api.user.login import login_bp
+from app.api.user.login import user_bp
 
-app.register_blueprint(login_bp)
+app.register_blueprint(user_bp)

@@ -1,14 +1,15 @@
 from flask import Blueprint
-from flask_login import login_user, logout_user
+from flask_login import login_user, logout_user, current_user
 from flask import request
 import sqlalchemy as sa
 from app import db
 from app.system_models import User
+from app.api.helper.validation import valid_json, require_fields
+from email_validator import validate_email, EmailNotValidError
 
-login_bp = Blueprint('login', __name__)
+from app.api.user import user_bp
 
-
-@login_bp.route('/login', methods=['POST'])
+@user_bp.post('/login')
 def login():
     """_summary_
         This function is for logging in user along with checking if
@@ -21,41 +22,56 @@ def login():
     }
     
     Returns:
-        {"message": "decription"}
-        html 
+        {"message": "decription"}, http response code
     """
+
+    if current_user.is_authenticated:
+        return {"message": "User is already logged in."}, 200
+    
     data = request.get_json()
     
-    if not data:
-        return{
-            "message": "No JSON data provided"
-        }, 400
+    error = valid_json(data)
+
+    if error is not None:
+        return error
+
+    fields = {
+        "email": str,
+        "password": str
+    }
+    
+    error = require_fields(data, fields)
+
+    if error is not None:
+        return error
 
     email = data.get("email")
     password = data.get("password")
     
-    if not email or not password:
-        return{
-            "message": "Email and Password are required"
-        }, 400
-
+    try:
+       validate_email(email, check_deliverability=False) 
+    except EmailNotValidError:
+        return {"message": "Invalid email."}
+   
+    normalized_email = validate_email(email)
+     
     user = db.session.scalar(
-        sa.select(User).where(User.Email == email)
+        sa.select(User).where(User.Email == normalized_email)
     )
     
     if user is None or not user.check_password(password):
         return{
-            "message":"Invalid username or password"
+            "message": "Invalid username or password."
         }, 401
     
     login_user(user)
     return {
-        "message": "logged in"
+        "message": "User logged in."
     }, 200
 
-@login_bp.route('/logout', methods=['POST'])
+@user_bp.post('/logout')
 def logout():
     logout_user()
     return {
-        "message": "user logged out"
+        "message": "User logged out."
     }, 200

@@ -21,7 +21,9 @@ class Permission(db.Model):
     PermissionID: so.Mapped[int] = so.mapped_column(primary_key=True)
     Name: so.Mapped[str] = so.mapped_column(sa.String(50), unique=True)
     Description: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
-
+    
+    RolePermission: so.WriteOnlyMapped['RolePermission'] = so.relationship(back_populates='Permissions')
+        
 class Role(db.Model):
     # Table Name
     __tablename__ = "ROLE"
@@ -63,6 +65,7 @@ class RolePermission(db.Model):
     back_populate spcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
     """
     Role: so.Mapped['Role'] = so.relationship(back_populates='RolePermissions')
+    Permissions: so.Mapped['Permission'] = so.relationship(back_populates='RolePermission')
    
 """
 UserStatus Enum so that Status is consistent
@@ -83,10 +86,10 @@ class User(UserMixin, db.Model):
     First_name: so.Mapped[str] = so.mapped_column(sa.String(120))
     Last_name: so.Mapped[str] = so.mapped_column(sa.String(120))
     Email: so.Mapped[str] = so.mapped_column(sa.String(120), index=True)
-    Hashed_Password: so.Mapped[str] = so.mapped_column(sa.String(120))
+    Hashed_Password: so.Mapped[str] = so.mapped_column(sa.String(256))
     Status: so.Mapped[UserStatus] = so.mapped_column(sa.Enum(UserStatus))
     Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
-    Updated_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+    Updated_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc),onupdate= lambda: datetime.now(timezone.utc))
 
     # Foreign Key Field
     RoleID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(Role.RoleID), index=True)
@@ -177,7 +180,7 @@ class DeploymentHistory(db.Model):
     Notes: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
     Deployment_Status: so.Mapped[DeploymentStatus] = so.mapped_column(sa.Enum(DeploymentStatus))
     Deployed_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
-    Updated_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+    Updated_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc), onupdate= lambda: datetime.now(timezone.utc))
 
     # Foreign Key Fields
     LogID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(ActivityLog.LogID), index=True)
@@ -266,7 +269,7 @@ class NetworkDiscovery(db.Model):
     
     # Table Fields
     NetDiscoveryID:  so.Mapped[int]  = so.mapped_column(primary_key=True)
-    Hostname: so.Mapped[Optional[str]] = so.mapped_column(sa.String(25))
+    Hostname: so.Mapped[Optional[str]] = so.mapped_column(sa.String(100))
     IP_Address: so.Mapped[str] = so.mapped_column(sa.String(16), index=True)
     Subnet_Mask: so.Mapped[str] = so.mapped_column(sa.String(16), index=True)
     MAC_Address: so.Mapped[Optional[str]] = so.mapped_column(sa.String(17), index=True)
