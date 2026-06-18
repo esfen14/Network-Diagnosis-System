@@ -1,19 +1,15 @@
 from app.system_models import UserStatus
 from email_validator import validate_email, EmailNotValidError
-from .database_access import \
-    exists_user_by_id,\
-    exists_user_by_email,\
-    exists_role_by_id,\
-    exists_role_by_name,\
-    exists_permission_by_id,\
-    exists_permission_by_name,\
-    exists_email
+from .database_access import *
 
+"""
+This is a separation of concern that requires checking of input
+"""
 # ================= PASSWORD  =====================
 def validate_password(password):
     MIN_PASSWORD_LENGTH = 12
     password = password.strip()
-    if password.isspace():
+    if not password:
         return {"message":"Password must not be empty."}, 400
     if len(password) < MIN_PASSWORD_LENGTH:
         return {"message":"Password must be at least "+ str(MIN_PASSWORD_LENGTH) +" characters long"}, 400
@@ -38,9 +34,6 @@ def validate_user_exists(user):
     exists = True
     if isinstance(user, int):
         exists = exists_user_by_id(user)
-
-    elif isinstance(user, str) and not user.isnumeric():
-        exists = exists_user_by_email(user) 
     
     else:
         return {"message": "Invalid Datatype."}, 400
@@ -55,15 +48,12 @@ def validate_user_not_exists(user):
     exists = True
     if isinstance(user, int):
         exists = exists_user_by_id(user)
-
-    elif isinstance(user, str) and not user.isnumeric():
-        exists = exists_user_by_email(user) 
     
     else:
         return {"message": "Invalid Datatype."}, 400
     
     if exists:
-        return {"message": "User alredy exists."}, 404
+        return {"message": "User alredy exists."}, 409
     
     return None
 
@@ -73,9 +63,6 @@ def validate_role_exists(role):
     exists = True
     if isinstance(role, int):
         exists = exists_role_by_id(role)
-
-    elif isinstance(role, str) and not role.isnumeric():
-        exists = exists_role_by_name(role)  
     
     else:
         return {"message": "Invalid Datatype."}, 400
@@ -86,20 +73,24 @@ def validate_role_exists(role):
     return None
 
 def validate_role_not_exists(role):
-    
     exists = True
     if isinstance(role, int):
         exists = exists_role_by_id(role)
-
-    elif isinstance(role, str) and not role.isnumeric():
-        exists = exists_role_by_name(role)  
-    
+        
+    elif isinstance(role, str) and not role.isdigit():
+        exists = exists_role_by_name(role)
+        
     else:
         return {"message": "Invalid Datatype."}, 400
     
     if exists:
-        return {"message": "Role already exists."}, 404
+        return {"message": "Role already exists."}, 409
     
+    return None
+
+def validate_role_name_available(role):
+    if exists_role_by_name(role):
+        return {"message": "That role name is already taken."}
     return None
 
 # ================= PERMISSION  ==================
@@ -108,9 +99,6 @@ def validate_permission_exists(permission):
     exists = True
     if isinstance(permission, int):
         exists = exists_permission_by_id(permission)
-
-    elif isinstance(permission, str) and not permission.isnumeric():
-        exists = exists_permission_by_name(permission)  
     
     else:
         return {"message": "Invalid Datatype."}, 400
@@ -170,7 +158,7 @@ def validate_json_fields(data, required_fields):
     return None
 
 # ================ USERSTATUS ====================
-def is_user_status_valid(status):
+def validate_userstatus(status):
     status = status.strip().lower()
     for main_status in UserStatus:
         if status == main_status.value.lower():
@@ -185,7 +173,8 @@ def validate_user_email(email):
     except EmailNotValidError:
         return {"message": "Not a valid email."}, 400
 
-def validate_email_not_exists(email):
-    if exists_email(email):
-        return {"message", "Email already exists."}, 400
+def validate_email_available(email):
+    if exists_user_by_email(email):
+        return {"message": "Email already exists."}, 409
     return None
+

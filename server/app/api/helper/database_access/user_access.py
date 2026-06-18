@@ -9,7 +9,12 @@ def get_user_by_id(user_id: int):
     return db.session.get(User, user_id)
 
 def get_user_by_email(user_email: str):
-    return db.session.get(User, user_email)
+    return db.session.scalar(
+        sa.select(User)
+        .where(
+            sa.func.lower(User.Email) == user_email.lower()
+        )
+    )
 
 # =========== Check From Database =============
 def exists_user_by_id(user_id):
@@ -31,14 +36,14 @@ def exists_user_by_email(user_email):
             )
         )
     )
-    
-def exists_email(email):
+
+def has_email(email, id):
     return db.session.scalar(
-            sa.select(
-                sa.exists()
-                .where(
-                    User.Email == email
-                )
+        sa.select(
+            sa.exists()
+            .where(
+                sa.func.lower(User.Email) == email.lower(),
+                User.UserID == id
             )
         )
-
+    )

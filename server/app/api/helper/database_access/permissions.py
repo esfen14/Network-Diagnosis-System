@@ -1,7 +1,7 @@
 import sqlalchemy as sa
 from app import db
 from flask_login import current_user
-from app.system_models import Permission, RolePermission
+from app.system_models import Permission, RolePermission, Role
 from functools import wraps
 
 def _has_permission(permission_name):
@@ -14,14 +14,17 @@ def _has_permission(permission_name):
     if permission_id is None:
         return {"message": "Permission does not exist."}, 400
    
-    exists = db.session.scalar(
-       sa.select(
-           sa.exists().where(
-               RolePermission.RoleID == current_user.RoleID,
-               RolePermission.PermissionID == permission_id)
-            )
-        ) 
+    query = (
+        sa.select(RolePermission)
+        .join(Role)
+        .where(
+            RolePermission.RoleID == current_user.RoleID,
+            RolePermission.PermissionID == permission_id,
+            Role.Is_Active.is_(True)
+        )
+    )
 
+    exists = db.session.scalar(sa.select(sa.exists(query)))
     if not exists:
         return {"message": "User has no permission."}, 403
     

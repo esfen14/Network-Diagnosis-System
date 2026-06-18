@@ -1,30 +1,18 @@
 from flask import request
 from flask_login import login_required, current_user
-from datetime import datetime, timezone
-from server.app.api.helper.database_access.permissions import require_permission
+from app.api.helper.database_access.permissions import require_permission
 from app.system_models import Permission, User, Role, RolePermission
 from app.api.helper import *
+from flask import current_app
 
 import sqlalchemy as sa
 from app import db
 
-from user import user_bp
-
-# DO NOT PUT A ROUTE ON THIS ONE, THIS IS FOR THE SERVER TO CREATE PERMISSIONS
-# ALONG WITH THAT TESTING PURPOSES
-def CreatePermission(Name, Description):
-    # check if the user has input a permission that is already in the database
-    # if there is
-    # print out a erorr message, saying,that permission has already been created
-    # stop the function 
-    # else
-    # get the inputs an insert it into the database
-    # commit the changes
-    print()
+from app.api.user import user_bp
     
 @user_bp.get('/permissions/options')
 @login_required
-@require_permission("Placeholder")
+@require_permission("role.edit")
 def permission_list():
     
     query = (
@@ -48,7 +36,7 @@ def permission_list():
 
 @user_bp.post('/roles')
 @login_required
-@require_permission("Placeholder")
+@require_permission("role.edit")
 def create_role():
     # check if the user has the permission or the user's role has the permission (function)
     # if not give an error
@@ -118,8 +106,9 @@ def create_role():
             db.session.add(role_permission)
         
         db.session.commit()
-    except Exception:
+    except Exception as e:
         db.session.rollback()
+        current_app.logger.exception(f"Failed to create role' {role_name}'")
         return {"message": "An error occurred."}, 500
     
     return {
@@ -128,7 +117,7 @@ def create_role():
 
 @user_bp.get('/roles')
 @login_required
-@require_permission("Placeholder")
+@require_permission("role.view")
 def roles():
     # check if the user has the permission or the user's role has the permission (function)
     # if not give an error
@@ -208,7 +197,7 @@ def roles():
 
 @user_bp.get('/roles/options')
 @login_required
-@require_permission("Placeholder")
+@require_permission("role.list")
 def list_roles():
     # check if the user has the permission or the user's role has the permission (function)
     # if not give an error
@@ -237,7 +226,7 @@ def list_roles():
 
 @user_bp.get('/roles/<int:id>')
 @login_required
-@require_permission("Placeholder")
+@require_permission("role.info")
 def role_info(id):
     # check if the user has the permission or the user's role has the permission (function)
     # get the id argument of the url
@@ -280,7 +269,7 @@ def role_info(id):
 
 @user_bp.put('/roles/<int:id>')
 @login_required
-@require_permission("Placeholder")
+@require_permission("role.edit")
 def edit_role(id):
     # check if the user has the permission or the user's role has the permission (function)
     # get the id of the role needs to be modified
@@ -320,10 +309,15 @@ def edit_role(id):
     if error is not None:
         return error
     
-    name = data.get("name")
+    role_name = data.get("name")
     description = data.get("description")
-    permission_list = data.get("permissions")
+    permission_list = list(set(data.get("permissions")))
 
+    if not has_name(role_name, id):
+        error = validate_role_name_available(role_name)
+        if error is not None:
+            return error
+    
     for permission_id in permission_list:
         error = validate_permission_exists(permission_id)
         if error is not None:
@@ -333,7 +327,7 @@ def edit_role(id):
 
         role = get_role_by_id(id)
         
-        role.Name = name
+        role.Name = role_name
         role.Description = description
 
 
@@ -353,6 +347,9 @@ def edit_role(id):
         
     except Exception:
         db.session.rollback()
+        current_app.logger.exception(
+            f"Failed to update role '{role_name}'"
+        )
         return {"message": "An error occurred."}, 500
     
     
@@ -361,7 +358,7 @@ def edit_role(id):
 
 @user_bp.put('/roles/<int:id>/status')
 @login_required
-@require_permission("Placeholder")
+@require_permission("role.edit")
 def roles_status(id):
     # check if the user has the permission or the user's role has the permission (function)
     # get the id of the role that needs to be modified
@@ -387,6 +384,9 @@ def roles_status(id):
             
     except Exception:   
         db.session.rollback()
+        current_app.logger.exception(
+            f"Failed to change role status"
+        )
         return {"message": "An error occurred."}, 500
     
     return {"message": "Role status updated sucessfully.",
@@ -397,7 +397,7 @@ def roles_status(id):
 
 @user_bp.post('/accounts')
 @login_required
-@require_permission("Placeholder")
+@require_permission("account.edit")
 def create_account():
     # check if the user has the permission or the user's role has the permission (function)
     # if not give an error
@@ -452,13 +452,13 @@ def create_account():
     password = data.get('password')
     confirm_password = data.get('confirm_password')
     status = data.get('status')
-    role = data.get('role_id')
+    role_id = data.get('role_id')
     
-    error  = validate_role_exists(role)
+    error  = validate_role_exists(role_id)
     if error is not None:
         return error
 
-    error = is_user_status_valid(status)
+    error = validate_userstatus(status)
     if error is not None:
         return error
     
@@ -474,26 +474,32 @@ def create_account():
     if error is not None:
         return error
     
-    error = validate_email_not_exists(email)
+    normalized_email = normalize_email(email)
+    
+    error = validate_email_available(normalized_email)
     if error is not None:
         return error
     
     normalized_status = convert_user_status(status)
     
-    normalized_email = normalize_email(email)
+    applied_role = get_role_by_id(role_id)
+    
     try:
         user = User(
             First_name=first_name,
             Last_name=last_name,
             Email= normalized_email,
             Status= normalized_status,
-            RoleID= role
+            RoleID= applied_role.RoleID
         )
         user.set_password(password)
 
         db.session.add(user)
         db.session.commit()
     except Exception:
+        current_app.logger.exception(
+            f"Failed to create account '{email}'"
+        )
         db.session.rollback()
         return {"message": "An error occurred."}, 500
     
@@ -501,7 +507,7 @@ def create_account():
 
 @user_bp.get('/accounts')
 @login_required
-@require_permission("Placeholder")
+@require_permission("account.view")
 def available_accounts():
     # check if the user has the permission or the user's role has the permission (function)
     # if not give an error
@@ -597,7 +603,7 @@ def available_accounts():
 
 @user_bp.get('/accounts/<int:id>')
 @login_required
-@require_permission("Placeholder")
+@require_permission("account.info")
 def account_info(id):
     # check if the user has the permission or the user's role has the permission (function)
     # if not give an error
@@ -625,7 +631,7 @@ def account_info(id):
 
 @user_bp.put('/accounts/<int:id>')
 @login_required
-@require_permission("Placeholder")
+@require_permission("account.edit")
 def edit_account(id):
     # check if the user has the permission or the user's role has the permission (function)
     # if not give an error
@@ -654,7 +660,7 @@ def edit_account(id):
         "password": str,
         "confirm_password": str,
         "role_id": int,
-        "status": str,
+        "status": str
         }
     error = validate_json_fields(data, fields)
     if error is not None:
@@ -668,7 +674,7 @@ def edit_account(id):
     role = data.get('role_id')
     status = data.get('status')
 
-    error = is_user_status_valid(status)
+    error = validate_userstatus(status)
     if error is not None:
         return error
     
@@ -680,11 +686,18 @@ def edit_account(id):
     if error is not None:
         return error
     
-    error = validate_email(email)
+    error = validate_user_email(email)
     if error is not None:
         return error
     
-    error = validate_email_not_exists(email)
+    normalized_email = normalize_email(email)
+     
+    if not has_email(email, id):
+        error = validate_email_available(email)
+        if error is not None:
+            return error
+    
+    error = validate_role_exists(role)
     if error is not None:
         return error
     
@@ -693,19 +706,22 @@ def edit_account(id):
 
     normalized_status = convert_user_status(status)
     
-    normalized_email = normalize_email(email)
+   
 
     try:
         user_info.First_name = first_name
         user_info.Last_name = last_name
         user_info.Email = normalized_email 
         user_info.set_password(password)
-        user_info.RoleID = role_info
+        user_info.RoleID = role_info.RoleID
         user_info.Status = normalized_status
 
         db.session.commit()
     except Exception:
         db.session.rollback()
+        current_app.logger.exception(
+            f"Failed to update account '{email}'"
+        )
         return {"message": "An error occurred."}, 400
     
     return {"message": "Sucessfully updated user."},200
