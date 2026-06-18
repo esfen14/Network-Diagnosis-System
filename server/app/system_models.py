@@ -19,7 +19,7 @@ class Permission(db.Model):
     
     # Table Fields
     PermissionID: so.Mapped[int] = so.mapped_column(primary_key=True)
-    Name: so.Mapped[str] = so.mapped_column(sa.String(50), unique=True)
+    Name: so.Mapped[str] = so.mapped_column(sa.String(50), unique=True, index=True)
     Description: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
 
 class Role(db.Model):
@@ -28,7 +28,7 @@ class Role(db.Model):
     
     # Table Fields
     RoleID: so.Mapped[int] = so.mapped_column(primary_key=True)
-    Name: so.Mapped[str] = so.mapped_column(sa.String(50))
+    Name: so.Mapped[str] = so.mapped_column(sa.String(50), unique=True, index=True)
     Is_Active: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=True)
     Description: so.Mapped[Optional[str]] = so.mapped_column(sa.String(150))
     Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
@@ -82,7 +82,7 @@ class User(UserMixin, db.Model):
     UserID: so.Mapped[int] = so.mapped_column(primary_key=True)
     First_name: so.Mapped[str] = so.mapped_column(sa.String(120))
     Last_name: so.Mapped[str] = so.mapped_column(sa.String(120))
-    Email: so.Mapped[str] = so.mapped_column(sa.String(120), index=True)
+    Email: so.Mapped[str] = so.mapped_column(sa.String(120), unique=True, index=True)
     Hashed_Password: so.Mapped[str] = so.mapped_column(sa.String(120))
     Status: so.Mapped[UserStatus] = so.mapped_column(sa.Enum(UserStatus))
     Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
@@ -266,7 +266,7 @@ class NetworkDiscovery(db.Model):
     
     # Table Fields
     NetDiscoveryID:  so.Mapped[int]  = so.mapped_column(primary_key=True)
-    Hostname: so.Mapped[Optional[str]] = so.mapped_column(sa.String(25))
+    Hostname: so.Mapped[Optional[str]] = so.mapped_column(sa.String(100))
     IP_Address: so.Mapped[str] = so.mapped_column(sa.String(16), index=True)
     Subnet_Mask: so.Mapped[str] = so.mapped_column(sa.String(16), index=True)
     MAC_Address: so.Mapped[Optional[str]] = so.mapped_column(sa.String(17), index=True)
