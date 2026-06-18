@@ -83,7 +83,7 @@ class User(UserMixin, db.Model):
     First_name: so.Mapped[str] = so.mapped_column(sa.String(120))
     Last_name: so.Mapped[str] = so.mapped_column(sa.String(120))
     Email: so.Mapped[str] = so.mapped_column(sa.String(120), unique=True, index=True)
-    Hashed_Password: so.Mapped[str] = so.mapped_column(sa.String(120))
+    Hashed_Password: so.Mapped[str] = so.mapped_column(sa.String(256))
     Status: so.Mapped[UserStatus] = so.mapped_column(sa.Enum(UserStatus))
     Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Updated_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
