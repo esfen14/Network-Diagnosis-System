@@ -4,17 +4,24 @@ import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 import { DeviceInventoryPage } from './pages/DeviceInventoryPage'
 import { NetworkHealthPage } from './pages/NetworkHealthPage'
+import { ManageAccountsPage } from './pages/ManageAccountsPage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
 
 export default function App() {
   return (
     <Routes>
+      {/* PUBLIC ROUTES */}
       <Route path="/login" element={<LoginPage />} />
+
+      {/* ADMIN LAYOUT ROUTES */}
       <Route path="/" element={<AdminLayout />}>
         <Route index element={<Navigate to="/dashboard" replace />} />
+
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="network-health" element={<NetworkHealthPage />} />
         <Route path="device-inventory" element={<DeviceInventoryPage />} />
+
+        {/* TOPOLOGY */}
         <Route
           path="topology"
           element={
@@ -24,6 +31,8 @@ export default function App() {
             />
           }
         />
+
+        {/* REPORTS */}
         <Route
           path="reports"
           element={
@@ -33,6 +42,8 @@ export default function App() {
             />
           }
         />
+
+        {/* SYSTEM LOGS */}
         <Route
           path="system-logs"
           element={
@@ -42,15 +53,11 @@ export default function App() {
             />
           }
         />
-        <Route
-          path="accounts"
-          element={
-            <PlaceholderPage
-              title="Manage Accounts"
-              description="User account management."
-            />
-          }
-        />
+
+        {/* ✅ FIXED: ACCOUNTS PAGE */}
+        <Route path="accounts" element={<ManageAccountsPage />} />
+
+        {/* SETTINGS */}
         <Route
           path="settings"
           element={
@@ -61,6 +68,8 @@ export default function App() {
           }
         />
       </Route>
+
+      {/* FALLBACK */}
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   )
