@@ -4,6 +4,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 import { DeviceInventoryPage } from './pages/DeviceInventoryPage'
 import { NetworkHealthPage } from './pages/NetworkHealthPage'
+import { TopologyPage } from './pages/TopologyPage'
 import { ManageAccountsPage } from './pages/ManageAccountsPage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
 
@@ -12,26 +13,17 @@ export default function App() {
     <Routes>
       {/* PUBLIC ROUTES */}
       <Route path="/login" element={<LoginPage />} />
-
       {/* ADMIN LAYOUT ROUTES */}
       <Route path="/" element={<AdminLayout />}>
         <Route index element={<Navigate to="/dashboard" replace />} />
-
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="network-health" element={<NetworkHealthPage />} />
         <Route path="device-inventory" element={<DeviceInventoryPage />} />
-
         {/* TOPOLOGY */}
         <Route
           path="topology"
-          element={
-            <PlaceholderPage
-              title="Topology View"
-              description="Visual map of your network infrastructure."
-            />
-          }
+          element={<TopologyPage />}
         />
-
         {/* REPORTS */}
         <Route
           path="reports"
@@ -42,7 +34,6 @@ export default function App() {
             />
           }
         />
-
         {/* SYSTEM LOGS */}
         <Route
           path="system-logs"
@@ -53,10 +44,8 @@ export default function App() {
             />
           }
         />
-
         {/* ✅ FIXED: ACCOUNTS PAGE */}
         <Route path="accounts" element={<ManageAccountsPage />} />
-
         {/* SETTINGS */}
         <Route
           path="settings"
@@ -68,7 +57,6 @@ export default function App() {
           }
         />
       </Route>
-
       {/* FALLBACK */}
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
