@@ -1,6 +1,6 @@
 from flask_login import login_user, logout_user, current_user, login_required
 from flask import request
-from app.api.helper import(
+from app.api.helper import (
     validate_json_data,
     validate_json_fields,
     validate_user_email,
@@ -9,29 +9,28 @@ from app.api.helper import(
 )
 from app.api.user import user_bp
 
+
 @user_bp.post('/login')
 def login():
-    """_summary_
-        This function is for logging in user along with checking if
-        the log in credentials are valid for logging in.
-        
+    """
+    This function is for logging in a user and validating credentials.
+
     Expects:
     {
         "email": "email",
-        "password": "password",
+        "password": "password"
     }
-    
+
     Returns:
-        {"message": "decription"}, http response code
+        {"message": "description"}, HTTP response code
     """
 
     if current_user.is_authenticated:
         return {"message": "User is already logged in."}, 200
-    
-    data = request.get_json()
-    
-    error = validate_json_data(data)
 
+    data = request.get_json()
+
+    error = validate_json_data(data)
     if error is not None:
         return error
 
@@ -39,35 +38,44 @@ def login():
         "email": str,
         "password": str
     }
-    
+
     error = validate_json_fields(data, fields)
     if error is not None:
         return error
 
     email = data.get("email")
     password = data.get("password")
-    
+
     error = validate_user_email(email)
     if error is not None:
         return error
-   
+
     normalized_email = normalize_email(email)
-     
+
     user = get_user_by_email(normalized_email)
-    if not (user.Status.value == "Active"):
-        return{
-            "message": "Account inactive."
-        }, 403
-    
-    if user is None or not user.check_password(password):
-        return{
+
+    if user is None:
+        return {
             "message": "Invalid username or password."
         }, 401
-    
+
+    if not user.check_password(password):
+        return {
+            "message": "Invalid username or password."
+        }, 401
+
+    # Check account status
+    if user.Status.value != "Active":
+        return {
+            "message": "Account inactive."
+        }, 403
+
     login_user(user)
+
     return {
         "message": "User logged in."
     }, 200
+
 
 @user_bp.post('/logout')
 @login_required
