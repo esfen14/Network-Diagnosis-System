@@ -11,20 +11,20 @@ import { PlaceholderPage } from './pages/PlaceholderPage'
 export default function App() {
   return (
     <Routes>
-      {/* PUBLIC ROUTES */}
+      
       <Route path="/login" element={<LoginPage />} />
-      {/* ADMIN LAYOUT ROUTES */}
+   
       <Route path="/" element={<AdminLayout />}>
-        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route index element={<Navigate to="/login" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="network-health" element={<NetworkHealthPage />} />
         <Route path="device-inventory" element={<DeviceInventoryPage />} />
-        {/* TOPOLOGY */}
+     
         <Route
           path="topology"
           element={<TopologyPage />}
         />
-        {/* REPORTS */}
+     
         <Route
           path="reports"
           element={
@@ -44,9 +44,9 @@ export default function App() {
             />
           }
         />
-        {/* ✅ FIXED: ACCOUNTS PAGE */}
+       
         <Route path="accounts" element={<ManageAccountsPage />} />
-        {/* SETTINGS */}
+     
         <Route
           path="settings"
           element={
@@ -57,7 +57,7 @@ export default function App() {
           }
         />
       </Route>
-      {/* FALLBACK */}
+  
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   )

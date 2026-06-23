@@ -3,11 +3,14 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_login import LoginManager
 from config import Config
+from flask_cors import CORS
 
 import os
 
 # Instantiate the application
 app = Flask(__name__)
+
+CORS(app, supports_credentials=True)
 
 # Call the configurations used
 app.config.from_object(Config)
@@ -31,4 +34,4 @@ from app import system_models, history_models
 #where the bluprints are called and registered
 from app.api.user import user_bp
 
-app.register_blueprint(user_bp)
+app.register_blueprint(user_bp, url_prefix="/user")

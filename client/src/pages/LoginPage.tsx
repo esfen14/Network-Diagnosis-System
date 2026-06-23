@@ -5,12 +5,45 @@ import { PinPointLogo } from '../components/login/PinPointLogo'
 
 export function LoginPage() {
   const navigate = useNavigate()
+
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    navigate('/dashboard')
+
+    try {
+      setLoading(true)
+
+      const response = await fetch('http://127.0.0.1:5000/user/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          email,
+          password,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        navigate('/dashboard')
+      } else {
+        alert(data.message || 'Login failed')
+      }
+    } catch (error) {
+      console.error('Login Error:', error)
+      alert('Unable to connect to server')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -28,7 +61,7 @@ export function LoginPage() {
             'linear-gradient(46deg, rgba(33, 33, 33, 0.84) 0%, rgba(66, 66, 66, 0.24) 100%)',
         }}
       />
-          
+
       <div className="absolute left-[110px] top-[180px] z-10 hidden lg:block">
         <PinPointLogo />
 
@@ -52,13 +85,12 @@ export function LoginPage() {
           </div>
         </div>
       </div>
-      
-        <div className="mt-12 flex gap-2">
-          <div className="h-0.5 w-12 rounded-full bg-white" />
-          <div className="h-0.5 w-8 rounded-full bg-white/40" />
-          <div className="h-0.5 w-8 rounded-full bg-white/40" />
-        </div>
-      
+
+      <div className="mt-12 flex gap-2">
+        <div className="h-0.5 w-12 rounded-full bg-white" />
+        <div className="h-0.5 w-8 rounded-full bg-white/40" />
+        <div className="h-0.5 w-8 rounded-full bg-white/40" />
+      </div>
 
       <div className="relative z-10 m-6 w-full max-w-[460px] rounded-3xl bg-white p-10 shadow-2xl lg:mr-[205px]">
         <header className="mb-8">
@@ -70,14 +102,16 @@ export function LoginPage() {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
           <div className="flex flex-col gap-5">
-          
             <div className="relative">
               <label className="absolute -top-2.5 left-4 z-10 bg-white px-1.5 text-xs text-[#424242]">
-                Username
+                Email
               </label>
+
               <input
-                type="text"
-                placeholder="Enter your username"
+                type="email"
+                placeholder="Enter your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-[30px] border border-[#424242] px-4 py-4 text-base text-black placeholder:text-[#424242]/60 outline-none focus:border-black"
                 required
               />
@@ -87,12 +121,16 @@ export function LoginPage() {
               <label className="absolute -top-2.5 left-4 z-10 bg-white px-1.5 text-xs text-[#100F0F]">
                 Password
               </label>
+
               <input
                 type={showPassword ? 'text' : 'password'}
                 placeholder="•••••••••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 className="w-full rounded-[30px] border border-[#100F0F] px-4 py-4 pr-12 text-base text-black placeholder:text-[#424242]/60 outline-none focus:border-black"
                 required
               />
+
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
@@ -118,6 +156,7 @@ export function LoginPage() {
               />
               Remember me
             </label>
+
             <button
               type="button"
               className="text-sm text-[#424242] hover:underline"
@@ -128,9 +167,10 @@ export function LoginPage() {
 
           <button
             type="submit"
-            className="w-full rounded-[30px] bg-[#212121] py-4 text-xs font-bold tracking-wide text-white transition hover:bg-black"
+            disabled={loading}
+            className="w-full rounded-[30px] bg-[#212121] py-4 text-xs font-bold tracking-wide text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-70"
           >
-            LOG IN
+            {loading ? 'LOGGING IN...' : 'LOG IN'}
           </button>
         </form>
       </div>
