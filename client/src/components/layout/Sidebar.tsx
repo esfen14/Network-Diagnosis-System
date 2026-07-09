@@ -11,17 +11,73 @@ import {
 import { NavLink } from 'react-router-dom'
 
 const navItems = [
-  { to: '/dashboard', label: 'Overview', icon: LayoutDashboard },
-  { to: '/network-health', label: 'Network Health', icon: Activity },
-  { to: '/device-inventory', label: 'Device Inventory', icon: FolderOpen },
-  { to: '/topology', label: 'Topology View', icon: Network },
-  { to: '/reports', label: 'Report', icon: FileText },
-  { to: '/system-logs', label: 'System Logs', icon: FileText },
-  { to: '/accounts', label: 'Manage Accounts', icon: Users },
-  { to: '/settings', label: 'Settings', icon: Settings },
+  {
+    to: '/dashboard',
+    label: 'Overview',
+    icon: LayoutDashboard,
+    roles: ['network_admin', 'network_technician'],
+  },
+  {
+    to: '/network-health',
+    label: 'Network Health',
+    icon: Activity,
+    roles: ['network_admin', 'network_technician'],
+  },
+  {
+    to: '/device-inventory',
+    label: 'Device Inventory',
+    icon: FolderOpen,
+    roles: ['network_admin', 'network_technician'],
+  },
+  {
+    to: '/topology',
+    label: 'Topology View',
+    icon: Network,
+    roles: ['network_admin', 'network_technician'],
+  },
+  {
+    to: '/plugins',
+    label: 'Plugins',
+    icon: Wrench, 
+    roles: ['network_admin', 'network_technician'],
+  },
+  {
+    to: '/reports',
+    label: 'Report',
+    icon: FileText,
+    roles: ['network_admin', 'network_technician'],
+  },
+
+  {
+    to: '/system-logs',
+    label: 'System Logs',
+    icon: FileText,
+    roles: ['network_admin'],
+  },
+  {
+    to: '/accounts',
+    label: 'Manage Accounts',
+    icon: Users,
+    roles: ['network_admin'],
+  },
+  {
+    to: '/settings',
+    label: 'Settings',
+    icon: Settings,
+    roles: ['network_admin'],
+  },
 ]
 
 export function Sidebar() {
+
+  const user = {
+    role: 'network_admin',
+  }
+
+  const visibleItems = navItems.filter((item) =>
+    item.roles.includes(user.role)
+  )
+
   return (
     <aside className="fixed left-0 top-0 flex h-screen w-[220px] flex-col border-r border-gray-200 bg-white px-4 py-4">
       <div className="flex flex-1 flex-col">
@@ -36,7 +92,7 @@ export function Sidebar() {
         </div>
 
         <div className="flex flex-col gap-1">
-          {navItems.map(({ to, label, icon: Icon }) => (
+          {visibleItems.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}
@@ -63,8 +119,11 @@ export function Sidebar() {
 
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-black">
-              Admin
+              {user.role === 'network_admin'
+                ? 'Network Admin'
+                : 'Network Technician'}
             </p>
+
             <p className="truncate text-xs text-gray-500">
               admin@pinpoint.local
             </p>

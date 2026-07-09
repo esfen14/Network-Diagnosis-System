@@ -5,21 +5,26 @@ import { LoginPage } from './pages/LoginPage'
 import { DeviceInventoryPage } from './pages/DeviceInventoryPage'
 import { NetworkHealthPage } from './pages/NetworkHealthPage'
 import { TopologyPage } from './pages/TopologyPage'
+import { ManageAccountsPage } from './pages/ManageAccountsPage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
 
 export default function App() {
   return (
     <Routes>
+      
       <Route path="/login" element={<LoginPage />} />
+   
       <Route path="/" element={<AdminLayout />}>
-        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route index element={<Navigate to="/login" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="network-health" element={<NetworkHealthPage />} />
         <Route path="device-inventory" element={<DeviceInventoryPage />} />
-       <Route
+     
+        <Route
           path="topology"
-            element={<TopologyPage />}
+          element={<TopologyPage />}
         />
+     
         <Route
           path="reports"
           element={
@@ -29,6 +34,17 @@ export default function App() {
             />
           }
         />
+
+        <Route
+          path="plugins"
+          element={
+            <PlaceholderPage
+              title="Plugins"
+              description="Manage and configure system plugins."
+            />
+          }
+        />
+      
         <Route
           path="system-logs"
           element={
@@ -38,15 +54,9 @@ export default function App() {
             />
           }
         />
-        <Route
-          path="accounts"
-          element={
-            <PlaceholderPage
-              title="Manage Accounts"
-              description="User account management."
-            />
-          }
-        />
+       
+        <Route path="accounts" element={<ManageAccountsPage />} />
+     
         <Route
           path="settings"
           element={
@@ -57,6 +67,7 @@ export default function App() {
           }
         />
       </Route>
+  
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   )

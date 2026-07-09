@@ -1,5 +1,24 @@
 {
   "dependencies": {
     "@xyflow/react": "^12.11.0"
-  }
+  },
+  "name": "network-diagnosis-system",
+  "version": "1.0.0",
+  "description": "This is where development of 4D-G2's capstone will happen.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/esfen14/Network-Diagnosis-System.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/esfen14/Network-Diagnosis-System/issues"
+  },
+  "homepage": "https://github.com/esfen14/Network-Diagnosis-System#readme"
 }

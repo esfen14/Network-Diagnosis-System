@@ -1,61 +1,86 @@
-from flask import Blueprint
-from flask_login import login_user, logout_user
+from flask_login import login_user, logout_user, current_user, login_required
 from flask import request
-import sqlalchemy as sa
-from app import db
-from app.models import User
+from app.api.helper import (
+    validate_json_data,
+    validate_json_fields,
+    validate_user_email,
+    get_user_by_email,
+    normalize_email
+)
+from app.api.user import user_bp
 
-login_bp = Blueprint('login', __name__)
 
-
-@login_bp.route('/login', methods=['POST'])
+@user_bp.post('/login')
 def login():
-    """_summary_
-        This function is for logging in user along with checking if
-        the log in credentials are valid for logging in.
-        
+    """
+    This function is for logging in a user and validating credentials.
+
     Expects:
     {
         "email": "email",
-        "password": "password",
+        "password": "password"
     }
-    
+
     Returns:
-        {"message": "decription"}
-        html 
+        {"message": "description"}, HTTP response code
     """
+
+    if current_user.is_authenticated:
+        return {"message": "User is already logged in."}, 200
+
     data = request.get_json()
-    
-    if not data:
-        return{
-            "message": "No JSON data provided"
-        }, 400
+
+    error = validate_json_data(data)
+    if error is not None:
+        return error
+
+    fields = {
+        "email": str,
+        "password": str
+    }
+
+    error = validate_json_fields(data, fields)
+    if error is not None:
+        return error
 
     email = data.get("email")
     password = data.get("password")
-    
-    if not email or not password:
-        return{
-            "message": "Email and Password are required"
-        }, 400
 
-    user = db.session.scalar(
-        sa.select(User).where(User.Email == email)
-    )
-    
-    if user is None or not user.check_password(password):
-        return{
-            "message":"Invalid username or password"
+    error = validate_user_email(email)
+    if error is not None:
+        return error
+
+    normalized_email = normalize_email(email)
+
+    user = get_user_by_email(normalized_email)
+
+    if user is None:
+        return {
+            "message": "Invalid username or password."
         }, 401
-    
+
+    if not user.check_password(password):
+        return {
+            "message": "Invalid username or password."
+        }, 401
+
+    # Check account status
+    if user.Status.value != "Active":
+        return {
+            "message": "Account inactive."
+        }, 403
+
     login_user(user)
+
     return {
-        "message": "logged in"
+        "message": "User logged in."
     }, 200
 
-@login_bp.route('/logout', methods=['POST'])
+
+@user_bp.post('/logout')
+@login_required
 def logout():
     logout_user()
     return {
-        "message": "user logged out"
+        "message": "User logged out."
     }, 200

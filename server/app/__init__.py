@@ -3,10 +3,14 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_login import LoginManager
 from config import Config
+from flask_cors import CORS
+
 import os
 
 # Instantiate the application
 app = Flask(__name__)
+
+CORS(app, supports_credentials=True)
 
 # Call the configurations used
 app.config.from_object(Config)
@@ -19,11 +23,15 @@ migrate = Migrate(app, db)
 
 # instantiate the Login Manager
 login = LoginManager(app)
-login.login_view = 'login'
+login.login_view = None
 
-from app import models
+from app.api.commands.seed import seed_command
+
+app.cli.add_command(seed_command)
+
+from app import system_models, history_models
 
 #where the bluprints are called and registered
-from app.api.user.login import login_bp
+from app.api.user import user_bp
 
-app.register_blueprint(login_bp)
+app.register_blueprint(user_bp, url_prefix="/user")
