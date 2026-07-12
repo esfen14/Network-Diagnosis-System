@@ -38,25 +38,6 @@ def permission_list():
 @login_required
 @require_permission("role.edit")
 def create_role():
-    # check if the user has the permission or the user's role has the permission (function)
-    # if not give an error
-    # get the json of the input
-    # It should be the name of the role and description
-    # check if the input is a json
-    # if not
-    # give an error
-    # else
-    # check if its an empty json
-    # if it is give an error
-    # else continue
-    # check if the role name is already in the system, not case sensitive
-    # if there is
-    # give an error
-    # else
-    # get the inputs
-    # insert it into the database
-    # commit changes
-    # retun success message
     """
     JSON format
     {
@@ -119,17 +100,6 @@ def create_role():
 @login_required
 @require_permission("role.view")
 def roles():
-    # check if the user has the permission or the user's role has the permission (function)
-    # if not give an error
-    # Get the the page argument (remember put a min and max)
-    # Get the per_page amount argument (remember put a min and max)
-    # Get the sorting argument
-    # get the search argument
-    # if else for the sorting argument given
-    # ask for the query made with the page and item and error out false
-    # 
-    # return the data:
-    # items, page, per_page, pages, total, has_next, has_prev
     page = request.args.get("page", default=1, type=int)
     per_page = request.args.get("per_page", default=10, type=int)
     sort_by = request.args.get("sort_by", default="name", type=str)
@@ -199,12 +169,6 @@ def roles():
 @login_required
 @require_permission("role.list")
 def list_roles():
-    # check if the user has the permission or the user's role has the permission (function)
-    # if not give an error
-    # ask for the query for all roles that are active
-    # return the data:
-    # items
-    
     query = (sa.select(Role)
              .order_by(Role.Name.asc())
              .where(Role.Is_Active.is_(True))
@@ -228,12 +192,6 @@ def list_roles():
 @login_required
 @require_permission("role.info")
 def role_info(id):
-    # check if the user has the permission or the user's role has the permission (function)
-    # get the id argument of the url
-    # make a query for the id given
-    # check if that id exists
-    # if not give an error
-    # else give the data
     error = validate_role_exists(id)
     if error is not None:
         return error
@@ -271,16 +229,6 @@ def role_info(id):
 @login_required
 @require_permission("role.edit")
 def edit_role(id):
-    # check if the user has the permission or the user's role has the permission (function)
-    # get the id of the role needs to be modified
-    # check if that role exists
-    # if not give an error
-    # else 
-    # check the format of the data given
-    # get the new info
-    # update the info of the given id
-    # commit changes
-    
     """
     JSON Format
     {
@@ -360,16 +308,6 @@ def edit_role(id):
 @login_required
 @require_permission("role.edit")
 def roles_status(id):
-    # check if the user has the permission or the user's role has the permission (function)
-    # get the id of the role that needs to be modified
-    # check if that role exists
-    # if not, give an error
-    # get the current status of the role
-    # if the current status is the same as input status
-    # give an error
-    # if not change the status
-    # commit changes
-    
     error = validate_role_exists(id)
     if error is not None:
         return error
@@ -399,21 +337,6 @@ def roles_status(id):
 @login_required
 @require_permission("account.edit")
 def create_account():
-    # check if the user has the permission or the user's role has the permission (function)
-    # if not give an error
-    # get the json of the input
-    # if the input is json, if not give an error
-    # if the json is emtpy, if not give an error
-    # check if the user's email is already in the system
-    # if yes then give an error
-    # get the inputs
-    # get the role of the input
-    # get the id of the role 
-    # insert the user into the database
-    # commit changes
-    # get the all the permissions
-    # add the permissions of the user
-    # commit changes
     """
     JSON format
     {
@@ -509,17 +432,6 @@ def create_account():
 @login_required
 @require_permission("account.view")
 def available_accounts():
-    # check if the user has the permission or the user's role has the permission (function)
-    # if not give an error
-    # get page argument
-    # get the per_page argument
-    # get the sorting argument
-    # get the search argument
-    # if else for the given sorting argument
-    # ask the query made with the page and item and error out false
-    #
-    # return the data:
-    # items, page, per_page, pages, total, has_next, has_prev
     page = request.args.get("page", default=1, type=int)
     per_page = request.args.get("per_page", default=10, type=int)
     sort_by = request.args.get("sort_by", default="first_name", type=str)
@@ -605,13 +517,6 @@ def available_accounts():
 @login_required
 @require_permission("account.info")
 def account_info(id):
-    # check if the user has the permission or the user's role has the permission (function)
-    # if not give an error
-    # get the id argument of the url
-    # make a query for the id given
-    # check if that id exists
-    #  if not give an erorr
-    # else give the data
     error = validate_user_exists(id)
     if error is not None:
         return error
@@ -633,16 +538,6 @@ def account_info(id):
 @login_required
 @require_permission("account.edit")
 def edit_account(id):
-    # check if the user has the permission or the user's role has the permission (function)
-    # if not give an error
-    # check if that user exists
-    # if not give an error
-    # else
-    # check the format of the given data
-    # get the new info 
-    # update the info of the given id
-    # commit changes
-    
     error = validate_user_exists(id)
     if error is not None:
         return error
@@ -729,12 +624,6 @@ def edit_account(id):
 @user_bp.get('/me')
 @login_required
 def user_permission():
-    # get the id of the user
-    # check if the id of the user exists
-    # if not give an error
-    # query the user's role permission
-    # return the output
-    
     permissions = db.session.scalars(
         sa.select(Permission)
         .join(RolePermission)
