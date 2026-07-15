@@ -27,7 +27,7 @@ export function ManageAccountsPage() {
           description="Manage all users in one place. Control access, assign roles, and monitor activity across your platform."
         />
 
-        {/* FILTERS */}
+
         <div className="flex flex-wrap items-center justify-between gap-4">
 
           <div className="flex gap-2">
@@ -58,7 +58,7 @@ export function ManageAccountsPage() {
 
         </div>
 
-        {/* TABLE */}
+   
         <UserTable users={filteredUsers} title="All System Users" />
 
       </div>

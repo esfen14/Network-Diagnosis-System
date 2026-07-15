@@ -34,7 +34,17 @@ export default function App() {
             />
           }
         />
-        {/* SYSTEM LOGS */}
+
+        <Route
+          path="plugins"
+          element={
+            <PlaceholderPage
+              title="Plugins"
+              description="Manage and configure system plugins."
+            />
+          }
+        />
+      
         <Route
           path="system-logs"
           element={
