@@ -5,7 +5,6 @@ from flask_login import LoginManager
 from config import Config
 from flask_cors import CORS
 
-import os
 
 # Instantiate the application
 app = Flask(__name__)
