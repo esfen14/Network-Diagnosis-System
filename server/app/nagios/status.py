@@ -112,7 +112,7 @@ def insert_service_status_data(service,data):
             Scheduled_Downtime_Depth= data['scheduled_downtime_depth']
         )
         
-        db.session.add(serviceStatus)
+        db.session.add(service_status)
         db.session.flush()
         
         for perf in data['plugin_putput'].split(" "):
@@ -134,67 +134,70 @@ def insert_service_status_data(service,data):
         current_app.logger.exception("Failed to insert service status")
 
 def get_status():
-    programStatusParams ={
-        "query": "programstatus"
-    }
-
-    response = requests.get(
-        NAGIOS_URL,
-        params=programStatusParams,
-        auth=(USERNAME, PASSWORD),
-        timeout=10
-    )
-
-    response.raise_for_status()
-
-    data = response.json()
-    
-    programStatus = data['data']['programstatus']
-    
-    
-    insert_programstatus_data(programStatus)
-    
-    hostParams = {
-        "query": "hostlist",
-        "formatoptions": "enumerate",
-        "details": "true"
-    }
-
-    response = requests.get(
-        NAGIOS_URL,
-        params=hostParams,
-        auth=(USERNAME, PASSWORD),
-        timeout=10
-    )
-    response.raise_for_status()
-
-    data = response.json()
-    # this gives you a JSON
-    hostlist = data['data']['hostlist']
-    # turns the JSON into a dict to easily be read
-    
-    for hostname, host_data in hostlist.items():
-        
-        insert_host_status_data(host_data)
-
-        serviceParams ={
-            "query": "servicelist",
-            "hostname": hostname,
-            "formatoptions": "enumerate",
-            "details": "true"    
+    try:
+        programStatusParams ={
+            "query": "programstatus"
         }
 
         response = requests.get(
             NAGIOS_URL,
-            params=serviceParams,
+            params=programStatusParams,
             auth=(USERNAME, PASSWORD),
             timeout=10
         )
+
+        response.raise_for_status()
+
         data = response.json()
+        
+        programStatus = data['data']['programstatus']
+        
+        
+        insert_programstatus_data(programStatus)
+        
+        hostParams = {
+            "query": "hostlist",
+            "formatoptions": "enumerate",
+            "details": "true"
+        }
 
-        #this this gives you a JSON
-        servicelist = data['data']['servicelist'].get(hostname, {})
+        response = requests.get(
+            NAGIOS_URL,
+            params=hostParams,
+            auth=(USERNAME, PASSWORD),
+            timeout=10
+        )
+        response.raise_for_status()
 
+        data = response.json()
+        # this gives you a JSON
+        hostlist = data['data']['hostlist']
         # turns the JSON into a dict to easily be read
-        for service, service_data in servicelist.items():
-            insert_service_status_data(service,service_data)
+        
+        for hostname, host_data in hostlist.items():
+            
+            insert_host_status_data(host_data)
+
+            serviceParams ={
+                "query": "servicelist",
+                "hostname": hostname,
+                "formatoptions": "enumerate",
+                "details": "true"    
+            }
+
+            response = requests.get(
+                NAGIOS_URL,
+                params=serviceParams,
+                auth=(USERNAME, PASSWORD),
+                timeout=10
+            )
+            data = response.json()
+
+            #this this gives you a JSON
+            servicelist = data['data']['servicelist'].get(hostname, {})
+
+            # turns the JSON into a dict to easily be read
+            for service, service_data in servicelist.items():
+                insert_service_status_data(service,service_data)
+    except requests.RequestException as e:
+        current_app.logger.error("Failed to request Nagios status: %s", e)

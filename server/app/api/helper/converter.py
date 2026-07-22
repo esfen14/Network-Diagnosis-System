@@ -2,7 +2,7 @@ from app.system_models import UserStatus
 from typing import Union
 from email_validator import validate_email
 from app.history_models import ConnectionStateType, HostStateType, ServiceStateType, PluginStatusType, AcknowledgementType
-import datetime
+from datetime import datetime, timedelta
     
 """
 This is a separation of conern regarding conversion of data
@@ -29,6 +29,13 @@ def convert_acknowledgement_type_enum(str):
 def convert_to_UTC(time):
     return datetime.datetime.fromtimestamp(time/1000, datetime.timezone.utc)
 
+def convert_to_UNIX(date_str, time_str):
+    dt = datetime.strptime(
+        f"{date_str} {time_str}",
+        "%m:%d:%Y %H:%M"
+    )
+    return int(dt.timestamp())
+
 def normalize_email(email):
     return validate_email(email, check_deliverability=False).normalized
 
@@ -45,7 +52,6 @@ def split_value_unit(data):
     unit = data[i:] or None
     return measured_value, unit
     
-
 def parse_perf_data(perf_data):
     raw_metric = perf_data.split("=")
     metric = raw_metric[0]
@@ -77,3 +83,8 @@ def parse_perf_data(perf_data):
         "minimum": minimum,
         "maximum": maximum
     }
+    
+def get_range_day(days):
+    end = datetime.now()
+    start = end - timedelta(days)
+    return int(start.timestamp()), int(end.timestamp())
