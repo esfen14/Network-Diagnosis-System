@@ -6,6 +6,7 @@ const pageTitles: Record<string, { section: string; page: string }> = {
   '/network-health': { section: 'Network Health', page: 'Overview' },
   '/device-inventory': { section: 'Device Inventory', page: 'Overview' },
   '/topology': { section: 'Dashboards', page: 'Topology View' },
+  '/plugins': { section: 'Dashboards', page: 'Plugins' },
   '/reports': { section: 'Dashboards', page: 'Reports' },
   '/system-logs': { section: 'Dashboards', page: 'System Logs' },
   '/accounts': { section: 'Dashboards', page: 'Manage Accounts' },
