@@ -1,32 +1,43 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AdminLayout } from './components/layout/AdminLayout'
+
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 import { DeviceInventoryPage } from './pages/DeviceInventoryPage'
 import { NetworkHealthPage } from './pages/NetworkHealthPage'
 import { TopologyPage } from './pages/TopologyPage'
 import { ManageAccountsPage } from './pages/ManageAccountsPage'
-import { PlaceholderPage } from './pages/PlaceholderPage'
 import { ReportsPage } from './pages/ReportsPage'
+import { SystemLogsPage } from './pages/SystemLogsPage'
+import { PlaceholderPage } from './pages/PlaceholderPage'
 
 export default function App() {
   return (
     <Routes>
-      
+
+      {/* PUBLIC */}
       <Route path="/login" element={<LoginPage />} />
-   
+
+      {/* PROTECTED / ADMIN */}
       <Route path="/" element={<AdminLayout />}>
-        <Route index element={<Navigate to="/login" replace />} />
+
+        {/* DEFAULT */}
+        <Route index element={<Navigate to="/dashboard" replace />} />
+
+        {/* MAIN PAGES */}
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="network-health" element={<NetworkHealthPage />} />
         <Route path="device-inventory" element={<DeviceInventoryPage />} />
         <Route path="reports" element={<ReportsPage />} />
-        <Route
-          path="topology"
-          element={<TopologyPage />}
-        />
-     
+        <Route path="topology" element={<TopologyPage />} />
 
+        {/* ✅ FIXED: REAL PAGE */}
+        <Route path="system-logs" element={<SystemLogsPage />} />
+
+        {/* ACCOUNTS */}
+        <Route path="accounts" element={<ManageAccountsPage />} />
+
+        {/* PLACEHOLDERS */}
         <Route
           path="plugins"
           element={
@@ -36,19 +47,7 @@ export default function App() {
             />
           }
         />
-      
-        <Route
-          path="system-logs"
-          element={
-            <PlaceholderPage
-              title="System Logs"
-              description="View system activity and audit logs."
-            />
-          }
-        />
-       
-        <Route path="accounts" element={<ManageAccountsPage />} />
-     
+
         <Route
           path="settings"
           element={
@@ -58,9 +57,12 @@ export default function App() {
             />
           }
         />
+
       </Route>
-  
+
+      {/* FALLBACK */}
       <Route path="*" element={<Navigate to="/login" replace />} />
+
     </Routes>
   )
 }
