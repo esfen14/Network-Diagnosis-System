@@ -9,6 +9,7 @@ import { TopologyPage } from './pages/TopologyPage'
 import { ManageAccountsPage } from './pages/ManageAccountsPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { SystemLogsPage } from './pages/SystemLogsPage'
+import { PluginsPage } from './pages/PluginsPage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
 
 export default function App() {
@@ -31,11 +32,12 @@ export default function App() {
         <Route path="reports" element={<ReportsPage />} />
         <Route path="topology" element={<TopologyPage />} />
 
-        {/* ✅ FIXED: REAL PAGE */}
         <Route path="system-logs" element={<SystemLogsPage />} />
 
         {/* ACCOUNTS */}
         <Route path="accounts" element={<ManageAccountsPage />} />
+        
+        <Route path="plugins" element={<PluginsPage />} />
 
         {/* PLACEHOLDERS */}
         <Route
