@@ -71,10 +71,6 @@ export function UserTable({ users, title }: UserTableProps) {
 
           <thead>
             <tr className="border-b border-white/10 text-xs text-gray-500">
-              <th className="px-4 py-3">
-                <input type="checkbox" className="rounded border-gray-600" />
-              </th>
-
               <th className="px-4 py-3 font-normal">Full Name</th>
               <th className="px-4 py-3 font-normal">User ID</th>
               <th className="px-4 py-3 font-normal">Username</th>
@@ -92,9 +88,6 @@ export function UserTable({ users, title }: UserTableProps) {
                 className="border-b border-white/5 transition hover:bg-white/5"
               >
 
-                <td className="px-4 py-3">
-                  <input type="checkbox" className="rounded border-gray-600" />
-                </td>
 
                 <td className="px-4 py-3 text-white">{user.fullName}</td>
                 <td className="px-4 py-3 text-white">{user.userId}</td>

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { DeviceTable } from '../components/device-inventory/DeviceTable'
+import { DeviceTable } from '../components/device-inventory/DeviceTable.tsx'
 import { PageHeader } from '../components/shared/PageHeader'
 import { devices, routers } from '../data/devices'
 

@@ -66,9 +66,6 @@ export function DeviceTable({ devices, title }: DeviceTableProps) {
         <table className="w-full min-w-[900px] text-left text-sm">
           <thead>
             <tr className="border-b border-white/10 text-xs text-gray-500">
-              <th className="px-4 py-3 font-normal">
-                <input type="checkbox" className="rounded border-gray-600" aria-label="Select all" />
-              </th>
               <th className="px-4 py-3 font-normal">Device ID</th>
               <th className="px-4 py-3 font-normal">Host Name</th>
               <th className="px-4 py-3 font-normal">Device Type</th>
@@ -86,9 +83,6 @@ export function DeviceTable({ devices, title }: DeviceTableProps) {
                   i === 4 ? 'bg-white/5' : ''
                 }`}
               >
-                <td className="px-4 py-3">
-                  <input type="checkbox" className="rounded border-gray-600" aria-label={`Select ${device.id}`} />
-                </td>
                 <td className="px-4 py-3 text-white">{device.id}</td>
                 <td className="px-4 py-3 text-white">{device.hostName}</td>
                 <td className="px-4 py-3 text-white">{device.deviceType}</td>
