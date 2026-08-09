@@ -1,4 +1,4 @@
-import requests
+import requests 
 from flask import current_app
 import sqlalchemy as sa
 from app import db

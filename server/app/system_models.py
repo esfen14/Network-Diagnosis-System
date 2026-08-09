@@ -190,7 +190,7 @@ class DeploymentHistory(db.Model):
     WriteOnlyMapped is to explicity load only that is queried
     back_populate sepcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
     """
-    NRPE_Deployment: so.WriteOnlyMapped['NRPEDeployment'] = so.relationship(back_populates='Deployment')
+    NCPA_Deployment: so.WriteOnlyMapped['NCPADeployment'] = so.relationship(back_populates='Deployment')
     
     """
     Gets one instance from the ActivityLog table
@@ -271,13 +271,14 @@ class NetworkDiscovery(db.Model):
     NetDiscoveryID:  so.Mapped[int]  = so.mapped_column(primary_key=True)
     Hostname: so.Mapped[Optional[str]] = so.mapped_column(sa.String(100))
     IP_Address: so.Mapped[str] = so.mapped_column(sa.String(16), index=True)
-    Subnet_Mask: so.Mapped[str] = so.mapped_column(sa.String(16), index=True)
+    Network: so.Mapped[str] = so.mapped_column(sa.String(16), index=True)
     MAC_Address: so.Mapped[Optional[str]] = so.mapped_column(sa.String(17), index=True)
     OS_Type: so.Mapped[Optional[str]] = so.mapped_column(sa.String(25))
     Device_Type: so.Mapped[Optional[str]] = so.mapped_column(sa.String(25))
-    NRPE_Eligible: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)
+    NCPA_Eligible: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)
     Scan_Status: so.Mapped[ScanStatus] = so.mapped_column(sa.Enum(ScanStatus))
     Scanned_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+    Include_Device_In_Scanning: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=True)
 
     # Foreign Key Fields
     LogID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(ActivityLog.LogID), index=True)
@@ -294,8 +295,25 @@ class NetworkDiscovery(db.Model):
     back_populate sepcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
     """
     SSH_Creds: so.WriteOnlyMapped['SSHCredentials'] = so.relationship(back_populates='Device')
-    NRPE_Deployment: so.WriteOnlyMapped['NRPEDeployment'] = so.relationship(back_populates='Device')
+    NRPE_Deployment: so.WriteOnlyMapped['NCPADeployment'] = so.relationship(back_populates='Device')
     
+class Open_TCP_Services(db.Model):
+    __tablename__ = "OPEN_TCP_Services"
+
+    OpenPortID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Port_Number: so.Mapped[int] = so.mapped_column()
+    Serivce_Name: so.Mapped[str] = so.mapped_column(sa.String(255))
+
+    NetDiscoveryID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True)
+
+class Open_UDP_Services(db.Model):
+    __tablename__ = "OPEN_UDP_Services"
+
+    OpenPortID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Port_Number: so.Mapped[int] = so.mapped_column()
+    Service_Name: so.Mapped[str] = so.mapped_column(sa.String(255))
+    
+    NetDiscoveryID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True)
 
 class SSHCredentials(db.Model):
     # Table Name
@@ -329,13 +347,13 @@ class AgentStatus(Enum):
     UNREACHABLE = "Unreachable"
     EXCLUDED = "Excluded"
     
-class NRPEDeployment(db.Model):
+class NCPADeployment(db.Model):
     # Table Name
-    __tablename__ = "NRPE_DEPLOYMENT"
+    __tablename__ = "NCPA_DEPLOYMENT"
     
     # Table Fields
-    NRPEID: so.Mapped[int] = so.mapped_column(primary_key=True)
-    NRPE_Port: so.Mapped[int] = so.mapped_column(sa.Integer())
+    NCPAID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    NCPA_Port: so.Mapped[int] = so.mapped_column(sa.Integer())
     Plugin_Installed: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)
     Agent_Status: so.Mapped[AgentStatus] = so.mapped_column(sa.Enum(AgentStatus))
 
@@ -347,12 +365,10 @@ class NRPEDeployment(db.Model):
     Gets on instnce of NetworkDiscovery
     back_populate sepcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
     """
-    Device: so.Mapped[NetworkDiscovery] = so.relationship(back_populates='NRPE_Deployment')
+    Device: so.Mapped[NetworkDiscovery] = so.relationship(back_populates='NCPA_Deployment')
     
     """
     Gets on instnce of DeploymentHistory
     back_populate sepcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
     """
-    Deployment: so.Mapped[DeploymentHistory] = so.relationship(back_populates='NRPE_Deployment')
-    
-    
+    Deployment: so.Mapped[DeploymentHistory] = so.relationship(back_populates='NCPA_Deployment')

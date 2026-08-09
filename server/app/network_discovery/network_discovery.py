@@ -1,10 +1,9 @@
-#!/usr/bin/env -S /home/paeng/Documents/Capstone-FIles/Capstone-Project/Network-Diagnosis-System/server/.venv/bin/python3
 import nmap3
 import xml.etree.ElementTree as ET
 
 # this needs to be part of the settings
 NETWORKS = ["localhost","192.168.130.0/24","10.10.99.0/24"]
-TCP_PORTS = ["1-5000"]
+TCP_PORTS = ["1-6000"]
 UDP_PORTS = [53,67,68,69,123,161,162,514]
 
 def _print_xml(xml):
@@ -23,7 +22,7 @@ def _discover_host(subnet):
     scanned_host = xmlroot.findall("host")
 
     # for debugging Nmap scans
-    #_print_xml(xmlroot)
+    _print_xml(xmlroot)
 
     for host in scanned_host:
 
@@ -74,10 +73,10 @@ def _discover_host_tcp_port(ip):
         port_string = ",".join(str(port) for port in TCP_PORTS)
         args += f" -p {port_string}"
     
-    xmlroot = nmap.scan_command(ip,"-sV -O",args)
+    xmlroot = nmap.scan_command(ip,"-sV -O --version-all",args)
 
     # for debugging nmap scans
-    # _print_xml(xml_result)    
+    _print_xml(xmlroot)    
 
     service_dict = {}
     os_name = "Unknown"
@@ -103,7 +102,6 @@ def _discover_host_tcp_port(ip):
 
     # Try to find all the TCP servcies of a certain IP
     for port in ports.findall("port"):
-        protocol = port.attrib.get("protocol")
         portid = str(port.attrib.get("portid"))
 
         state = port.find("state")
@@ -115,7 +113,6 @@ def _discover_host_tcp_port(ip):
                 service_name = service.attrib.get("name")
 
             service_dict[portid] = {
-                "protocol": protocol,
                 "service_name": service_name
             }
 
@@ -177,3 +174,6 @@ def discover_network():
             hosts[network][ip]["services"]["udp"] = _discover_host_udp_port(ip)
 
     return hosts
+
+result = discover_network()
+print(result)
