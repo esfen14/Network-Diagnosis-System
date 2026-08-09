@@ -1,5 +1,0 @@
-{
-    "dns": "check_dns",
-    "snmp": "check_snmp",
-    "ntp": "check_ntp"
-}
