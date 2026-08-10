@@ -54,15 +54,17 @@ def login():
     normalized_email = normalize_email(email)
      
     user = get_user_by_email(normalized_email)
+
+    if user is None or not user.check_password(password):
+            return{
+                "message": "Invalid username or password."
+            }, 401
+    
     if not (user.Status.value == "Active"):
         return{
             "message": "Account inactive."
         }, 403
     
-    if user is None or not user.check_password(password):
-        return{
-            "message": "Invalid username or password."
-        }, 401
     
     login_user(user)
     return {

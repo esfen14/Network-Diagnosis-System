@@ -1,6 +1,6 @@
 import requests
 from datetime import datetime, time
-from app.api.helper import convert_to_UNIX, get_range
+from app.api.helper import convert_to_UNIX, get_range_day
 from flask import current_app
 
 NAGIOS_URL = "http://192.168.130.10/nagios/cgi-bin/archivejson.cgi"
@@ -86,7 +86,7 @@ def request_current_alert_count():
 def request_alerts_last(
         day=None
     ):
-    start, end = get_range(day)
+    start, end = get_range_day(day)
         
     params = {
         "starttime": start,
@@ -97,7 +97,7 @@ def request_alerts_last(
 def request_alert_count_last(
         day=None
     ):
-    start, end = get_range(day)
+    start, end = get_range_day(day)
         
     params = {
         "starttime": start,
@@ -158,7 +158,7 @@ def request_current_alert_notification():
 def request_notifications_last(
         day=None
     ):
-    start, end = get_range(day)
+    start, end = get_range_day(day)
         
     params = {
         "starttime": start,
@@ -169,7 +169,7 @@ def request_notifications_last(
 def request_notifications_count_last(
         day=None
     ):
-    start, end = get_range(day)
+    start, end = get_range_day(day)
         
     params = {
         "starttime": start,

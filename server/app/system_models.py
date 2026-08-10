@@ -295,7 +295,7 @@ class NetworkDiscovery(db.Model):
     back_populate sepcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
     """
     SSH_Creds: so.WriteOnlyMapped['SSHCredentials'] = so.relationship(back_populates='Device')
-    NRPE_Deployment: so.WriteOnlyMapped['NCPADeployment'] = so.relationship(back_populates='Device')
+    NCPA_Deployment: so.WriteOnlyMapped['NCPADeployment'] = so.relationship(back_populates='Device')
     
 class Open_TCP_Services(db.Model):
     __tablename__ = "OPEN_TCP_Services"

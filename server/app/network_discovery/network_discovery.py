@@ -2,7 +2,7 @@ import nmap3
 import xml.etree.ElementTree as ET
 
 # this needs to be part of the settings
-NETWORKS = ["localhost","192.168.130.0/24","10.10.99.0/24"]
+NETWORKS = ["localhost","192.168.130.0/24"]
 TCP_PORTS = ["1-6000"]
 UDP_PORTS = [53,67,68,69,123,161,162,514]
 
@@ -13,7 +13,7 @@ def _print_xml(xml):
 
 
 def _discover_host(subnet):
-    nmap = nmap3.Nmap()
+    nmap = nmap3.Nmap(path="/usr/local/bin/nmap-sudo")
 
     xmlroot = nmap.scan_command(subnet,"-PS -PA -PE -sn -R")
 
@@ -22,7 +22,7 @@ def _discover_host(subnet):
     scanned_host = xmlroot.findall("host")
 
     # for debugging Nmap scans
-    _print_xml(xmlroot)
+    # _print_xml(xmlroot)
 
     for host in scanned_host:
 
@@ -43,7 +43,8 @@ def _discover_host(subnet):
 
             elif address.attrib.get("addrtype") == "mac":
                 mac_address = address.attrib["addr"]
-        
+                
+        print(f"{ipv4}: {mac_address}")
         hostnames = host.find("hostnames")
         hostname = "Unknown"
 
@@ -76,7 +77,7 @@ def _discover_host_tcp_port(ip):
     xmlroot = nmap.scan_command(ip,"-sV -O --version-all",args)
 
     # for debugging nmap scans
-    _print_xml(xmlroot)    
+    # _print_xml(xmlroot)    
 
     service_dict = {}
     os_name = "Unknown"
@@ -172,8 +173,4 @@ def discover_network():
             hosts[network][ip]["services"]["tcp"], hosts[network][ip]["data"]["os"]= _discover_host_tcp_port(ip)
 
             hosts[network][ip]["services"]["udp"] = _discover_host_udp_port(ip)
-
     return hosts
-
-result = discover_network()
-print(result)

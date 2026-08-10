@@ -24,6 +24,7 @@ PERMISSIONS = [
     "account.view",
     "account.edit",
     "account.info",
+    "system.discover"
 ]
 
 ROLES = [
@@ -33,7 +34,7 @@ ROLES = [
 ]
 
 SEED_USERS = [
-("Admin", "User", "[admin@test.com](mailto:admin@test.com)", "Administrator", UserStatus.ACTIVE),
+("Admin", "User", "admin@test.com", "Administrator", UserStatus.ACTIVE),
 
 ("John", "Doe", "john@test.com", "Manager", UserStatus.ACTIVE),
 ("Jane", "Smith", "jane@test.com", "Staff", UserStatus.INACTIVE),
@@ -70,7 +71,7 @@ SEED_USERS = [
 ]
 
 
-# =========================
+# =====================
 # HELPERS
 # =========================
 

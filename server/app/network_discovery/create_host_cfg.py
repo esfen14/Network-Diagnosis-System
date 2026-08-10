@@ -11,7 +11,7 @@ from app import db
 from flask import current_app
 import sqlalchemy as sa
 from app.system_models import User, UserStatus, NetworkDiscovery, Open_TCP_Services, Open_UDP_Services, ScanStatus, NCPADeployment, AgentStatus
-
+from app.logging.user_activity import create_user_log 
 
 TCP_SERVICE_OVERRIDES = {
     "5693": "ncpa",
@@ -317,7 +317,7 @@ def _create_host_cfg_file(discovered_hosts):
         f.write("".join(host_config))
     return cfg_path
 
-def _save_discovered_hosts(discovered_hosts,log_id, DeploymentID):
+def _save_discovered_hosts(discovered_hosts,log_id):
     try:
         for network, hosts in discovered_hosts.items():
 
@@ -337,7 +337,6 @@ def _save_discovered_hosts(discovered_hosts,log_id, DeploymentID):
                                 NetworkDiscovery.Network == network
                         )
                     )
-
                 else:
                     device = db.session.scalar(
                         sa.select(NetworkDiscovery).where(
@@ -370,19 +369,6 @@ def _save_discovered_hosts(discovered_hosts,log_id, DeploymentID):
                     db.session.add(device)
                     
                     db.session.flush()
-
-                    if NCPA_Eligible == True:
-                        NCPA_device = NCPADeployment(
-                            NCPA_Port = NCPA_PORT,
-                            Plugin_Installed = False,
-                            Agent_Status = AgentStatus.PENDING_NRPE,
-                            Device = device.NetDiscoveryID,
-                            DeploymentID = DeploymentID
-                        )
-
-                        db.session.add(NCPA_device)
-
-                        db.session.flush()
 
                 else:
                     NCPA_Eligible = False
@@ -424,6 +410,7 @@ def _save_discovered_hosts(discovered_hosts,log_id, DeploymentID):
                             db.session.add(new_service)
 
                             db.session.flush()
+                    """
                     if device.NCPA_Eligible and port_number == str(NCPA_PORT):
                         NCPA_device = db.session.scalar(sa.select(NCPADeployment).where(
                                 NCPADeployment.NetworkDiscoveryID == device.NetDiscoveryID
@@ -432,6 +419,7 @@ def _save_discovered_hosts(discovered_hosts,log_id, DeploymentID):
 
                         NCPA_device.Plugin_Installed = True
                         NCPA_device.Agent_Status = AgentStatus.MONITORED
+                    """
 
                 # -------------------------------------------------
                 # UDP services
@@ -749,21 +737,34 @@ def _override_service_names(discovered_hosts,protocol,service_overrides):
 
     return discovered_hosts   
 
-if __name__ == "__main__":
+def discover_network_create_hosts(user_id):
+
+    print("Created Log")
+    action = "Discovered Networks"
+    log_id = create_user_log(user_id, action)
 
     # Gets the network info
+    print("Discovering Hosts")
     discovered_hosts = discover_network()
 
+    print("Inital discovered hosts:")
+    print(discovered_hosts)
     # Creates hostnames for hosts that don't have names
+    print("Creating Hostnames")
     discovered_hosts = _create_hostname(discovered_hosts)
 
     # Overrides services names due to NMAP not always being right
+    print("Override Service Names")
     discovered_hosts = _override_service_names(discovered_hosts,"tcp", TCP_SERVICE_OVERRIDES)
     discovered_hosts = _override_service_names(discovered_hosts,"udp", UDP_SERVICE_OVERRIDES)
+    print("Print Discovered Hosts:")
+    print(discovered_hosts)
 
     # Save it to the database
-    _save_discovered_hosts(discovered_hosts,log_id,deployment_id)
+    print("Saving Discovered Hosts")
+    _save_discovered_hosts(discovered_hosts,log_id.LogID)
 
+    print("Create Database Hosts Dict")
     system_hosts = _create_database_hosts()
 
     new_cfg = _create_host_cfg_file(system_hosts)
