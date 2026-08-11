@@ -113,18 +113,6 @@ def _create_host_cfg_file(discovered_hosts):
         f"""
 
         #
-        # Define Contact Templates
-        #
-
-        """
-    )
-
-    host_config.append(_add_space(4))
-
-    host_config.append(
-        f"""
-
-        #
         # Define Contacts
         #  
 
@@ -160,8 +148,8 @@ def _create_host_cfg_file(discovered_hosts):
     )
 
     contact_group = {
-        "group_name": "system-users",
-        "alias_name": "System Users",
+        "group_name": "system_users",
+        "alias_name": "Nagios Users",
         "member_list": ",".join(user.Email for user in users)
     }
 
