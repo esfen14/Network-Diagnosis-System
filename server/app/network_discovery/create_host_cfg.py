@@ -137,14 +137,14 @@ def _create_host_cfg_file(discovered_hosts):
         sa.select(User).where(
             User.Status == UserStatus.ACTIVE
         )
-    ) 
+    )
 
     for user in users:
         user_information = {
             "contact_name": str(user.Email),
             "use": "generic-contact",
             "full_name": str(user.First_name + " " + user.Last_name),
-            "email": str(user.Email)
+            "email_address": str(user.Email)
         }
 
         host_config.append(create_contact(user_information))
@@ -162,9 +162,9 @@ def _create_host_cfg_file(discovered_hosts):
     )
 
     contact_group = {
-        "contact_group": "admins",
+        "group_name": "admins",
         "alias_name": "Nagios Users",
-        "member_list": ",".join(user.First_name for user in users)
+        "member_list": ",".join(user.Email for user in users)
     }
 
     host_config.append(create_contactgroup(contact_group))
@@ -255,7 +255,7 @@ def _create_host_cfg_file(discovered_hosts):
             tcp_services = host_data["services"]["tcp"]
 
             for port, service_data in tcp_services.items():
-                service_name = service_name = f"{service_data['service_name']} ({port}/TCP)"
+                service_name = service_name = f"{service_data['service_name']}-{port}-TCP"
 
                 command = _get_command(service_name,port,TCP_COMMANDS,"check_tcp")
                 service = {
@@ -272,13 +272,13 @@ def _create_host_cfg_file(discovered_hosts):
             udp_services = host_data["services"]["udp"]
 
             for port, service_data in udp_services.items():
-                service_name = service_name = f"{service_data['service_name']} ({port}/UDP)"
+                service_name = service_name = f"{service_data['service_name']}-{port}-UDP"
             
                 command = _get_command(service_name,port,UDP_COMMANDS,"check_udp")
                 service = {
                     "host_name": host_data["data"]["hostname"],
                     "service_name": service_name,
-                    "contact_group": "admins"
+                    "contact_groups": "admins"
                 }
             
                 host_config.append(
@@ -560,7 +560,6 @@ def _build_temp_cfg_lines(main_cfg_lines, candidate_cfg_path):
     """
     new_lines = []
     replaced = False
-
     for line in main_cfg_lines:
         stripped = line.strip()
         points_to_live_hosts_cfg = (
@@ -774,6 +773,8 @@ def discover_network_create_hosts(user_id):
     if is_valid:
         applied, apply_message = _apply_new_host_cfg(new_cfg)
         print(apply_message)
+        return apply_message
 
     else:
         print(result)
+        return result

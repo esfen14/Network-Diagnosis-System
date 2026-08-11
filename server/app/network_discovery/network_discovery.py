@@ -2,7 +2,7 @@ import nmap3
 import xml.etree.ElementTree as ET
 
 # this needs to be part of the settings
-NETWORKS = ["localhost","192.168.130.0/24"]
+NETWORKS = ["192.168.130.0/24"]
 TCP_PORTS = ["1-6000"]
 UDP_PORTS = [53,67,68,69,123,161,162,514]
 

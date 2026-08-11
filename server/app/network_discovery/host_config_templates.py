@@ -48,5 +48,5 @@ def create_contactgroup(contactgroup):
     return _load_template("contactgroup.cfg.tpl").format(
         contactgroup_name=contactgroup["group_name"],
         alias=contactgroup["alias_name"],
-        members=contactgroup["contact_list"] 
+        members=contactgroup["member_list"] 
     )
