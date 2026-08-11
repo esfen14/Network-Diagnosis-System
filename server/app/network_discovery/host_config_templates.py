@@ -4,7 +4,8 @@ _template_cache = {}
 
 def _load_template(name):
     if name not in _template_cache:
-        _template_cache[name] = Path(f"templates/{name}").read_text()
+        template_cache = Path(__file__).parent / "templates" / name
+        _template_cache[name] = template_cache.read_text()
     return _template_cache[name]
 
 def create_host(host):
@@ -12,7 +13,7 @@ def create_host(host):
         host_name=host["host_name"],
         alias=host["alias"],
         address=host["address"],
-        contact_group=host["contact_groups"] 
+        contact_groups=host["contact_groups"] 
     )
     
 def create_service(service, service_command):
@@ -20,7 +21,7 @@ def create_service(service, service_command):
         host_name=service["host_name"],
         service_name=service["service_name"],
         command=service_command,
-        contact_group=service["contact_groups"] 
+        contact_groups=service["contact_groups"] 
     ) 
     
 def create_contact(contact):
@@ -28,12 +29,12 @@ def create_contact(contact):
         contact_name=contact["contact_name"],
         use=contact["use"],
         alias=contact["full_name"],
-        email=contact["email_address"] 
+        email_address=contact["email_address"] 
     )
 
 def create_contact_template(contact_template):
-    return _load_template("contactgroups.cfg.tpl").format(
-        name=contact_template
+    return _load_template("contact_template.cfg.tpl").format(
+        template_name=contact_template
     )
     
 def create_hostgroup(hostgroup):

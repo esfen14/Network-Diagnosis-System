@@ -1,4 +1,4 @@
-define host {
+define host {{
     host_name                       {name}
     alias                           {alias}
     address                         {address}
@@ -11,4 +11,4 @@ define host {
     notification_interval           5
     notification_period             24x7
     contact_groups                  {contact_groups}
-}
+}}

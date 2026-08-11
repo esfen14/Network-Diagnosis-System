@@ -1,4 +1,4 @@
-define service{
+define service {{
     host_name                   {host_name}
     service_description         {service_name}
     check_command               {command} 
@@ -7,4 +7,4 @@ define service{
     retry_interval              1
     check_period                24x7
     contact_group               {contact_groups}
-}
+}}

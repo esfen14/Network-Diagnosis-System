@@ -44,7 +44,6 @@ def _discover_host(subnet):
             elif address.attrib.get("addrtype") == "mac":
                 mac_address = address.attrib["addr"]
                 
-        print(f"{ipv4}: {mac_address}")
         hostnames = host.find("hostnames")
         hostname = "Unknown"
 
