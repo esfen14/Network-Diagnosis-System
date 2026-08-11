@@ -119,8 +119,6 @@ def _create_host_cfg_file(discovered_hosts):
         """
     )
 
-    host_config.append(create_contact_template("generic-contact"))
-
     host_config.append(_add_space(4))
 
     host_config.append(
