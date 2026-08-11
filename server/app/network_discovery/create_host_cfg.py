@@ -160,8 +160,8 @@ def _create_host_cfg_file(discovered_hosts):
     )
 
     contact_group = {
-        "group_name": "admins",
-        "alias_name": "Nagios Users",
+        "group_name": "system-users",
+        "alias_name": "System Users",
         "member_list": ",".join(user.Email for user in users)
     }
 
@@ -226,7 +226,7 @@ def _create_host_cfg_file(discovered_hosts):
             host["host_name"] = host_data["data"]["hostname"] 
             host["alias"] = "alias" 
             host["address"] = ip
-            host["contact_groups"] = "admins"
+            host["contact_groups"] = "system_users"
             host_config.append(create_host(host))
             host_config.append(_add_space(4))
 
@@ -259,7 +259,7 @@ def _create_host_cfg_file(discovered_hosts):
                 service = {
                     "host_name": host_data["data"]["hostname"],
                     "service_name": service_name,
-                    "contact_groups": "admins"
+                    "contact_groups": "system_users"
                 }
 
                 host_config.append(
@@ -276,7 +276,7 @@ def _create_host_cfg_file(discovered_hosts):
                 service = {
                     "host_name": host_data["data"]["hostname"],
                     "service_name": service_name,
-                    "contact_groups": "admins"
+                    "contact_groups": "system_users"
                 }
             
                 host_config.append(
