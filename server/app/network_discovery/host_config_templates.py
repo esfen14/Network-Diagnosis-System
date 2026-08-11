@@ -16,7 +16,7 @@ def create_host(host):
     )
     
 def create_service(service, service_command):
-    return _load_template("host.cfg.tpl").format(
+    return _load_template("service.cfg.tpl").format(
         host_name=service["host_name"],
         service_name=service["service_name"],
         command=service_command,
@@ -24,7 +24,7 @@ def create_service(service, service_command):
     ) 
     
 def create_contact(contact):
-    return _load_template("host.cfg.tpl").format(
+    return _load_template("contact.cfg.tpl").format(
         contact_name=contact["contact_name"],
         use=contact["use"],
         alias=contact["full_name"],
@@ -32,19 +32,19 @@ def create_contact(contact):
     )
 
 def create_contact_template(contact_template):
-    return _load_template("host.cfg.tpl").format(
+    return _load_template("contactgroups.cfg.tpl").format(
         name=contact_template
     )
     
 def create_hostgroup(hostgroup):
-    return _load_template("host.cfg.tpl").format(
+    return _load_template("hostgroup.cfg.tpl").format(
         group_name=hostgroup["group_name"],
         alias=hostgroup["alias_name"],
         members=hostgroup["member_list"] 
     )
 
 def create_contactgroup(contactgroup):
-    return _load_template("host.cfg.tpl").format(
+    return _load_template("contactgroup.cfg.tpl").format(
         contactgroup_name=contactgroup["group_name"],
         alias=contactgroup["alias_name"],
         members=contactgroup["contact_list"] 
