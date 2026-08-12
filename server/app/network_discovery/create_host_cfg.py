@@ -355,7 +355,7 @@ def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weig
                         OS_Type = os_type,
                         NCPA_Eligible = NCPA_Eligible,
                         Scan_Status=ScanStatus.PENDING,
-                        DiscoveryRecord = network_discovery_id
+                        DiscoveryStatusID = network_discovery_id
                     )
 
                     db.session.add(device)
