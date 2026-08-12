@@ -32,7 +32,7 @@ def start_discover_network():
 @require_permission('system.discover')
 def discover_network_status():
 
-    if discovery_thread is None or discovery_thread.is_alive():
+    if discovery_thread is None or not discovery_thread.is_alive():
         return {"message": "There is no network discovery occuring right now."}, 200
 
     discover_info = get_network_discovery_status()
