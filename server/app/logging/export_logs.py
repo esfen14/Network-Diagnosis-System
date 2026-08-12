@@ -2,7 +2,7 @@ from app.system_models import ExportLog
 from flask import current_app
 import sqlalchemy as sa
 from app import db
-from datetime import datetime
+from datetime import datetime, timezone
 from app.logging.user_activity import create_user_log
 
 

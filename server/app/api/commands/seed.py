@@ -67,7 +67,7 @@ SEED_USERS = [
 ("Sebastian", "Baker", "sebastian.baker@test.com", "Staff", UserStatus.ACTIVE),
 ("Grace", "Adams", "grace.adams@test.com", "Staff", UserStatus.ACTIVE),
 ("Matthew", "Nelson", "matthew.nelson@test.com", "Manager", UserStatus.ACTIVE),
-("Chloe", "Carter", "chloe.carter@test.com", "Staff", UserStatus.ACTIVE),
+("Chloe", "Carter", "chloe.carter@test.com", "Staff", UserStatus.INACTIVE),
 ]
 
 

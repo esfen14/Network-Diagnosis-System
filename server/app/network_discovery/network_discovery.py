@@ -1,5 +1,7 @@
 import nmap3
 import xml.etree.ElementTree as ET
+from app.logging import update_network_discovery_status, calculate_progress
+from app.system_models import DiscoveryStatus
 
 # this needs to be part of the settings
 NETWORKS = ["192.168.130.0/24"]
@@ -24,6 +26,7 @@ def _discover_host(subnet):
     # for debugging Nmap scans
     # _print_xml(xmlroot)
 
+    
     for host in scanned_host:
 
         ipv4 = None
@@ -53,6 +56,9 @@ def _discover_host(subnet):
             if hostname_element is not None:
                 hostname = hostname_element.get("name", "Unknown")
 
+        if ipv4 is None:
+            continue
+        
         host_dict[ipv4] = {
             "data":{
                 "hostname": hostname,
@@ -162,14 +168,41 @@ def _discover_host_udp_port(ip):
 
     return service_dict
 
-def discover_network():
+def discover_network(network_discvovery_status_id, progress_weight):
     hosts = {}
 
-    for network in NETWORKS:
+    total_networks = len(NETWORKS)
+
+    if total_networks == 0:
+        return hosts
+
+    for network_index, network in enumerate(NETWORKS):
         hosts[network] = _discover_host(network)
 
-        for ip in hosts[network]:
+        total_hosts = len(hosts[network])
+
+        # Portion of the overall 0-50% range belonging to this subnet
+        subnet_start = (network_index / total_networks) * progress_weight
+        subnet_end = ((network_index + 1) / total_networks) * progress_weight
+
+        for host_index, ip in enumerate(hosts[network]):
             hosts[network][ip]["services"]["tcp"], hosts[network][ip]["data"]["os"]= _discover_host_tcp_port(ip)
 
             hosts[network][ip]["services"]["udp"] = _discover_host_udp_port(ip)
+
+            if total_hosts > 0:
+                progress = calculate_progress(host_index + 1, 
+                                            total_hosts, 
+                                            subnet_start, 
+                                            subnet_end
+                                            )
+            else:
+                progress = subnet_end
+            
+            update_network_discovery_status(
+                    network_discvovery_status_id,
+                    DiscoveryStatus.RUNNING,
+                    int(progress),
+                    "Discovering hosts."
+            )
     return hosts

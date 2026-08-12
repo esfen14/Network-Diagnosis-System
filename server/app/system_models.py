@@ -159,7 +159,7 @@ class ActivityLog(db.Model):
     Deployment: so.WriteOnlyMapped['DeploymentHistory'] = so.relationship(back_populates='Logs')
     Config_Logs: so.WriteOnlyMapped['ConfigurationChanges'] = so.relationship(back_populates='Logs')
     Export_Logs: so.WriteOnlyMapped['ExportLog'] = so.relationship(back_populates='Logs')
-    NetDiscover_Logs: so.WriteOnlyMapped['NetworkDiscovery'] = so.relationship(back_populates='Logs')
+    NetDiscover_Logs: so.WriteOnlyMapped['NetworkDiscoveryStatus'] = so.relationship(back_populates='Logs')
     
     
 """
@@ -250,6 +250,31 @@ class ExportLog(db.Model):
     """
     Logs: so.Mapped[ActivityLog] = so.relationship(back_populates='Export_Logs')
 
+class DiscoveryStatus(Enum):
+    RUNNING = "Running"
+    SUCCESS = "Success"
+    FAILED = "Failed"
+    INTERUPPTED = "Interrupted"
+
+class NetworkDiscoveryStatus(db.Model):
+    # Table name
+    __tablename__ = "NETWORK_DISCOVERY_STATUS"
+
+    # Table Fields
+    DiscoveryStatusID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Status: so.Mapped[DiscoveryStatus] = so.mapped_column(sa.Enum(DiscoveryStatus))
+    Progress: so.Mapped[int] = so.mapped_column()
+    Message: so.Mapped[str] = so.mapped_column(sa.String(100))
+    Start_At: so.Mapped[datetime] = so.mapped_column(default= lambda: datetime.now(timezone.utc))
+    Completed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
+    Error: so.Mapped[Optional[str]] = so.mapped_column()
+
+    # Foreign Key Fields
+    LogID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(ActivityLog.LogID), index=True)
+
+    Logs: so.Mapped[ActivityLog] = so.relationship(back_populates='NetDiscover_Logs')
+    Devices: so.Mapped[NetworkDiscovery] = so.relationship(back_populates='DiscoveryRecord')
+
 """
 ScanStatus Enum so that Scan_Status is consistent
 To call use "NetworkDiscovery.Scan_Status = ScanStatus.PENDING"
@@ -281,13 +306,13 @@ class NetworkDiscovery(db.Model):
     Include_Device_In_Scanning: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=True)
 
     # Foreign Key Fields
-    LogID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(ActivityLog.LogID), index=True)
+    DiscoveryStatusID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscoveryStatus.DiscoveryStatusID), index=True)
 
     """
     Gets on instnce of ActivityLog
     back_populate sepcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
     """
-    Logs: so.Mapped[ActivityLog] = so.relationship(back_populates='NetDiscover_Logs')
+    DiscoveryRecord: so.Mapped[NetworkDiscoveryStatus] = so.relationship(back_populates='Devices')
 
     """
     WriteOnlyMapped enables for Many of the DeploymentHistory
@@ -303,6 +328,7 @@ class Open_TCP_Services(db.Model):
     OpenPortID: so.Mapped[int] = so.mapped_column(primary_key=True)
     Port_Number: so.Mapped[int] = so.mapped_column()
     Serivce_Name: so.Mapped[str] = so.mapped_column(sa.String(255))
+    Closed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
 
     NetDiscoveryID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True)
 
@@ -312,6 +338,7 @@ class Open_UDP_Services(db.Model):
     OpenPortID: so.Mapped[int] = so.mapped_column(primary_key=True)
     Port_Number: so.Mapped[int] = so.mapped_column()
     Service_Name: so.Mapped[str] = so.mapped_column(sa.String(255))
+    Closed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
     
     NetDiscoveryID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True)
 

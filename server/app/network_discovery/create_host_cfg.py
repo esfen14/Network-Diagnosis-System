@@ -1,5 +1,5 @@
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import subprocess
 import shutil
 import json
@@ -10,8 +10,9 @@ from app.network_discovery.host_config_templates import *
 from app import db
 from flask import current_app
 import sqlalchemy as sa
-from app.system_models import User, UserStatus, NetworkDiscovery, Open_TCP_Services, Open_UDP_Services, ScanStatus, NCPADeployment, AgentStatus
-from app.logging.user_activity import create_user_log 
+from app.system_models import User, UserStatus, NetworkDiscovery, Open_TCP_Services, Open_UDP_Services, ScanStatus
+from app.logging import create_network_discovery_status, update_network_discovery_status, calculate_progress
+from app.system_models import DiscoveryStatus
 
 TCP_SERVICE_OVERRIDES = {
     "5693": "ncpa",
@@ -45,6 +46,8 @@ BACKUP_DIR = PROJECT_ROOT / "running-host-config-backup"
 # Any constants above the line should be added to the settings menu (except the Projecdt Root)
 
 # ====================================================================
+
+PROGRESS_WEIGHT = [40,50,55,60,70,80,90,95,100]
 
 # Nagios live config
 NAGIOS_HOST_CFG = Path("/usr/local/nagios/etc/objects/hosts.cfg")
@@ -123,7 +126,7 @@ def _create_host_cfg_file(discovered_hosts):
         sa.select(User).where(
             User.Status == UserStatus.ACTIVE
         )
-    )
+    ).all()
 
     for user in users:
         user_information = {
@@ -241,7 +244,7 @@ def _create_host_cfg_file(discovered_hosts):
             tcp_services = host_data["services"]["tcp"]
 
             for port, service_data in tcp_services.items():
-                service_name = service_name = f"{service_data['service_name']}-{port}-TCP"
+                service_name = f"{service_data['service_name']}-{port}-TCP"
 
                 command = _get_command(service_name,port,TCP_COMMANDS,"check_tcp")
                 service = {
@@ -258,7 +261,7 @@ def _create_host_cfg_file(discovered_hosts):
             udp_services = host_data["services"]["udp"]
 
             for port, service_data in udp_services.items():
-                service_name = service_name = f"{service_data['service_name']}-{port}-UDP"
+                service_name = f"{service_data['service_name']}-{port}-UDP"
             
                 command = _get_command(service_name,port,UDP_COMMANDS,"check_udp")
                 service = {
@@ -303,7 +306,10 @@ def _create_host_cfg_file(discovered_hosts):
         f.write("".join(host_config))
     return cfg_path
 
-def _save_discovered_hosts(discovered_hosts,log_id):
+def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weight):
+    total_hosts = sum(len(hosts) for hosts in discovered_hosts.values())
+    processed_hosts = 0
+
     try:
         for network, hosts in discovered_hosts.items():
 
@@ -349,11 +355,10 @@ def _save_discovered_hosts(discovered_hosts,log_id):
                         OS_Type = os_type,
                         NCPA_Eligible = NCPA_Eligible,
                         Scan_Status=ScanStatus.PENDING,
-                        LogID=log_id
+                        DiscoveryRecord = network_discovery_id
                     )
 
                     db.session.add(device)
-                    
                     db.session.flush()
 
                 else:
@@ -361,86 +366,128 @@ def _save_discovered_hosts(discovered_hosts,log_id):
 
                     if os_type == "Linux":
                         NCPA_Eligible = True
-                    
+
                     device.Hostname = hostname
                     device.MAC_Address = mac_address
                     device.OS_Type = os_type
                     device.NCPA_Eligible = NCPA_Eligible
                     device.Scan_Status = ScanStatus.PENDING
-                    device.LogID = log_id
+                    device.DiscoveryRecord = network_discovery_id
 
                 # -------------------------------------------------
-                # TCP services
+                # TCP services — add/update found ports, then
+                # remove any DB-stored port not seen in this scan
                 # -------------------------------------------------
+
+                scanned_tcp_ports = set()
 
                 for port_number, service_data in services.get("tcp", {}).items():
+                    # Model column is an int; scan data comes in as a string —
+                    # normalize here so comparisons/deletes below match correctly
+                    port_number_int = int(port_number)
+                    scanned_tcp_ports.add(port_number_int)
+
                     existing_service = db.session.scalar(
                         sa.select(Open_TCP_Services).where(
                             Open_TCP_Services.NetDiscoveryID == device.NetDiscoveryID,
-                            Open_TCP_Services.Port_Number == port_number
+                            Open_TCP_Services.Port_Number == port_number_int
                         )
                     )
-                    
+
+                    service_name = service_data.get("service_name", "Unknown")
 
                     if existing_service is None:
-
-                            new_service = Open_TCP_Services(
-                                Port_Number=port_number,
-                                Serivce_Name=service_data.get(
-                                    "service_name",
-                                    "Unknown"
-                                ),
-                                NetDiscoveryID=device.NetDiscoveryID
-                            )
-
-                            db.session.add(new_service)
-
-                            db.session.flush()
-                    """
-                    if device.NCPA_Eligible and port_number == str(NCPA_PORT):
-                        NCPA_device = db.session.scalar(sa.select(NCPADeployment).where(
-                                NCPADeployment.NetworkDiscoveryID == device.NetDiscoveryID
-                            )
-                        )
-
-                        NCPA_device.Plugin_Installed = True
-                        NCPA_device.Agent_Status = AgentStatus.MONITORED
-                    """
-
-                # -------------------------------------------------
-                # UDP services
-                # -------------------------------------------------
-
-                for port_number, service_data in services.get("udp", {}).items():
-
-                    existing_service = db.session.scalar(
-                        sa.select(Open_UDP_Services)
-                            .where(
-                                Open_UDP_Services.NetDiscoveryID == device.NetDiscoveryID,
-                                Open_UDP_Services.Port_Number == port_number
-                            )
-                        )
-
-                    if existing_service is None:
-
-                        new_service = Open_UDP_Services(
-                            Port_Number=port_number,
-                            Service_Name=service_data.get(
-                                "service_name",
-                                "Unknown"
-                            ),
+                        new_service = Open_TCP_Services(
+                            Port_Number=port_number_int,
+                            Serivce_Name=service_name,
                             NetDiscoveryID=device.NetDiscoveryID
                         )
-
                         db.session.add(new_service)
-
                         db.session.flush()
+                    else:
+                        # Service still open — keep its name in sync in case
+                        # nmap's guess changed between scans (e.g. Unknown -> ssh)
+                        existing_service.Serivce_Name = service_name
+
+                # Remove TCP services that were recorded before but weren't
+                # seen in this scan — they're no longer open on this host
+                stale_tcp_query = sa.select(Open_TCP_Services).where(
+                    Open_TCP_Services.NetDiscoveryID == device.NetDiscoveryID
+                )
+                if scanned_tcp_ports:
+                    stale_tcp_query = stale_tcp_query.where(
+                        Open_TCP_Services.Port_Number.not_in(scanned_tcp_ports)
+                    )
+
+                stale_tcp_services = db.session.scalars(stale_tcp_query).all()
+                for stale_service in stale_tcp_services:
+                    db.session.delete(stale_service)
+
+                # -------------------------------------------------
+                # UDP services — same add/update/remove pattern
+                # -------------------------------------------------
+
+                scanned_udp_ports = set()
+
+                for port_number, service_data in services.get("udp", {}).items():
+                    port_number_int = int(port_number)
+                    scanned_udp_ports.add(port_number_int)
+
+                    existing_service = db.session.scalar(
+                        sa.select(Open_UDP_Services).where(
+                            Open_UDP_Services.NetDiscoveryID == device.NetDiscoveryID,
+                            Open_UDP_Services.Port_Number == port_number_int
+                        )
+                    )
+
+                    service_name = service_data.get("service_name", "Unknown")
+
+                    if existing_service is None:
+                        new_service = Open_UDP_Services(
+                            Port_Number=port_number_int,
+                            Service_Name=service_name,
+                            NetDiscoveryID=device.NetDiscoveryID
+                        )
+                        db.session.add(new_service)
+                        db.session.flush()
+                    else:
+                        existing_service.Service_Name = service_name
+
+                stale_udp_query = sa.select(Open_UDP_Services).where(
+                    Open_UDP_Services.NetDiscoveryID == device.NetDiscoveryID
+                )
+                if scanned_udp_ports:
+                    stale_udp_query = stale_udp_query.where(
+                        Open_UDP_Services.Port_Number.not_in(scanned_udp_ports)
+                    )
+
+                stale_udp_services = db.session.scalars(stale_udp_query).all()
+                for stale_service in stale_udp_services:
+                    db.session.delete(stale_service)
+
+                processed_hosts += 1
+
+                progress = calculate_progress(
+                    processed_hosts,
+                    total_hosts,
+                    progress_weight - 10,
+                    progress_weight
+                    )
+
+                if processed_hosts % 10 == 0 or processed_hosts == total_hosts:
+                    update_network_discovery_status(
+                        network_discovery_id,
+                        DiscoveryStatus.RUNNING,
+                        progress,
+                        "Saving hosts to database."
+                    )
 
         # Save everything at once
         db.session.commit()
     except Exception as e:
         db.session.rollback()
         current_app.logger.exception(f"Failed to insert new hosts: {e}")
+        raise
 
 
 def _backup_running_host_cfg():
@@ -462,7 +509,7 @@ def _backup_running_host_cfg():
 
     return backup_path
 
-def _create_database_hosts():
+def _load_monitored_hosts(network_discovery_id, progress_weight):
     """
     Rebuilds a discovered_hosts dict from the database, in the same
     shape as discover_network()'s output:
@@ -516,6 +563,9 @@ def _create_database_hosts():
             "service_name": service.Service_Name
         }
 
+    total_hosts = len(devices)
+    processed_hosts = 0
+
     for device in devices:
         discovered_hosts.setdefault(device.Network, {})
 
@@ -531,6 +581,23 @@ def _create_database_hosts():
             }
         }
 
+        processed_hosts += 1
+        
+        progress = calculate_progress(
+            processed_hosts,
+            total_hosts,
+            progress_weight - 10,
+            progress_weight
+        )
+        
+        if processed_hosts % 10 == 0 or processed_hosts == total_hosts:
+            update_network_discovery_status(
+                network_discovery_id,
+                DiscoveryStatus.RUNNING,
+                progress,
+                "Loading discovered hosts from database"
+            )
+    
     return discovered_hosts
 
 import tempfile
@@ -693,16 +760,54 @@ def _apply_new_host_cfg(cfg_path):
 
     return True, f"Applied {cfg_path} successfully. Backup stored at {backup_path}"
 
-def _create_hostname(discovered_hosts):
+def _create_hostname(network_discovery_id, discovered_hosts, progress_weight):
+    total_hosts = sum(len(hosts) for hosts in discovered_hosts.values())
+    processed_hosts = 0
+
     for hosts in discovered_hosts.values():
         for ip, host_data in hosts.items():
             if host_data["data"]["hostname"] == "Unknown":
                 host_data["data"]["hostname"] = f"{ip}.{DOMAIN}"
 
+            processed_hosts += 1
+
+            progress = calculate_progress(
+                processed_hosts,
+                total_hosts,
+                progress_weight - 10,
+                progress_weight
+            )
+
+            if processed_hosts % 10 == 0 or processed_hosts == total_hosts:
+                update_network_discovery_status(
+                    network_discovery_id,
+                    DiscoveryStatus.RUNNING,
+                    progress,
+                    "Creating hostnames"
+                )
+
     return discovered_hosts
 
-def _override_service_names(discovered_hosts,protocol,service_overrides):
+def _override_service_names(network_discovery_id, discovered_hosts, protocol, service_overrides,progress_weight):
+    total_services = sum(
+        len(host_data["services"].get(protocol, {}))
+        for hosts in discovered_hosts.values()
+        for host_data in hosts.values()
+    )
+
+    if total_services == 0:
+        update_network_discovery_status(
+            network_discovery_id,
+            DiscoveryStatus.RUNNING,
+            progress_weight,
+            f"No {protocol.upper()} services to override"
+        )
+        return discovered_hosts
+
+    processed_services = 0
+
     for hosts in discovered_hosts.values():
+
         for host_data in hosts.values():
 
             services = host_data["services"].get(protocol, {})
@@ -720,47 +825,117 @@ def _override_service_names(discovered_hosts,protocol,service_overrides):
                     service_name
                 )
 
+                processed_services += 1
+                    
+                progress = calculate_progress(
+                                processed_services,
+                                total_services,
+                                progress_weight - 5,
+                                progress_weight
+                            )
+                    
+                if processed_services % 10 == 0 or processed_services == total_services:
+                    update_network_discovery_status(
+                        network_discovery_id,
+                        DiscoveryStatus.RUNNING,
+                        progress,
+                        f"Overriding {protocol} service names"
+                    )
+
     return discovered_hosts   
 
-def discover_network_create_hosts(user_id):
+def discover_network_create_hosts(app, user_id):
+    network_discovery_id = None
+   
+    with app.app_context():
+        try:
+            print("Created Log")
+            network_discovery_id = create_network_discovery_status(user_id).DiscoveryStatusID
 
-    print("Created Log")
-    action = "Discovered Networks"
-    log_id = create_user_log(user_id, action)
+            # Gets the network info
+            print("Discovering Hosts")
+            discovered_hosts = discover_network(network_discovery_id, PROGRESS_WEIGHT[0])
 
-    # Gets the network info
-    print("Discovering Hosts")
-    discovered_hosts = discover_network()
+            print("Inital discovered hosts:")
+            print(discovered_hosts)
+            # Creates hostnames for hosts that don't have names
+            print("Creating Hostnames")
+            discovered_hosts = _create_hostname(network_discovery_id, discovered_hosts, PROGRESS_WEIGHT[1])
 
-    print("Inital discovered hosts:")
-    print(discovered_hosts)
-    # Creates hostnames for hosts that don't have names
-    print("Creating Hostnames")
-    discovered_hosts = _create_hostname(discovered_hosts)
+            # Overrides services names due to NMAP not always being right
+            print("Override Service Names")
+            discovered_hosts = _override_service_names(network_discovery_id, discovered_hosts,"tcp", TCP_SERVICE_OVERRIDES, PROGRESS_WEIGHT[2])
+            discovered_hosts = _override_service_names(network_discovery_id, discovered_hosts,"udp", UDP_SERVICE_OVERRIDES, PROGRESS_WEIGHT[3])
 
-    # Overrides services names due to NMAP not always being right
-    print("Override Service Names")
-    discovered_hosts = _override_service_names(discovered_hosts,"tcp", TCP_SERVICE_OVERRIDES)
-    discovered_hosts = _override_service_names(discovered_hosts,"udp", UDP_SERVICE_OVERRIDES)
-    print("Print Discovered Hosts:")
-    print(discovered_hosts)
+            # Save it to the database
+            print("Saving Discovered Hosts")
+            _save_discovered_hosts(discovered_hosts, network_discovery_id, PROGRESS_WEIGHT[4])
 
-    # Save it to the database
-    print("Saving Discovered Hosts")
-    _save_discovered_hosts(discovered_hosts,log_id.LogID)
+            print("Create Database Hosts Dict")
+            system_hosts = _load_monitored_hosts(network_discovery_id, PROGRESS_WEIGHT[5])
 
-    print("Create Database Hosts Dict")
-    system_hosts = _create_database_hosts()
+            new_cfg = _create_host_cfg_file(system_hosts)
+            print(f"Created: {new_cfg}")
+            update_network_discovery_status(
+                network_discovery_id,
+                DiscoveryStatus.RUNNING,
+                PROGRESS_WEIGHT[6],
+                "Generated new Nagios configuration"
+            )
 
-    new_cfg = _create_host_cfg_file(system_hosts)
-    print(f"Created: {new_cfg}")
+            update_network_discovery_status(
+                network_discovery_id,
+                DiscoveryStatus.RUNNING,
+                PROGRESS_WEIGHT[7],
+                "Validating config"
+            )
+            
+            is_valid, result = _validate_config(new_cfg)
+            
+            
+            if is_valid:
+                applied, apply_message = _apply_new_host_cfg(new_cfg)
 
-    is_valid, result = _validate_config(new_cfg)
-    if is_valid:
-        applied, apply_message = _apply_new_host_cfg(new_cfg)
-        print(apply_message)
-        return apply_message
+                if applied:
+                    update_network_discovery_status(
+                        network_discovery_id,
+                        DiscoveryStatus.SUCCESS,
+                        PROGRESS_WEIGHT[8],
+                        "New host.cfg successfully applied",
+                        datetime.now(timezone.utc)
+                        )
+                    print(apply_message)
+                else:
+                    update_network_discovery_status(
+                        network_discovery_id,
+                        DiscoveryStatus.FAILED,
+                        PROGRESS_WEIGHT[8],
+                        "Config not applied",
+                        datetime.now(timezone.utc)
+                        )
+                    print(apply_message)
 
-    else:
-        print(result)
-        return result
+            else:
+                update_network_discovery_status(
+                    network_discovery_id,
+                    DiscoveryStatus.FAILED,
+                    PROGRESS_WEIGHT[8],
+                    "Config failed to validate",
+                    datetime.now(timezone.utc),
+                    result
+                )
+                print(result)
+        except Exception as e:
+            app.logger.exception(
+                f"Network discovery failed {e}"
+            )
+            if network_discovery_id is not None:
+                update_network_discovery_status(
+                    network_discovery_id,
+                    DiscoveryStatus.FAILED,
+                    100,
+                    "Network discovery failed",
+                    datetime.now(timezone.utc),
+                    str(e)
+                )
+            raise

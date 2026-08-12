@@ -1,8 +1,8 @@
-"""initial database schema
+"""Initial Schema
 
-Revision ID: d6150bbf8780
+Revision ID: f711a171a49f
 Revises: 
-Create Date: 2026-07-12 15:40:06.220600
+Create Date: 2026-08-12 10:11:49.417641
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'd6150bbf8780'
+revision = 'f711a171a49f'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -131,41 +131,79 @@ def upgrade_():
     with op.batch_alter_table('EXPORT_LOG', schema=None) as batch_op:
         batch_op.create_index(batch_op.f('ix_EXPORT_LOG_LogID'), ['LogID'], unique=False)
 
+    op.create_table('NETWORK_DISCOVERY_STATUS',
+    sa.Column('DiscoveryStatusID', sa.Integer(), nullable=False),
+    sa.Column('Status', sa.Enum('DISCOVERING', 'PROCESSING', 'SAVING', 'GENERATING_CONFIG', 'VALIDATING', 'FAILED', 'APPLYING', 'SUCCESS', name='discoverystatus'), nullable=False),
+    sa.Column('Progress', sa.Integer(), nullable=False),
+    sa.Column('Message', sa.String(length=100), nullable=False),
+    sa.Column('Start_At', sa.DateTime(), nullable=False),
+    sa.Column('Comppleted_At', sa.DateTime(), nullable=True),
+    sa.Column('Error', sa.String(), nullable=True),
+    sa.Column('LogID', sa.Integer(), nullable=False),
+    sa.ForeignKeyConstraint(['LogID'], ['ACTIVITY_LOG.LogID'], ),
+    sa.PrimaryKeyConstraint('DiscoveryStatusID')
+    )
+    with op.batch_alter_table('NETWORK_DISCOVERY_STATUS', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_NETWORK_DISCOVERY_STATUS_LogID'), ['LogID'], unique=False)
+
     op.create_table('NETWORK_DISCOVERY',
     sa.Column('NetDiscoveryID', sa.Integer(), nullable=False),
     sa.Column('Hostname', sa.String(length=100), nullable=True),
     sa.Column('IP_Address', sa.String(length=16), nullable=False),
-    sa.Column('Subnet_Mask', sa.String(length=16), nullable=False),
+    sa.Column('Network', sa.String(length=16), nullable=False),
     sa.Column('MAC_Address', sa.String(length=17), nullable=True),
     sa.Column('OS_Type', sa.String(length=25), nullable=True),
     sa.Column('Device_Type', sa.String(length=25), nullable=True),
-    sa.Column('NRPE_Eligible', sa.Boolean(), nullable=False),
+    sa.Column('NCPA_Eligible', sa.Boolean(), nullable=False),
     sa.Column('Scan_Status', sa.Enum('PENDING', 'DEPLOYING', 'DEPLOYED', 'FAILED', 'UNREACHABLE', 'UNINSTALLED', name='scanstatus'), nullable=False),
     sa.Column('Scanned_At', sa.DateTime(), nullable=False),
-    sa.Column('LogID', sa.Integer(), nullable=False),
-    sa.ForeignKeyConstraint(['LogID'], ['ACTIVITY_LOG.LogID'], ),
+    sa.Column('Include_Device_In_Scanning', sa.Boolean(), nullable=False),
+    sa.Column('DiscoveryStatusID', sa.Integer(), nullable=False),
+    sa.ForeignKeyConstraint(['DiscoveryStatusID'], ['NETWORK_DISCOVERY_STATUS.DiscoveryStatusID'], ),
     sa.PrimaryKeyConstraint('NetDiscoveryID')
     )
     with op.batch_alter_table('NETWORK_DISCOVERY', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_NETWORK_DISCOVERY_DiscoveryStatusID'), ['DiscoveryStatusID'], unique=False)
         batch_op.create_index(batch_op.f('ix_NETWORK_DISCOVERY_IP_Address'), ['IP_Address'], unique=False)
-        batch_op.create_index(batch_op.f('ix_NETWORK_DISCOVERY_LogID'), ['LogID'], unique=False)
         batch_op.create_index(batch_op.f('ix_NETWORK_DISCOVERY_MAC_Address'), ['MAC_Address'], unique=False)
-        batch_op.create_index(batch_op.f('ix_NETWORK_DISCOVERY_Subnet_Mask'), ['Subnet_Mask'], unique=False)
+        batch_op.create_index(batch_op.f('ix_NETWORK_DISCOVERY_Network'), ['Network'], unique=False)
 
-    op.create_table('NRPE_DEPLOYMENT',
-    sa.Column('NRPEID', sa.Integer(), nullable=False),
-    sa.Column('NRPE_Port', sa.Integer(), nullable=False),
+    op.create_table('NCPA_DEPLOYMENT',
+    sa.Column('NCPAID', sa.Integer(), nullable=False),
+    sa.Column('NCPA_Port', sa.Integer(), nullable=False),
     sa.Column('Plugin_Installed', sa.Boolean(), nullable=False),
     sa.Column('Agent_Status', sa.Enum('DISCOVERED', 'PENDING_NRPE', 'MONITORED', 'UNREACHABLE', 'EXCLUDED', name='agentstatus'), nullable=False),
     sa.Column('NetworkDiscoveryID', sa.Integer(), nullable=False),
     sa.Column('DeploymentID', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['DeploymentID'], ['DEPLOYMENT_HISTORY.DeploymentID'], ),
     sa.ForeignKeyConstraint(['NetworkDiscoveryID'], ['NETWORK_DISCOVERY.NetDiscoveryID'], ),
-    sa.PrimaryKeyConstraint('NRPEID')
+    sa.PrimaryKeyConstraint('NCPAID')
     )
-    with op.batch_alter_table('NRPE_DEPLOYMENT', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_NRPE_DEPLOYMENT_DeploymentID'), ['DeploymentID'], unique=False)
-        batch_op.create_index(batch_op.f('ix_NRPE_DEPLOYMENT_NetworkDiscoveryID'), ['NetworkDiscoveryID'], unique=False)
+    with op.batch_alter_table('NCPA_DEPLOYMENT', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_NCPA_DEPLOYMENT_DeploymentID'), ['DeploymentID'], unique=False)
+        batch_op.create_index(batch_op.f('ix_NCPA_DEPLOYMENT_NetworkDiscoveryID'), ['NetworkDiscoveryID'], unique=False)
+
+    op.create_table('OPEN_TCP_Services',
+    sa.Column('OpenPortID', sa.Integer(), nullable=False),
+    sa.Column('Port_Number', sa.Integer(), nullable=False),
+    sa.Column('Serivce_Name', sa.String(length=255), nullable=False),
+    sa.Column('NetDiscoveryID', sa.Integer(), nullable=False),
+    sa.ForeignKeyConstraint(['NetDiscoveryID'], ['NETWORK_DISCOVERY.NetDiscoveryID'], ),
+    sa.PrimaryKeyConstraint('OpenPortID')
+    )
+    with op.batch_alter_table('OPEN_TCP_Services', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_OPEN_TCP_Services_NetDiscoveryID'), ['NetDiscoveryID'], unique=False)
+
+    op.create_table('OPEN_UDP_Services',
+    sa.Column('OpenPortID', sa.Integer(), nullable=False),
+    sa.Column('Port_Number', sa.Integer(), nullable=False),
+    sa.Column('Service_Name', sa.String(length=255), nullable=False),
+    sa.Column('NetDiscoveryID', sa.Integer(), nullable=False),
+    sa.ForeignKeyConstraint(['NetDiscoveryID'], ['NETWORK_DISCOVERY.NetDiscoveryID'], ),
+    sa.PrimaryKeyConstraint('OpenPortID')
+    )
+    with op.batch_alter_table('OPEN_UDP_Services', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_OPEN_UDP_Services_NetDiscoveryID'), ['NetDiscoveryID'], unique=False)
 
     op.create_table('SSH_CREDENTIALS',
     sa.Column('SSHID', sa.Integer(), nullable=False),
@@ -189,18 +227,30 @@ def downgrade_():
         batch_op.drop_index(batch_op.f('ix_SSH_CREDENTIALS_NetworkDiscoveryID'))
 
     op.drop_table('SSH_CREDENTIALS')
-    with op.batch_alter_table('NRPE_DEPLOYMENT', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_NRPE_DEPLOYMENT_NetworkDiscoveryID'))
-        batch_op.drop_index(batch_op.f('ix_NRPE_DEPLOYMENT_DeploymentID'))
+    with op.batch_alter_table('OPEN_UDP_Services', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_OPEN_UDP_Services_NetDiscoveryID'))
 
-    op.drop_table('NRPE_DEPLOYMENT')
+    op.drop_table('OPEN_UDP_Services')
+    with op.batch_alter_table('OPEN_TCP_Services', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_OPEN_TCP_Services_NetDiscoveryID'))
+
+    op.drop_table('OPEN_TCP_Services')
+    with op.batch_alter_table('NCPA_DEPLOYMENT', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_NCPA_DEPLOYMENT_NetworkDiscoveryID'))
+        batch_op.drop_index(batch_op.f('ix_NCPA_DEPLOYMENT_DeploymentID'))
+
+    op.drop_table('NCPA_DEPLOYMENT')
     with op.batch_alter_table('NETWORK_DISCOVERY', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_NETWORK_DISCOVERY_Subnet_Mask'))
+        batch_op.drop_index(batch_op.f('ix_NETWORK_DISCOVERY_Network'))
         batch_op.drop_index(batch_op.f('ix_NETWORK_DISCOVERY_MAC_Address'))
-        batch_op.drop_index(batch_op.f('ix_NETWORK_DISCOVERY_LogID'))
         batch_op.drop_index(batch_op.f('ix_NETWORK_DISCOVERY_IP_Address'))
+        batch_op.drop_index(batch_op.f('ix_NETWORK_DISCOVERY_DiscoveryStatusID'))
 
     op.drop_table('NETWORK_DISCOVERY')
+    with op.batch_alter_table('NETWORK_DISCOVERY_STATUS', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_NETWORK_DISCOVERY_STATUS_LogID'))
+
+    op.drop_table('NETWORK_DISCOVERY_STATUS')
     with op.batch_alter_table('EXPORT_LOG', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_EXPORT_LOG_LogID'))
 
