@@ -38,7 +38,7 @@ def discover_network_status():
     discover_info = get_network_discovery_status()
 
     return {
-        "Status": discover_info.Status.value(),
+        "Status": discover_info.Status.value,
         "Progress": discover_info.Progress,
         "Message": discover_info.Message,
         "Error": discover_info.Error,

@@ -10,10 +10,10 @@ from app import db
 
 from app.api.user import user_bp
     
-@user_bp.get('/permissions/options')
-@login_required
-@require_permission("role.edit")
-def permission_list():
+@user_bp.get('/permissions/options')    # This specifies the route of this function
+@login_required                         # This sepcifices that login is needed to access this route
+@require_permission("role.edit")        # This specifies the role that the user needs to access this function  
+def permission_list():                  # The function itself
     
     query = (
         sa.select(Permission)

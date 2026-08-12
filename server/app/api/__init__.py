@@ -1,7 +1,9 @@
 from flask import Blueprint
 from app.api import( 
     user,
-    system
+    system,
+    monitoring,
+    device
 )
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
@@ -10,7 +12,9 @@ api_bp = Blueprint('api', __name__, url_prefix='/api')
 # import modules
 modules = [
     user.user_bp,
-    system.system_bp
+    system.system_bp,
+    monitoring.monitoring_bp,
+    device.device_bp
 ]
 
 for module in modules:
