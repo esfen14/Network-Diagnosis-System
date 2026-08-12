@@ -372,7 +372,7 @@ def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weig
                     device.OS_Type = os_type
                     device.NCPA_Eligible = NCPA_Eligible
                     device.Scan_Status = ScanStatus.PENDING
-                    device.DiscoveryRecord = network_discovery_id
+                    device.DiscoveryStatusID = network_discovery_id
 
                 # -------------------------------------------------
                 # TCP services — add/update found ports, then
