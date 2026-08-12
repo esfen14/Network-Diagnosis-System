@@ -18,4 +18,5 @@ def create_user_log(user_id, action):
         return user_log
     except Exception as e:
         current_app.logger.exception(f"Cannot create log for user {user_id} error: {e}")
+        raise
 

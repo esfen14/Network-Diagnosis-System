@@ -9,20 +9,21 @@ def create_network_discovery_status(user_id):
     try:
         user_log = create_user_log(user_id, "Discovering Network Hosts") 
 
-        NetDiscoveryStatus = NetworkDiscoveryStatus(
+        network_discovery_status = NetworkDiscoveryStatus(
             Status = DiscoveryStatus.RUNNING,
             Progress = 0, 
             Message = "Network Discovery process Starting.",
             LogID = user_log.LogID
         )
 
-        db.session.add(NetDiscoveryStatus)
+        db.session.add(network_discovery_status)
         db.session.commit()
 
-        return NetworkDiscoveryStatus
+        return network_discovery_status
     except Exception as e:
         db.session.rollback()
         current_app.logger.exception(f"Cannot create network dicovery status {e}")
+        raise
 
 def update_network_discovery_status(network_discovery_status_id, Status, Progress, Message, Completed_At=None, Error=None):
     try:
@@ -61,6 +62,7 @@ def get_network_discovery_status():
         )
     except Exception as e:
         current_app.logger.exception(f"An Error Occured")
+        raise
 
 def calculate_progress(current, total, start, end):
     if total <= 0:
