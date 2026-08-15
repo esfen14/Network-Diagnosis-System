@@ -14,6 +14,7 @@ from app.system_models import User, UserStatus, NetworkDiscovery, Open_TCP_Servi
 from app.logging import create_network_discovery_status, update_network_discovery_status, calculate_progress
 from app.system_models import DiscoveryStatus
 
+# what names to will be placed to ports from nmap
 TCP_SERVICE_OVERRIDES = {
     "5693": "ncpa",
     "5666": "nrpe",
@@ -30,6 +31,8 @@ UDP_SERVICE_OVERRIDES = {
     "443": "https",
 }
 
+# for the default hostname given to hosts ip.test.local
+# example 192.168.130.10.test.local
 DOMAIN = "test.local"
 
 NCPA_PORT = "5693"

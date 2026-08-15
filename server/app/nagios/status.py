@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from app.nagios.version import latest, last_checked
 from app.api.helper import convert_host_state_type_enum, convert_plugin_status_type_enum, convert_acknowledgement_type_enum, convert_connection_state_type_enum, convert_service_state_type_enum, convert_to_UTC, parse_perf_data
 
+# If nagios is installed externally (for some reason, or in a docker container, what is the IP, though this may net be needed)
 NAGIOS_URL = "http://192.168.130.10/nagios/cgi-bin/statusjson.cgi"
 
 USERNAME = "nagiosadmin"

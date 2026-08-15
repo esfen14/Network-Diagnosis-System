@@ -4,8 +4,13 @@ from app.logging import update_network_discovery_status, calculate_progress
 from app.system_models import DiscoveryStatus
 
 # this needs to be part of the settings
+
+# What networks will be scanned
+# prevent the user from adding localhost (might also check that in the backend) to prevent errors
 NETWORKS = ["192.168.130.0/24"]
+# What tcp ports will be scanned
 TCP_PORTS = ["1-6000"]
+# what udp ports will be scanned
 UDP_PORTS = [53,67,68,69,123,161,162,514]
 
 def _print_xml(xml):
