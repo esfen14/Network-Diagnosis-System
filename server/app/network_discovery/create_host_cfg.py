@@ -10,7 +10,15 @@ from app.network_discovery.host_config_templates import *
 from app import db
 from flask import current_app
 import sqlalchemy as sa
-from app.system_models import User, UserStatus, NetworkDiscovery, Open_TCP_Services, Open_UDP_Services, ScanStatus
+from app.system_models import \
+    User, \
+    UserStatus, \
+    NetworkDiscovery, \
+    Open_TCP_Services, \
+    Open_UDP_Services, \
+    SSHCredentials, \
+    NCPADeployment, \
+    AgentStatus 
 from app.logging import create_network_discovery_status, update_network_discovery_status, calculate_progress
 from app.system_models import DiscoveryStatus
 
@@ -135,7 +143,7 @@ def _create_host_cfg_file(discovered_hosts):
         user_information = {
             "contact_name": str(user.Email),
             "use": "generic-contact",
-            "full_name": str(user.First_name + " " + user.Last_name),
+            "full_name": str(user.First_Name + " " + user.Last_Name),
             "email_address": str(user.Email)
         }
 
@@ -357,7 +365,6 @@ def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weig
                         MAC_Address = mac_address,
                         OS_Type = os_type,
                         NCPA_Eligible = NCPA_Eligible,
-                        Scan_Status=ScanStatus.PENDING,
                         DiscoveryStatusID = network_discovery_id
                     )
 
@@ -369,12 +376,26 @@ def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weig
 
                     if os_type == "Linux":
                         NCPA_Eligible = True
+                        ssh = SSHCredentials(
+                                SSH_Port = int(port_number) ,
+                                Key_Installed = False,
+                                Key_Fingerprint = None,
+                                Created_At = None,
+                                NetworkDiscoveryID = device.NetDiscoveryID
+                            )
+                        db.session.add(ssh)
+                        
+                        ncpa = NCPADeployment(
+                                Agent_Status = AgentStatus.PENDING_NCPA,
+                                NetworkDiscoveryID = device.NetDiscoveryID
+                            )
+                        
+                        db.session.add(ncpa)
 
                     device.Hostname = hostname
                     device.MAC_Address = mac_address
                     device.OS_Type = os_type
                     device.NCPA_Eligible = NCPA_Eligible
-                    device.Scan_Status = ScanStatus.PENDING
                     device.DiscoveryStatusID = network_discovery_id
 
                 # -------------------------------------------------
@@ -400,6 +421,7 @@ def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weig
                     service_name = service_data.get("service_name", "Unknown")
 
                     if existing_service is None:
+
                         new_service = Open_TCP_Services(
                             Port_Number=port_number_int,
                             Serivce_Name=service_name,

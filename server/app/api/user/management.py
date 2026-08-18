@@ -440,8 +440,8 @@ def available_accounts():
     
     allowed_sorts = {
         "id": User.UserID,
-        "first_name": User.First_name,
-        "last_name": User.Last_name, 
+        "first_name": User.First_Name,
+        "last_name": User.Last_Name, 
         "email": User.Email,
         "role": Role.Name,
         "status": User.Status,
@@ -472,8 +472,8 @@ def available_accounts():
     if search:
         query = query.where(
             sa.or_(
-                User.First_name.ilike(f"%{search}%"),
-                User.Last_name.ilike(f"%{search}%"),
+                User.First_Name.ilike(f"%{search}%"),
+                User.Last_Name.ilike(f"%{search}%"),
                 User.Email.ilike(f"%{search}%"),
                 User.Status.cast(sa.String).ilike(f"%{search}%"),
                 Role.Name.ilike(f"%{search}%"),
@@ -493,8 +493,8 @@ def available_accounts():
         items.append(
             {
                 "id": user.UserID,
-                "first_name": user.First_name,
-                "last_name": user.Last_name,
+                "first_name": user.First_Name,
+                "last_name": user.Last_Name,
                 "email": user.Email,
                 "role": user.Role.Name,
                 "status": user.Status.value,
@@ -525,8 +525,8 @@ def account_info(id):
     
     return {
         "id": user.UserID,
-        "first_name": user.First_name,
-        "last_name": user.Last_name,
+        "first_name": user.First_Name,
+        "last_name": user.Last_Name,
         "email": user.Email,
         "role": user.Role.Name,
         "status": user.Status.value,
@@ -604,8 +604,8 @@ def edit_account(id):
    
 
     try:
-        user_info.First_name = first_name
-        user_info.Last_name = last_name
+        user_info.First_Name = first_name
+        user_info.Last_Name = last_name
         user_info.Email = normalized_email 
         user_info.set_password(password)
         user_info.RoleID = role_info.RoleID

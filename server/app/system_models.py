@@ -83,8 +83,8 @@ class User(UserMixin, db.Model):
 
     # Table Fields
     UserID: so.Mapped[int] = so.mapped_column(primary_key=True)
-    First_name: so.Mapped[str] = so.mapped_column(sa.String(120))
-    Last_name: so.Mapped[str] = so.mapped_column(sa.String(120))
+    First_Name: so.Mapped[str] = so.mapped_column(sa.String(120))
+    Last_Name: so.Mapped[str] = so.mapped_column(sa.String(120))
     Email: so.Mapped[str] = so.mapped_column(sa.String(120), unique=True, index=True)
     Hashed_Password: so.Mapped[str] = so.mapped_column(sa.String(256))
     Status: so.Mapped[UserStatus] = so.mapped_column(sa.Enum(UserStatus))
@@ -156,48 +156,11 @@ class ActivityLog(db.Model):
     WriteOnlyMapped is to explicity load only that is queried
     back_populate sepcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
     """
-    Deployment: so.WriteOnlyMapped['DeploymentHistory'] = so.relationship(back_populates='Logs')
+    Deployment_Logs: so.WriteOnlyMapped['NCPADeploymentStatus'] = so.relationship(back_populates='Logs')
     Config_Logs: so.WriteOnlyMapped['ConfigurationChanges'] = so.relationship(back_populates='Logs')
     Export_Logs: so.WriteOnlyMapped['ExportLog'] = so.relationship(back_populates='Logs')
     NetDiscover_Logs: so.WriteOnlyMapped['NetworkDiscoveryStatus'] = so.relationship(back_populates='Logs')
     
-    
-"""
-DeploymentStatus Enum so that Deployment_Status is consistent
-To call use "DeploymentHistory.Deployment_Status = DeploymentStatus.FAILED"
-The models class need to be imported to use the Enums
-"""
-class DeploymentStatus(Enum):
-    FAILED="Failed"
-    SUCCESS="Success"
-    
-class DeploymentHistory(db.Model):
-    # Table Name
-    __tablename__ = "DEPLOYMENT_HISTORY"
-    
-    # Table Fields
-    DeploymentID: so.Mapped[int] = so.mapped_column(primary_key=True)
-    Notes: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
-    Deployment_Status: so.Mapped[DeploymentStatus] = so.mapped_column(sa.Enum(DeploymentStatus))
-    Deployed_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
-    Updated_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc), onupdate= lambda: datetime.now(timezone.utc))
-
-    # Foreign Key Fields
-    LogID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(ActivityLog.LogID), index=True)
-
-    """
-    WriteOnlyMapped enables for Many of the DeploymentHistory
-    WriteOnlyMapped is to explicity load only that is queried
-    back_populate sepcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
-    """
-    NCPA_Deployment: so.WriteOnlyMapped['NCPADeployment'] = so.relationship(back_populates='Deployment')
-    
-    """
-    Gets one instance from the ActivityLog table
-    back_populate sepcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
-    """
-    Logs: so.Mapped[ActivityLog] = so.relationship(back_populates='Deployment')
-
 class ConfigurationChanges( db.Model):
     # Table Name
     __tablename__ = "CONFIGURATION_CHANGES"
@@ -280,13 +243,6 @@ ScanStatus Enum so that Scan_Status is consistent
 To call use "NetworkDiscovery.Scan_Status = ScanStatus.PENDING"
 The models class need to be imported to use the Enums
 """
-class ScanStatus(Enum):
-    PENDING = "Pending"    
-    DEPLOYING = "Deploying"
-    DEPLOYED = "Deployed"
-    FAILED = "Failed"
-    UNREACHABLE = "Unreachable"
-    UNINSTALLED = "Uninstalled"
 
 class NetworkDiscovery(db.Model):
     # Table Name
@@ -301,7 +257,6 @@ class NetworkDiscovery(db.Model):
     OS_Type: so.Mapped[Optional[str]] = so.mapped_column(sa.String(25))
     Device_Type: so.Mapped[Optional[str]] = so.mapped_column(sa.String(25))
     NCPA_Eligible: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)
-    Scan_Status: so.Mapped[ScanStatus] = so.mapped_column(sa.Enum(ScanStatus))
     Scanned_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Include_Device_In_Scanning: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=True)
 
@@ -348,10 +303,10 @@ class SSHCredentials(db.Model):
     
     # Table Fields
     SSHID: so.Mapped[int] = so.mapped_column(primary_key=True)
-    SSH_Username: so.Mapped[str] = so.mapped_column(sa.String(50))
     SSH_Port: so.Mapped[int] = so.mapped_column(sa.Integer())
     Key_Installed: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)
-    Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+    Key_Fingerprint: so.Mapped[Optional[str]] = so.mapped_column()
+    Created_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
     # Foreign Key Field
     NetworkDiscoveryID:  so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True)
@@ -362,31 +317,58 @@ class SSHCredentials(db.Model):
     """
     Device: so.Mapped[NetworkDiscovery] = so.relationship(back_populates='SSH_Creds')
 
+class DeploymentStatus(Enum):
+    RUNNING = "Running"
+    SUCCESS = "Success"
+    FAILED = "Failed"
+
+class NCPADeploymentStatus(db.Model):
+    # Table Name
+    __tablename__ = "NCPA_DEPLOYMENT_STATUS"
+
+    # Table Fields
+    NCPADeployStatusID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Status: so.Mapped[DeploymentStatus] = so.mapped_column()
+    Progress: so.Mapped[int] = so.mapped_column()
+    Message: so.Mapped[str] = so.mapped_column(sa.String(100))
+    Start_At: so.Mapped[datetime] = so.mapped_column(default= lambda: datetime.now(timezone.utc))
+    Completed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
+    Error: so.Mapped[Optional[str]] = so.mapped_column()
+
+
+    # Foreign Key
+    LogID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(ActivityLog.LogID))
+
+    # Relationships
+    Logs: so.Mapped[ActivityLog] = so.relationship(back_populates='Deployment_Logs')
+    Device_Deployment: so.Mapped[NCPADeployment] = so.relationship(back_populates='DeploymentStatus')
 """
 AgentStatus Enum so that Agent_Status is consistent
 To call use "NRPEDeployment.Agent_Status = AgentStatus.DISCOVERED"
 The models class need to be imported to use the Enums
 """
 class AgentStatus(Enum):
-    DISCOVERED = "Discovered"
-    PENDING_NRPE = "Pending_NRPE"
-    MONITORED = "Monitored"
-    UNREACHABLE = "Unreachable"
+    PENDING_NCPA = "Pending NCPA"
+    DEPLOYED = "Deployed NCPA"
     EXCLUDED = "Excluded"
+
+class DeploymentMethod(Enum):
+    AUTOMATIC = "Automatic"
+    MANUAL = "Manual"
     
 class NCPADeployment(db.Model):
     # Table Name
     __tablename__ = "NCPA_DEPLOYMENT"
     
     # Table Fields
-    NCPAID: so.Mapped[int] = so.mapped_column(primary_key=True)
-    NCPA_Port: so.Mapped[int] = so.mapped_column(sa.Integer())
-    Plugin_Installed: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)
-    Agent_Status: so.Mapped[AgentStatus] = so.mapped_column(sa.Enum(AgentStatus))
+    NCPADeployID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Deployement_Method: so.Mapped[Optional[DeploymentMethod]] = so.mapped_column(sa.Enum(DeploymentMethod))
+    Agent_Status: so.Mapped[Optional[AgentStatus]] = so.mapped_column(sa.Enum(AgentStatus))
+    Error: so.Mapped[Optional[str]] = so.mapped_column()
 
     # Foreign Key Field
+    NCPADeploymentStatus: so.Mapped[Optional[int]] = so.mapped_column(sa.ForeignKey(NCPADeploymentStatus.NCPADeployStatusID))
     NetworkDiscoveryID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True)
-    DeploymentID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(DeploymentHistory.DeploymentID), index=True)
 
     """
     Gets on instnce of NetworkDiscovery
@@ -395,7 +377,7 @@ class NCPADeployment(db.Model):
     Device: so.Mapped[NetworkDiscovery] = so.relationship(back_populates='NCPA_Deployment')
     
     """
-    Gets on instnce of DeploymentHistory
+    Gets on instnce of NCPADeploymentStatus
     back_populate sepcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
     """
-    Deployment: so.Mapped[DeploymentHistory] = so.relationship(back_populates='NCPA_Deployment')
+    Deployment_Status: so.Mapped[NCPADeploymentStatus] = so.relationship(back_populates='Device_Deployment')

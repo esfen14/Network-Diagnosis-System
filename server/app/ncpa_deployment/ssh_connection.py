@@ -1,4 +1,5 @@
 import paramiko
+from flask import current_app
 
 PUBLIC_KEY_PATH = "/home/paeng/.ssh/pinpoint_ncpa_deploy.pub"
 PRIVATE_KEY_PATH = "/home/paeng/.ssh/pinpoint_ncpa_deploy"
@@ -7,59 +8,44 @@ DEPLOYMENT_USER = "pinpoint-deployment"
 TOKEN = "publictest"
 NCPA_PORT = "5693"
 
-def ssh_connect(ip_address, username, password):
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+def run_command(client, command):
+    stdin, stdout, stderr = client.exec_command(command, get_pty=True)
 
-    try:
-        client.connect(
-            ip_address,
-            SSH_PORT, 
-            username, 
-            password,
-            timeout=10
-        )
-        # commands = ['touch sample-file','ls -la','','sudo -S apt update']
-        # for command in commands:
-        #    stdin, stdout, stderr = client.exec_command(command)
-        #    stdin.write(password + '\n')
-        #    print(f'Output of {command}:\n{stdout.read().decode('utf-8')}')
-        #    print(f'Error output {command}: \n{stderr.read().decode('utf-8')}')
-        #    exit_status = stdout.channel.recv_exit_status()
-        #    print(exit_status)
+    output = stdout.read().decode('utf-8')
+    errors = stderr.read().decode('utf-8')
 
-        check_user = f'id {DEPLOYMENT_USER}'
-        stdin, stdout, stderr = client.exec_command(check_user)
+    if stdout.recv_exit_status() != 0 or errors:
+        current_app.logger.exception(
+            f"Command failed: {command}\n Output: {output}\n Errors: {errors}")
+        return {"success": False, "message": "An error occured. Please try again."}
+    return {"success": True, "message": ""}
 
-        if stdout.channel.recv_exit_status() == 0:
-            return {"success": False, "message": "Deployment user already exists."}
+def run_sudo_command(client, command, password):
+    stdin, stdout, stderr = client.exec_command(command, get_pty=True)
+    stdin.write(password + '\n')
+    stdin.flush()
 
-        add_user = f'sudo -S useradd -m {DEPLOYMENT_USER}'
-        stdin, stdout, stderr = client.exec_command(add_user, get_pty=True)
-        stdin.write(password + '\n')
-        stdin.flush()
+    output = stdout.read().decode('utf-8')
+    errors = stderr.read().decode('utf-8')
 
-        if stdout.channel.recv_exit_status() != 0:
-            return {"success": False, "message": "User was not added."}
-        
-    except paramiko.SSHException as e:
-        print(f'SSH Error: {e}')
-    except Exception as e:
-        print(f'Error {e}')
-    finally :
-        client.close()
+    if stdout.recv_exit_status() != 0 or errors:
+        current_app.logger.exception(
+            f"Command failed: {command}\n Output: {output}\n Errors: {errors}")
+        return {"success": False, "message": "An error occured. Please try again."}
+    return {"success": True, "message": ""}
+
 
 def give_program_permissions(ip_address, username, password):
     # check if the device already has a host key in the db
     # if not, confirm if the device is correct
     # set pramiko's key policy to reject if its not part of the host keys the server
-    # load the host keys
-    # connect to the client
-    # make a user for ncpa installer
-    # install our public key
-    # make give a scoped passwordless sudo for sepcific functions
-    # add the password to apply the commands
-    # discard password
+    # load the host keys /
+    # connect to the client /
+    # make a user for ncpa installer /
+    # install our public key /
+    # make give a scoped passwordless sudo for sepcific functions /
+    # add the password to apply the commands /
+    # discard password /
 
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -76,53 +62,38 @@ def give_program_permissions(ip_address, username, password):
 
         if stdout.channel.recv_exit_status() != 0:
             add_user = f'sudo -S useradd -m {DEPLOYMENT_USER}'
-            stdin, stdout, stderr = client.exec_command(add_user, get_pty=True)
-            stdin.write(password + '\n')
-            stdin.flush()
-
-        if stdout.channel.recv_exit_status() != 0:
-            return {"success": False, "message": "User was not added."}
+            run_sudo_command(client, add_user, password)
 
         with open(PUBLIC_KEY_PATH) as f:
             public_key = f.read().strip()
 
+        if not public_key:
+            return {"success": False, "message": "Failed to load private key."}
+
         make_dir = f'sudo -S mkdir -p ~{DEPLOYMENT_USER}/.ssh'
-        stdin, stdout, stderr = client.exec_command(make_dir, get_pty=True)
-        stdin.write(password + '\n')
-        stdin.flush()
-        print(make_dir, " " ,stdout.read().decode('utf-8'))
-        print(make_dir, " " ,stderr.read().decode('utf-8'))
+        result = run_sudo_command(client, make_dir, password)
+        if not result['success']:
+            return result
 
         add_key = f"sudo -S bash -c 'echo \"{public_key}\" >> ~{DEPLOYMENT_USER}/.ssh/authorized_keys'"
-        stdin, stdout, stderr = client.exec_command(add_key)
-        stdin.write(password + '\n')
-        stdin.flush()
-        print(add_key, " " ,stdout.read().decode('utf-8'))
-        print(add_key, " " ,stderr.read().decode('utf-8'))
+        result = run_sudo_command(client, add_key, password)
+        if not result['success']:
+            return result
 
         add_folder_permission = f'sudo -S chmod 700 ~{DEPLOYMENT_USER}/.ssh'
-        stdin, stdout, stderr = client.exec_command(add_folder_permission, get_pty=True)
-        stdin.write(password + '\n')
-        stdin.flush()
-        print(add_folder_permission, " " ,stdout.read().decode('utf-8'))
-        print(add_folder_permission, " " ,stderr.read().decode('utf-8'))
+        result = run_sudo_command(client, add_folder_permission, password)
+        if not result['success']:
+            return result
 
-        add_folder_permission = f'sudo -S chmod 600 ~{DEPLOYMENT_USER}/.ssh/authorized_keys'
-        stdin, stdout, stderr = client.exec_command(add_folder_permission, get_pty=True)
-        stdin.write(password + '\n')
-        stdin.flush()
-        print(add_folder_permission, " " ,stdout.read().decode('utf-8'))
-        print(add_folder_permission, " " ,stderr.read().decode('utf-8'))
+        add_key_permission = f'sudo -S chmod 600 ~{DEPLOYMENT_USER}/.ssh/authorized_keys'
+        result = run_sudo_command(client, add_key_permission, password)
+        if not result['success']:
+            return result
 
-        add_folder_permission = f'sudo -S chown -R {DEPLOYMENT_USER}:{DEPLOYMENT_USER} ~{DEPLOYMENT_USER}/.ssh'
-        stdin, stdout, stderr = client.exec_command(add_folder_permission, get_pty=True)
-        stdin.write(password + '\n')
-        stdin.flush()
-        print(add_folder_permission, " " ,stdout.read().decode('utf-8'))
-        print(add_folder_permission, " " ,stderr.read().decode('utf-8'))
-
-        if stdout.channel.recv_exit_status() !=0:
-            return {"success": False, "message": f"Adding key failed.{stderr.read().decode('utf-8')}"}
+        change_folder_ownership = f'sudo -S chown -R {DEPLOYMENT_USER}:{DEPLOYMENT_USER} ~{DEPLOYMENT_USER}/.ssh'
+        result = run_sudo_command(client, change_folder_ownership, password)
+        if not result["success"]:
+            return result
 
         sudoers_rule = (
             f"{DEPLOYMENT_USER} ALL=(root) NOPASSWD: "
@@ -134,39 +105,26 @@ def give_program_permissions(ip_address, username, password):
             f"/etc/init.d/ncpa, "
             f"/usr/sbin/ufw"
         )
-
         sudo_setup_cmd = (
             f"sudo -S bash -c"
             f" 'echo \"{sudoers_rule}\" | sudo -S tee -a /etc/sudoers.d/pinpoint-ncpa-deploy && "
             f"chmod 440 /etc/sudoers.d/pinpoint-ncpa-deploy && "
             f"visudo -cf /etc/sudoers.d/pinpoint-ncpa-deploy'"
         )
-
-        stdin, stdout, stderr = client.exec_command(sudo_setup_cmd, get_pty=True)
-        stdin.write(password + "\n")   # feed the password to sudo's prompt
-        stdin.flush()
-        exit_status = stdout.channel.recv_exit_status()
-        print(sudo_setup_cmd, " " ,stdout.read().decode('utf-8'))
-        print(sudo_setup_cmd, " " ,stderr.read().decode('utf-8'))
-        print(sudo_setup_cmd , " " ,stdout.channel.recv_exit_status())
-
-        password = None
-
-        if exit_status != 0:
-            return {"success": False, "message": f"Setup failed. {stderr.read().decode('utf-8')} {stdout.read().decode('utf-8')}"}
-
-        print("Success")
+        result = run_sudo_command(client, sudo_setup_cmd, password)
+        if not result['success']:
+            return result
 
     except paramiko.SSHException as e:
-        print(f'SSH Error: {e}')
-        raise
+        current_app.logger.error(f'SSH Error: {e}')
+        return {"success": False, "message": "An Error occured. Please try again."}
     except Exception as e:
-        print(f"Error {e}")
-        raise
+        current_app.logger.error(f"Error {e}")
+        return {"success": False, "message": "An Error occured. Please try again."}
     finally:
         client.close()
 
-    return 0
+    return {"success": True, "message": "User successfully added."}
 
 def install_ncpa(ip_address):
     # start SSH connection to the client
@@ -193,34 +151,26 @@ def install_ncpa(ip_address):
         )
 
         apt_update = "sudo apt-get update"
-        stdin, stdout, stderr = client.exec_command(apt_update)
-        exit_status = stdout.channel.recv_exit_status()
-        print(apt_update, " " ,stdout.read().decode('utf-8'))
-        print(apt_update, " " ,stderr.read().decode('utf-8'))
-        print(apt_update , " " ,stdout.channel.recv_exit_status())
+        result = run_command(client, apt_update)
+        if not result['success']:
+            return result
 
         install_apt_transport = "sudo apt-get install apt-transport-https"
-        stdin, stdout, stderr = client.exec_command(install_apt_transport)
-        exit_status = stdout.channel.recv_exit_status()
-        print(install_apt_transport, " " ,stdout.read().decode('utf-8'))
-        print(install_apt_transport, " " ,stderr.read().decode('utf-8'))
-        print(install_apt_transport , " " ,stdout.channel.recv_exit_status())
+        result = run_command(client, install_apt_transport)
+        if not result['success']:
+            return result
 
         make_keyring = "sudo mkdir -m 0755 -p /etc/apt/keyrings/"
-        stdin, stdout, stderr = client.exec_command(make_keyring)
-        exit_status = stdout.channel.recv_exit_status()
-        print(make_keyring, " " ,stdout.read().decode('utf-8'))
-        print(make_keyring, " " ,stderr.read().decode('utf-8'))
-        print(make_keyring , " " ,stdout.channel.recv_exit_status())
+        result = run_command(client, make_keyring)
+        if not result['success']:
+            return result
 
         get_gpg_key = (
             "curl -fsSL https://repo.nagios.com/GPG-KEY-NAGIOS-V3 | "
             "sudo -n gpg --dearmor -o /etc/apt/keyrings/GPG-KEY-NAGIOS-V3.gpg")
-        stdin, stdout, stderr = client.exec_command(get_gpg_key)
-        exit_status = stdout.channel.recv_exit_status()
-        print(get_gpg_key, " " ,stdout.read().decode('utf-8'))
-        print(get_gpg_key, " " ,stderr.read().decode('utf-8'))
-        print(get_gpg_key , " " ,stdout.channel.recv_exit_status())
+        result = run_command(client, get_gpg_key)
+        if not result['success']:
+            return result
 
         source_content = (
             'Types: deb\n'
@@ -229,47 +179,35 @@ def install_ncpa(ip_address):
             'Signed-By: /etc/apt/keyrings/GPG-KEY-NAGIOS-V3.gpg'
         )
         add_source = f'echo "{source_content}" | sudo -n tee /etc/apt/sources.list.d/nagios.sources > /dev/null'
-        stdin, stdout, stderr = client.exec_command(add_source)
-        exit_status = stdout.channel.recv_exit_status()
-        print(add_source, " " ,stdout.read().decode('utf-8'))
-        print(add_source, " " ,stderr.read().decode('utf-8'))
-        print(add_source , " " ,stdout.channel.recv_exit_status())
+        result = run_command(client, add_source)
+        if not result['success']:
+            return result
 
         apt_update = "sudo apt-get update"
-        stdin, stdout, stderr = client.exec_command(apt_update)
-        exit_status = stdout.channel.recv_exit_status()
-        print(apt_update, " " ,stdout.read().decode('utf-8'))
-        print(apt_update, " " ,stderr.read().decode('utf-8'))
-        print(apt_update , " " ,stdout.channel.recv_exit_status())
+        result = run_command(client, apt_update)
+        if not result['success']:
+            return result
 
         install_ncpa = "sudo -n apt-get install ncpa"
-        stdin, stdout, stderr = client.exec_command(install_ncpa)
-        exit_status = stdout.channel.recv_exit_status()
-        print(install_ncpa, " " ,stdout.read().decode('utf-8'))
-        print(install_ncpa, " " ,stderr.read().decode('utf-8'))
-        print(install_ncpa , " " ,stdout.channel.recv_exit_status())
+        result = run_command(client, install_ncpa)
+        if not result['success']:
+            return result
 
         configure_token = f"sudo -n sed -i 's/^community_string = .*/community_string = {TOKEN}/' /usr/local/ncpa/etc/ncpa.cfg"
-        stdin, stdout, stderr = client.exec_command(configure_token)
-        exit_status = stdout.channel.recv_exit_status()
-        print(configure_token, " " ,stdout.read().decode('utf-8'))
-        print(configure_token, " " ,stderr.read().decode('utf-8'))
-        print(configure_token , " " ,stdout.channel.recv_exit_status())
+        result = run_command(client, configure_token)
+        if not result['success']:
+            return result
+
 
         restart_ncpa = "sudo -n /etc/init.d/ncpa restart"
-        stdin, stdout, stderr = client.exec_command(restart_ncpa)
-        exit_status = stdout.channel.recv_exit_status()
-        print(restart_ncpa, " " ,stdout.read().decode('utf-8'))
-        print(restart_ncpa, " " ,stderr.read().decode('utf-8'))
-        print(restart_ncpa , " " ,stdout.channel.recv_exit_status())
+        result = run_command(client, configure_token)
+        if not result['success']:
+            return result
 
         add_ufw_rule = f"sudo -n ufw allow {NCPA_PORT}/tcp"
-        stdin, stdout, stderr = client.exec_command(add_ufw_rule)
-        exit_status = stdout.channel.recv_exit_status()
-        print(add_ufw_rule, " " ,stdout.read().decode('utf-8'))
-        print(add_ufw_rule, " " ,stderr.read().decode('utf-8'))
-        print(add_ufw_rule , " " ,stdout.channel.recv_exit_status())
-
+        result = run_command(client, configure_token)
+        if not result['success']:
+            return result
 
     except paramiko.SSHException as e:
         print(f'SSH Error: {e}')
@@ -280,7 +218,7 @@ def install_ncpa(ip_address):
     finally:
         client.close()
 
-    return 0
+    return {"success": True, "message": "NCPA successfully Deployed."}
 
 
 # result = give_program_permissions(ip_address="192.168.130.9",username="paeng",password="password")
