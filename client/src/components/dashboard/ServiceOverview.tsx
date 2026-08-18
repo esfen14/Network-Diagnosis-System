@@ -15,8 +15,6 @@ const toneStyles: Record<StatusTone, string> = {
   gray: 'bg-gray-600',
 }
 
-// Placeholder data — replace with a real fetch to the backend's service-status
-// endpoint once it's available (e.g. GET /api/service-overview).
 const services: ServiceItem[] = [
   { label: 'System Status', status: 'Operational', tone: 'green' },
   { label: 'Monitoring Coverage', status: '', tone: 'gray', isHeader: true },
@@ -42,26 +40,30 @@ const services: ServiceItem[] = [
 
 export function ServiceOverview() {
   return (
-    <aside className="hidden w-72 shrink-0 border-l border-white/10 xl:block">
+    <aside className="hidden w-72 shrink-0 border-l border-gray-200 dark:border-white/10 xl:block">
       <div className="sticky top-0 max-h-screen overflow-y-auto p-4">
         <h3 className="mb-4 text-sm font-semibold text-pinpoint-green">
           Service Overview
         </h3>
+
         <div className="space-y-1">
           {services.map((item) =>
             item.isHeader ? (
               <p
                 key={item.label}
-                className="pb-1 pt-3 text-xs font-medium uppercase text-gray-500 first:pt-0"
+                className="pb-1 pt-3 text-xs font-medium uppercase text-white first:pt-0"
               >
                 {item.label}
               </p>
             ) : (
               <div
                 key={item.label}
-                className="flex items-center justify-between rounded-xl px-2 py-2 hover:bg-white/5"
+                className="flex items-center justify-between rounded-xl px-2 py-2 hover:bg-gray-100 dark:hover:bg-white/5"
               >
-                <span className="text-sm text-white/80">{item.label}</span>
+                <span className="text-sm text-white">
+                  {item.label}
+                </span>
+
                 <span
                   className={`rounded-full px-3 py-1 text-xs font-medium text-white ${toneStyles[item.tone]}`}
                 >

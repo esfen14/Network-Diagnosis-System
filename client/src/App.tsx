@@ -1,70 +1,99 @@
+// PLEASE WALANG GAGALAW NG KAHIT ANO DITO
+
 import { Navigate, Route, Routes } from 'react-router-dom'
+
 import { AdminLayout } from './components/layout/AdminLayout'
 
-import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
-import { DeviceInventoryPage } from './pages/DeviceInventoryPage'
+import { DashboardPage } from './pages/DashboardPage'
 import { NetworkHealthPage } from './pages/NetworkHealthPage'
+import { DeviceInventoryPage } from './pages/DeviceInventoryPage'
 import { TopologyPage } from './pages/TopologyPage'
-import { ManageAccountsPage } from './pages/ManageAccountsPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { SystemLogsPage } from './pages/SystemLogsPage'
+import { ManageAccountsPage } from './pages/ManageAccountsPage'
 import { PluginsPage } from './pages/PluginsPage'
-import { PlaceholderPage } from './pages/PlaceholderPage'
+import { SettingsPage } from './pages/SettingsPage'
 
 export default function App() {
   return (
     <Routes>
+      
+      <Route
+        path="/login"
+        element={<LoginPage />}
+      />
 
-      {/* PUBLIC */}
-      <Route path="/login" element={<LoginPage />} />
-
-      {/* PROTECTED / ADMIN */}
-      <Route path="/" element={<AdminLayout />}>
-
-        {/* DEFAULT */}
-        <Route index element={<Navigate to="/dashboard" replace />} />
-
-        {/* MAIN PAGES */}
-        <Route path="dashboard" element={<DashboardPage />} />
-        <Route path="network-health" element={<NetworkHealthPage />} />
-        <Route path="device-inventory" element={<DeviceInventoryPage />} />
-        <Route path="reports" element={<ReportsPage />} />
-        <Route path="topology" element={<TopologyPage />} />
-
-        <Route path="system-logs" element={<SystemLogsPage />} />
-
-        {/* ACCOUNTS */}
-        <Route path="accounts" element={<ManageAccountsPage />} />
-        
-        <Route path="plugins" element={<PluginsPage />} />
-
-        {/* PLACEHOLDERS */}
+      <Route
+        path="/"
+        element={<AdminLayout />}
+      >
         <Route
-          path="plugins"
+          index
           element={
-            <PlaceholderPage
-              title="Plugins"
-              description="Manage and configure system plugins."
+            <Navigate
+              to="/login"
+              replace
             />
           }
+        />
+
+        <Route
+          path="dashboard"
+          element={<DashboardPage />}
+        />
+
+        <Route
+          path="network-health"
+          element={<NetworkHealthPage />}
+        />
+
+        <Route
+          path="device-inventory"
+          element={<DeviceInventoryPage />}
+        />
+
+        <Route
+          path="topology"
+          element={<TopologyPage />}
+        />
+
+        <Route
+          path="reports"
+          element={<ReportsPage />}
+        />
+
+        <Route
+          path="system-logs"
+          element={<SystemLogsPage />}
+        />
+
+        <Route
+          path="accounts"
+          element={<ManageAccountsPage />}
+        />
+
+        <Route
+          path="plugins"
+          element={<PluginsPage />}
         />
 
         <Route
           path="settings"
-          element={
-            <PlaceholderPage
-              title="Settings"
-              description="System configuration and preferences."
-            />
-          }
+          element={<SettingsPage />}
         />
-
       </Route>
 
-      {/* FALLBACK */}
-      <Route path="*" element={<Navigate to="/login" replace />} />
-
+      {/* Unknown routes */}
+      <Route
+        path="*"
+        element={
+          <Navigate
+            to="/login"
+            replace
+          />
+        }
+      />
     </Routes>
   )
 }
