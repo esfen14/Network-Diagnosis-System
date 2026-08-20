@@ -173,7 +173,7 @@ def _discover_host_udp_port(ip):
 
     return service_dict
 
-def discover_network(network_discvovery_status_id, progress_weight):
+def discover_network(network_discvovery_status_id, progress_weight, stop_event):
     hosts = {}
 
     total_networks = len(NETWORKS)
@@ -182,6 +182,10 @@ def discover_network(network_discvovery_status_id, progress_weight):
         return hosts
 
     for network_index, network in enumerate(NETWORKS):
+
+        if stop_event.is_set():
+            return None
+        
         hosts[network] = _discover_host(network)
 
         total_hosts = len(hosts[network])
@@ -191,9 +195,17 @@ def discover_network(network_discvovery_status_id, progress_weight):
         subnet_end = ((network_index + 1) / total_networks) * progress_weight
 
         for host_index, ip in enumerate(hosts[network]):
+
+            if stop_event.is_set():
+                return None
+            
             hosts[network][ip]["services"]["tcp"], hosts[network][ip]["data"]["os"]= _discover_host_tcp_port(ip)
 
+            if stop_event.is_set():
+                return None
+            
             hosts[network][ip]["services"]["udp"] = _discover_host_udp_port(ip)
+
 
             if total_hosts > 0:
                 progress = calculate_progress(host_index + 1, 

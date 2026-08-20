@@ -53,8 +53,7 @@ def update_ncpa_deployment_status(ncpa_deployment_status_id, status, progress, m
 def get_deployment_ncpa_status():
     try:
         return db.session.scalar(
-            sa.Select(NCPADeploymentStatus)
-            .where(NCPADeploymentStatus.Status == DeploymentStatus.RUNNING)
+            sa.select(NCPADeploymentStatus)
             .order_by(NCPADeploymentStatus.Start_At.desc()
                       ).limit(1)
         )

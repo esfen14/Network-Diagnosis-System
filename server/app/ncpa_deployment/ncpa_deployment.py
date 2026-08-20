@@ -760,7 +760,7 @@ def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
             client.close()
 
 
-def install_process(app, user_id, device_list):
+def install_process(app, user_id, device_list, stop_event):
     '''
         device_credentials: list of dicts like
         [
@@ -785,6 +785,15 @@ def install_process(app, user_id, device_list):
                 ip_address = entry["ip_address"]
                 username = entry["username"]
                 password = entry["password"]
+
+                if stop_event.is_set():
+                    update_ncpa_deployment_status(
+                        ncpa_deployment_status_id,
+                        DeploymentStatus.INTERRUPTED,
+                        progress,
+                        "NCPA deployment stopped by user."
+                    )
+                    return
 
                 key_installed = give_program_permissions(device_id, ncpa_deployment_status_id, ip_address, username, password)
                 if key_installed:

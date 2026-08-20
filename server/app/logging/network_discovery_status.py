@@ -55,8 +55,7 @@ def update_network_discovery_status(network_discovery_status_id, status, progres
 def get_network_discovery_status():
     try:
         return db.session.scalar(
-            sa.Select(NetworkDiscoveryStatus)
-            .where(NetworkDiscoveryStatus.Status == DiscoveryStatus.RUNNING)
+            sa.select(NetworkDiscoveryStatus)
             .order_by(NetworkDiscoveryStatus.Start_At.desc()
                       ).limit(1)
         )

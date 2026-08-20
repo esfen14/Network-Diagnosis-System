@@ -869,36 +869,66 @@ def _override_service_names(network_discovery_id, discovered_hosts, protocol, se
 
     return discovered_hosts   
 
-def discover_network_create_hosts(app, user_id):
+def discover_network_create_hosts(app, user_id, stop_event):
     network_discovery_id = None
    
     with app.app_context():
         try:
+
             print("Created Log")
             network_discovery_id = create_network_discovery_status(user_id).DiscoveryStatusID
 
+            if stop_event.is_set():
+                return
+            
             # Gets the network info
             print("Discovering Hosts")
-            discovered_hosts = discover_network(network_discovery_id, PROGRESS_WEIGHT[0])
+            discovered_hosts = discover_network(network_discovery_id, PROGRESS_WEIGHT[0], stop_event)
 
+            if discovered_hosts is None:
+                update_network_discovery_status(
+                    network_discovery_id,
+                    DiscoveryStatus.INTERRUPTED,
+                    100,
+                    "Network discovery was stopped.",
+                    datetime.now(timezone.utc)
+                )
+                return
+            
             print("Inital discovered hosts:")
             print(discovered_hosts)
+
+            if stop_event.is_set():
+                return
+            
             # Creates hostnames for hosts that don't have names
             print("Creating Hostnames")
             discovered_hosts = _create_hostname(network_discovery_id, discovered_hosts, PROGRESS_WEIGHT[1])
 
+            if stop_event.is_set():
+                return
+            
             # Overrides services names due to NMAP not always being right
             print("Override Service Names")
             discovered_hosts = _override_service_names(network_discovery_id, discovered_hosts,"tcp", TCP_SERVICE_OVERRIDES, PROGRESS_WEIGHT[2])
             discovered_hosts = _override_service_names(network_discovery_id, discovered_hosts,"udp", UDP_SERVICE_OVERRIDES, PROGRESS_WEIGHT[3])
 
+            if stop_event.is_set():
+                return
+            
             # Save it to the database
             print("Saving Discovered Hosts")
             _save_discovered_hosts(discovered_hosts, network_discovery_id, PROGRESS_WEIGHT[4])
 
+            if stop_event.is_set():
+                return
+            
             print("Create Database Hosts Dict")
             system_hosts = _load_monitored_hosts(network_discovery_id, PROGRESS_WEIGHT[5])
 
+            if stop_event.is_set():
+                return
+            
             new_cfg = _create_host_cfg_file(system_hosts)
             print(f"Created: {new_cfg}")
             update_network_discovery_status(
@@ -908,6 +938,9 @@ def discover_network_create_hosts(app, user_id):
                 "Generated new Nagios configuration"
             )
 
+            if stop_event.is_set():
+                return
+            
             update_network_discovery_status(
                 network_discovery_id,
                 DiscoveryStatus.RUNNING,
@@ -916,7 +949,9 @@ def discover_network_create_hosts(app, user_id):
             )
             
             is_valid, result = _validate_config(new_cfg)
-            
+
+            if stop_event.is_set():
+                return
             
             if is_valid:
                 applied, apply_message = _apply_new_host_cfg(new_cfg)

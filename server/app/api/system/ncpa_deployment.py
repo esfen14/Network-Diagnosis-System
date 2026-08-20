@@ -10,6 +10,27 @@ from app.system_models import NetworkDiscovery, SSHCredentials
 from app.ncpa_deployment.ncpa_deployment import *
 
 deploy_ncpa_thread = None
+deploy_ncpa_thread_stop_event = threading.Event()
+
+@system_bp.get('/deployment/ncpa/devices')
+@login_required
+@require_permission("system.deploy.ncpa")
+def get_ncpa_eligible_devices():
+    devices = db.session.scalars(
+        sa.select(NetworkDiscovery)
+        .where(NetworkDiscovery.NCPA_Eligible.is_(True))
+        .order_by(NetworkDiscovery.Hostname.asc())
+    ).all()
+
+    return {
+        "devices": [
+            {
+                "device_id": device.NetDiscoveryID,
+                "hostname": device.Hostname,
+            }
+            for device in devices
+        ]
+    }, 200
 
 @system_bp.get('/deployment/ncpa/<int:device_id>/fingerprint')
 @login_required
@@ -55,7 +76,7 @@ def confirm_device_trust(device_id):
 
     return {"success": True, "message": "Device fingerprint added."}, 200
 
-@system_bp.post('/deployment/ncpa/')
+@system_bp.post('/deployment/ncpa/start')
 @login_required
 @require_permission('system.deploy.ncpa')
 def deploy_ncpa():
@@ -117,10 +138,15 @@ def deploy_ncpa():
 
         validated_entries.append(validated_entry)
 
+    deploy_ncpa_thread_stop_event.clear()
     deploy_ncpa_thread = threading.Thread(
         daemon=True,
         target=install_process,
-        args=(app, current_user.UserID, validated_entries)
+        args=(app, 
+              current_user.UserID, 
+              validated_entries, 
+              deploy_ncpa_thread_stop_event
+            )
     )
     deploy_ncpa_thread.start()
 
@@ -129,19 +155,47 @@ def deploy_ncpa():
         "rejected": rejected_entries
     }, 202
 
+@system_bp.post('/deployment/ncpa/stop')
+@login_required
+@require_permission('system.deploy.ncpa')
+def stop_ncpa_deployment():
+
+    global deploy_ncpa_thread
+
+    if deploy_ncpa_thread is None or not deploy_ncpa_thread.is_alive():
+        return {
+            "success": False,
+            "message": "There is no NCPA deployment running."
+        }, 400
+
+    deploy_ncpa_thread_stop_event.set()
+
+    return {
+        "success": True,
+        "message": "NCPA deployment stop requested."
+    }, 200
+
 
 @system_bp.get('/deployment/ncpa/status')
 @login_required
 @require_permission('system.deploy.ncpa')
 def deploy_ncpa_status():
-    if deploy_ncpa_thread is None or not deploy_ncpa_thread.is_alive():
-        return {"message": "There is no NCPA deployment occuring right now."}, 200
-
     deployment_info = get_deployment_ncpa_status()
 
+    if deployment_info is None:
+        return {
+            "message": "No NCPA deployment has occurred yet."
+        }, 200
+
     return {
-            "Status": deployment_info.Status.value,
-            "Progress": deployment_info.Progress,
-            "Message": deployment_info.Message,
-            "Error": deployment_info.Error,
+        "id": deployment_info.NCPADeployStatusID,
+        "status": deployment_info.Status.value,
+        "progress": deployment_info.Progress,
+        "message": deployment_info.Message,
+        "start_at": deployment_info.Start_At.isoformat(),
+        "completed_at": (
+            deployment_info.Completed_At.isoformat()
+            if deployment_info.Completed_At else None
+        ),
+        "error": deployment_info.Error
     }, 200

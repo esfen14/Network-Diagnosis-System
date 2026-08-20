@@ -36,7 +36,6 @@ ROLES = [
 
 SEED_USERS = [
 ("Admin", "User", "admin@test.com", "Administrator", UserStatus.ACTIVE),
-
 ("John", "Doe", "john@test.com", "Manager", UserStatus.ACTIVE),
 ("Jane", "Smith", "jane@test.com", "Staff", UserStatus.INACTIVE),
 ("Michael", "Brown", "michael.brown@test.com", "Manager", UserStatus.ACTIVE),

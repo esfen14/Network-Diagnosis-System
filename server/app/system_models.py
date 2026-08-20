@@ -217,7 +217,7 @@ class DiscoveryStatus(Enum):
     RUNNING = "Running"
     SUCCESS = "Success"
     FAILED = "Failed"
-    INTERUPPTED = "Interrupted"
+    INTERRUPTED = "Interrupted"
 
 class NetworkDiscoveryStatus(db.Model):
     # Table name
@@ -322,6 +322,7 @@ class DeploymentStatus(Enum):
     SUCCESS = "Success"
     PARTIAL_FAILURE = "Partial Failure"
     FAILED = "Failed"
+    INTERRUPTED = "Interrupted"
 
 class NCPADeploymentStatus(db.Model):
     # Table Name
