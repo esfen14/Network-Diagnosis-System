@@ -14,6 +14,7 @@ import os
 
 home = str(os.getenv("HOME"))
 PUBLIC_KEY_PATH = os.path.join(home,".ssh","pinpoint_ncpa_deploy.pub")
+PRIVATE_KEY_PATH = os.path.join(home,".ssh","pinpoint_ncpa_deploy")
 
 SSH_PORT = 22
 NCPA_PORT = "5693"
@@ -173,7 +174,9 @@ def connect_with_fingerprint_check(
         ip_address, 
         username, 
         expected_fingerprint, 
-        password=None): 
+        password=None,
+        private_key=None,
+    ): 
 
     verify_host_fingerprint( 
         ip_address,
@@ -192,7 +195,8 @@ def connect_with_fingerprint_check(
         host_key = transport.get_remote_server_key() 
         client.get_host_keys().add( 
             ip_address, host_key.get_name(), 
-            host_key, )
+            host_key
+            )
     finally: 
         transport.close() 
 
@@ -201,6 +205,7 @@ def connect_with_fingerprint_check(
             port=SSH_PORT, 
             username=username, 
             password=password,
+            pkey=private_key,
             timeout=SSH_TIMEOUT, 
             allow_agent=False, 
             look_for_keys=False
@@ -668,7 +673,8 @@ def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
         client = connect_with_fingerprint_check(
             ip_address,
             DEPLOYMENT_USER,
-            fingerprint
+            fingerprint,
+            private_key=PRIVATE_KEY_PATH
         )
 
 
