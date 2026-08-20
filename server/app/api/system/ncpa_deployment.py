@@ -56,7 +56,7 @@ def get_device_fingerprint(device_id):
 @login_required
 @require_permission('system.deploy.ncpa')
 def confirm_device_trust(device_id):
-    data = request.get_json()
+    
     device = db.session.get(NetworkDiscovery, device_id)
     if device is None:
         return {"error": "Device not found"}, 404

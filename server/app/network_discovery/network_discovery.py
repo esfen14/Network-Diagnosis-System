@@ -22,7 +22,7 @@ def _print_xml(xml):
 def _discover_host(subnet):
     nmap = nmap3.Nmap(path="/usr/local/bin/nmap-sudo")
 
-    xmlroot = nmap.scan_command(subnet,"-PS -PA -PE -sn -R")
+    xmlroot = nmap.scan_command(subnet,"-PS -PA -PE -sn -R", "--open")
 
     host_dict = {}
 
