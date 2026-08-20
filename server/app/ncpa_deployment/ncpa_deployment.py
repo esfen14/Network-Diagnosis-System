@@ -774,7 +774,12 @@ def install_process(app, user_id, device_list, stop_event):
     '''
     with app.app_context():
 
-        ncpa_deployment_status_id = create_ncpa_deployment_status(user_id).NCPADeployStatusID
+        ncpa_deployment_status = create_ncpa_deployment_status(user_id)
+
+        if ncpa_deployment_status is None:
+            raise ValueError("User doesn't exist.")
+        
+        ncpa_deployment_status_id = ncpa_deployment_status.NCPADeployStatusID
         processed_devices = 0
         progress = 0
         failed_deployment = []
