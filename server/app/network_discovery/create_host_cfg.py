@@ -353,22 +353,7 @@ def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weig
                 if os_type == "Linux":
                     NCPA_Eligible = True
 
-                    ssh = SSHCredentials(
-                        SSH_Port = int(port_number) ,
-                        Key_Installed = False,
-                        Key_Fingerprint = None,
-                        Created_At = None,
-                        NetworkDiscoveryID = device.NetDiscoveryID
-                    )
-                                            
-                    db.session.add(ssh)
-                                            
-                    ncpa = NCPADeployment(
-                        Agent_Status = AgentStatus.PENDING_NCPA,
-                        NetworkDiscoveryID = device.NetDiscoveryID
-                        )
-                                            
-                    db.session.add(ncpa)
+                    
 
                 # -------------------------------------------------
                 # Create device if it doesn't exist
@@ -387,6 +372,25 @@ def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weig
 
                     db.session.add(device)
                     db.session.flush()
+
+                    if device.NCPA_Eligible == True:
+                        ssh = SSHCredentials(
+                            SSH_Port = int(port_number) ,
+                            Key_Installed = False,
+                            Key_Fingerprint = None,
+                            Created_At = None,
+                            NetworkDiscoveryID = device.NetDiscoveryID
+                        )
+                                                                    
+                        db.session.add(ssh)
+                                                                    
+                        ncpa = NCPADeployment(
+                            Agent_Status = AgentStatus.PENDING_NCPA,
+                            NetworkDiscoveryID = device.NetDiscoveryID
+                        )
+                                                                    
+                        db.session.add(ncpa)
+                        db.session.flush()
 
                 else:
                     NCPA_Eligible = False
