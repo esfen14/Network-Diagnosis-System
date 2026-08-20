@@ -205,7 +205,7 @@ def connect_with_fingerprint_check(
             port=SSH_PORT, 
             username=username, 
             password=password,
-            pkey=private_key,
+            key_filename=private_key,
             timeout=SSH_TIMEOUT, 
             allow_agent=False, 
             look_for_keys=False
