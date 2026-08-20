@@ -297,7 +297,7 @@ def install_restricted_sudo(client, password):
 
     sudoers_content = ( f"{DEPLOYMENT_USER} ALL=(root) " f"NOPASSWD: {REMOTE_HELPER}\n" ) 
     
-    escaped = sudoers_content.replace("'", "'\"'\"'") 
+    escaped = sudoers_content.replace("'", "'\\''")
     command = ( 
         f"/bin/sh -c " 
         f"'printf \"%s\" " 
