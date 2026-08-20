@@ -320,8 +320,7 @@ def install_deployment_helper(client, password):
     helper_path = "/usr/local/sbin/pinpoint-ncpa-deploy"
     temp_path = f"/tmp/.pinpoint-ncpa-deploy-{secrets.token_hex(16)}"
 
-    helper_content = r'''
-    #!/bin/bash
+    helper_content = r'''#!/bin/bash
     set -euo pipefail
 
     TOKEN="${1:-}"
