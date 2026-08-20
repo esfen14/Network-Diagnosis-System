@@ -12,7 +12,7 @@ def create_network_discovery_status(user_id):
         network_discovery_status = NetworkDiscoveryStatus(
             Status = DiscoveryStatus.RUNNING,
             Progress = 0, 
-            Message = "Network Discovery process Starting.",
+            Message = "Network Discovery process starting.",
             LogID = user_log.LogID
         )
 
@@ -25,7 +25,7 @@ def create_network_discovery_status(user_id):
         current_app.logger.exception(f"Cannot create network dicovery status {e}")
         raise
 
-def update_network_discovery_status(network_discovery_status_id, Status, Progress, Message, Completed_At=None, Error=None):
+def update_network_discovery_status(network_discovery_status_id, status, progress, message, completed_at=None, error=None):
     try:
 
         network_discovery_status = db.session.scalar(
@@ -39,11 +39,11 @@ def update_network_discovery_status(network_discovery_status_id, Status, Progres
                 f"Discovery status {network_discovery_status_id} does not exist"
             )
 
-        network_discovery_status.Status = Status
-        network_discovery_status.Progress = Progress
-        network_discovery_status.Message = Message
-        network_discovery_status.Completed_At = Completed_At
-        network_discovery_status.Error = Error
+        network_discovery_status.Status = status
+        network_discovery_status.Progress = progress
+        network_discovery_status.Message = message
+        network_discovery_status.Completed_At = completed_at
+        network_discovery_status.Error = error
 
         db.session.commit()
 
@@ -62,7 +62,7 @@ def get_network_discovery_status():
         )
     except Exception as e:
         current_app.logger.exception(f"An Error Occured")
-        raise
+        raise ValueError("An Error Occured")
 
 def calculate_progress(current, total, start, end):
     if total <= 0:

@@ -320,6 +320,7 @@ class SSHCredentials(db.Model):
 class DeploymentStatus(Enum):
     RUNNING = "Running"
     SUCCESS = "Success"
+    PARTIAL_FAILURE = "Partial Failure"
     FAILED = "Failed"
 
 class NCPADeploymentStatus(db.Model):
@@ -335,13 +336,12 @@ class NCPADeploymentStatus(db.Model):
     Completed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
     Error: so.Mapped[Optional[str]] = so.mapped_column()
 
-
     # Foreign Key
     LogID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(ActivityLog.LogID))
 
     # Relationships
     Logs: so.Mapped[ActivityLog] = so.relationship(back_populates='Deployment_Logs')
-    Device_Deployment: so.Mapped[NCPADeployment] = so.relationship(back_populates='DeploymentStatus')
+    Device_Deployment: so.Mapped[NCPADeployment] = so.relationship(back_populates='Deployment_Status')
 """
 AgentStatus Enum so that Agent_Status is consistent
 To call use "NRPEDeployment.Agent_Status = AgentStatus.DISCOVERED"
@@ -350,7 +350,9 @@ The models class need to be imported to use the Enums
 class AgentStatus(Enum):
     PENDING_NCPA = "Pending NCPA"
     DEPLOYED = "Deployed NCPA"
+    FAILED = "Deployment Failed"
     EXCLUDED = "Excluded"
+    INCOMPATIBLE = "Incompatible"
 
 class DeploymentMethod(Enum):
     AUTOMATIC = "Automatic"
@@ -363,11 +365,12 @@ class NCPADeployment(db.Model):
     # Table Fields
     NCPADeployID: so.Mapped[int] = so.mapped_column(primary_key=True)
     Deployement_Method: so.Mapped[Optional[DeploymentMethod]] = so.mapped_column(sa.Enum(DeploymentMethod))
+    Token: so.Mapped[Optional[str]] = so.mapped_column(sa.String(32))
     Agent_Status: so.Mapped[Optional[AgentStatus]] = so.mapped_column(sa.Enum(AgentStatus))
     Error: so.Mapped[Optional[str]] = so.mapped_column()
 
     # Foreign Key Field
-    NCPADeploymentStatus: so.Mapped[Optional[int]] = so.mapped_column(sa.ForeignKey(NCPADeploymentStatus.NCPADeployStatusID))
+    NCPADeploymentStatusID: so.Mapped[Optional[int]] = so.mapped_column(sa.ForeignKey(NCPADeploymentStatus.NCPADeployStatusID))
     NetworkDiscoveryID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True)
 
     """

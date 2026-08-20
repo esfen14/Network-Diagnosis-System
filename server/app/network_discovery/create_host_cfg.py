@@ -963,4 +963,4 @@ def discover_network_create_hosts(app, user_id):
                     datetime.now(timezone.utc),
                     str(e)
                 )
-            raise
+            raise ValueError("Network discvoery Failed")

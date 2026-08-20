@@ -24,7 +24,8 @@ PERMISSIONS = [
     "account.view",
     "account.edit",
     "account.info",
-    "system.discover"
+    "system.discover",
+    "system.deploy.ncpa"
 ]
 
 ROLES = [
