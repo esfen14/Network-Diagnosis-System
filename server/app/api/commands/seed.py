@@ -172,8 +172,8 @@ def seed_users():
             continue
 
         user = User(
-            First_name=first,
-            Last_name=last,
+            First_Name=first,
+            Last_Name=last,
             Email=email,
             RoleID=role.RoleID,
             Status=status
