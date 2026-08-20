@@ -208,15 +208,24 @@ def get_trusted_devices():
     devices = db.session.scalars(
             sa.select(NetworkDiscovery).join(
                 SSHCredentials, 
-                NetworkDiscovery.NetDiscoveryID == SSHCredentials.NetworkDiscoveryID)
-                .where(SSHCredentials.Key_Fingerprint.is_not(None))
+                NetworkDiscovery.NetDiscoveryID == SSHCredentials.NetworkDiscoveryID
+                ).join(
+                    NCPADeployment,
+                    NetworkDiscovery.NetDiscoveryID == NCPADeployment.NetworkDiscoveryID
+                )
+                .where(
+                    SSHCredentials.Key_Fingerprint.is_not(None),
+                    NCPADeployment.Agent_Status == AgentStatus.PENDING_NCPA
+                )
             ).all()
-    
+
+    # Don't forget for the front-end to ask for the 
+    # username and password of each device before
+    # deploying NCPA
     return {
         "devices": [
             {
                 "device_id": device.NetDiscoveryID,
-                "hostname": device.Hostname,
                 "username": "",
                 "password": ""
             }
