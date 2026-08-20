@@ -323,7 +323,7 @@ def install_deployment_helper(client, password):
     temp_path = f"/tmp/.pinpoint-ncpa-deploy-{secrets.token_hex(16)}"
 
     
-    helper_content = textwrap.dedent(r'''\
+    helper_content = textwrap.dedent('''
     #!/bin/bash
     set -euo pipefail
 
@@ -354,9 +354,7 @@ def install_deployment_helper(client, password):
 
     "$MKDIR" -m 0755 -p "$KEYRING_DIR"
 
-    "$CURL" -fsSL \
-        https://repo.nagios.com/GPG-KEY-NAGIOS-V3 |
-        "$GPG" --batch --yes --dearmor -o "$GPG_KEY"
+    "$CURL" -fsSL https://repo.nagios.com/GPG-KEY-NAGIOS-V3 | "$GPG" --batch --yes --dearmor -o "$GPG_KEY"
 
     . /etc/os-release
     CODENAME="${VERSION_CODENAME:-}"
@@ -377,9 +375,7 @@ def install_deployment_helper(client, password):
 
     DEBIAN_FRONTEND=noninteractive "$APT" install -y ncpa
 
-    "$SED" -i \
-        "s/^community_string = .*/community_string = $TOKEN/" \
-        "$NCPA_CONFIG"
+    "$SED" -i "s/^community_string = .*/community_string = $TOKEN/" "$NCPA_CONFIG"
 
     "$NCPA_INIT" restart
 
@@ -393,9 +389,7 @@ def install_deployment_helper(client, password):
         echo "NCPA service is not active after restart." >&2
         exit 1
     fi
-    ''')
-
-    print(repr(helper_content[:50]))
+    ''').lstrip('\n')
 
     try:
 
