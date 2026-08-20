@@ -13,7 +13,7 @@ def create_ncpa_deployment_status(user_id):
 
         ncpa_deploymenet_staus = NCPADeploymentStatus(
             Status= DeploymentStatus.RUNNING,
-            progress= 0,
+            Progress= 0,
             Message= "NCPA Deloymnet process starting.",
             LogID = user_log.LogID
         )
