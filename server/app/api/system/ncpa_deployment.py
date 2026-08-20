@@ -205,4 +205,21 @@ def deploy_ncpa_status():
 @login_required
 @require_permission('system.deploy.ncpa')
 def get_trusted_devices():
-    return {"message": "Not implemented"}, 200
+    devices = db.session.scalars(
+            sa.select(NetworkDiscovery).join(
+                SSHCredentials, 
+                NetworkDiscovery.NetDiscoveryID == SSHCredentials.NetworkDiscoveryID)
+                .where(SSHCredentials.Key_Fingerprint.is_not(None))
+            ).all()
+    
+    return {
+        "devices": [
+            {
+                "device_id": device.NetDiscoveryID,
+                "hostname": device.Hostname,
+                "username": "",
+                "password": ""
+            }
+            for device in devices
+        ]
+    }, 200

@@ -267,8 +267,8 @@ def install_deployment_key(client, password):
     if not result["success"]:
 
 
-        quoted_public_key = shlex.quote(public_key)
-        quoted_authorized_keys = shlex.quote(REMOTE_AUTHORIZED_KEYS)
+        quoted_public_key = public_key.replace("'", "'\\''")
+        quoted_authorized_keys = REMOTE_AUTHORIZED_KEYS.replace("'", "'\\''")
         add_key_command = (
             f"/bin/sh -c "
             f"'printf \"%s\\n\" \"{quoted_public_key}\" "
