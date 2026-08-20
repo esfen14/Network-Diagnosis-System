@@ -377,7 +377,12 @@ def install_deployment_helper(client, password):
 
     "$SED" -i "s/^community_string = .*/community_string = $TOKEN/" "$NCPA_CONFIG"
 
-    "$NCPA_INIT" restart
+    sleep 2
+
+    if ! "$NCPA_INIT" status | grep -qi "running"; then
+        echo "NCPA service is not active after restart." >&2
+        exit 1
+    fi
 
     if [ -x "$UFW" ]; then
         "$UFW" allow "$NCPA_PORT/tcp"
