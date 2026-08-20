@@ -9,8 +9,11 @@ import hmac
 import secrets
 import shlex
 import requests
+import os
 
-PUBLIC_KEY_PATH = "~/.ssh/pinpoint_ncpa_deploy.pub"
+
+home = str(os.getenv("HOME"))
+PUBLIC_KEY_PATH = os.path.join(home,".ssh","pinpoint_ncpa_deploy.pub")
 
 SSH_PORT = 22
 NCPA_PORT = "5693"
