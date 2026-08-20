@@ -377,6 +377,8 @@ def install_deployment_helper(client, password):
 
     "$SED" -i "s/^community_string = .*/community_string = $TOKEN/" "$NCPA_CONFIG"
 
+    "$NCPA_INIT" restart
+
     sleep 2
 
     if ! "$NCPA_INIT" status | grep -qi "running"; then
@@ -386,13 +388,6 @@ def install_deployment_helper(client, password):
 
     if [ -x "$UFW" ]; then
         "$UFW" allow "$NCPA_PORT/tcp"
-    fi
-
-    sleep 2
-
-    if ! /usr/bin/systemctl is-active --quiet ncpa; then
-        echo "NCPA service is not active after restart." >&2
-        exit 1
     fi
     ''').lstrip('\n')
 
