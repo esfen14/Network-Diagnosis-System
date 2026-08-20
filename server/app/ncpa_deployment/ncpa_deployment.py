@@ -322,121 +322,80 @@ def install_deployment_helper(client, password):
     helper_path = "/usr/local/sbin/pinpoint-ncpa-deploy"
     temp_path = f"/tmp/.pinpoint-ncpa-deploy-{secrets.token_hex(16)}"
 
-    helper_content = helper_content = textwrap.dedent(r'''\
-        #!/bin/bash
-        set -euo pipefail
+    
+    helper_content = textwrap.dedent(r'''\
+    #!/bin/bash
+    set -euo pipefail
 
-        TOKEN="${1:-}"
+    TOKEN="${1:-}"
 
-        if [[ ! "$TOKEN" =~ ^[a-f0-9]{32}$ ]]; then
-            echo "Invalid token." >&2
-            exit 1
-        fi
+    if [[ ! "$TOKEN" =~ ^[a-f0-9]{32}$ ]]; then
+        echo "Invalid token." >&2
+        exit 1
+    fi
 
-        APT="/usr/bin/apt-get"
-        MKDIR="/usr/bin/mkdir"
-        GPG="/usr/bin/gpg"
-        TEE="/usr/bin/tee"
-        SED="/usr/bin/sed"
-        UFW="/usr/sbin/ufw"
-        NCPA_INIT="/etc/init.d/ncpa"
-        CURL="/usr/bin/curl"
+    APT="/usr/bin/apt-get"
+    MKDIR="/usr/bin/mkdir"
+    GPG="/usr/bin/gpg"
+    TEE="/usr/bin/tee"
+    SED="/usr/bin/sed"
+    UFW="/usr/sbin/ufw"
+    NCPA_INIT="/etc/init.d/ncpa"
+    CURL="/usr/bin/curl"
 
-        KEYRING_DIR="/etc/apt/keyrings"
-        GPG_KEY="/etc/apt/keyrings/GPG-KEY-NAGIOS-V3.gpg"
-        NCPA_SOURCE="/etc/apt/sources.list.d/nagios.sources"
-        NCPA_CONFIG="/usr/local/ncpa/etc/ncpa.cfg"
+    KEYRING_DIR="/etc/apt/keyrings"
+    GPG_KEY="/etc/apt/keyrings/GPG-KEY-NAGIOS-V3.gpg"
+    NCPA_SOURCE="/etc/apt/sources.list.d/nagios.sources"
+    NCPA_CONFIG="/usr/local/ncpa/etc/ncpa.cfg"
 
-        NCPA_PORT="5693"
+    NCPA_PORT="5693"
 
-        # ---------------------------------------------------------
-        # Update package information
-        # ---------------------------------------------------------
+    "$APT" update
 
-        "$APT" update
+    "$MKDIR" -m 0755 -p "$KEYRING_DIR"
 
-        # ---------------------------------------------------------
-        # Create APT keyring directory
-        # ---------------------------------------------------------
+    "$CURL" -fsSL \
+        https://repo.nagios.com/GPG-KEY-NAGIOS-V3 |
+        "$GPG" --batch --yes --dearmor -o "$GPG_KEY"
 
-        "$MKDIR" -m 0755 -p "$KEYRING_DIR"
+    . /etc/os-release
+    CODENAME="${VERSION_CODENAME:-}"
 
-        # ---------------------------------------------------------
-        # Install Nagios repository signing key
-        # ---------------------------------------------------------
+    if [ -z "$CODENAME" ]; then
+        echo "Unable to determine OS codename." >&2
+        exit 1
+    fi
 
-        "$CURL" -fsSL \
-            https://repo.nagios.com/GPG-KEY-NAGIOS-V3 |
-            "$GPG" --batch --yes --dearmor -o "$GPG_KEY"
+    "$TEE" "$NCPA_SOURCE" > /dev/null <<EOF
+    Types: deb
+    URIs: https://repo.nagios.com/deb/$CODENAME
+    Suites: /
+    Signed-By: $GPG_KEY
+    EOF
 
-        # ---------------------------------------------------------
-        # Determine Debian/Ubuntu release
-        # ---------------------------------------------------------
+    "$APT" update
 
-        . /etc/os-release
-        CODENAME="${VERSION_CODENAME:-}"
+    DEBIAN_FRONTEND=noninteractive "$APT" install -y ncpa
 
-        if [ -z "$CODENAME" ]; then
-            echo "Unable to determine OS codename." >&2
-            exit 1
-        fi
+    "$SED" -i \
+        "s/^community_string = .*/community_string = $TOKEN/" \
+        "$NCPA_CONFIG"
 
-        # ---------------------------------------------------------
-        # Configure Nagios repository
-        # ---------------------------------------------------------
+    "$NCPA_INIT" restart
 
-        "$TEE" "$NCPA_SOURCE" > /dev/null <<EOF
-        Types: deb
-        URIs: https://repo.nagios.com/deb/$CODENAME
-        Suites: /
-        Signed-By: $GPG_KEY
-        EOF
+    if [ -x "$UFW" ]; then
+        "$UFW" allow "$NCPA_PORT/tcp"
+    fi
 
-        # ---------------------------------------------------------
-        # Update package information again
-        # ---------------------------------------------------------
+    sleep 2
 
-        "$APT" update
+    if ! /usr/bin/systemctl is-active --quiet ncpa; then
+        echo "NCPA service is not active after restart." >&2
+        exit 1
+    fi
+    ''')
 
-        # ---------------------------------------------------------
-        # Install NCPA
-        # ---------------------------------------------------------
-
-        DEBIAN_FRONTEND=noninteractive "$APT" install -y ncpa
-
-        # ---------------------------------------------------------
-        # Configure NCPA token
-        # ---------------------------------------------------------
-
-        "$SED" -i \
-            "s/^community_string = .*/community_string = $TOKEN/" \
-            "$NCPA_CONFIG"
-
-        # ---------------------------------------------------------
-        # Restart NCPA
-        # ---------------------------------------------------------
-
-        "$NCPA_INIT" restart
-
-        # ---------------------------------------------------------
-        # Configure firewall
-        # ---------------------------------------------------------
-
-        if [ -x "$UFW" ]; then
-            "$UFW" allow "$NCPA_PORT/tcp"
-        fi
-
-        # ---------------------------------------------------------
-        # Verify NCPA actually started
-        # ---------------------------------------------------------
-
-        sleep 2
-
-        if ! /usr/bin/systemctl is-active --quiet ncpa; then
-            echo "NCPA service is not active after restart." >&2
-            exit 1
-        fi
-        ''')
+    print(repr(helper_content[:50]))
 
     try:
 
