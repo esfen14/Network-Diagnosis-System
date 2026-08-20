@@ -199,6 +199,12 @@ def connect_with_fingerprint_check(
             ip_address, host_key.get_name(), 
             host_key
             )
+    except paramiko.SSHException as e:
+        current_app.logger.error(e)
+        raise ValueError("Host offline")
+    except Exception as e:
+            current_app.logger.error(e)
+            raise ValueError("An error occured.")
     finally: 
         transport.close() 
 
@@ -377,17 +383,17 @@ def install_deployment_helper(client, password):
 
     "$SED" -i "s/^community_string = .*/community_string = $TOKEN/" "$NCPA_CONFIG"
 
-    "$NCPA_INIT" restart
+    "$NCPA_INIT" stop || true
+    sleep 1
+    "$NCPA_INIT" start
 
-    if [ -x "$UFW" ]; then
-        "$UFW" allow "$NCPA_PORT/tcp"
-    fi
+    sleep 2
 
-    sleep 5
+    NCPA_STATUS_OUTPUT=$("$NCPA_INIT" status 2>&1 || true)
 
-    if ! /usr/bin/systemctl is-active --quiet ncpa; then
+    if ! echo "$NCPA_STATUS_OUTPUT" | grep -qi "running"; then
         echo "NCPA service is not active after restart." >&2
-        /usr/bin/systemctl status ncpa --no-pager >&2 || true
+        echo "$NCPA_STATUS_OUTPUT" >&2
         exit 1
     fi
     ''').lstrip('\n')
