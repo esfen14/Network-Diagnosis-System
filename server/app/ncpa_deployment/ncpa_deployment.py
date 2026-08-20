@@ -364,7 +364,7 @@ def install_deployment_helper(client, password):
 
     "$CURL" -fsSL \
         https://repo.nagios.com/GPG-KEY-NAGIOS-V3 |
-        "$GPG" --dearmor -o "$GPG_KEY"
+        "$GPG" --batch --yes --dearmor -o "$GPG_KEY"
 
         
     # ---------------------------------------------------------
