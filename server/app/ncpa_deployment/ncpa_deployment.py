@@ -296,15 +296,14 @@ def install_deployment_key(client, password):
 def install_restricted_sudo(client, password): 
 
     sudoers_content = ( f"{DEPLOYMENT_USER} ALL=(root) " f"NOPASSWD: {REMOTE_HELPER}\n" ) 
-    
-    escaped = sudoers_content.replace("'", "'\\''")
-    command = ( 
-        f"/bin/sh -c " 
-        f"'printf \"%s\" " 
-        f"'{escaped}' " 
-        f"> {REMOTE_SUDOERS} && " 
-        f"/usr/bin/chmod 440 {REMOTE_SUDOERS} && " 
-        f"/usr/sbin/visudo -cf {REMOTE_SUDOERS}'") 
+
+    script = (
+        f"printf '%s' {shlex.quote(sudoers_content)} > {shlex.quote(REMOTE_SUDOERS)}"
+        f" && /usr/bin/chmod 440 {shlex.quote(REMOTE_SUDOERS)}"
+        f" && /usr/sbin/visudo -cf {shlex.quote(REMOTE_SUDOERS)}"
+    )
+
+    command = f"/bin/sh -c {shlex.quote(script)}"
     
     result = run_sudo_command(client, command, password) 
 
