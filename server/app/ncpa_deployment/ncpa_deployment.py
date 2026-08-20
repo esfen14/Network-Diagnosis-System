@@ -10,7 +10,7 @@ import secrets
 import shlex
 import requests
 
-PUBLIC_KEY_PATH = "/home/paeng/.ssh/pinpoint_ncpa_deploy.pub"
+PUBLIC_KEY_PATH = "~/.ssh/pinpoint_ncpa_deploy.pub"
 
 SSH_PORT = 22
 NCPA_PORT = "5693"
