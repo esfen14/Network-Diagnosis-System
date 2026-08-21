@@ -1,3 +1,11 @@
+const supportedChecks = [
+  'Ping (availability & latency)',
+  'Resource Usage (CPU, memory)',
+  'Process and User Monitoring',
+  'Network Connections',
+  'Route Tracing',
+]
+
 const insights = [
   {
     message: '66 devices are unreachable (check_ping)',
@@ -42,6 +50,15 @@ export function InsightsPanel() {
             </div>
           ))}
         </div>
+
+        <h3 className="mb-3 mt-8 text-sm font-semibold text-white">Current Supported Checks</h3>
+        <ul className="space-y-2">
+          {supportedChecks.map((check) => (
+            <li key={check} className="text-sm text-gray-400">
+              {check}
+            </li>
+          ))}
+        </ul>
       </div>
     </aside>
   )

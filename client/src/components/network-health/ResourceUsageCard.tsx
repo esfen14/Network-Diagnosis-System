@@ -8,7 +8,7 @@ const resources = [
 
 export function ResourceUsageCard() {
   return (
-    <div className="rounded-3xl bg-[#171B20] p-5 shadow-sm">
+    <div className="flex h-full flex-col rounded-3xl bg-[#171B20] p-5 shadow-sm">
       <div className="mb-5 flex items-center justify-between">
         <h3 className="text-lg font-semibold text-white">Average Resource</h3>
         <button
@@ -20,7 +20,7 @@ export function ResourceUsageCard() {
         </button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid flex-1 content-center gap-4 sm:grid-cols-3">
         {resources.map(({ label, value, icon: Icon }) => (
           <div
             key={label}
