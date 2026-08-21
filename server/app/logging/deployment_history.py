@@ -24,6 +24,7 @@ def create_ncpa_deployment_status(user_id):
         return ncpa_deploymenet_staus
     except Exception as e:
         current_app.logger.exception(f"Cannot create NCPA Deployment log for user {user_id} error: {e}")
+        return None
 
 def update_ncpa_deployment_status(ncpa_deployment_status_id, status, progress, message, competed_at=None,error=None):
     try:
@@ -35,9 +36,10 @@ def update_ncpa_deployment_status(ncpa_deployment_status_id, status, progress, m
         )
 
         if ncpa_deployment_status is None:
-            raise ValueError(
+            current_app.logger.error(
                 f"NCPA Deployment status {ncpa_deployment_status_id} does not exist"
             )
+            return
 
         ncpa_deployment_status.Status = status
         ncpa_deployment_status.Progress = progress
@@ -59,8 +61,8 @@ def get_deployment_ncpa_status():
         )
 
     except Exception as e:
-        current_app.logger.exception(f"An Error Occured.")
-        raise ValueError("An Error Occured")
+        current_app.logger.exception(f"An unexpected error Occured.")
+        return None
     
 def calculate_progress(current, total, start, end):
     if total <= 0:

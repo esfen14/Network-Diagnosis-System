@@ -515,7 +515,6 @@ def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weig
     except Exception as e:
         db.session.rollback()
         current_app.logger.exception(f"Failed to insert new hosts: {e}")
-        raise
 
 
 def _backup_running_host_cfg():
@@ -775,7 +774,7 @@ def _apply_new_host_cfg(cfg_path):
         )
 
         if result.returncode != 0:
-            raise RuntimeError(result.stdout + result.stderr)
+            current_app.logger.error(result.stdout + result.stderr)
 
     except Exception as e:
         # Reload failed — roll back to the last known-good config so Nagios
@@ -897,22 +896,17 @@ def discover_network_create_hosts(app, user_id, stop_event):
                     datetime.now(timezone.utc)
                 )
                 return
-            
-            print("Inital discovered hosts:")
-            print(discovered_hosts)
 
             if stop_event.is_set():
                 return
             
             # Creates hostnames for hosts that don't have names
-            print("Creating Hostnames")
             discovered_hosts = _create_hostname(network_discovery_id, discovered_hosts, PROGRESS_WEIGHT[1])
 
             if stop_event.is_set():
                 return
             
             # Overrides services names due to NMAP not always being right
-            print("Override Service Names")
             discovered_hosts = _override_service_names(network_discovery_id, discovered_hosts,"tcp", TCP_SERVICE_OVERRIDES, PROGRESS_WEIGHT[2])
             discovered_hosts = _override_service_names(network_discovery_id, discovered_hosts,"udp", UDP_SERVICE_OVERRIDES, PROGRESS_WEIGHT[3])
 
@@ -920,13 +914,11 @@ def discover_network_create_hosts(app, user_id, stop_event):
                 return
             
             # Save it to the database
-            print("Saving Discovered Hosts")
             _save_discovered_hosts(discovered_hosts, network_discovery_id, PROGRESS_WEIGHT[4])
 
             if stop_event.is_set():
                 return
             
-            print("Create Database Hosts Dict")
             system_hosts = _load_monitored_hosts(network_discovery_id, PROGRESS_WEIGHT[5])
 
             if stop_event.is_set():
@@ -990,7 +982,7 @@ def discover_network_create_hosts(app, user_id, stop_event):
                 print(result)
         except Exception as e:
             app.logger.exception(
-                f"Network discovery failed {e}"
+                f"Network discovery failed."
             )
             if network_discovery_id is not None:
                 update_network_discovery_status(
@@ -1001,4 +993,3 @@ def discover_network_create_hosts(app, user_id, stop_event):
                     datetime.now(timezone.utc),
                     str(e)
                 )
-            raise ValueError("Network discvoery Failed")

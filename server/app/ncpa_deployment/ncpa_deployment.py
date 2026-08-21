@@ -137,8 +137,9 @@ def run_sudo_command(client, command, password, log_command=None):
             }
 
 def get_host_key_fingerprint(ip_address):
-    transport = paramiko.Transport((ip_address, SSH_PORT))
+    transport = None
     try:
+        transport = paramiko.Transport((ip_address, SSH_PORT))
         transport.start_client(timeout=SSH_TIMEOUT)
         key = transport.get_remote_server_key()
 
@@ -147,14 +148,25 @@ def get_host_key_fingerprint(ip_address):
         fingerprint = base64.b64encode(sha256_digest).decode('utf-8').rstrip('=')
 
         return f"{fingerprint}"
+    except paramiko.SSHException as e:
+        current_app.logger.exception("Cannot reach host")
+        return None
+    except Exception as e:
+        current_app.logger.exception("An unexpected error occured.")
+        return None
     finally:
-        transport.close()
+        if transport is not None:
+            transport.close()
 
 def query_key_fingerprint(device_id):
 
-    creds = db.session.scalar(
-        sa.select(SSHCredentials.Key_Fingerprint).where(SSHCredentials.NetworkDiscoveryID == device_id)
-    )
+    try :
+        creds = db.session.scalar(
+            sa.select(SSHCredentials.Key_Fingerprint).where(SSHCredentials.NetworkDiscoveryID == device_id)
+        )
+    except Exception as e:
+        current_app.logger.exception(f"Device {device_id} does not exist.")
+        creds = None
 
     return creds
 
@@ -163,12 +175,18 @@ def verify_host_fingerprint(ip_address, expected_fingerprint):
     Verify that the live SSH host key matches the trusted fingerprint. 
     """ 
     if not expected_fingerprint: 
-        raise ValueError("No trusted host fingerprint exists.") 
+        current_app.logger.error("No trusted host fingerprint exists.")
+        return False
     
     actual_fingerprint = get_host_key_fingerprint(ip_address)
 
-    if not hmac.compare_digest( actual_fingerprint, expected_fingerprint, ): 
-        raise ValueError( f"SSH host-key mismatch for {ip_address}." ) 
+    if actual_fingerprint is None:
+        current_app.logger.error(f"Cannot reach host {ip_address}.")
+        return False
+
+    if not hmac.compare_digest( actual_fingerprint, expected_fingerprint): 
+        current_app.logger.error(f"SSH host-key mismatch for {ip_address}.")
+        return False
 
     return True
 
@@ -180,10 +198,14 @@ def connect_with_fingerprint_check(
         private_key=None,
     ): 
 
-    verify_host_fingerprint( 
+    result = verify_host_fingerprint( 
         ip_address,
         expected_fingerprint
     ) 
+
+    if not result:
+        return None
+    
     client = paramiko.SSHClient() 
 
     client.set_missing_host_key_policy( paramiko.RejectPolicy() ) 
@@ -200,11 +222,11 @@ def connect_with_fingerprint_check(
             host_key
             )
     except paramiko.SSHException as e:
-        current_app.logger.error(e)
-        raise ValueError("Host offline")
+        current_app.logger.exception(f"Failed to retreieve key from {ip_address}.")
+        return None
     except Exception as e:
-            current_app.logger.error(e)
-            raise ValueError("An error occured.")
+        current_app.logger.error(f"An unexpected error occured.")
+        return None
     finally: 
         transport.close() 
 
@@ -474,6 +496,7 @@ def install_deployment_helper(client, password):
             )
             run_sudo_command(client, cleanup, password)
         except Exception:
+            current_app.logger.exception("Installation failed.")
             pass
 
 
@@ -499,10 +522,14 @@ def give_program_permissions( device_id, ncpa_deployment_status_id, ip_address, 
 
         client = connect_with_fingerprint_check( ip_address, username, fingerprint, password=password, )
 
+        if client is None:
+            update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="Cannot reach host.") 
+            return False
+        
         is_compatible, os_info = check_debian_based(client)
         if not is_compatible: 
             mark_device_incompatible(device_id) 
-            update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.INCOMPATIBLE, error="Unsupported operating system." ) 
+            update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.INCOMPATIBLE, error=f"Unsupported distro {os_info}." ) 
             return False 
 
         if not ensure_deployment_user(client, password): 
@@ -529,28 +556,28 @@ def give_program_permissions( device_id, ncpa_deployment_status_id, ip_address, 
         ) 
 
         if ssh_credentials is None: 
-            update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="SSH credential record not found.") 
+            update_ncpa_deployment_info(device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="SSH credential record not found.") 
             return False 
 
         ssh_credentials.Key_Installed = True 
         db.session.commit() 
-        update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.PENDING_NCPA, ) 
+        update_ncpa_deployment_info(device_id, ncpa_deployment_status_id, agent_status=AgentStatus.PENDING_NCPA) 
         return True 
     
     except paramiko.AuthenticationException: 
-        current_app.logger.warning( "SSH authentication failed for device %s.", device_id, ) 
-        update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="SSH authentication failed.", ) 
+        current_app.logger.warning(f"SSH authentication failed for device {device_id}.") 
+        update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="SSH authentication failed.") 
         return False 
     
     except paramiko.SSHException: 
-        current_app.logger.exception( "SSH error while preparing device %s.", device_id, ) 
+        current_app.logger.exception(f"SSH error while preparing device {device_id}.") 
         update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="SSH connection error." ) 
         return False 
     
     except Exception: 
-        current_app.logger.exception( "Unexpected error while preparing device %s.", device_id, ) 
         db.session.rollback() 
-        update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="An unexpected error occurred.", ) 
+        update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="An unexpected error occurred.") 
+        current_app.logger.exception(f"Unexpected error while preparing device {device_id}.") 
         return False 
     
     finally: 
@@ -639,6 +666,14 @@ def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
             private_key=PRIVATE_KEY_PATH
         )
 
+        if client is None:
+            update_ncpa_deployment_info(
+                device_id,
+                ncpa_deployment_status_id,
+                agent_status=AgentStatus.FAILED,
+                error="ACannot connect to device."
+            )
+            return None
 
         token = secrets.token_hex(16)
 
@@ -698,31 +733,29 @@ def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
         return True
 
     except paramiko.SSHException:
+        db.session.rollback()
         current_app.logger.exception(
             "SSH error during NCPA installation."
         )
-
         update_ncpa_deployment_info(
             device_id,
             ncpa_deployment_status_id,
             agent_status=AgentStatus.FAILED,
             error="An error occurred while connecting to the device."
         )
-
         return False
 
     except Exception:
+        db.session.rollback()
         current_app.logger.exception(
             "NCPA installation failed."
         )
-
         update_ncpa_deployment_info(
             device_id,
             ncpa_deployment_status_id,
             agent_status=AgentStatus.FAILED,
             error="An unexpected error occurred."
         )
-
         return False
 
     finally:
@@ -747,7 +780,7 @@ def install_process(app, user_id, device_list, stop_event):
         ncpa_deployment_status = create_ncpa_deployment_status(user_id)
 
         if ncpa_deployment_status is None:
-            raise ValueError("User doesn't exist.")
+            return None
         
         ncpa_deployment_status_id = ncpa_deployment_status.NCPADeployStatusID
         processed_devices = 0
@@ -775,9 +808,11 @@ def install_process(app, user_id, device_list, stop_event):
                     installed_ncpa = install_ncpa(device_id, ncpa_deployment_status_id, ip_address)
 
                     if not installed_ncpa:
+                        app.logger.error(f"Cannot install ncpa in device {device_id}, {ip_address}.")
                         failed_deployment.append(device_id)
 
                 else:
+                    app.logger.error(f"Cannot install key in device {device_id}, {ip_address}.")
                     failed_deployment.append(device_id)
 
                 processed_devices += 1
@@ -802,7 +837,7 @@ def install_process(app, user_id, device_list, stop_event):
                 )
 
         except Exception as e:
-            app.logger.exception(f"NCPA Deployment failed {e}")
+            app.logger.exception(f"NCPA Deployment failed")
 
             if ncpa_deployment_status_id is not None:
                 update_ncpa_deployment_status(
@@ -813,6 +848,3 @@ def install_process(app, user_id, device_list, stop_event):
                     datetime.now(timezone.utc),
                     str(e)
                 )
-            raise ValueError("NCPA deployment failed.")
-
-    

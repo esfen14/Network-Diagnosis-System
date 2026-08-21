@@ -1,5 +1,5 @@
 from flask_login import login_user, logout_user, current_user, login_required
-from flask import request
+from flask import request, current_app
 from app.api.helper import(
     validate_json_data,
     validate_json_fields,

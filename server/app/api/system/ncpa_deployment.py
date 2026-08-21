@@ -16,65 +16,82 @@ deploy_ncpa_thread_stop_event = threading.Event()
 @login_required
 @require_permission("system.deploy.ncpa")
 def get_ncpa_eligible_devices():
-    devices = db.session.scalars(
-        sa.select(NetworkDiscovery)
-        .where(NetworkDiscovery.NCPA_Eligible.is_(True))
-        .order_by(NetworkDiscovery.Hostname.asc())
-    ).all()
+    try:
+        devices = db.session.scalars(
+            sa.select(NetworkDiscovery)
+            .where(NetworkDiscovery.NCPA_Eligible.is_(True))
+            .order_by(NetworkDiscovery.Hostname.asc())
+        ).all()
 
-    return {
-        "devices": [
-            {
-                "device_id": device.NetDiscoveryID,
-                "hostname": device.Hostname,
-            }
-            for device in devices
-        ]
-    }, 200
+        return {
+            "devices": [
+                {
+                    "device_id": device.NetDiscoveryID,
+                    "hostname": device.Hostname,
+                }
+                for device in devices
+            ]
+        }, 200
+    except Exception:
+        current_app.logger.exception("An unexpected error occured.")
+        return {
+                "message": "An unexpected error occured."
+            }, 500
 
 @system_bp.get('/deployment/ncpa/<int:device_id>/fingerprint')
 @login_required
 @require_permission('system.deploy.ncpa')
 def get_device_fingerprint(device_id):
-    device = db.session.get(NetworkDiscovery, device_id)
-    if device is None:
-        return {"error": "Device not found"}, 404
     try:
+        device = db.session.get(NetworkDiscovery, device_id)
+        if device is None:
+            return {"error": "Device not found"}, 404
+        try:
 
-        fingerprint = get_host_key_fingerprint(device.IP_Address)
-    except Exception as e:
-        current_app.logger.error("Could not reach device.")
-        return {"message": "Could not reach device."}, 502
+            fingerprint = get_host_key_fingerprint(device.IP_Address)
+        except Exception as e:
+            current_app.logger.error("Could not reach device.")
+            return {"message": "Could not reach device."}, 502
 
-    return {
-        "device_id": device_id,
-        "ip_address": device.IP_Address,
-        "fingerprint": fingerprint
-    }, 200
+        return {
+            "device_id": device_id,
+            "ip_address": device.IP_Address,
+            "fingerprint": fingerprint
+        }, 200
+    except Exception:
+        current_app.logger.exception("An unexpected error occured.")
+        return {
+                "message": "An unexpected error occured."
+            }, 500
 
 @system_bp.post('/deployment/ncpa/<int:device_id>/confirm-trust')
 @login_required
 @require_permission('system.deploy.ncpa')
 def confirm_device_trust(device_id):
+    try:
+        device = db.session.get(NetworkDiscovery, device_id)
+        if device is None:
+            return {"error": "Device not found"}, 404
+        
+        # Recreate the fingerprint rather than believing the client
+        fingerprint = get_host_key_fingerprint(device.IP_Address)
 
-    device = db.session.get(NetworkDiscovery, device_id)
-    if device is None:
-        return {"error": "Device not found"}, 404
-    
-    # Recreate the fingerprint rather than believing the client
-    fingerprint = get_host_key_fingerprint(device.IP_Address)
+        creds = db.session.scalar(
+            sa.select(SSHCredentials).where(SSHCredentials.NetworkDiscoveryID == device_id)
+        )
 
-    creds = db.session.scalar(
-        sa.select(SSHCredentials).where(SSHCredentials.NetworkDiscoveryID == device_id)
-    )
+        if creds is None:
+            return {"success" : False, "message": "That device id doesn't exist."}, 404
 
-    if creds is None:
-        return {"success" : False, "message": "That device id doesn't exist."}, 404
+        creds.Key_Fingerprint = fingerprint
+        db.session.commit()
 
-    creds.Key_Fingerprint = fingerprint
-    db.session.commit()
-
-    return {"success": True, "message": "Device fingerprint added."}, 200
+        return {"success": True, "message": "Device fingerprint added."}, 200
+    except Exception:
+        current_app.logger.exception("An unexpected error occured.")
+        return {
+                "message": "An unexpected error occured."
+            }, 500
 
 @system_bp.post('/deployment/ncpa/start')
 @login_required
@@ -108,25 +125,29 @@ def deploy_ncpa():
 
     for entry in device_credentials:
         device_id = entry["device_id"]
+
         creds = db.session.scalar(
             sa.select(SSHCredentials).where(SSHCredentials.NetworkDiscoveryID == device_id)
         )
 
+        if creds is None:
+            rejected_entries.append({"device_id": device_id, "reason": "Device does not credentials table."})
+            
         device = db.session.get(NetworkDiscovery, device_id)
 
         if device is None:
-            rejected_entries.append({"device_id": device_id, "reason": "Device Does not exist"})
+            rejected_entries.append({"device_id": device_id, "reason": "Device does not exist."})
             continue
 
         ip_address = device.IP_Address
 
         if creds is None or creds.Key_Fingerprint is None:
-            rejected_entries.append({"device_id": device_id, "reason": "Not trust-confirmed"})
+            rejected_entries.append({"device_id": device_id, "reason": "Not trust-confirmed."})
             continue
 
         current_fingerprint = get_host_key_fingerprint(ip_address)
         if current_fingerprint != creds.Key_Fingerprint:
-            rejected_entries.append({"device_id": device_id, "reason": "Host key mismatch"})
+            rejected_entries.append({"device_id": device_id, "reason": "Host key mismatch."})
             continue
 
         validated_entry = { 

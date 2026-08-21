@@ -23,7 +23,7 @@ def create_network_discovery_status(user_id):
     except Exception as e:
         db.session.rollback()
         current_app.logger.exception(f"Cannot create network dicovery status {e}")
-        raise
+        return None
 
 def update_network_discovery_status(network_discovery_status_id, status, progress, message, completed_at=None, error=None):
     try:
@@ -51,6 +51,7 @@ def update_network_discovery_status(network_discovery_status_id, status, progres
     except Exception as e:
         db.session.rollback()
         current_app.logger.exception(f"Cannot create network dicovery status {e}")
+        return None
 
 def get_network_discovery_status():
     try:
@@ -61,7 +62,7 @@ def get_network_discovery_status():
         )
     except Exception as e:
         current_app.logger.exception(f"An Error Occured")
-        raise ValueError("An Error Occured")
+        return None
 
 def calculate_progress(current, total, start, end):
     if total <= 0:
