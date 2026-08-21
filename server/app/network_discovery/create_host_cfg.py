@@ -415,9 +415,14 @@ def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weig
                     scanned_tcp_ports.add(port_number_int)
 
                     existing_service = db.session.scalar(
-                        sa.select(Open_TCP_Services).where(
+                        sa.select(Open_TCP_Services).join(
+                            NetworkDiscovery,
+                            Open_TCP_Services.NetDiscoveryID == NetworkDiscovery.NetDiscoveryID
+                        )
+                        .where(
                             Open_TCP_Services.NetDiscoveryID == device.NetDiscoveryID,
-                            Open_TCP_Services.Port_Number == port_number_int
+                            Open_TCP_Services.Port_Number == port_number_int,
+                            NetworkDiscovery.Include_Device_In_Scanning.is_(True)
                         )
                     )
 
@@ -435,7 +440,7 @@ def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weig
                     else:
                         # Service still open — keep its name in sync in case
                         # nmap's guess changed between scans (e.g. Unknown -> ssh)
-                        existing_service.Serivce_Name = service_name
+                        existing_service.Service_Name = service_name
 
                 # Remove TCP services that were recorded before but weren't
                 # seen in this scan — they're no longer open on this host
@@ -462,9 +467,14 @@ def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weig
                     scanned_udp_ports.add(port_number_int)
 
                     existing_service = db.session.scalar(
-                        sa.select(Open_UDP_Services).where(
+                        sa.select(Open_UDP_Services).join(
+                            NetworkDiscovery,
+                            Open_UDP_Services.NetDiscoveryID == NetworkDiscovery.NetDiscoveryID
+                        )
+                        .where(
                             Open_UDP_Services.NetDiscoveryID == device.NetDiscoveryID,
-                            Open_UDP_Services.Port_Number == port_number_int
+                            Open_UDP_Services.Port_Number == port_number_int,
+                            NetworkDiscovery.Include_Device_In_Scanning.is_(True)
                         )
                     )
 

@@ -282,7 +282,7 @@ class Open_TCP_Services(db.Model):
 
     OpenPortID: so.Mapped[int] = so.mapped_column(primary_key=True)
     Port_Number: so.Mapped[int] = so.mapped_column()
-    Serivce_Name: so.Mapped[str] = so.mapped_column(sa.String(255))
+    Service_Name: so.Mapped[str] = so.mapped_column(sa.String(255))
     # Closed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
 
     NetDiscoveryID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True)
