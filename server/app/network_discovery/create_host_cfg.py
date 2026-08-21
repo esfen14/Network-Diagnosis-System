@@ -21,6 +21,8 @@ from app.system_models import \
     AgentStatus 
 from app.logging import create_network_discovery_status, update_network_discovery_status, calculate_progress
 from app.system_models import DiscoveryStatus
+import socket
+import ipaddress
 
 # what names to will be placed to ports from nmap
 TCP_SERVICE_OVERRIDES = {
@@ -317,14 +319,31 @@ def _create_host_cfg_file(discovered_hosts):
         f.write("".join(host_config))
     return cfg_path
 
+def get_monitoring_server_ips():
+    ips = set()
+
+    for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+        ip = info[4][0]
+        address = ipaddress.ip_address(ip)
+
+        if not address.is_loopback:
+            ips.add(ip)
+
+    return ips
+
 def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weight):
     total_hosts = sum(len(hosts) for hosts in discovered_hosts.values())
     processed_hosts = 0
 
+    monitoring_server_ips = get_monitoring_server_ips()
+
     try:
         for network, hosts in discovered_hosts.items():
-
+            
             for ip_address, host_data in hosts.items():
+
+                if ip_address in monitoring_server_ips:
+                    continue
 
                 data = host_data["data"]
                 services = host_data.get("services", {})
