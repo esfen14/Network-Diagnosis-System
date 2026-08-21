@@ -449,8 +449,8 @@ def create_account():
         
         try:
             user = User(
-                First_name=first_name,
-                Last_name=last_name,
+                First_Name=first_name,
+                Last_Name=last_name,
                 Email= normalized_email,
                 Status= normalized_status,
                 RoleID= applied_role.RoleID
