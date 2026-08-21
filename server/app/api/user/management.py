@@ -719,8 +719,8 @@ def user_permission():
             }, 404
             
         return {
-            "first_name": current_user.First_name,
-            "last_name": current_user.Last_name,
+            "first_name": current_user.First_Name,
+            "last_name": current_user.Last_Name,
             "role": role_name,
             "permissions": permission_array
                 },200
