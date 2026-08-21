@@ -33,5 +33,7 @@ from app import system_models, history_models
 
 #where the bluprints are called and registered
 from app.api.user import user_bp
+app.register_blueprint(user_bp)
 
-app.register_blueprint(user_bp, url_prefix="/user")
+from app.api.system import system_bp
+app.register_blueprint(system_bp)
