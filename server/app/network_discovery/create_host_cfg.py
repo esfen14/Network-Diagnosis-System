@@ -451,7 +451,7 @@ def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weig
 
                         new_service = Open_TCP_Services(
                             Port_Number=port_number_int,
-                            Serivce_Name=service_name,
+                            Service_Name=service_name,
                             NetDiscoveryID=device.NetDiscoveryID
                         )
                         db.session.add(new_service)
@@ -610,7 +610,7 @@ def _load_monitored_hosts(network_discovery_id, progress_weight):
     tcp_by_device = {}
     for service in tcp_services:
         tcp_by_device.setdefault(service.NetDiscoveryID, {})[str(service.Port_Number)] = {
-            "service_name": service.Serivce_Name
+            "service_name": service.Service_Name
         }
 
     udp_by_device = {}
