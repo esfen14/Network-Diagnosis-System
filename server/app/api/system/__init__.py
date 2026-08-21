@@ -7,3 +7,4 @@ from app.api.system import log
 from app.api.system import report
 from app.api.system import settings
 from app.api.system import ncpa_deployment
+from app.api.system import inventory
