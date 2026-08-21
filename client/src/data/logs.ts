@@ -1,0 +1,38 @@
+export const logs = [
+  {
+    id: 1,
+    type: 'account',
+    title: 'Account Created',
+    user: 'Admin Ella',
+    description: 'created a new account.',
+    timestamp: '2026-01-20 10:45 AM',
+    tagId: 'AC-1023',
+  },
+  {
+    id: 2,
+    type: 'network',
+    title: 'Network Alert',
+    user: 'System',
+    description: 'detected unusual traffic.',
+    timestamp: '2026-01-20 09:12 AM',
+    tagId: 'NW-8872',
+  },
+  {
+    id: 3,
+    type: 'session',
+    title: 'Login Attempt',
+    user: 'Admin Ella',
+    description: 'failed login attempt.',
+    timestamp: '2026-01-19 08:30 PM',
+    tagId: 'SE-3321',
+  },
+  {
+    id: 4,
+    type: 'account',
+    title: 'Password Reset',
+    user: 'Admin John',
+    description: 'reset a user password.',
+    timestamp: '2026-01-18 02:11 PM',
+    tagId: 'AC-5567',
+  },
+]

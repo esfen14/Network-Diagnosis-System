@@ -18,18 +18,32 @@ const alerts: AlertItem[] = [
 
 export function AlertsSidebar() {
   return (
-    <aside className="hidden w-72 shrink-0 border-l border-white/10 xl:block">
+    <aside className="hidden w-72 shrink-0 border-l border-black/10 dark:border-white/10 xl:block">
       <div className="sticky top-0 p-4">
-        <h3 className="mb-4 text-sm font-semibold text-white">Alerts</h3>
+        <h3 className="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+          Alerts
+        </h3>
+
         <div className="space-y-3">
           {alerts.map((alert) => (
-            <div key={alert.title + alert.time} className="flex gap-3 rounded-xl p-2 hover:bg-white/5">
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${alert.iconBg}`}>
+            <div
+              key={alert.title + alert.time}
+              className="flex gap-3 rounded-xl p-2 hover:bg-black/5 dark:hover:bg-white/5"
+            >
+              <div
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${alert.iconBg}`}
+              >
                 <alert.icon className="h-4 w-4 text-white" />
               </div>
+
               <div className="min-w-0">
-                <p className="truncate text-sm text-white">{alert.title}</p>
-                <p className="text-xs text-gray-500">{alert.time}</p>
+                <p className="truncate text-sm text-gray-900 dark:text-white">
+                  {alert.title}
+                </p>
+
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {alert.time}
+                </p>
               </div>
             </div>
           ))}

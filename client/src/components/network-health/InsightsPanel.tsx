@@ -1,3 +1,11 @@
+const supportedChecks = [
+  'Ping (availability & latency)',
+  'Resource Usage (CPU, memory)',
+  'Process and User Monitoring',
+  'Network Connections',
+  'Route Tracing',
+]
+
 const insights = [
   {
     message: '66 devices are unreachable (check_ping)',
@@ -28,20 +36,40 @@ const insights = [
 
 export function InsightsPanel() {
   return (
-    <aside className="hidden w-72 shrink-0 border-l border-white/10 xl:block">
+    <aside className="hidden w-72 shrink-0 border-l border-[var(--system-border)] xl:block">
       <div className="sticky top-0 p-4">
-        <h3 className="mb-4 text-sm font-semibold text-white">Network Health Insights</h3>
+        <h3 className="mb-4 text-sm font-semibold text-[var(--system-text)]">
+          Network Health Insights
+        </h3>
+
         <div className="space-y-4">
           {insights.map((item, i) => (
             <div key={i} className="flex gap-3">
-              <div className={`mt-1 h-8 w-8 shrink-0 rounded-full ${item.color}`} />
+              <div
+                className={`mt-1 h-8 w-8 shrink-0 rounded-full ${item.color}`}
+              />
+
               <div>
-                <p className="text-sm leading-snug text-white">{item.message}</p>
-                <p className="mt-1 text-xs text-gray-500">{item.time}</p>
+                <p className="text-sm leading-snug text-[var(--system-text)]">
+                  {item.message}
+                </p>
+
+                <p className="mt-1 text-xs text-[var(--system-text-secondary)]">
+                  {item.time}
+                </p>
               </div>
             </div>
           ))}
         </div>
+
+        <h3 className="mb-3 mt-8 text-sm font-semibold text-white">Current Supported Checks</h3>
+        <ul className="space-y-2">
+          {supportedChecks.map((check) => (
+            <li key={check} className="text-sm text-gray-400">
+              {check}
+            </li>
+          ))}
+        </ul>
       </div>
     </aside>
   )
