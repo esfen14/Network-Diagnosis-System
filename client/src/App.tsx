@@ -44,12 +44,14 @@ export default function App() {
           path="device-inventory"
           element={<DeviceInventoryPage />}
         />
+
         {/* Hidden for now — re-enable when Topology View is ready
         <Route
           path="topology"
           element={<TopologyPage />}
         />
         */}
+
         <Route
           path="reports"
           element={<ReportsPage />}

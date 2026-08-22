@@ -43,6 +43,9 @@ export function PluginsPage() {
   const confirmAdd = () => {
     setPluginState('adding')
 
+    // abang - swap this for the real install call
+    // POST /api/plugins/install { ids: selected }
+    // keep the modal open until the response comes back, don't just trust the timeout
     setTimeout(() => {
       setSelected([])
       setPluginState('idle')
@@ -57,6 +60,8 @@ export function PluginsPage() {
   const confirmDelete = () => {
     setPluginState('deleting')
 
+    // abang - same deal, wire this to DELETE /api/plugins { ids: selected }
+    // also need to handle partial failures if some plugins fail to delete
     setTimeout(() => {
       setSelected([])
       setPluginState('deleteSuccess')
@@ -74,6 +79,7 @@ export function PluginsPage() {
       />
 
       <div className="grid md:grid-cols-4 gap-5">
+        {/* these are hardcoded for now, hook up to /api/plugins/stats later */}
         <SummaryStatCard
           title="Available Plugins"
           value="50"
