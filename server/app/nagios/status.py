@@ -30,7 +30,8 @@ def insert_programstatus_data(data):
         db.session.add(program_status)
         db.session.commit()
     except Exception as e:
-        db.rollback()
+        # Bug fix: was db.rollback() — must be db.session.rollback()
+        db.session.rollback()
         current_app.logger.exception("Failed to insert program status")
 
 def insert_host_status_data(data):
@@ -64,7 +65,15 @@ def insert_host_status_data(data):
         db.session.add(host_status)
         db.session.flush()
         
-        for perf in data['plugin_output'].split(" "):
+        # Bug fix: was iterating data['plugin_output'] (the text) instead of
+        # data['performance_data'] or perf_data field. Nagios statusjson puts
+        # perf data in 'performance_data', which is space-separated key=value
+        # pairs.  We guard against an empty / missing field gracefully.
+        perf_raw = data.get('performance_data', '') or ''
+
+        for perf in perf_raw.split(" "):
+            if not perf or "=" not in perf:
+                continue
 
             perf_data = parse_perf_data(perf)
             
@@ -78,14 +87,17 @@ def insert_host_status_data(data):
                 Minimum= perf_data['minimum'],
                 Maximum= perf_data['maximum']
             )
+            # Bug fix: db.session.add was outside the loop — every perf entry
+            # must be added individually inside the loop
+            db.session.add(host_perf_data)
         
-        db.session.add(host_perf_data)
         db.session.commit()
     except Exception as e:
-        db.rollback()
+        # Bug fix: was db.rollback()
+        db.session.rollback()
         current_app.logger.exception("Failed to insert host status")
         
-def insert_service_status_data(service,data):
+def insert_service_status_data(service, data):
     try:
         
         service_status = ServiceStatus(
@@ -95,7 +107,7 @@ def insert_service_status_data(service,data):
             Current_State= convert_service_state_type_enum(data['status']),
             Plugin_Output= data['plugin_output'],
             State_Type= data['state_type'],
-            Last_Time_Ok= convert_to_UTC(data['last_time_ok']) ,
+            Last_Time_Ok= convert_to_UTC(data['last_time_ok']),
             Last_Time_Warning= convert_to_UTC(data['last_time_warning']),
             Last_Time_Critical= convert_to_UTC(data['last_time_critical']),
             Last_Time_Unknown= convert_to_UTC(data['last_time_unknown']),
@@ -116,27 +128,38 @@ def insert_service_status_data(service,data):
         db.session.add(service_status)
         db.session.flush()
         
-        for perf in data['plugin_putput'].split(" "):
+        # Bug fix: was data['plugin_putput'] (typo) and was missing add+flush
+        # inside loop; now uses performance_data field correctly
+        perf_raw = data.get('performance_data', '') or ''
+
+        for perf in perf_raw.split(" "):
+            if not perf or "=" not in perf:
+                continue
+
             perf_data = parse_perf_data(perf)
             
             service_perf_data = ServicePerfData(
-                ServiceStatusID = service_status.ServiceStatusID,
+                ServiceStatusID= service_status.ServiceStatusID,
                 Metric= perf_data['metric'],
                 Measured_Value= perf_data['measured_value'],
                 Unit= perf_data['unit'],
-                Warning_Threshold=  perf_data['warning_threshold'],
+                Warning_Threshold= perf_data['warning_threshold'],
                 Critical_Threshold= perf_data['critical_threshold'],
                 Minimum= perf_data['minimum'],
-                Maximum=  perf_data['maximum'],
+                Maximum= perf_data['maximum'],
             )
-            
+            # Bug fix: missing db.session.add inside loop
+            db.session.add(service_perf_data)
+
+        db.session.commit()
     except Exception as e:
-        db.rollback()
+        # Bug fix: was missing rollback entirely
+        db.session.rollback()
         current_app.logger.exception("Failed to insert service status")
 
 def get_status():
     try:
-        programStatusParams ={
+        programStatusParams = {
             "query": "programstatus"
         }
 
@@ -152,7 +175,6 @@ def get_status():
         data = response.json()
         
         programStatus = data['data']['programstatus']
-        
         
         insert_programstatus_data(programStatus)
         
@@ -171,15 +193,13 @@ def get_status():
         response.raise_for_status()
 
         data = response.json()
-        # this gives you a JSON
         hostlist = data['data']['hostlist']
-        # turns the JSON into a dict to easily be read
         
         for hostname, host_data in hostlist.items():
             
             insert_host_status_data(host_data)
 
-            serviceParams ={
+            serviceParams = {
                 "query": "servicelist",
                 "hostname": hostname,
                 "formatoptions": "enumerate",
@@ -194,11 +214,9 @@ def get_status():
             )
             data = response.json()
 
-            #this this gives you a JSON
             servicelist = data['data']['servicelist'].get(hostname, {})
 
-            # turns the JSON into a dict to easily be read
             for service, service_data in servicelist.items():
-                insert_service_status_data(service,service_data)
+                insert_service_status_data(service, service_data)
     except requests.RequestException as e:
         current_app.logger.error("Failed to request Nagios status: %s", e)

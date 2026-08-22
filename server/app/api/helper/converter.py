@@ -2,7 +2,7 @@ from app.system_models import UserStatus
 from typing import Union
 from email_validator import validate_email
 from app.history_models import ConnectionStateType, HostStateType, ServiceStateType, PluginStatusType, AcknowledgementType
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
     
 """
 This is a separation of conern regarding conversion of data
@@ -26,13 +26,26 @@ def convert_plugin_status_type_enum(str):
 def convert_acknowledgement_type_enum(str):
     return getattr(AcknowledgementType, str.upper())
 
-def convert_to_UTC(time):
-    return datetime.datetime.fromtimestamp(time/1000, datetime.timezone.utc)
+def convert_to_UTC(timestamp):
+    # Bug fix: was datetime.datetime.fromtimestamp(..., datetime.timezone.utc)
+    # — datetime is already imported as the class, so it's just datetime.fromtimestamp
+    # Nagios timestamps are Unix seconds (int), not milliseconds.
+    if timestamp is None:
+        return None
+    return datetime.fromtimestamp(timestamp, timezone.utc)
 
-def convert_to_UNIX(date_str, time_str):
+def convert_to_UNIX(date_str, time_obj):
+    # Bug fix: was strptime(f"{date_str} {time_str}", "%m:%d:%Y %H:%M")
+    # — the separator in the format was ":" not "-" and time_obj is a datetime.time,
+    # not a string; also date format from Nagios is YYYY-MM-DD not MM:DD:YYYY.
+    if hasattr(time_obj, 'hour'):
+        # time_obj is a datetime.time instance (e.g. time.min / time.max)
+        time_str = time_obj.strftime("%H:%M:%S")
+    else:
+        time_str = str(time_obj)
     dt = datetime.strptime(
         f"{date_str} {time_str}",
-        "%m:%d:%Y %H:%M"
+        "%Y-%m-%d %H:%M:%S"
     )
     return int(dt.timestamp())
 

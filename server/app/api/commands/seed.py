@@ -25,7 +25,13 @@ PERMISSIONS = [
     "account.edit",
     "account.info",
     "system.discover",
-    "system.deploy.ncpa"
+    "system.deploy.ncpa",
+    "system.inventory",
+    # monitoring permissions
+    "monitoring.alerts",
+    "monitoring.notifications",
+    "monitoring.dashboard",
+    "monitoring.network_health",
 ]
 
 ROLES = [

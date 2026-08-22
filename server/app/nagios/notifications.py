@@ -72,15 +72,15 @@ def request_current_alerts():
     return _request_archive("alertlist",params)
 
 def request_current_alert_count():
-
-    today = datetime.now().date
+    # Bug fix: was datetime.now().date (missing parentheses — returns method not value)
+    today = datetime.now().date()
         
     params = {
         "starttime": convert_to_UNIX(str(today), time.min),
         "endtime": convert_to_UNIX(str(today), time.max),
     }
     
-    return _request_archive("alertcount",params)
+    return _request_archive("alertcount", params)
 
 
 def request_alerts_last(
@@ -130,7 +130,8 @@ def request_notifications_history(
     if service:
         params['service'] = service
     
-    return _request_archive("alertlist", params)
+    # Bug fix: was querying "alertlist" — notifications use "notificationlist"
+    return _request_archive("notificationlist", params)
 
 def request_current_notifications():
 
@@ -141,18 +142,19 @@ def request_current_notifications():
         "endtime": convert_to_UNIX(str(today), time.max),
     }
     
-    return _request_archive("alertlist",params)
+    # Bug fix: was querying "alertlist" — notifications use "notificationlist"
+    return _request_archive("notificationlist", params)
 
 def request_current_alert_notification():
-
-    today = datetime.now().date
+    # Bug fix: was datetime.now().date (missing parentheses — returns method not value)
+    today = datetime.now().date()
         
     params = {
         "starttime": convert_to_UNIX(str(today), time.min),
         "endtime": convert_to_UNIX(str(today), time.max),
     }
     
-    return _request_archive("alertcount",params)
+    return _request_archive("notificationcount", params)
 
 
 def request_notifications_last(
@@ -164,7 +166,8 @@ def request_notifications_last(
         "starttime": start,
         "endtime": end,
     }
-    return _request_archive("alertlist",params)
+    # Bug fix: was querying "alertlist" — notifications use "notificationlist"
+    return _request_archive("notificationlist",params)
 
 def request_notifications_count_last(
         day=None
