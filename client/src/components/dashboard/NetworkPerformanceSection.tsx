@@ -4,12 +4,12 @@ import { NetworkChart } from './NetworkChart'
 
 export function NetworkPerformanceSection() {
   return (
-    <div className="rounded-3xl bg-[#1a1f26] p-6 shadow-lg">
+    <div className="rounded-3xl bg-white p-6 shadow-lg">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-white">Network Performance</h2>
+        <h2 className="text-lg font-semibold text-[var(--system-text)]">Network Performance</h2>
         <button
           type="button"
-          className="rounded-2xl bg-white/10 p-2 text-white/70 hover:bg-white/20"
+          className="rounded-2xl bg-black/5 p-2 text-black/60 hover:bg-black/10"
           aria-label="More options"
         >
           <MoreHorizontal className="h-4 w-4" />

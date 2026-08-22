@@ -11,12 +11,12 @@ const rows = [
 
 export function SystemActivityCard() {
   return (
-    <div className="rounded-3xl bg-[#171B20] p-5 shadow-sm">
+    <div className="rounded-3xl bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-white">System Activity</h3>
+        <h3 className="text-lg font-semibold text-[var(--system-text)]">System Activity</h3>
         <button
           type="button"
-          className="rounded-2xl bg-white/10 p-2 text-white/70 hover:bg-white/20"
+          className="rounded-2xl bg-white p-2 text-black/60 hover:bg-black/10"
           aria-label="More options"
         >
           <MoreHorizontal className="h-4 w-4" />
@@ -27,10 +27,10 @@ export function SystemActivityCard() {
         {rows.map(({ label, value, dot }) => (
           <div
             key={label}
-            className="flex items-center justify-between border-b border-dashed border-white/10 py-2.5 last:border-b-0"
+            className="flex items-center justify-between border-b border-dashed border-black/10 py-2.5 last:border-b-0"
           >
-            <span className="text-sm font-medium text-[#F4A90B]">{label}</span>
-            <span className="flex items-center gap-1.5 text-sm text-white">
+            <span className="text-sm font-medium text-[#B87D08]">{label}</span>
+            <span className="flex items-center gap-1.5 text-sm text-[var(--system-text)]">
               {dot && <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />}
               {value}
             </span>
@@ -40,7 +40,7 @@ export function SystemActivityCard() {
 
       <div className="mt-4 flex items-center gap-2">
         <span className="h-2 w-2 rounded-full bg-[#F4A90B]" />
-        <span className="text-xs text-gray-400">Live monitoring active</span>
+        <span className="text-xs text-[var(--system-text-secondary)]">Live monitoring active</span>
       </div>
     </div>
   )
