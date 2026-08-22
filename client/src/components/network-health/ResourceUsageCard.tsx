@@ -8,7 +8,7 @@ const resources = [
 
 export function ResourceUsageCard() {
   return (
-    <div className="flex h-full flex-col rounded-3xl bg-[#171B20] p-5 shadow-sm">
+    <div className="flex h-full flex-col rounded-3xl bg-white p-5 shadow-sm">
       <div className="mb-5 flex items-center justify-between">
         <h3 className="text-lg font-semibold text-white">Average Resource</h3>
         <button

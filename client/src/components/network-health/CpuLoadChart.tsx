@@ -27,7 +27,7 @@ const loadStats = [
 
 export function CpuLoadChart() {
   return (
-    <div className="rounded-3xl bg-[#171B20] p-5 shadow-sm">
+    <div className="rounded-3xl bg-white p-5 shadow-sm">
       <div className="mb-1 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h3 className="text-lg font-semibold text-white">

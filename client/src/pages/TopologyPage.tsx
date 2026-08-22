@@ -53,7 +53,7 @@ export function TopologyPage() {
 
         <PageHeader
           title="Service Status"
-          highlight="Summary"
+          highlight="Overview"
           description="Live status of hosts and monitored services across your network."
         />
 
