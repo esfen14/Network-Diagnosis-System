@@ -28,13 +28,13 @@ const navItems = [
   },
   {
     to: '/device-inventory',
-    label: 'Device Inventory',
+    label: 'Host Inventory',
     icon: FolderOpen,
     roles: ['network_admin', 'network_technician'],
   },
   {
     to: '/topology',
-    label: 'Topology View',
+    label: 'Service Status',
     icon: Network,
     roles: ['network_admin', 'network_technician'],
   },
