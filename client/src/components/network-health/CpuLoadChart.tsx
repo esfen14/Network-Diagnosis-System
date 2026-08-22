@@ -27,13 +27,13 @@ const loadStats = [
 
 export function CpuLoadChart() {
   return (
-    <div className="rounded-3xl bg-[#171B20] p-5 shadow-sm">
+    <div className="rounded-3xl bg-white p-5 shadow-sm">
       <div className="mb-1 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h3 className="text-lg font-semibold text-white">
+          <h3 className="text-lg font-semibold text-[var(--system-text)]">
             CPU Load for localhost
           </h3>
-          <p className="text-sm text-gray-400">Datasource: load1</p>
+          <p className="text-sm text-[var(--system-text-secondary)]">Datasource: load1</p>
         </div>
       </div>
 
@@ -46,25 +46,25 @@ export function CpuLoadChart() {
                 <stop offset="100%" stopColor="#38BDF8" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid stroke="#374151" strokeDasharray="3 3" vertical={false} />
+            <CartesianGrid stroke="#E5E7EB" strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="time"
               axisLine={false}
               tickLine={false}
-              tick={{ fill: '#9CA3AF', fontSize: 11 }}
+              tick={{ fill: '#6B7280', fontSize: 11 }}
             />
             <YAxis
               axisLine={false}
               tickLine={false}
-              tick={{ fill: '#9CA3AF', fontSize: 11 }}
+              tick={{ fill: '#6B7280', fontSize: 11 }}
               domain={[0, 2]}
             />
             <Tooltip
               contentStyle={{
-                background: '#232323',
-                border: 'none',
+                background: '#FFFFFF',
+                border: '1px solid #E5E7EB',
                 borderRadius: 12,
-                color: '#fff',
+                color: '#111827',
               }}
             />
             <Area
@@ -81,10 +81,10 @@ export function CpuLoadChart() {
       <div className="mt-4 flex items-start gap-3">
         <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-sky-400" />
         <div className="grid grid-cols-2 gap-x-10 gap-y-1 text-xs">
-          <span className="text-gray-400">Load average</span>
+          <span className="text-[var(--system-text-secondary)]">Load average</span>
           <span />
           {loadStats.map((stat) => (
-            <span key={stat.period} className="col-span-2 -mt-1 text-sm font-medium text-white">
+            <span key={stat.period} className="col-span-2 -mt-1 text-sm font-medium text-[var(--system-text)]">
               {stat.period}
             </span>
           ))}
@@ -92,13 +92,13 @@ export function CpuLoadChart() {
             {loadStats.map((stat) => (
               <div key={`${stat.period}-detail`} className="space-y-1">
                 <p className="text-gray-500">
-                  <span className="text-white">{stat.last}</span> last
+                  <span className="text-[var(--system-text)]">{stat.last}</span> last
                 </p>
                 <p className="text-gray-500">
-                  <span className="text-white">{stat.avg}</span> avg
+                  <span className="text-[var(--system-text)]">{stat.avg}</span> avg
                 </p>
                 <p className="text-gray-500">
-                  <span className="text-white">{stat.max}</span> max
+                  <span className="text-[var(--system-text)]">{stat.max}</span> max
                 </p>
               </div>
             ))}

@@ -8,12 +8,12 @@ const resources = [
 
 export function ResourceUsageCard() {
   return (
-    <div className="flex h-full flex-col rounded-3xl bg-[#171B20] p-5 shadow-sm">
+    <div className="flex h-full flex-col rounded-3xl bg-white p-5 shadow-sm">
       <div className="mb-5 flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-white">Average Resource</h3>
+        <h3 className="text-lg font-semibold text-[var(--system-text)]">Average Resource</h3>
         <button
           type="button"
-          className="rounded-2xl bg-white/10 p-2 text-white/70 hover:bg-white/20"
+          className="rounded-2xl bg-black/5 p-2 text-black/60 hover:bg-black/10"
           aria-label="More options"
         >
           <MoreHorizontal className="h-4 w-4" />
@@ -24,13 +24,13 @@ export function ResourceUsageCard() {
         {resources.map(({ label, value, icon: Icon }) => (
           <div
             key={label}
-            className="flex flex-col items-center rounded-3xl bg-[#232323] p-4"
+            className="flex flex-col items-center rounded-3xl bg-gray-100 p-4"
           >
             <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-[#F4A90B]">
               <Icon className="h-5 w-5 text-white" />
             </div>
-            <p className="text-sm text-gray-400">{label}</p>
-            <p className="mt-1 text-lg font-semibold text-white">{value}</p>
+            <p className="text-sm text-[var(--system-text-secondary)]">{label}</p>
+            <p className="mt-1 text-lg font-semibold text-[var(--system-text)]">{value}</p>
           </div>
         ))}
       </div>

@@ -48,7 +48,7 @@ export function NetworkInfoCard() {
 
       <button
         type="button"
-        className="mt-6 flex items-center gap-2 rounded-3xl bg-[#0D1117] px-6 py-3 text-sm font-medium text-white shadow-md transition hover:bg-black"
+        className="mt-6 flex items-center gap-2 rounded-3xl bg-white px-6 py-3 text-sm font-medium text-[#171B20] shadow-md transition hover:bg-gray-100"
       >
         <RefreshCw className="h-4 w-4" />
         Re-Scan
