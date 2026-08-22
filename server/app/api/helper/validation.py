@@ -90,7 +90,7 @@ def validate_role_not_exists(role):
 
 def validate_role_name_available(role):
     if exists_role_by_name(role):
-        return {"message": "That role name is already taken."}
+        return {"message": "That role name is already taken."}, 409
     return None
 
 # ================= PERMISSION  ==================

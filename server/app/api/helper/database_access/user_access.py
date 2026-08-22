@@ -16,6 +16,11 @@ def get_user_by_email(user_email: str):
         )
     )
 
+def get_all_users():
+    return db.session.scalars(
+        sa.select(User)
+    ).all()
+
 # =========== Check From Database =============
 def exists_user_by_id(user_id):
     return db.session.scalar(

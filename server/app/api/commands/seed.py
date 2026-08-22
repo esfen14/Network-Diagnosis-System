@@ -24,6 +24,8 @@ PERMISSIONS = [
     "account.view",
     "account.edit",
     "account.info",
+    "system.discover",
+    "system.deploy.ncpa"
 ]
 
 ROLES = [
@@ -33,8 +35,7 @@ ROLES = [
 ]
 
 SEED_USERS = [
-("Admin", "User", "[admin@test.com](mailto:admin@test.com)", "Administrator", UserStatus.ACTIVE),
-
+("Admin", "User", "admin@test.com", "Administrator", UserStatus.ACTIVE),
 ("John", "Doe", "john@test.com", "Manager", UserStatus.ACTIVE),
 ("Jane", "Smith", "jane@test.com", "Staff", UserStatus.INACTIVE),
 ("Michael", "Brown", "michael.brown@test.com", "Manager", UserStatus.ACTIVE),
@@ -66,11 +67,11 @@ SEED_USERS = [
 ("Sebastian", "Baker", "sebastian.baker@test.com", "Staff", UserStatus.ACTIVE),
 ("Grace", "Adams", "grace.adams@test.com", "Staff", UserStatus.ACTIVE),
 ("Matthew", "Nelson", "matthew.nelson@test.com", "Manager", UserStatus.ACTIVE),
-("Chloe", "Carter", "chloe.carter@test.com", "Staff", UserStatus.ACTIVE),
+("Chloe", "Carter", "chloe.carter@test.com", "Staff", UserStatus.INACTIVE),
 ]
 
 
-# =========================
+# =====================
 # HELPERS
 # =========================
 
@@ -170,8 +171,8 @@ def seed_users():
             continue
 
         user = User(
-            First_name=first,
-            Last_name=last,
+            First_Name=first,
+            Last_Name=last,
             Email=email,
             RoleID=role.RoleID,
             Status=status
