@@ -25,7 +25,7 @@ export function TrendStatCard({
         : 'bg-gray-500'
 
   return (
-    <div className="flex h-[125px] items-center justify-between gap-4 rounded-3xl bg-[#171B20] p-5 shadow-sm">
+    <div className="flex h-[125px] items-center justify-between gap-4 rounded-3xl bg-white p-5 shadow-sm">
       <div className="flex items-center gap-4">
         <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${iconBg}`}>
           <Icon className="h-5 w-5 text-white" />

@@ -22,7 +22,7 @@ export function SparklineMetricCard({
   const badgeBg = changeType === 'positive' ? 'bg-emerald-500' : 'bg-red-600'
 
   return (
-    <div className="flex h-[125px] flex-col gap-2 rounded-3xl bg-[#171B20] p-4 shadow-sm">
+    <div className="flex h-[125px] flex-col gap-2 rounded-3xl bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm text-white">{title}</span>
 

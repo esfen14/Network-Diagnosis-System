@@ -11,7 +11,7 @@ const rows = [
 
 export function SystemActivityCard() {
   return (
-    <div className="rounded-3xl bg-[#171B20] p-5 shadow-sm">
+    <div className="rounded-3xl bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-lg font-semibold text-white">System Activity</h3>
         <button
