@@ -11,10 +11,14 @@ type StatusFilter =
   | 'suspended'
 
 export function ManageAccountsPage() {
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [statusFilter, setStatusFilter] =
+    useState<StatusFilter>('all')
 
   const filteredUsers = useMemo(() => {
-    if (statusFilter === 'all') return users
+    if (statusFilter === 'all') {
+      return users
+    }
+
     return users.filter((u) => u.status === statusFilter)
   }, [statusFilter])
 
@@ -22,44 +26,67 @@ export function ManageAccountsPage() {
     <main className="ml-[220px] flex-1">
       <div className="space-y-6">
 
+        {/* HEADER */}
         <PageHeader
           title="User Management"
           description="Manage all users in one place. Control access, assign roles, and monitor activity across your platform."
         />
 
-
+        {/* TABS + ACTIONS */}
         <div className="flex flex-wrap items-center justify-between gap-4">
 
-          <div className="flex gap-2">
-            {(['all', 'active', 'inactive', 'locked', 'suspended'] as StatusFilter[]).map((status) => (
+          {/* STATUS TABS */}
+          <div className="flex gap-6 border-b border-white/10">
+            {(
+              [
+                'all',
+                'active',
+                'inactive',
+                'locked',
+                'suspended',
+              ] as StatusFilter[]
+            ).map((status) => (
               <button
                 key={status}
+                type="button"
                 onClick={() => setStatusFilter(status)}
-                className={`px-4 py-2 rounded-lg text-sm transition ${
+                className={`pb-3 text-sm transition ${
                   statusFilter === status
-                    ? 'bg-white text-black'
-                    : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                    ? 'border-b-2 border-white font-medium text-white'
+                    : 'text-gray-500 hover:text-gray-300'
                 }`}
               >
-                {status.charAt(0).toUpperCase() + status.slice(1)}
+                {status === 'all'
+                  ? 'All'
+                  : status.charAt(0).toUpperCase() + status.slice(1)}
               </button>
             ))}
           </div>
 
+          {/* ACTION BUTTONS */}
           <div className="flex gap-2">
-            <button className="px-4 py-2 rounded-lg bg-white/10 text-gray-300 hover:bg-white/20">
+            <button
+              type="button"
+              className="rounded-lg bg-white/10 px-4 py-2 text-gray-300 transition hover:bg-white/20"
+            >
               Export
             </button>
 
-            <button className="px-4 py-2 rounded-lg bg-[#ffb100] text-black font-medium">
+            <button
+              type="button"
+              className="rounded-lg bg-[#ffb100] px-4 py-2 font-medium text-black transition hover:bg-[#e6a000]"
+            >
               + Add User
             </button>
           </div>
 
         </div>
 
-   
-        <UserTable users={filteredUsers} title="All System Users" />
+        {/* USER TABLE */}
+        <UserTable
+          users={filteredUsers}
+          title="All System Users"
+        />
 
       </div>
     </main>
