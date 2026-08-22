@@ -170,7 +170,7 @@ export function TopologyPage() {
 
               {selected.type === 'device' && iface && showInterface && (
                 <>
-                  <div className="rounded-2xl bg-[#0d1117] p-4 space-y-2">
+                  <div className="rounded-2xl bg-poinpoint-dark p-4 space-y-2">
                     <div className="flex justify-between items-center">
                       <h2 className="text-white font-semibold text-sm">Interface Information</h2>
                       <button
