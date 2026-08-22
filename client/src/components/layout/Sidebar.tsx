@@ -32,12 +32,12 @@ const navItems = [
     icon: FolderOpen,
     roles: ['network_admin', 'network_technician'],
   },
-  {
-    to: '/topology',
-    label: 'Topology View',
-    icon: Network,
-    roles: ['network_admin', 'network_technician'],
-  },
+  //{
+    //to: '/topology',
+    //label: 'Topology View',
+    //icon: Network,
+    //roles: ['network_admin', 'network_technician'],
+  //},
   {
     to: '/plugins',
     label: 'Plugins',
