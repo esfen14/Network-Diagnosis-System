@@ -83,6 +83,13 @@ PERMISSION_NAMES = [
     "system.discover",
     "network.discovery",
     "role.edit",
+    "role.view",
+    "role.list",
+    "role.info",
+    "account.edit",
+    "account.view",
+    "account.info",
+    "system.deploy.ncpa",
 ]
 
 
@@ -188,5 +195,22 @@ def logged_in_client(client, db_session, admin_user):
     )
     assert resp.status_code == 200, (
         f"logged_in_client: login failed with {resp.status_code}: {resp.get_json()}"
+    )
+    return client
+
+
+@pytest.fixture()
+def limited_client(client, db_session, regular_user):
+    """
+    A test client that is already logged in as regular_user.
+    regular_user only has 'system.inventory' permission, so any endpoint
+    requiring a different permission should return 403.
+    """
+    resp = client.post(
+        "/api/user/login",
+        json={"email": "regular@example.com", "password": "RegularPass1!"},
+    )
+    assert resp.status_code == 200, (
+        f"limited_client: login failed with {resp.status_code}: {resp.get_json()}"
     )
     return client
