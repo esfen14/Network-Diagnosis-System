@@ -1,16 +1,16 @@
+import { useState, useMemo } from 'react'
 import {
   ArrowUpDown,
   Filter,
-  Plus,
   Search,
   Edit,
-  Download,
 } from 'lucide-react'
 import type { User } from '../../data/users'
 
 type UserTableProps = {
   users: User[]
   title: string
+  onEdit: (user: User) => void
 }
 
 function StatusBadge({ status }: { status: User['status'] }) {
@@ -43,11 +43,48 @@ function StatusBadge({ status }: { status: User['status'] }) {
 export function UserTable({
   users,
   title,
+  onEdit,
 }: UserTableProps) {
+  const [query, setQuery] = useState('')
+  const [sortAsc, setSortAsc] = useState(true)
+  const [showFilter, setShowFilter] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<'All' | User['status']>('All')
+
+  const statuses = useMemo(
+    () => ['All', ...Array.from(new Set(users.map((u) => u.status)))] as const,
+    [users]
+  )
+
+  const filtered = useMemo(() => {
+    let result = users
+
+    if (statusFilter !== 'All') {
+      result = result.filter((u) => u.status === statusFilter)
+    }
+
+    if (query.trim()) {
+      const q = query.toLowerCase()
+      result = result.filter(
+        (u) =>
+          u.fullName.toLowerCase().includes(q) ||
+          u.userId.toLowerCase().includes(q) ||
+          u.username.toLowerCase().includes(q)
+      )
+    }
+
+    result = [...result].sort((a, b) =>
+      sortAsc
+        ? a.fullName.localeCompare(b.fullName)
+        : b.fullName.localeCompare(a.fullName)
+    )
+
+    return result
+  }, [users, query, statusFilter, sortAsc])
+
   return (
     <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[#171B20]">
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 p-4 dark:border-white/10">
+      <div className="relative flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 p-4 dark:border-white/10">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
           {title}
         </h2>
@@ -60,26 +97,56 @@ export function UserTable({
             <input
               type="search"
               placeholder="Search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
               className="w-32 bg-transparent text-sm text-gray-800 placeholder:text-gray-500 outline-none dark:text-white dark:placeholder:text-gray-500"
             />
           </div>
 
-          <button
-            type="button"
-            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
+          {/* Filter */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowFilter((v) => !v)}
+              className={`rounded-lg p-2 ${
+                showFilter || statusFilter !== 'All'
+                  ? 'bg-gray-200 text-gray-900 dark:bg-white/20 dark:text-white'
+                  : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white'
+              }`}
+            >
+              <Filter className="h-4 w-4" />
+            </button>
 
-          <button
-            type="button"
-            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
-          >
-            <Filter className="h-4 w-4" />
-          </button>
+            {showFilter && (
+              <div className="absolute right-0 top-full z-10 mt-2 w-40 rounded-xl border border-gray-200 bg-white p-2 shadow-lg dark:border-white/10 dark:bg-[#171B20]">
+                <span className="block px-2 py-1 text-xs font-medium text-gray-400">
+                  Status
+                </span>
+                {statuses.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => {
+                      setStatusFilter(s)
+                      setShowFilter(false)
+                    }}
+                    className={`block w-full rounded-lg px-2 py-1.5 text-left text-sm capitalize ${
+                      statusFilter === s
+                        ? 'bg-[#ffb100]/20 text-[#ffb100]'
+                        : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/10'
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
+          {/* Sort */}
           <button
             type="button"
+            onClick={() => setSortAsc((v) => !v)}
+            title={sortAsc ? 'Sorted A → Z' : 'Sorted Z → A'}
             className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
           >
             <ArrowUpDown className="h-4 w-4" />
@@ -124,58 +191,62 @@ export function UserTable({
           </thead>
 
           <tbody>
-            {users.map((user) => (
-              <tr
-                key={user.id}
-                className="border-b border-gray-100 transition hover:bg-gray-50 dark:border-white/5 dark:hover:bg-white/5"
-              >
-                <td className="px-4 py-3 text-gray-900 dark:text-white">
-                  {user.fullName}
-                </td>
-
-                <td className="px-4 py-3 text-gray-900 dark:text-white">
-                  {user.userId}
-                </td>
-
-                <td className="px-4 py-3 text-gray-900 dark:text-white">
-                  {user.username}
-                </td>
-
-                <td className="px-4 py-3">
-                  <StatusBadge status={user.status} />
-                </td>
-
-                <td className="px-4 py-3 text-gray-900 dark:text-white">
-                  {user.joinedDate}
-                </td>
-
-                <td className="px-4 py-3 text-gray-900 dark:text-white">
-                  {user.lastActive}
-                </td>
-
-                <td className="px-4 py-3">
-                  <div className="flex gap-3 text-gray-500 dark:text-gray-400">
-
-                    <button
-                      type="button"
-                      className="hover:text-gray-900 dark:hover:text-white"
-                      title="Edit"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </button>
-
-                    <button
-                      type="button"
-                      className="hover:text-gray-900 dark:hover:text-white"
-                      title="Download"
-                    >
-                      <Download className="h-4 w-4" />
-                    </button>
-
-                  </div>
+            {filtered.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={7}
+                  className="px-4 py-8 text-center text-gray-500 dark:text-gray-400"
+                >
+                  No users match your search or filter
                 </td>
               </tr>
-            ))}
+            ) : (
+              filtered.map((user) => (
+                <tr
+                  key={user.id}
+                  className="border-b border-gray-100 transition hover:bg-gray-50 dark:border-white/5 dark:hover:bg-white/5"
+                >
+                  <td className="px-4 py-3 text-gray-900 dark:text-white">
+                    {user.fullName}
+                  </td>
+
+                  <td className="px-4 py-3 text-gray-900 dark:text-white">
+                    {user.userId}
+                  </td>
+
+                  <td className="px-4 py-3 text-gray-900 dark:text-white">
+                    {user.username}
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <StatusBadge status={user.status} />
+                  </td>
+
+                  <td className="px-4 py-3 text-gray-900 dark:text-white">
+                    {user.joinedDate}
+                  </td>
+
+                  <td className="px-4 py-3 text-gray-900 dark:text-white">
+                    {user.lastActive}
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <div className="flex gap-3 text-gray-500 dark:text-gray-400">
+
+                      <button
+                        type="button"
+                        onClick={() => onEdit(user)}
+                        className="hover:text-gray-900 dark:hover:text-white"
+                        title="Edit"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
 
         </table>
@@ -183,7 +254,7 @@ export function UserTable({
 
       <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 text-sm text-gray-500 dark:border-white/10 dark:text-gray-400">
         <span>
-          Showing {users.length} users
+          Showing {filtered.length} of {users.length} users
         </span>
 
         <div className="flex gap-2">
