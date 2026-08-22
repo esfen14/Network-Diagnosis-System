@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Activity, CheckCircle2, XCircle } from 'lucide-react'
+import { Activity, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 
 import { PageHeader } from '../components/shared/PageHeader'
 import { SummaryStatCard } from '../components/shared/SummaryStatCard'
@@ -11,6 +11,46 @@ type ReportView = 'all-devices' | 'link-health'
 
 export function ReportsPage() {
   const [view, setView] = useState<ReportView>('all-devices')
+  const [selectedDate, setSelectedDate] = useState('')
+  const [isRunning, setIsRunning] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  const handleRunReport = async () => {
+    setIsRunning(true)
+    setStatusMessage(null)
+    try {
+      // TODO: replace with real backend call, e.g.:
+      // const res = await fetch(`/api/reports/run?view=${view}&date=${selectedDate}`, { method: 'POST' })
+      // if (!res.ok) throw new Error('Failed to run report')
+      await abang() // placeholder simulating backend latency
+      setStatusMessage({ type: 'success', text: 'Report generated successfully.' })
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: 'Could not run report. Please try again.' })
+    } finally {
+      setIsRunning(false)
+    }
+  }
+
+  const handleExport = async () => {
+    setIsExporting(true)
+    setStatusMessage(null)
+    try {
+      // TODO: replace with real backend call, e.g.:
+      // const res = await fetch(`/api/reports/export?view=${view}&date=${selectedDate}`)
+      // const blob = await res.blob()
+      // trigger file download from blob here
+      await abang() // placeholder simulating backend latency
+      setStatusMessage({ type: 'success', text: 'Export ready for download.' })
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: 'Export failed. Please try again.' })
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  // Placeholder for the backend call 
+  const abang = () => new Promise((resolve) => setTimeout(resolve, 900))
 
   return (
     <main className="ml-[220px] flex-1">
@@ -118,17 +158,49 @@ export function ReportsPage() {
         <div className="flex flex-wrap items-center justify-end gap-2">
           <input
             type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
             className="rounded-lg bg-white/10 px-4 py-2 text-white outline-none"
           />
 
-          <button className="rounded-lg bg-white px-4 py-2 font-medium text-black">
-            Run Report
+          <button
+            type="button"
+            onClick={handleRunReport}
+            disabled={isRunning}
+            className="flex items-center gap-2 rounded-lg bg-white px-4 py-2 font-medium text-black transition disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isRunning && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isRunning ? 'Running...' : 'Run Report'}
           </button>
 
-          <button className="rounded-lg bg-[#ffb100] px-4 py-2 font-medium text-black">
-            Export
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={isExporting}
+            className="flex items-center gap-2 rounded-lg bg-[#ffb100] px-4 py-2 font-medium text-black transition disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isExporting && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isExporting ? 'Exporting...' : 'Export'}
           </button>
         </div>
+
+        {/* Status message */}
+        {statusMessage && (
+          <div
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm ${
+              statusMessage.type === 'success'
+                ? 'bg-green-500/10 text-green-400'
+                : 'bg-red-500/10 text-red-400'
+            }`}
+          >
+            {statusMessage.type === 'success' ? (
+              <CheckCircle2 className="h-4 w-4" />
+            ) : (
+              <XCircle className="h-4 w-4" />
+            )}
+            {statusMessage.text}
+          </div>
+        )}
 
         {view === 'all-devices' ? (
           <AllDevicesReportTable />
