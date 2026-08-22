@@ -1,0 +1,1353 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Nagios Core JSON CGI API",
+    "description": "OpenAPI specification for the Nagios Core 4.5.11 JSON CGI endpoints at http://192.168.130.10/nagios/. These endpoints provide read-only access to Nagios monitoring data including host/service status, object configuration, and historical archives.",
+    "version": "4.5.11",
+    "contact": {
+      "name": "Detech-IT (4D-G2 Capstone)"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://192.168.130.10/nagios/cgi-bin",
+      "description": "Live Nagios testing server"
+    }
+  ],
+  "security": [
+    {
+      "basicAuth": []
+    }
+  ],
+  "paths": {
+    "/statusjson.cgi": {
+      "get": {
+        "operationId": "getStatus",
+        "summary": "Query runtime status data",
+        "description": "Returns runtime status information about hosts, services, comments, downtimes, program status, and performance data.",
+        "tags": ["Status"],
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "description": "Specifies the type of query to be executed.",
+            "schema": {
+              "type": "string",
+              "enum": ["hostcount", "hostlist", "host", "servicecount", "servicelist", "service", "commentcount", "commentlist", "comment", "downtimecount", "downtimelist", "downtime", "programstatus", "performancedata", "help"]
+            }
+          },
+          {
+            "name": "formatoptions",
+            "in": "query",
+            "required": false,
+            "description": "Formatting options separated by a plus (+) sign.",
+            "schema": {
+              "type": "string",
+              "example": "whitespace+enumerate+bitmask+duration"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "description": "Zero-based index of the first object in the list to be returned. Optional for hostlist, servicelist.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "count",
+            "in": "query",
+            "required": false,
+            "description": "Number of objects in the list to be returned. Optional for hostlist, servicelist.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "hostname",
+            "in": "query",
+            "required": false,
+            "description": "Name for the host requested. Required for query=host and query=service.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "servicedescription",
+            "in": "query",
+            "required": false,
+            "description": "Description for the service requested. Required for query=service. Depends on hostname.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hostgroup",
+            "in": "query",
+            "required": false,
+            "description": "Returns information applicable to the hostgroup or the hosts in the hostgroup.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "servicegroup",
+            "in": "query",
+            "required": false,
+            "description": "Returns information applicable to the servicegroup or the services in the servicegroup.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "parenthost",
+            "in": "query",
+            "required": false,
+            "description": "Limits hosts/services to those whose host parent is specified. 'none' returns directly reachable hosts.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "childhost",
+            "in": "query",
+            "required": false,
+            "description": "Limits hosts/services to those having the specified child host. 'none' returns hosts with no children.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hoststatus",
+            "in": "query",
+            "required": false,
+            "description": "Limits returned info to hosts matching these statuses (space-separated).",
+            "schema": {
+              "type": "string",
+              "example": "up down unreachable pending"
+            }
+          },
+          {
+            "name": "servicestatus",
+            "in": "query",
+            "required": false,
+            "description": "Limits returned info to services matching these statuses (space-separated).",
+            "schema": {
+              "type": "string",
+              "example": "ok warning critical unknown pending"
+            }
+          },
+          {
+            "name": "parentservice",
+            "in": "query",
+            "required": false,
+            "description": "Limits services to those whose parent service matches. 'none' returns services with no parent.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "childservice",
+            "in": "query",
+            "required": false,
+            "description": "Limits services to those having the named child service. 'none' returns services with no children.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "contactgroup",
+            "in": "query",
+            "required": false,
+            "description": "Returns information applicable to the contactgroup.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "contactname",
+            "in": "query",
+            "required": false,
+            "description": "Name for the contact requested.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Returns the details for all entities in the list. Optional for hostlist, servicelist, commentlist, downtimelist.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "dateformat",
+            "in": "query",
+            "required": false,
+            "description": "strftime format string for time_t values. Percent signs must be encoded as %25, spaces as +.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hosttimefield",
+            "in": "query",
+            "required": false,
+            "description": "Field to use when comparing times on a hostlist query.",
+            "schema": {
+              "type": "string",
+              "enum": ["lastupdate", "lastcheck", "nextcheck", "laststatechange", "lasthardstatechange", "lasttimeup", "lasttimedown", "lasttimeunreachable", "lastnotification", "nextnotification"]
+            }
+          },
+          {
+            "name": "servicetimefield",
+            "in": "query",
+            "required": false,
+            "description": "Field to use when comparing times on a servicelist query.",
+            "schema": {
+              "type": "string",
+              "enum": ["lastupdate", "lastcheck", "nextcheck", "laststatechange", "lasthardstatechange", "lasttimeok", "lasttimewarning", "lasttimecritical", "lasttimeunknown", "lastnotification", "nextnotification"]
+            }
+          },
+          {
+            "name": "commenttimefield",
+            "in": "query",
+            "required": false,
+            "description": "Field to use when comparing times on a commentlist query.",
+            "schema": {
+              "type": "string",
+              "enum": ["entrytime", "expiretime"]
+            }
+          },
+          {
+            "name": "downtimetimefield",
+            "in": "query",
+            "required": false,
+            "description": "Field to use when comparing times on a downtimelist query.",
+            "schema": {
+              "type": "string",
+              "enum": ["entrytime", "starttime", "flexdowntimestart", "endtime"]
+            }
+          },
+          {
+            "name": "starttime",
+            "in": "query",
+            "required": false,
+            "description": "Starting time for time range queries. Plus/minus sign means relative to query time.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "endtime",
+            "in": "query",
+            "required": false,
+            "description": "Ending time for time range queries. Plus/minus sign means relative to query time.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "commentid",
+            "in": "query",
+            "required": false,
+            "description": "Comment ID for the comment requested. Required for query=comment.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "downtimeid",
+            "in": "query",
+            "required": false,
+            "description": "Downtime ID for the downtime requested. Required for query=downtime.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "commenttypes",
+            "in": "query",
+            "required": false,
+            "description": "Comment type filter (space-separated): host, service.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "entrytypes",
+            "in": "query",
+            "required": false,
+            "description": "Entry type filter (space-separated): user, downtime, flapping, acknowledgement.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "persistence",
+            "in": "query",
+            "required": false,
+            "description": "Comment persistence filter: yes, no.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expiring",
+            "in": "query",
+            "required": false,
+            "description": "Whether comment expires: yes, no.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "downtimeobjecttypes",
+            "in": "query",
+            "required": false,
+            "description": "Downtime object type filter (space-separated): host, service.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "downtimetypes",
+            "in": "query",
+            "required": false,
+            "description": "Downtime type filter (space-separated): fixed, flexible.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "triggered",
+            "in": "query",
+            "required": false,
+            "description": "Whether downtime is triggered: yes, no.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "triggeredby",
+            "in": "query",
+            "required": false,
+            "description": "ID of the downtime which triggers other downtimes.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "ineffect",
+            "in": "query",
+            "required": false,
+            "description": "Whether downtime is in effect: yes, no.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "checktimeperiod",
+            "in": "query",
+            "required": false,
+            "description": "Name of a check timeperiod to use as selection criteria.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hostnotificationtimeperiod",
+            "in": "query",
+            "required": false,
+            "description": "Name of a host notification timeperiod to use as selection criteria.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "servicenotificationtimeperiod",
+            "in": "query",
+            "required": false,
+            "description": "Name of a service notification timeperiod to use as selection criteria.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "checkcommand",
+            "in": "query",
+            "required": false,
+            "description": "Name of a check command to use as a selector.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventhandler",
+            "in": "query",
+            "required": false,
+            "description": "Name of an event handler to use as a selector.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful query response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid credentials"
+          }
+        }
+      }
+    },
+    "/objectjson.cgi": {
+      "get": {
+        "operationId": "getObjects",
+        "summary": "Query object configuration data",
+        "description": "Returns Nagios object configuration information including hosts, services, contacts, commands, timeperiods, host/service groups, dependencies, and escalations.",
+        "tags": ["Objects"],
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "description": "Specifies the type of query to be executed.",
+            "schema": {
+              "type": "string",
+              "enum": ["hostcount", "hostlist", "host", "hostgroupcount", "hostgrouplist", "hostgroup", "servicecount", "servicelist", "service", "servicegroupcount", "servicegrouplist", "servicegroup", "contactcount", "contactlist", "contact", "contactgroupcount", "contactgrouplist", "contactgroup", "timeperiodcount", "timeperiodlist", "timeperiod", "commandcount", "commandlist", "command", "servicedependencycount", "servicedependencylist", "serviceescalationcount", "serviceescalationlist", "hostdependencycount", "hostdependencylist", "hostescalationcount", "hostescalationlist", "help"]
+            }
+          },
+          {
+            "name": "formatoptions",
+            "in": "query",
+            "required": false,
+            "description": "Formatting options separated by a plus (+) sign.",
+            "schema": {
+              "type": "string",
+              "example": "whitespace+enumerate+bitmask+duration"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "description": "Zero-based index of the first object in the list to be returned.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "count",
+            "in": "query",
+            "required": false,
+            "description": "Number of objects in the list to be returned.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "hostname",
+            "in": "query",
+            "required": false,
+            "description": "Name for the host requested. Required for query=host and query=service.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "servicedescription",
+            "in": "query",
+            "required": false,
+            "description": "Description for the service requested. Required for query=service. Depends on hostname.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hostgroup",
+            "in": "query",
+            "required": false,
+            "description": "Host group name. Required for query=hostgroup.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "servicegroup",
+            "in": "query",
+            "required": false,
+            "description": "Service group name. Required for query=servicegroup.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "contactname",
+            "in": "query",
+            "required": false,
+            "description": "Contact name. Required for query=contact.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "contactgroup",
+            "in": "query",
+            "required": false,
+            "description": "Contact group name. Required for query=contactgroup.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timeperiod",
+            "in": "query",
+            "required": false,
+            "description": "Timeperiod name. Required for query=timeperiod.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "command",
+            "in": "query",
+            "required": false,
+            "description": "Command name. Required for query=command.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "parenthost",
+            "in": "query",
+            "required": false,
+            "description": "Limits hosts/services to those whose host parent is specified.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "childhost",
+            "in": "query",
+            "required": false,
+            "description": "Limits hosts/services to those having the specified child host.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "parentservice",
+            "in": "query",
+            "required": false,
+            "description": "Limits services to those whose parent service matches.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "childservice",
+            "in": "query",
+            "required": false,
+            "description": "Limits services to those having the named child service.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "If true, return the details for all entities in the list.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "dateformat",
+            "in": "query",
+            "required": false,
+            "description": "strftime format string for time_t values.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hostgroupmember",
+            "in": "query",
+            "required": false,
+            "description": "Limits hostgroups to those containing this host.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "servicegroupmemberhost",
+            "in": "query",
+            "required": false,
+            "description": "Limits servicegroups to those containing this host (used with servicegroupmemberservice).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "servicegroupmemberservice",
+            "in": "query",
+            "required": false,
+            "description": "Limits servicegroups to those containing this service (depends on servicegroupmemberhost).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "contactgroupmember",
+            "in": "query",
+            "required": false,
+            "description": "Limits contactgroups to those containing this contact.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "checktimeperiod",
+            "in": "query",
+            "required": false,
+            "description": "Name of a check timeperiod to use as selection criteria.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hostnotificationtimeperiod",
+            "in": "query",
+            "required": false,
+            "description": "Name of a host notification timeperiod to use as selection criteria.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "servicenotificationtimeperiod",
+            "in": "query",
+            "required": false,
+            "description": "Name of a service notification timeperiod to use as selection criteria.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "checkcommand",
+            "in": "query",
+            "required": false,
+            "description": "Name of a check command to use as a selector.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventhandler",
+            "in": "query",
+            "required": false,
+            "description": "Name of an event handler to use as a selector.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "masterhostname",
+            "in": "query",
+            "required": false,
+            "description": "Name for a master host (dependency selector).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "masterhostgroupname",
+            "in": "query",
+            "required": false,
+            "description": "Name for a master hostgroup (dependency selector).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "masterservicedescription",
+            "in": "query",
+            "required": false,
+            "description": "Description for a master service (depends on masterhostname).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "masterservicegroupname",
+            "in": "query",
+            "required": false,
+            "description": "Name for a master servicegroup (dependency selector).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "dependenthostname",
+            "in": "query",
+            "required": false,
+            "description": "Name for a dependent host (dependency selector).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "dependenthostgroupname",
+            "in": "query",
+            "required": false,
+            "description": "Name for a dependent hostgroup (dependency selector).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "dependentservicedescription",
+            "in": "query",
+            "required": false,
+            "description": "Description for a dependent service (depends on dependenthostname).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "dependentservicegroupname",
+            "in": "query",
+            "required": false,
+            "description": "Name for a dependent servicegroup (dependency selector).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful query response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid credentials"
+          }
+        }
+      }
+    },
+    "/archivejson.cgi": {
+      "get": {
+        "operationId": "getArchive",
+        "summary": "Query historical/archive data",
+        "description": "Returns historical archive information including alerts, notifications, state changes, and availability reports.",
+        "tags": ["Archive"],
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "description": "Specifies the type of query to be executed.",
+            "schema": {
+              "type": "string",
+              "enum": ["alertcount", "alertlist", "notificationcount", "notificationlist", "statechangelist", "availability", "help"]
+            }
+          },
+          {
+            "name": "formatoptions",
+            "in": "query",
+            "required": false,
+            "description": "Formatting options separated by a plus (+) sign.",
+            "schema": {
+              "type": "string",
+              "example": "whitespace+enumerate+bitmask+duration"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "description": "Zero-based index of the first object in the list to be returned.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "count",
+            "in": "query",
+            "required": false,
+            "description": "Number of objects in the list to be returned.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "starttime",
+            "in": "query",
+            "required": false,
+            "description": "Starting time. Required for alertcount, alertlist, notificationcount, notificationlist, statechangelist, availability. Plus/minus means relative to query time.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "endtime",
+            "in": "query",
+            "required": false,
+            "description": "Ending time. Required for alertcount, alertlist, notificationcount, notificationlist, statechangelist, availability. Plus/minus means relative to query time.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "objecttypes",
+            "in": "query",
+            "required": false,
+            "description": "Object types to include (space-separated): host, service.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "objecttype",
+            "in": "query",
+            "required": false,
+            "description": "Object type for statechangelist query. Required for query=statechangelist.",
+            "schema": {
+              "type": "string",
+              "enum": ["host", "service"]
+            }
+          },
+          {
+            "name": "availabilityobjecttype",
+            "in": "query",
+            "required": false,
+            "description": "Object type for availability report. Required for query=availability.",
+            "schema": {
+              "type": "string",
+              "enum": ["hosts", "hostgroups", "services", "servicegroups"]
+            }
+          },
+          {
+            "name": "hostname",
+            "in": "query",
+            "required": false,
+            "description": "Name for the host. Required for query=statechangelist.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "servicedescription",
+            "in": "query",
+            "required": false,
+            "description": "Description for the service (depends on hostname).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hostgroup",
+            "in": "query",
+            "required": false,
+            "description": "Returns information for hosts in the hostgroup.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "servicegroup",
+            "in": "query",
+            "required": false,
+            "description": "Returns information for services in the servicegroup.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "contactname",
+            "in": "query",
+            "required": false,
+            "description": "Name for the contact requested.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "contactgroup",
+            "in": "query",
+            "required": false,
+            "description": "Returns information for contacts in the contactgroup.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "parenthost",
+            "in": "query",
+            "required": false,
+            "description": "Limits results to those whose host parent is specified.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "childhost",
+            "in": "query",
+            "required": false,
+            "description": "Limits results to those having the specified child host.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "statetypes",
+            "in": "query",
+            "required": false,
+            "description": "State types to include (space-separated): hard, soft.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hoststates",
+            "in": "query",
+            "required": false,
+            "description": "Host states to include (space-separated): up, down, unreachable.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "servicestates",
+            "in": "query",
+            "required": false,
+            "description": "Service states to include (space-separated): ok, warning, critical, unknown.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hostnotificationtypes",
+            "in": "query",
+            "required": false,
+            "description": "Host notification types (space-separated): nodata, down, unreachable, recovery, hostcustom, hostack, hostflapstart, hostflapstop.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "servicenotificationtypes",
+            "in": "query",
+            "required": false,
+            "description": "Service notification types (space-separated): nodata, critical, warning, recovery, custom, serviceack, serviceflapstart, serviceflapstop, unknown.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "notificationmethod",
+            "in": "query",
+            "required": false,
+            "description": "Filter by notification method (command name).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "dateformat",
+            "in": "query",
+            "required": false,
+            "description": "strftime format string for time_t values.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "backtrackedarchives",
+            "in": "query",
+            "required": false,
+            "description": "Number of backtracked archives to read to find initial states.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "timeperiod",
+            "in": "query",
+            "required": false,
+            "description": "Timeperiod to use for availability reports.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "assumeinitialstate",
+            "in": "query",
+            "required": false,
+            "description": "Assume the initial state for availability reports.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "assumestateretention",
+            "in": "query",
+            "required": false,
+            "description": "Assume states are retained for availability reports.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "assumestatesduringnagiosdowntime",
+            "in": "query",
+            "required": false,
+            "description": "Assume states are retained during Nagios downtime for availability reports.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "assumedinitialhoststate",
+            "in": "query",
+            "required": false,
+            "description": "Host state assumed when initial state cannot be determined.",
+            "schema": {
+              "type": "string",
+              "enum": ["up", "down", "unreachable", "current"]
+            }
+          },
+          {
+            "name": "assumedinitialservicestate",
+            "in": "query",
+            "required": false,
+            "description": "Service state assumed when initial state cannot be determined.",
+            "schema": {
+              "type": "string",
+              "enum": ["ok", "warning", "critical", "unknown", "current"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful query response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid credentials"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "basicAuth": {
+        "type": "http",
+        "scheme": "basic",
+        "description": "HTTP Basic Authentication. Default credentials: nagiosadmin / password"
+      }
+    },
+    "schemas": {
+      "ResultMeta": {
+        "type": "object",
+        "properties": {
+          "query_time": {
+            "type": "integer",
+            "description": "Time of the query in milliseconds since Unix epoch"
+          },
+          "cgi": {
+            "type": "string",
+            "description": "The CGI that processed the request"
+          },
+          "user": {
+            "type": "string",
+            "description": "Authenticated user"
+          },
+          "query": {
+            "type": "string",
+            "description": "The query type that was executed"
+          },
+          "query_status": {
+            "type": "string",
+            "description": "Status of the query (e.g., 'released')"
+          },
+          "program_start": {
+            "type": "integer",
+            "description": "Nagios program start time in milliseconds since Unix epoch"
+          },
+          "last_data_update": {
+            "type": "integer",
+            "description": "Last data update time in milliseconds since Unix epoch"
+          },
+          "type_code": {
+            "type": "integer",
+            "description": "Result type code (0 = success)"
+          },
+          "type_text": {
+            "type": "string",
+            "description": "Result type text (e.g., 'Success')"
+          },
+          "message": {
+            "type": "string",
+            "description": "Additional result message"
+          }
+        }
+      },
+      "HostStatus": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "plugin_output": {
+            "type": "string"
+          },
+          "long_plugin_output": {
+            "type": "string"
+          },
+          "perf_data": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["up", "down", "unreachable", "pending"]
+          },
+          "last_update": {
+            "type": "integer"
+          },
+          "has_been_checked": {
+            "type": "boolean"
+          },
+          "should_be_scheduled": {
+            "type": "boolean"
+          },
+          "current_attempt": {
+            "type": "integer"
+          },
+          "max_attempts": {
+            "type": "integer"
+          },
+          "last_check": {
+            "type": "integer"
+          },
+          "next_check": {
+            "type": "integer"
+          },
+          "check_options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "check_type": {
+            "type": "string"
+          },
+          "last_state_change": {
+            "type": "integer"
+          },
+          "last_hard_state_change": {
+            "type": "integer"
+          },
+          "last_hard_state": {
+            "type": "string"
+          },
+          "last_time_up": {
+            "type": "integer"
+          },
+          "last_time_down": {
+            "type": "integer"
+          },
+          "last_time_unreachable": {
+            "type": "integer"
+          },
+          "state_type": {
+            "type": "string"
+          },
+          "last_notification": {
+            "type": "integer"
+          },
+          "next_notification": {
+            "type": "integer"
+          },
+          "no_more_notifications": {
+            "type": "boolean"
+          },
+          "notifications_enabled": {
+            "type": "boolean"
+          },
+          "problem_has_been_acknowledged": {
+            "type": "boolean"
+          },
+          "acknowledgement_type": {
+            "type": "string"
+          },
+          "current_notification_number": {
+            "type": "integer"
+          },
+          "accept_passive_checks": {
+            "type": "boolean"
+          },
+          "event_handler_enabled": {
+            "type": "boolean"
+          },
+          "checks_enabled": {
+            "type": "boolean"
+          },
+          "flap_detection_enabled": {
+            "type": "boolean"
+          },
+          "is_flapping": {
+            "type": "boolean"
+          },
+          "percent_state_change": {
+            "type": "number"
+          },
+          "latency": {
+            "type": "number"
+          },
+          "execution_time": {
+            "type": "number"
+          },
+          "scheduled_downtime_depth": {
+            "type": "integer"
+          },
+          "process_performance_data": {
+            "type": "boolean"
+          },
+          "obsess": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ProgramStatus": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "example": "4.5.11"
+          },
+          "nagios_pid": {
+            "type": "integer"
+          },
+          "daemon_mode": {
+            "type": "boolean"
+          },
+          "program_start": {
+            "type": "integer"
+          },
+          "last_log_rotation": {
+            "type": "integer"
+          },
+          "enable_notifications": {
+            "type": "boolean"
+          },
+          "execute_service_checks": {
+            "type": "boolean"
+          },
+          "accept_passive_service_checks": {
+            "type": "boolean"
+          },
+          "execute_host_checks": {
+            "type": "boolean"
+          },
+          "accept_passive_host_checks": {
+            "type": "boolean"
+          },
+          "enable_event_handlers": {
+            "type": "boolean"
+          },
+          "obsess_over_services": {
+            "type": "boolean"
+          },
+          "obsess_over_hosts": {
+            "type": "boolean"
+          },
+          "check_service_freshness": {
+            "type": "boolean"
+          },
+          "check_host_freshness": {
+            "type": "boolean"
+          },
+          "enable_flap_detection": {
+            "type": "boolean"
+          },
+          "process_performance_data": {
+            "type": "boolean"
+          }
+        }
+      },
+      "StatusResponse": {
+        "type": "object",
+        "properties": {
+          "format_version": {
+            "type": "integer"
+          },
+          "result": {
+            "$ref": "#/components/schemas/ResultMeta"
+          },
+          "data": {
+            "type": "object",
+            "description": "Response data varies by query type. Contains host, hostlist, hostcount, service, servicelist, servicecount, comment, commentlist, commentcount, downtime, downtimelist, downtimecount, programstatus, or performancedata."
+          }
+        }
+      },
+      "ObjectResponse": {
+        "type": "object",
+        "properties": {
+          "format_version": {
+            "type": "integer"
+          },
+          "result": {
+            "$ref": "#/components/schemas/ResultMeta"
+          },
+          "data": {
+            "type": "object",
+            "description": "Response data varies by query type. Contains object configuration details for hosts, services, contacts, commands, timeperiods, groups, dependencies, or escalations."
+          }
+        }
+      },
+      "ArchiveResponse": {
+        "type": "object",
+        "properties": {
+          "format_version": {
+            "type": "integer"
+          },
+          "result": {
+            "$ref": "#/components/schemas/ResultMeta"
+          },
+          "data": {
+            "type": "object",
+            "description": "Response data varies by query type. Contains alertcount, alertlist, notificationcount, notificationlist, statechangelist, or availability report data."
+          }
+        }
+      }
+    }
+  }
+}
