@@ -13,7 +13,7 @@ HostStatus
 from app.api.system import system_bp
 
 
-@system_bp.get('/devices')
+@system_bp.get('/inventory')
 @login_required
 @require_permission("system.inventory")
 def query_system_devices():
@@ -131,7 +131,7 @@ def query_system_devices():
             "message": "An unexpected error occurred."
         }, 500
 
-@system_bp.get('/devices/<int:device_id>/ports/tcp')
+@system_bp.get('/inventory/<int:device_id>/ports/tcp')
 @login_required
 @require_permission("system.inventory")
 def device_tcp_ports(device_id):
@@ -175,7 +175,7 @@ def device_tcp_ports(device_id):
             "message": "An unexpected error occurred."
         }, 500
 
-@system_bp.get('/devices/<int:device_id>/ports/udp')
+@system_bp.get('/inventory/<int:device_id>/ports/udp')
 @login_required
 @require_permission("system.inventory")
 def device_udp_ports(device_id):
