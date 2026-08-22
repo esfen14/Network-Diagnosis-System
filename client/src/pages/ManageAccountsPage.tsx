@@ -122,30 +122,44 @@ export function ManageAccountsPage() {
     <main className="ml-[220px] flex-1">
       <div className="space-y-6">
 
+        {/* HEADER */}
         <PageHeader
           title="User Management"
           description="Manage all users in one place. Control access, assign roles, and monitor activity across your platform."
         />
 
-
+        {/* TABS + ACTIONS */}
         <div className="flex flex-wrap items-center justify-between gap-4">
 
-          <div className="flex gap-2">
-            {(['all', 'active', 'inactive', 'locked', 'suspended'] as StatusFilter[]).map((status) => (
+          {/* STATUS TABS */}
+          <div className="flex gap-6 border-b border-white/10">
+            {(
+              [
+                'all',
+                'active',
+                'inactive',
+                'locked',
+                'suspended',
+              ] as StatusFilter[]
+            ).map((status) => (
               <button
                 key={status}
+                type="button"
                 onClick={() => setStatusFilter(status)}
-                className={`px-4 py-2 rounded-lg text-sm transition ${
+                className={`pb-3 text-sm transition ${
                   statusFilter === status
-                    ? 'bg-white text-black'
-                    : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                    ? 'border-b-2 border-white font-medium text-white'
+                    : 'text-gray-500 hover:text-gray-300'
                 }`}
               >
-                {status.charAt(0).toUpperCase() + status.slice(1)}
+                {status === 'all'
+                  ? 'All'
+                  : status.charAt(0).toUpperCase() + status.slice(1)}
               </button>
             ))}
           </div>
 
+          {/* ACTION BUTTONS */}
           <div className="flex gap-2">
             <button
               onClick={handleExport}
