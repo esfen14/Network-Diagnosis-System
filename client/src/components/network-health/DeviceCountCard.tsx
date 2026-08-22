@@ -14,15 +14,10 @@ export function DeviceCountCard({
   iconBg,
 }: DeviceCountCardProps) {
   return (
-<<<<<<< HEAD
-    <div className="flex h-[100px] items-center gap-4 rounded-3xl bg-[#171B20] p-5 shadow-sm">
-      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-3xl ${iconBg}`}>
-=======
     <div className="flex items-center gap-4 rounded-3xl bg-[var(--system-card)] p-5 shadow-sm">
       <div
         className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-3xl ${iconBg}`}
       >
->>>>>>> a4da439abc1fd13696322146175a2e97635e3d94
         <Icon className="h-5 w-5 text-white" />
       </div>
 
