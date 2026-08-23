@@ -43,7 +43,7 @@ export function AllDevicesReportTable() {
     timestamp: string
   }
 
-  const devices: Device[] = []
+  const devices = useMemo<Device[]>(() => [], [])
 
   const [query, setQuery] = useState('')
   const [sortAsc, setSortAsc] = useState(true)
@@ -74,7 +74,6 @@ export function AllDevicesReportTable() {
     )
 
     return result
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [devices, query, statusFilter, sortAsc])
 
   return (
@@ -158,7 +157,7 @@ export function AllDevicesReportTable() {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1100px] text-left text-sm">
+        <table className="w-full min-w-275 text-left text-sm">
 
           <thead className="border-b border-gray-200 text-gray-500 dark:border-white/10 dark:text-gray-500">
             <tr>

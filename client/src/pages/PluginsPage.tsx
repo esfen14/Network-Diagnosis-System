@@ -71,7 +71,7 @@ export function PluginsPage() {
   const closeModal = () => setPluginState('idle')
 
   return (
-    <main className="ml-[220px] flex-1 space-y-6">
+    <main className="ml-55 flex-1 space-y-6">
 
       <PageHeader
         title="Monitoring Configuration"

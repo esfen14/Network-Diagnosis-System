@@ -22,9 +22,9 @@ export function SparklineMetricCard({
   const badgeBg = changeType === 'positive' ? 'bg-emerald-500' : 'bg-red-600'
 
   return (
-    <div className="flex h-[125px] flex-col gap-2 rounded-3xl bg-white p-4 shadow-sm">
+    <div className="flex h-31.25 flex-col gap-2 rounded-3xl bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm text-[var(--system-text)]">{title}</span>
+        <span className="text-sm text-var(--system-text)">{title}</span>
 
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-medium text-white ${badgeBg}`}
@@ -34,8 +34,8 @@ export function SparklineMetricCard({
       </div>
 
       <div className="flex items-baseline gap-1">
-        <span className="text-xl font-bold text-[var(--system-text)]">{value}</span>
-        <span className="text-xs text-[var(--system-text-secondary)]">{unit}</span>
+        <span className="text-xl font-bold text-var(--system-text)">{value}</span>
+        <span className="text-xs text-var(--system-text-secondary)">{unit}</span>
       </div>
 
       <MiniSparkline

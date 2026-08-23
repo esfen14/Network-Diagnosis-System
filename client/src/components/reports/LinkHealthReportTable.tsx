@@ -137,7 +137,7 @@ export function LinkHealthReportTable({
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1200px] text-left text-sm">
+        <table className="w-full min-w-300 text-left text-sm">
 
           <thead>
             <tr className="border-b border-gray-200 text-xs text-gray-500 dark:border-white/10 dark:text-gray-500">

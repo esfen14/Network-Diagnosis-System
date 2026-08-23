@@ -53,7 +53,7 @@ export function ReportsPage() {
   const abang = () => new Promise((resolve) => setTimeout(resolve, 900))
 
   return (
-    <main className="ml-[220px] flex-1">
+    <main className="ml-55 flex-1">
       <div className="space-y-6">
 
         <PageHeader

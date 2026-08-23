@@ -119,7 +119,7 @@ export function ManageAccountsPage() {
   }
 
   return (
-    <main className="ml-[220px] flex-1">
+    <main className="ml-55 flex-1">
       <div className="space-y-6">
 
         {/* HEADER */}

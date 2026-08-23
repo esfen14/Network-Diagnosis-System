@@ -36,9 +36,9 @@ const insights = [
 
 export function InsightsPanel() {
   return (
-    <aside className="hidden w-72 shrink-0 border-l border-[var(--system-border)] xl:block">
+    <aside className="hidden w-72 shrink-0 border-l border-var(--system-border) xl:block">
       <div className="sticky top-0 p-4">
-        <h3 className="mb-4 text-sm font-semibold text-[var(--system-text)]">
+        <h3 className="mb-4 text-sm font-semibold text-var(--system-text)">
           Network Health Insights
         </h3>
 
@@ -50,11 +50,11 @@ export function InsightsPanel() {
               />
 
               <div>
-                <p className="text-sm leading-snug text-[var(--system-text)]">
+                <p className="text-sm leading-snug text-var(--system-text)">
                   {item.message}
                 </p>
 
-                <p className="mt-1 text-xs text-[var(--system-text-secondary)]">
+                <p className="mt-1 text-xs text-var(--system-text-secondary)">
                   {item.time}
                 </p>
               </div>

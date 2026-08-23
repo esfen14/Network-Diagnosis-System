@@ -116,7 +116,7 @@ export function AvailablePluginsTable({ data, selected, onSelect }: Props) {
 
       {/* TABLE */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-sm">
+        <table className="w-full min-w-225 text-sm">
           <thead className="border-b border-gray-200 dark:border-white/10 text-xs text-gray-500 dark:text-gray-400">
             <tr>
               <th className="px-4 py-3 text-left"></th>

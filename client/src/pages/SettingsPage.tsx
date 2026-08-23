@@ -40,7 +40,7 @@ export function SettingsPage() {
   ]
 
   return (
-    <main className="ml-[220px] flex-1">
+    <main className="ml-55 flex-1">
       <div className="min-h-screen p-6">
 
         {/* HEADER */}

@@ -7,10 +7,10 @@ function CustomNode({ data }: NodeProps) {
   const Icon = data.icon as typeof Server
   return (
     <div className="flex items-center gap-2 rounded-lg border border-gray-600 bg-[#1a1f26] px-3 py-2 text-white text-xs">
-      <Handle type="target" position={Position.Top} className="!bg-gray-500" />
+      <Handle type="target" position={Position.Top} className="bg-gray-500!" />
       <Icon className="h-4 w-4 shrink-0" />
       <span>{data.label as string}</span>
-      <Handle type="source" position={Position.Bottom} className="!bg-gray-500" />
+      <Handle type="source" position={Position.Bottom} className="bg-gray-500!" />
     </div>
   )
 }
@@ -98,14 +98,14 @@ export function TopologyPage() {
   const iface = selected?.type === 'device' ? interfaceInfo[selected.id] : null
 
   return (
-    <main className="ml-[220px] flex-1">
+    <main className="ml-55 flex-1">
       <div className="rounded-3xl bg-[#1a1f26] p-8 shadow-lg">
         <h1 className="text-2xl font-semibold text-white">Topology</h1>
         <p className="mt-2 text-gray-400">Visual representation of the network's structure and architecture.</p>
 
         <div className="mt-6 flex gap-4">
           {/* Network Map */}
-          <div className="rounded-2xl overflow-hidden bg-[#0d1117]" style={{ height: '600px', width: '0', flexGrow: 1 }}>
+          <div className="rounded-2xl overflow-hidden bg-pinpoint-dark" style={{ height: '600px', width: '0', flexGrow: 1 }}>
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -127,7 +127,7 @@ export function TopologyPage() {
             <div className="w-72 shrink-0 space-y-4">
               {selected.type === 'device' && device && !showInterface && (
                 <>
-                  <div className="rounded-2xl bg-[#0d1117] p-4 space-y-2">
+                  <div className="rounded-2xl bg-pinpoint-dark p-4 space-y-2">
                     <div className="flex justify-between items-center">
                       <h2 className="text-white font-semibold text-sm">Device Information</h2>
                       <button
@@ -145,7 +145,7 @@ export function TopologyPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl bg-[#0d1117] p-4 space-y-2">
+                  <div className="rounded-2xl bg-pinpoint-dark p-4 space-y-2">
                     <div className="flex justify-between items-center">
                       <p className="text-white text-sm font-medium">Device Utilization</p>
                       <p className="text-gray-400 text-xs">Last 5</p>
@@ -160,7 +160,7 @@ export function TopologyPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl bg-[#0d1117] p-4 space-y-2 text-sm">
+                  <div className="rounded-2xl bg-pinpoint-dark p-4 space-y-2 text-sm">
                     <p className="text-gray-400">Power Status: <span className={device.powerStatus === 'Online' ? 'text-green-400' : 'text-red-400'}>{device.powerStatus}</span></p>
                     <p className="text-gray-400">Uptime (HH:mm:ss): <span className="text-white">{device.uptime}</span></p>
                     <p className="text-gray-400">Last Scanned: <span className="text-white">{device.lastScanned}</span></p>
@@ -193,7 +193,7 @@ export function TopologyPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl bg-[#0d1117] p-4 space-y-2">
+                  <div className="rounded-2xl bg-pinpoint-dark p-4 space-y-2">
                     <h2 className="text-white font-semibold text-sm">Interface Health</h2>
                     <div className="flex justify-between items-center">
                       <p className="text-white text-sm font-medium">Ingress/Egress Traffic</p>
@@ -212,7 +212,7 @@ export function TopologyPage() {
 
               {selected.type === 'link' && (
                 <>
-                  <div className="rounded-2xl bg-[#0d1117] p-4 space-y-2">
+                  <div className="rounded-2xl bg-pinpoint-dark p-4 space-y-2">
                     <h2 className="text-white font-semibold text-sm">Link Summary</h2>
                     <div className="space-y-1 text-sm">
                       <p className="text-gray-400">From: <span className="text-white">{selected.source}</span></p>
@@ -221,7 +221,7 @@ export function TopologyPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl bg-[#0d1117] p-4 space-y-2">
+                  <div className="rounded-2xl bg-pinpoint-dark p-4 space-y-2">
                     <div className="flex justify-between items-center">
                       <p className="text-white text-sm font-medium">Utilization</p>
                       <p className="text-gray-400 text-xs">Last 5 Hours</p>
@@ -231,7 +231,7 @@ export function TopologyPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl bg-[#0d1117] p-4 space-y-2">
+                  <div className="rounded-2xl bg-pinpoint-dark p-4 space-y-2">
                     <div className="flex justify-between items-center">
                       <p className="text-white text-sm font-medium">Ingress/Egress Traffic</p>
                       <p className="text-gray-400 text-xs">Last 5 Hours</p>

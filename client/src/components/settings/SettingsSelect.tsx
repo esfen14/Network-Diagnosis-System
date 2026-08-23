@@ -34,11 +34,11 @@ export function SettingsSelect({
           w-full
           rounded-xl
           border
-          border-[var(--system-border)]
-          bg-[var(--system-card-secondary)]
+          border-var(--system-border)
+          bg-var(--system-card-secondary)
           px-3
           text-sm
-          text-[var(--system-text)]
+          text-var(--system-text)
           outline-none
           transition
           duration-200

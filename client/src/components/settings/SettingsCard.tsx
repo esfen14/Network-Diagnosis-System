@@ -15,7 +15,7 @@ export function SettingsCard({
     <section
       className="
         rounded-3xl
-        bg-[var(--system-card)]
+        bg-var(--system-card)
         p-6
         shadow-lg
         transition-colors
@@ -27,7 +27,7 @@ export function SettingsCard({
           className="
             text-base
             font-semibold
-            text-[var(--system-text)]
+            text-var(--system-text)
           "
         >
           {title}
@@ -38,7 +38,7 @@ export function SettingsCard({
             className="
               mt-1
               text-sm
-              text-[var(--system-text-secondary)]
+              text-var(--system-text-secondary)
             "
           >
             {description}

@@ -14,7 +14,7 @@ export function DeviceCountCard({
   iconBg,
 }: DeviceCountCardProps) {
   return (
-    <div className="flex items-center gap-4 rounded-3xl bg-[var(--system-card)] p-5 shadow-sm">
+    <div className="flex items-center gap-4 rounded-3xl bg-var(--system-card) p-5 shadow-sm">
       <div
         className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-3xl ${iconBg}`}
       >
@@ -22,11 +22,11 @@ export function DeviceCountCard({
       </div>
 
       <div>
-        <p className="text-sm text-[var(--system-text-secondary)]">
+        <p className="text-sm text-var(--system-text-secondary)">
           {title}
         </p>
 
-        <p className="text-2xl font-bold text-[var(--system-text)]">
+        <p className="text-2xl font-bold text-var(--system-text)">
           {count}
         </p>
       </div>

@@ -30,10 +30,10 @@ export function CpuLoadChart() {
     <div className="rounded-3xl bg-white p-5 shadow-sm">
       <div className="mb-1 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h3 className="text-lg font-semibold text-[var(--system-text)]">
+          <h3 className="text-lg font-semibold text-var(--system-text)">
             CPU Load for localhost
           </h3>
-          <p className="text-sm text-[var(--system-text-secondary)]">Datasource: load1</p>
+          <p className="text-sm text-var(--system-text-secondary)">Datasource: load1</p>
         </div>
       </div>
 
@@ -81,10 +81,10 @@ export function CpuLoadChart() {
       <div className="mt-4 flex items-start gap-3">
         <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-sky-400" />
         <div className="grid grid-cols-2 gap-x-10 gap-y-1 text-xs">
-          <span className="text-[var(--system-text-secondary)]">Load average</span>
+          <span className="text-var(--system-text-secondary)">Load average</span>
           <span />
           {loadStats.map((stat) => (
-            <span key={stat.period} className="col-span-2 -mt-1 text-sm font-medium text-[var(--system-text)]">
+            <span key={stat.period} className="col-span-2 -mt-1 text-sm font-medium text-var(--system-text)">
               {stat.period}
             </span>
           ))}
@@ -92,13 +92,13 @@ export function CpuLoadChart() {
             {loadStats.map((stat) => (
               <div key={`${stat.period}-detail`} className="space-y-1">
                 <p className="text-gray-500">
-                  <span className="text-[var(--system-text)]">{stat.last}</span> last
+                  <span className="text-var(--system-text)">{stat.last}</span> last
                 </p>
                 <p className="text-gray-500">
-                  <span className="text-[var(--system-text)]">{stat.avg}</span> avg
+                  <span className="text-var(--system-text)">{stat.avg}</span> avg
                 </p>
                 <p className="text-gray-500">
-                  <span className="text-[var(--system-text)]">{stat.max}</span> max
+                  <span className="text-var(--system-text)">{stat.max}</span> max
                 </p>
               </div>
             ))}
