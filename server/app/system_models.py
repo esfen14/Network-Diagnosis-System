@@ -463,3 +463,32 @@ class SystemSettings(db.Model):
             "version": self.Version,
             "updatedAt": self.Updated_At.isoformat(),
         }
+
+class NotificationCursor(db.Model):
+    """
+    Tracks the read/unread boundary for Nagios notifications per user.
+
+    One row per user.  last_seen_ts is the UNIX timestamp of the most-recent
+    notification the user has acknowledged (i.e. opened the notification panel).
+
+    Any Nagios notification whose timestamp > last_seen_ts is considered "unread"
+    for that user.  A value of 0 (default) means the user has never read anything,
+    so everything is unread.
+    """
+    __tablename__ = "NOTIFICATION_CURSOR"
+
+    UserID: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey(User.UserID, ondelete="CASCADE"),
+        primary_key=True,
+    )
+    last_seen_ts: so.Mapped[int] = so.mapped_column(
+        sa.BigInteger(),
+        default=0,
+        nullable=False,
+    )
+    Updated_At: so.Mapped[datetime] = so.mapped_column(
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    User: so.Mapped['User'] = so.relationship()

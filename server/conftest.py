@@ -90,6 +90,8 @@ PERMISSION_NAMES = [
     "account.view",
     "account.info",
     "system.deploy.ncpa",
+    "system.notifications",
+    "system.report",
 ]
 
 
