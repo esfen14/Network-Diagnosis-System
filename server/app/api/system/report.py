@@ -26,7 +26,7 @@ from flask_login import login_required
 
 from app import db
 from app.api.system import system_bp
-from app.api.helper import get_range_custom
+from app.api.helper import get_range_custom, success, error
 from app.api.helper.database_access.permissions import require_permission
 from app.history_models import HostStatus, ServiceStatus, ServiceStateType
 from app.system_models import NetworkDiscovery
@@ -243,7 +243,7 @@ def report_host_availability():
             if total_snaps > 0 else None
         )
 
-        return {
+        return success({
             "period": _period_meta(period, start_dt, end_dt),
             "summary": {
                 "total":       len(hosts),
@@ -253,13 +253,13 @@ def report_host_availability():
                 "uptime_pct":  overall_uptime,
             },
             "hosts": hosts,
-        }, 200
+        })
 
     except Exception:
         current_app.logger.exception(
             "Unexpected error in report_host_availability"
         )
-        return {"message": "An unexpected error occurred."}, 500
+        return error("An unexpected error occurred.", 500)
 
 
 # ---------------------------------------------------------------------------
@@ -462,7 +462,7 @@ def report_hosts_by_os():
             for entry in grp["hosts"]
         )
 
-        return {
+        return success({
             "period": _period_meta(period, start_dt, end_dt),
             "summary": {
                 "total_hosts": global_total,
@@ -472,13 +472,13 @@ def report_hosts_by_os():
                 "uptime_pct":  global_uptime,
             },
             "by_os": by_os,
-        }, 200
+        })
 
     except Exception:
         current_app.logger.exception(
             "Unexpected error in report_hosts_by_os"
         )
-        return {"message": "An unexpected error occurred."}, 500
+        return error("An unexpected error occurred.", 500)
 
 
 # ---------------------------------------------------------------------------
@@ -652,7 +652,7 @@ def report_network_services():
             if global_total_snaps > 0 else None
         )
 
-        return {
+        return success({
             "period": _period_meta(period, start_dt, end_dt),
             "summary": {
                 "total_services":  len(services),
@@ -664,13 +664,13 @@ def report_network_services():
                 "uptime_pct":      overall_uptime,
             },
             "services": services,
-        }, 200
+        })
 
     except Exception:
         current_app.logger.exception(
             "Unexpected error in report_network_services"
         )
-        return {"message": "An unexpected error occurred."}, 500
+        return error("An unexpected error occurred.", 500)
 
 
 # ---------------------------------------------------------------------------
@@ -803,18 +803,18 @@ def report_device_services():
                 "services":   services,
             })
 
-        return {
+        return success({
             "period": _period_meta(period, start_dt, end_dt),
             "total_hosts":    len(hosts),
             "total_services": sum(len(h["services"]) for h in hosts),
             "hosts": hosts,
-        }, 200
+        })
 
     except Exception:
         current_app.logger.exception(
             "Unexpected error in report_device_services"
         )
-        return {"message": "An unexpected error occurred."}, 500
+        return error("An unexpected error occurred.", 500)
 
 
 # ---------------------------------------------------------------------------
@@ -852,22 +852,21 @@ def report_alerts():
         count  = request_alert_count_range(start_ts, end_ts, hostname=hostname, service=service)
 
         if alerts is None and count is None:
-            return {
-                "message": (
-                    "Failed to retrieve alert data from Nagios. "
-                    "Check server logs for details."
-                )
-            }, 502
+            return error(
+                "Failed to retrieve alert data from Nagios. "
+                "Check server logs for details.",
+                502,
+            )
 
-        return {
+        return success({
             "period": _period_meta(period, start_dt, end_dt),
             "count":  count,
             "alerts": alerts,
-        }, 200
+        })
 
     except Exception:
         current_app.logger.exception("Unexpected error in report_alerts")
-        return {"message": "An unexpected error occurred."}, 500
+        return error("An unexpected error occurred.", 500)
 
 
 # ---------------------------------------------------------------------------
@@ -909,19 +908,18 @@ def report_notifications():
         )
 
         if notifications is None and count is None:
-            return {
-                "message": (
-                    "Failed to retrieve notification data from Nagios. "
-                    "Check server logs for details."
-                )
-            }, 502
+            return error(
+                "Failed to retrieve notification data from Nagios. "
+                "Check server logs for details.",
+                502,
+            )
 
-        return {
+        return success({
             "period": _period_meta(period, start_dt, end_dt),
             "count":         count,
             "notifications": notifications,
-        }, 200
+        })
 
     except Exception:
         current_app.logger.exception("Unexpected error in report_notifications")
-        return {"message": "An unexpected error occurred."}, 500
+        return error("An unexpected error occurred.", 500)
