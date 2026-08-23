@@ -1,3 +1,40 @@
+"""
+NCPA Deployment API Routes
+==========================
+
+Purpose
+-------
+This module provides the Flask REST API for remotely deploying the NCPA
+(Nagios Core Agent) monitoring agent to discovered network devices.
+
+Workflow
+--------
+1. List eligible devices  →  2. Verify SSH host-key fingerprint  →
+3. Confirm trust (save fingerprint)  →  4. Supply credentials & start  →
+5. Background deployment  →  6. Monitor status
+
+Security
+--------
+- Every SSH connection verifies the device's host-key fingerprint.
+- The deployment user on the remote device has restricted sudo (one command only).
+- All routes require the ``system.deploy.ncpa`` permission.
+
+Module-level state
+------------------
+deploy_ncpa_thread          – Background daemon thread (``None`` when idle)
+deploy_ncpa_thread_stop_event – Threading.Event for graceful stop
+
+Routes
+------
+GET    /system/deployment/ncpa/devices            – List NCPA-eligible devices
+GET    /system/deployment/ncpa/<id>/fingerprint    – Fetch live SSH host-key fingerprint
+POST   /system/deployment/ncpa/<id>/confirm-trust  – Save/confirm device fingerprint
+POST   /system/deployment/ncpa/start               – Start background deployment
+POST   /system/deployment/ncpa/stop                – Request running deployment to stop
+GET    /system/deployment/ncpa/status              – Latest deployment job status
+GET    /system/deployment/ncpa/devices/trusted     – Trust-confirmed devices ready for deploy
+"""
+
 from flask_login import login_required, current_user
 from flask import request, current_app
 from app import app, db
@@ -7,7 +44,7 @@ from app.api.system import system_bp
 from app.api.helper import success, error
 from app.api.helper.database_access.permissions import require_permission
 from app.logging.deployment_history import get_deployment_ncpa_status
-from app.system_models import NetworkDiscovery, SSHCredentials
+from app.system_models import NetworkDiscovery, SSHCredentials, NCPADeployment, AgentStatus
 from app.ncpa_deployment.ncpa_deployment import *
 
 deploy_ncpa_thread = None
@@ -18,6 +55,14 @@ deploy_ncpa_thread_stop_event = threading.Event()
 @login_required
 @require_permission("system.deploy.ncpa")
 def get_ncpa_eligible_devices():
+    """
+    List all devices marked as NCPA-eligible.
+
+    Returns devices where ``NCPA_Eligible == True``, sorted by hostname.
+
+    Response (200):
+        { "success": true, "data": { "devices": [ {"device_id": int, "hostname": str}, ... ] } }
+    """
     try:
         devices = db.session.scalars(
             sa.select(NetworkDiscovery)
@@ -44,6 +89,24 @@ def get_ncpa_eligible_devices():
 @login_required
 @require_permission('system.deploy.ncpa')
 def get_device_fingerprint(device_id):
+    """
+    Fetch the live SSH host-key fingerprint for a device.
+
+    Connects to the device's IP address and retrieves its current
+    SSH host-key (SHA-256, base64-encoded). Used during the trust-
+    confirmation flow so the admin can verify before approving.
+
+    Args:
+        device_id: Primary key of the NetworkDiscovery record.
+
+    Response (200):
+        { "success": true, "data": { "device_id": int, "ip_address": str, "fingerprint": str } }
+
+    Errors:
+        404 – Device not found.
+        502 – Could not reach the device.
+        500 – Unexpected error.
+    """
     try:
         device = db.session.get(NetworkDiscovery, device_id)
 
@@ -71,6 +134,23 @@ def get_device_fingerprint(device_id):
 @login_required
 @require_permission('system.deploy.ncpa')
 def confirm_device_trust(device_id):
+    """
+    Save the device's current SSH host-key fingerprint.
+
+    Re-fetches the live fingerprint server-side (does not trust the
+    client) and stores it in the SSH_CREDENTIALS table. This is the
+    "trust confirmation" step — once saved, the device can be deployed to.
+
+    Args:
+        device_id: Primary key of the NetworkDiscovery record.
+
+    Response (200):
+        { "success": true, "message": "Device fingerprint saved." }
+
+    Errors:
+        404 – Device not found, or no SSH credentials entry exists.
+        500 – Unexpected error.
+    """
     try:
         device = db.session.get(NetworkDiscovery, device_id)
 
@@ -103,15 +183,37 @@ def confirm_device_trust(device_id):
 @login_required
 @require_permission('system.deploy.ncpa')
 def deploy_ncpa():
-    '''
-    Expected JSON body:
-    {
-        "devices": [
-            { "device_id": 1, "username": "admin", "password": "password123" },
-            ...
-        ]
-    }
-    '''
+    """
+    Start a background NCPA deployment job for one or more devices.
+
+    Validates each device (existence, trust confirmation, host-key match),
+    then launches a daemon thread that runs the actual deployment
+    (bootstrap user → install SSH key → install NCPA → verify).
+
+    Request body (JSON):
+        {
+            "devices": [
+                { "device_id": 1, "username": "admin", "password": "secret" },
+                ...
+            ]
+        }
+
+    Rejection reasons per device:
+        - "Device does not exist." – no NetworkDiscovery record
+        - "Not trust-confirmed."   – no SSH credentials or fingerprint saved
+        - "Host key mismatch."     – live fingerprint differs from stored
+
+    Response (202):
+        {
+            "success": true,
+            "data": { "started": int, "rejected": [{ "device_id": int, "reason": str }, ...] },
+            "message": "Deployment started for N device(s)."
+        }
+
+    Errors:
+        400 – Deployment already running, or no devices provided.
+        500 – Unexpected error.
+    """
     global deploy_ncpa_thread
 
     if deploy_ncpa_thread is not None and deploy_ncpa_thread.is_alive():
@@ -191,6 +293,19 @@ def deploy_ncpa():
 @login_required
 @require_permission('system.deploy.ncpa')
 def stop_ncpa_deployment():
+    """
+    Request the running deployment thread to stop.
+
+    Sets the ``deploy_ncpa_thread_stop_event`` flag. The background
+    thread checks this flag between devices and will halt on the next
+    evaluation.
+
+    Response (200):
+        { "success": true, "message": "NCPA deployment stop requested." }
+
+    Errors:
+        400 – No deployment is currently running.
+    """
     global deploy_ncpa_thread
 
     if deploy_ncpa_thread is None or not deploy_ncpa_thread.is_alive():
@@ -204,6 +319,32 @@ def stop_ncpa_deployment():
 @login_required
 @require_permission('system.deploy.ncpa')
 def deploy_ncpa_status():
+    """
+    Return the latest NCPA deployment job's status.
+
+    Queries the most recent record from ``NCPA_DEPLOYMENT_STATUS``
+    (ordered by ``Start_At`` descending).
+
+    Possible ``status`` values:
+        ``Running``, ``Success``, ``Partial Failure``, ``Failed``, ``Interrupted``
+
+    Response (200):
+        {
+            "success": true,
+            "data": {
+                "id": int,
+                "status": str,
+                "progress": int,
+                "message": str,
+                "start_at": "ISO-8601",
+                "completed_at": "ISO-8601" | null,
+                "error": str | null
+            }
+        }
+
+    When no deployment has occurred yet:
+        { "success": true, "message": "No NCPA deployment has occurred yet." }
+    """
     try:
         deployment_info = get_deployment_ncpa_status()
 
@@ -232,6 +373,19 @@ def deploy_ncpa_status():
 @login_required
 @require_permission('system.deploy.ncpa')
 def get_trusted_devices():
+    """
+    List trust-confirmed devices ready for deployment.
+
+    Returns devices that have:
+    - A saved SSH host-key fingerprint (``Key_Fingerprint IS NOT NULL``)
+    - An ``NCPADeployment`` record with ``Agent_Status == PENDING_NCPA``
+
+    These are devices the admin can select, supply credentials for,
+    and then deploy.
+
+    Response (200):
+        { "success": true, "data": { "devices": [ {"device_id": int, "hostname": str, "ip_address": str}, ... ] } }
+    """
     try:
         devices = db.session.scalars(
             sa.select(NetworkDiscovery)

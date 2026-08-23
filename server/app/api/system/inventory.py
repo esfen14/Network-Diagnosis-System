@@ -1,3 +1,25 @@
+"""System Inventory API module.
+
+Provides read-only endpoints for querying discovered network devices,
+their open TCP ports, and their open UDP ports. All routes require
+authentication and the "system.inventory" permission.
+
+Routes
+------
+GET /inventory
+    Paginated, searchable, sortable list of all discovered network devices.
+    Returns device details (hostname, IP, MAC, OS, device type, host status, etc.)
+    with pagination metadata.
+
+GET /inventory/<int:device_id>/ports/tcp
+    Returns a list of all open TCP ports for a specific device.
+    Each entry includes the port number and service name.
+
+GET /inventory/<int:device_id>/ports/udp
+    Returns a list of all open UDP ports for a specific device.
+    Each entry includes the port number and service name.
+"""
+
 from flask_login import login_required, current_user
 from app import app, db
 import sqlalchemy as sa
@@ -18,6 +40,54 @@ from app.api.system import system_bp
 @login_required
 @require_permission("system.inventory")
 def query_system_devices():
+    """Query and paginate all discovered network devices with optional search and sorting.
+
+    Retrieves the list of network devices discovered by the system, supports
+    pagination, full-text search across multiple fields, and sorting on any
+    supported column.
+
+    Inputs (query parameters):
+        page (int, default=1): Page number (must be >= 1).
+        per_page (int, default=10): Items per page (must be 1-100).
+        sort_by (str, default="hostname"): Column to sort by. One of:
+            "id", "hostname", "ip_address", "network", "mac_address",
+            "os_type", "device_type", "scanned_at".
+        order (str, default="asc"): Sort direction — "asc" or "desc".
+        search (str, default=""): Free-text search applied across
+            hostname, ip_address, network, mac_address, os_type, device_type.
+
+    Returns (JSON):
+        {
+            "success": true,
+            "data": {
+                "items": [
+                    {
+                        "id": int,
+                        "hostname": str,
+                        "ip_address": str,
+                        "network": str,
+                        "mac_address": str,
+                        "os_type": str | null,
+                        "device_type": str,
+                        "ncpa_eligible": bool,
+                        "include_in_scanning": bool,
+                        "scanned_at": str (ISO-8601) | null,
+                        "host_status": int | null
+                    }
+                ],
+                "page": int,
+                "per_page": int,
+                "pages": int,
+                "total": int,
+                "has_next": bool,
+                "has_prev": bool
+            }
+        }
+
+    Raises (JSON error):
+        400: Invalid page, per_page out of range, invalid sort field, or invalid order.
+        500: Unexpected server error.
+    """
     try:
         page = request.args.get("page", default=1, type=int)
         per_page = request.args.get("per_page", default=10, type=int)
@@ -134,6 +204,31 @@ def query_system_devices():
 @login_required
 @require_permission("system.inventory")
 def device_tcp_ports(device_id):
+    """Retrieve all open TCP ports for a specific discovered device.
+
+    Inputs (URL parameters):
+        device_id (int): The NetworkDiscovery ID of the target device.
+
+    Returns (JSON):
+        {
+            "success": true,
+            "data": {
+                "device_id": int,
+                "protocol": "TCP",
+                "ports": [
+                    {
+                        "id": int,
+                        "port": int,
+                        "service": str
+                    }
+                ]
+            }
+        }
+
+    Raises (JSON error):
+        404: Device with the given ID does not exist.
+        500: Unexpected server error.
+    """
     try:
         device = db.session.get(NetworkDiscovery, device_id)
 
@@ -174,6 +269,31 @@ def device_tcp_ports(device_id):
 @login_required
 @require_permission("system.inventory")
 def device_udp_ports(device_id):
+    """Retrieve all open UDP ports for a specific discovered device.
+
+    Inputs (URL parameters):
+        device_id (int): The NetworkDiscovery ID of the target device.
+
+    Returns (JSON):
+        {
+            "success": true,
+            "data": {
+                "device_id": int,
+                "protocol": "UDP",
+                "ports": [
+                    {
+                        "id": int,
+                        "port": int,
+                        "service": str
+                    }
+                ]
+            }
+        }
+
+    Raises (JSON error):
+        404: Device with the given ID does not exist.
+        500: Unexpected server error.
+    """
     try:
         device = db.session.get(NetworkDiscovery, device_id)
 

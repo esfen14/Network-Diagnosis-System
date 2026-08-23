@@ -1,3 +1,46 @@
+"""System log endpoints for the Network Diagnosis System.
+
+Provides paginated, filterable, and sortable read-only access to five
+log categories used for auditing and monitoring:
+
+1. **Activity Logs** – user actions (login, logout, config changes, etc.)
+2. **Configuration Change Logs** – parameter-level before/after snapshots
+3. **Network Discovery Logs** – status of network discovery scans
+4. **NCPA Deployment Logs** – status of NCPA agent deployments
+5. **Export Logs** – history of report exports (PDF, CSV, etc.)
+
+All routes require authentication and the ``system.logs`` permission.
+Each endpoint returns a ``success(...)`` envelope containing a list of
+log items plus pagination metadata.
+
+Routes
+------
+GET /log
+    Paginated user activity logs (logins, logouts, config changes, etc.).
+    Supports filtering by date range, search across action type and user fields,
+    and sorting by id, action_type, or performed_at.
+
+GET /configurationchange
+    Paginated configuration change audit trail with old/new value snapshots.
+    Supports filtering by date range, search across parameter and config type,
+    and sorting by id, type, parameter, or changed_at.
+
+GET /networkdiscovery
+    Paginated network discovery scan status logs (queued, running, completed, failed).
+    Supports filtering by date range, search across message and error fields,
+    and sorting by id, status, progress, start_at, or completed_at.
+
+GET /ncpadeployment
+    Paginated NCPA agent deployment status logs (queued, running, completed, failed).
+    Supports filtering by date range, search across message and error fields,
+    and sorting by id, status, progress, start_at, or completed_at.
+
+GET /exportlog
+    Paginated history of system report exports (PDF, CSV, etc.).
+    Supports filtering by date range, search across report type and user,
+    and sorting by id, report_type, format, or exported_at.
+"""
+
 from flask import request, current_app
 from flask_login import login_required
 import sqlalchemy as sa
@@ -24,6 +67,66 @@ from app.api.system import system_bp
 @login_required
 @require_permission("system.logs")
 def activity_logs():
+    """Retrieve paginated user activity logs.
+
+    Queries the ``ActivityLog`` table joined with ``User`` to produce a
+    chronological feed of user actions such as logins, logouts, and
+    configuration modifications.
+
+    **Query Parameters**
+
+    page (int, default 1):
+        Page number (1-based).
+    per_page (int, default 10, max 100):
+        Number of items per page.
+    sort_by (str, default "performed_at"):
+        Column to sort by. Allowed values: ``id``, ``action_type``,
+        ``performed_at``.
+    order (str, default "desc"):
+        Sort direction. Allowed values: ``asc``, ``desc``.
+    search (str, default ""):
+        Free-text filter matched against ``Action_Type``, user first name,
+        last name, and email.
+    start_date (str, default "", format YYYY-MM-DD):
+        Inclusive start of date range filter on ``Performed_At``.
+    end_date (str, default "", format YYYY-MM-DD):
+        Inclusive end of date range filter on ``Performed_At``.
+
+    **Returns (JSON via ``success()``)**
+
+    On success (HTTP 200):
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": {
+                "items": [
+                    {
+                        "id":          1,
+                        "category":    "activity",
+                        "type":        "account",
+                        "title":       "User Login",
+                        "user":        "John Doe",
+                        "description": "User Login",
+                        "timestamp":   "2025-01-15T10:30:00",
+                        "tagId":       "AL-0001"
+                    }
+                ],
+                "page":     1,
+                "per_page": 10,
+                "pages":    5,
+                "total":    42,
+                "has_next": true,
+                "has_prev": false
+            }
+        }
+
+    On error:
+
+    * ``400`` – invalid sort field, page < 1, or per_page out of range.
+    * ``500`` – unexpected internal error (logged with traceback).
+    """
     try:
         page     = request.args.get("page",     default=1,    type=int)
         per_page = request.args.get("per_page", default=10,   type=int)
@@ -118,6 +221,73 @@ def activity_logs():
 @login_required
 @require_permission("system.logs")
 def configuration_change_logs():
+    """Retrieve paginated configuration change logs.
+
+    Queries the ``ConfigurationChanges`` table joined with ``ActivityLog``
+    and ``User`` to produce an audit trail of parameter-level configuration
+    updates, including old and new values.
+
+    **Query Parameters**
+
+    page (int, default 1):
+        Page number (1-based).
+    per_page (int, default 10, max 100):
+        Number of items per page.
+    sort_by (str, default "changed_at"):
+        Column to sort by. Allowed values: ``id``, ``type``,
+        ``parameter``, ``changed_at``.
+    order (str, default "desc"):
+        Sort direction. Allowed values: ``asc``, ``desc``.
+    search (str, default ""):
+        Free-text filter matched against ``Conf_Type``, ``Parameter_Name``,
+        ``Old_Value``, ``New_Value``, and user names.
+    start_date (str, default "", format YYYY-MM-DD):
+        Inclusive start of date range on ``Changed_At``.
+    end_date (str, default "", format YYYY-MM-DD):
+        Inclusive end of date range on ``Changed_At``.
+
+    **Returns (JSON via ``success()``)**
+
+    On success (HTTP 200):
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": {
+                "items": [
+                    {
+                        "id":          1,
+                        "category":    "configurationChange",
+                        "type":        "configuration",
+                        "title":       "Configuration Updated",
+                        "user":        "John Doe",
+                        "description": "timeout changed from '30' to '60'.",
+                        "timestamp":   "2025-01-15T10:30:00",
+                        "tagId":       "CC-0001",
+                        "details": {
+                            "configuration_type": "network",
+                            "parameter_name":     "timeout",
+                            "old_value":          "30",
+                            "new_value":          "60",
+                            "log_id":             1
+                        }
+                    }
+                ],
+                "page":     1,
+                "per_page": 10,
+                "pages":    5,
+                "total":    42,
+                "has_next": true,
+                "has_prev": false
+            }
+        }
+
+    On error:
+
+    * ``400`` – invalid sort field, page < 1, or per_page out of range.
+    * ``500`` – unexpected internal error (logged with traceback).
+    """
     try:
         page     = request.args.get("page",     default=1,    type=int)
         per_page = request.args.get("per_page", default=10,   type=int)
@@ -226,6 +396,75 @@ def configuration_change_logs():
 @login_required
 @require_permission("system.logs")
 def network_discovery_logs():
+    """Retrieve paginated network discovery status logs.
+
+    Queries the ``NetworkDiscoveryStatus`` table joined with
+    ``ActivityLog`` and ``User`` to track the lifecycle of network
+    discovery scans (queued, running, completed, failed).
+
+    **Query Parameters**
+
+    page (int, default 1):
+        Page number (1-based).
+    per_page (int, default 10, max 100):
+        Number of items per page.
+    sort_by (str, default "start_at"):
+        Column to sort by. Allowed values: ``id``, ``status``,
+        ``progress``, ``start_at``, ``completed_at``.
+    order (str, default "desc"):
+        Sort direction. Allowed values: ``asc``, ``desc``.
+    search (str, default ""):
+        Free-text filter matched against ``Message``, ``Error``, and user
+        names.
+    start_date (str, default "", format YYYY-MM-DD):
+        Inclusive start of date range on ``Start_At``.
+    end_date (str, default "", format YYYY-MM-DD):
+        Inclusive end of date range on ``Start_At``.
+
+    **Returns (JSON via ``success()``)**
+
+    On success (HTTP 200):
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": {
+                "items": [
+                    {
+                        "id":          1,
+                        "category":    "networkDiscovery",
+                        "type":        "network",
+                        "title":       "Network Discovery",
+                        "user":        "John Doe",
+                        "description": "Discovery scan completed successfully",
+                        "timestamp":   "2025-01-15T10:30:00",
+                        "tagId":       "ND-0001",
+                        "details": {
+                            "status":       "completed",
+                            "progress":     100,
+                            "message":      "Discovery scan completed successfully",
+                            "start_at":     "2025-01-15T10:00:00",
+                            "completed_at": "2025-01-15T10:30:00",
+                            "error":        null,
+                            "log_id":       1
+                        }
+                    }
+                ],
+                "page":     1,
+                "per_page": 10,
+                "pages":    5,
+                "total":    42,
+                "has_next": true,
+                "has_prev": false
+            }
+        }
+
+    On error:
+
+    * ``400`` – invalid sort field, page < 1, or per_page out of range.
+    * ``500`` – unexpected internal error (logged with traceback).
+    """
     try:
         page     = request.args.get("page",     default=1,    type=int)
         per_page = request.args.get("per_page", default=10,   type=int)
@@ -333,6 +572,75 @@ def network_discovery_logs():
 @login_required
 @require_permission("system.logs")
 def ncpa_deployment_logs():
+    """Retrieve paginated NCPA deployment status logs.
+
+    Queries the ``NCPADeploymentStatus`` table joined with ``ActivityLog``
+    and ``User`` to track the lifecycle of NCPA agent deployments
+    (queued, running, completed, failed).
+
+    **Query Parameters**
+
+    page (int, default 1):
+        Page number (1-based).
+    per_page (int, default 10, max 100):
+        Number of items per page.
+    sort_by (str, default "start_at"):
+        Column to sort by. Allowed values: ``id``, ``status``,
+        ``progress``, ``start_at``, ``completed_at``.
+    order (str, default "desc"):
+        Sort direction. Allowed values: ``asc``, ``desc``.
+    search (str, default ""):
+        Free-text filter matched against ``Message``, ``Error``, and user
+        names.
+    start_date (str, default "", format YYYY-MM-DD):
+        Inclusive start of date range on ``Start_At``.
+    end_date (str, default "", format YYYY-MM-DD):
+        Inclusive end of date range on ``Start_At``.
+
+    **Returns (JSON via ``success()``)**
+
+    On success (HTTP 200):
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": {
+                "items": [
+                    {
+                        "id":          1,
+                        "category":    "ncpaDeployment",
+                        "type":        "deployment",
+                        "title":       "NCPA Deployment",
+                        "user":        "John Doe",
+                        "description": "Deployment completed successfully",
+                        "timestamp":   "2025-01-15T10:30:00",
+                        "tagId":       "NP-0001",
+                        "details": {
+                            "status":       "completed",
+                            "progress":     100,
+                            "message":      "Deployment completed successfully",
+                            "start_at":     "2025-01-15T10:00:00",
+                            "completed_at": "2025-01-15T10:30:00",
+                            "error":        null,
+                            "log_id":       1
+                        }
+                    }
+                ],
+                "page":     1,
+                "per_page": 10,
+                "pages":    5,
+                "total":    42,
+                "has_next": true,
+                "has_prev": false
+            }
+        }
+
+    On error:
+
+    * ``400`` – invalid sort field, page < 1, or per_page out of range.
+    * ``500`` – unexpected internal error (logged with traceback).
+    """
     try:
         page     = request.args.get("page",     default=1,    type=int)
         per_page = request.args.get("per_page", default=10,   type=int)
@@ -440,6 +748,73 @@ def ncpa_deployment_logs():
 @login_required
 @require_permission("system.logs")
 def export_logs():
+    """Retrieve paginated system log export history.
+
+    Queries the ``ExportLog`` table joined with ``ActivityLog`` and ``User``
+    to track when and how system reports were exported (PDF, CSV, etc.).
+
+    **Query Parameters**
+
+    page (int, default 1):
+        Page number (1-based).
+    per_page (int, default 10, max 100):
+        Number of items per page.
+    sort_by (str, default "exported_at"):
+        Column to sort by. Allowed values: ``id``, ``report_type``,
+        ``format``, ``exported_at``.
+    order (str, default "desc"):
+        Sort direction. Allowed values: ``asc``, ``desc``.
+    search (str, default ""):
+        Free-text filter matched against ``Report_Type`` and user names
+        / email.
+    start_date (str, default "", format YYYY-MM-DD):
+        Inclusive start of date range on ``Exported_At``.
+    end_date (str, default "", format YYYY-MM-DD):
+        Inclusive end of date range on ``Exported_At``.
+
+    **Returns (JSON via ``success()``)**
+
+    On success (HTTP 200):
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": {
+                "items": [
+                    {
+                        "id":          1,
+                        "category":    "exportLog",
+                        "type":        "export",
+                        "title":       "System Logs Exported",
+                        "user":        "John Doe",
+                        "description": "Exported network report as PDF.",
+                        "timestamp":   "2025-01-15T10:30:00",
+                        "tagId":       "EX-0001",
+                        "details": {
+                            "report_type": "network",
+                            "format":      "pdf",
+                            "start_date":  "2025-01-01",
+                            "end_date":    "2025-01-15",
+                            "exported_at": "2025-01-15T10:30:00",
+                            "log_id":      1
+                        }
+                    }
+                ],
+                "page":     1,
+                "per_page": 10,
+                "pages":    5,
+                "total":    42,
+                "has_next": true,
+                "has_prev": false
+            }
+        }
+
+    On error:
+
+    * ``400`` – invalid sort field, page < 1, or per_page out of range.
+    * ``500`` – unexpected internal error (logged with traceback).
+    """
     try:
         page     = request.args.get("page",     default=1,    type=int)
         per_page = request.args.get("per_page", default=10,   type=int)

@@ -15,6 +15,35 @@ Uptime % is computed from polling snapshots stored in HostStatus / ServiceStatus
 
 Routes that query Nagios CGI (alerts, notifications) return the raw Nagios
 data shaped into a consistent envelope.
+
+Routes
+------
+GET /report/availability
+    Host availability report within the selected period. Computes uptime % per
+    host from HostStatus snapshots and returns a summary of Up/Down/Unreachable
+    counts alongside per-host details.
+
+GET /report/hosts-by-os
+    Host availability grouped by OS type. Works like /report/availability but
+    adds an OS_Type dimension from NetworkDiscovery, with per-OS aggregate
+    counts and per-host breakdowns.
+
+GET /report/network-services
+    Network-wide service health overview. Aggregates ServiceStatus snapshots
+    per unique service name across all hosts, computing uptime % and current
+    state for each (host, service) instance.
+
+GET /report/device-services
+    Per-device service health. Groups service snapshots by hostname, showing
+    all monitored services per host with uptime % and current state.
+
+GET /report/alerts
+    Alert list and summary count fetched from Nagios archivejson.cgi.
+    Optional hostname and service filters. Returns raw Nagios alert data.
+
+GET /report/notifications
+    Notification list and summary count fetched from Nagios archivejson.cgi.
+    Optional hostname and service filters. Returns raw Nagios notification data.
 """
 
 from collections import Counter
