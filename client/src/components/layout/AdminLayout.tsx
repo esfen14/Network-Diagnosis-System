@@ -25,7 +25,7 @@ export function AdminLayout() {
             : 'bg-pinpoint-dark'
         }`}
       >
-        <div className="ml-[215px]">
+        <div className="ml-53.75">
           <Header />
         </div>
 

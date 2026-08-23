@@ -21,14 +21,14 @@ const categories = ['Idle', 'System', 'User', 'Wait', 'Utilization']
 
 export function CpuUtilizationChart() {
   return (
-    <div className="rounded-3xl bg-[var(--system-card)] p-5 shadow-sm">
+    <div className="rounded-3xl bg-var(--system-card) p-5 shadow-sm">
       <div className="mb-1 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h3 className="text-lg font-semibold text-[var(--system-text)]">
+          <h3 className="text-lg font-semibold text-var(--system-text)">
             CPU Utilization for localhost
           </h3>
 
-          <p className="text-sm text-[var(--system-text-secondary)]">
+          <p className="text-sm text-var(--system-text-secondary)">
             Datasource: user
           </p>
         </div>
@@ -36,7 +36,7 @@ export function CpuUtilizationChart() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="flex items-center gap-1 rounded-2xl bg-[var(--system-input)] px-3 py-2 text-sm text-[var(--system-text)] transition hover:opacity-80"
+            className="flex items-center gap-1 rounded-2xl bg-var(--system-input) px-3 py-2 text-sm text-var(--system-text) transition hover:opacity-80"
           >
             24 hours
             <ChevronDown className="h-4 w-4" />
@@ -44,7 +44,7 @@ export function CpuUtilizationChart() {
 
           <button
             type="button"
-            className="rounded-2xl bg-[var(--system-input)] p-2 text-[var(--system-text-secondary)] transition hover:opacity-80"
+            className="rounded-2xl bg-var(--system-input) p-2 text-var(--system-text-secondary) transition hover:opacity-80"
             aria-label="More options"
           >
             <MoreHorizontal className="h-4 w-4" />
@@ -52,7 +52,7 @@ export function CpuUtilizationChart() {
         </div>
       </div>
 
-      <p className="mb-4 text-sm text-[var(--system-text-secondary)]">
+      <p className="mb-4 text-sm text-var(--system-text-secondary)">
         CPU Utilization (%)
       </p>
 
@@ -142,7 +142,7 @@ export function CpuUtilizationChart() {
         {categories.map((cat) => (
           <span
             key={cat}
-            className="text-xs text-[var(--system-text-secondary)]"
+            className="text-xs text-var(--system-text-secondary)"
           >
             {cat}
           </span>

@@ -62,10 +62,10 @@ export function LoginPage() {
         }}
       />
 
-      <div className="absolute left-[110px] top-[180px] z-10 hidden lg:block">
+      <div className="absolute left-27.5 top-45 z-10 hidden lg:block">
         <PinPointLogo />
 
-        <div className="mt-12 max-w-[340px]">
+        <div className="mt-12 max-w-85">
           <h2 className="text-[42px] font-bold leading-[0.95] text-white">
             <span className="block">Next Generation</span>
             <span className="block">Infrastructure</span>
@@ -79,9 +79,9 @@ export function LoginPage() {
           </p>
 
           <div className="mt-10 flex gap-3">
-            <div className="h-[3px] w-12 rounded-full bg-white" />
-            <div className="h-[3px] w-8 rounded-full bg-white/40" />
-            <div className="h-[3px] w-8 rounded-full bg-white/40" />
+            <div className="h-0.75 w-12 rounded-full bg-white" />
+            <div className="h-0.75 w-8 rounded-full bg-white/40" />
+            <div className="h-0.75 w-8 rounded-full bg-white/40" />
           </div>
         </div>
       </div>
@@ -92,7 +92,7 @@ export function LoginPage() {
         <div className="h-0.5 w-8 rounded-full bg-white/40" />
       </div>
 
-      <div className="relative z-10 m-6 w-full max-w-[460px] rounded-3xl bg-white p-10 shadow-2xl lg:mr-[205px]">
+      <div className="relative z-10 m-6 w-full max-w-115 rounded-3xl bg-white p-10 shadow-2xl lg:mr-51.25">
         <header className="mb-8">
           <p className="text-xs tracking-tight text-black">WELCOME BACK</p>
           <h2 className="mt-1 text-[25px] font-medium leading-tight tracking-tight text-black">
@@ -103,7 +103,7 @@ export function LoginPage() {
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
           <div className="flex flex-col gap-5">
             <div className="relative">
-              <label className="absolute -top-2.5 left-4 z-10 bg-white px-1.5 text-xs text-[#424242]">
+              <label className="absolute -top-2.5 left-4 z-10 bg-white px-1.5 text-xs text-pinpoint-input-border">
                 Email
               </label>
 
@@ -112,7 +112,7 @@ export function LoginPage() {
                 placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-[30px] border border-[#424242] px-4 py-4 text-base text-black placeholder:text-[#424242]/60 outline-none focus:border-black"
+                className="w-full rounded-[30px] border border-pinpoint-input-border px-4 py-4 text-base text-black placeholder:text-pinpoint-input-border/60 outline-none focus:border-black"
                 required
               />
             </div>
@@ -127,7 +127,7 @@ export function LoginPage() {
                 placeholder="•••••••••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-[30px] border border-[#100F0F] px-4 py-4 pr-12 text-base text-black placeholder:text-[#424242]/60 outline-none focus:border-black"
+                className="w-full rounded-[30px] border border-[#100F0F] px-4 py-4 pr-12 text-base text-black placeholder:text-pinpoint-input-border/60 outline-none focus:border-black"
                 required
               />
 
@@ -152,14 +152,14 @@ export function LoginPage() {
                 type="checkbox"
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 accent-[#212121]"
+                className="h-4 w-4 rounded border-gray-300 accent-pinpoint-btn"
               />
               Remember me
             </label>
 
             <button
               type="button"
-              className="text-sm text-[#424242] hover:underline"
+              className="text-sm text-pinpoint-input-border hover:underline"
             >
               Forgot Password?
             </button>
@@ -168,7 +168,7 @@ export function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-[30px] bg-[#212121] py-4 text-xs font-bold tracking-wide text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-70"
+            className="w-full rounded-[30px] bg-pinpoint-btn py-4 text-xs font-bold tracking-wide text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-70"
           >
             {loading ? 'LOGGING IN...' : 'LOG IN'}
           </button>

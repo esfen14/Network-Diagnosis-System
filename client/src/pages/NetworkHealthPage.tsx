@@ -34,8 +34,8 @@ export function NetworkHealthPage() {
   }
 
   return (
-    <main className="flex-1 overflow-x-auto ml-[220px]">
-      <div className="min-w-[1400px] pl-6 pr-8"> 
+    <main className="flex-1 overflow-x-auto ml-55">
+      <div className="min-w-350 pl-6 pr-8"> 
         <div className="flex items-start gap-8">
           <div className="min-w-0 flex-1">
             <PageHeader

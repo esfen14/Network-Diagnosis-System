@@ -4,10 +4,10 @@ const barHeights = [40, 65, 55, 80, 70, 45, 60]
 
 export function HostAvailabilityCard() {
   return (
-    <div className="rounded-3xl bg-[var(--system-card)] p-5 shadow-sm">
+    <div className="rounded-3xl bg-var(--system-card) p-5 shadow-sm">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm text-[var(--system-text-secondary)]">
+          <p className="text-sm text-var(--system-text-secondary)">
             Host Availability
           </p>
 
@@ -44,7 +44,7 @@ export function HostAvailabilityCard() {
           7.5%
         </span>
 
-        <span className="text-xs text-[var(--system-text-secondary)]">
+        <span className="text-xs text-var(--system-text-secondary)">
           in last 7 Days
         </span>
       </div>

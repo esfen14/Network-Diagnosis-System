@@ -59,7 +59,7 @@ export function SystemLogsPage() {
   }
 
   return (
-    <main className="ml-[220px] flex-1 text-white">
+    <main className="ml-55 flex-1 text-white">
       <div className="space-y-6">
 
         {/* HEADER */}
@@ -117,7 +117,7 @@ export function SystemLogsPage() {
                 onChange={(e) => setStartDate(e.target.value)}
                 placeholder="YYYY-MM-DD"
                 maxLength={10}
-                className="w-[145px] rounded-lg bg-white/10 px-3 py-2 text-sm text-white placeholder-gray-500 outline-none transition focus:bg-white/15"
+                className="w-36.25 rounded-lg bg-white/10 px-3 py-2 text-sm text-white placeholder-gray-500 outline-none transition focus:bg-white/15"
               />
             </div>
 
@@ -133,7 +133,7 @@ export function SystemLogsPage() {
                 onChange={(e) => setEndDate(e.target.value)}
                 placeholder="YYYY-MM-DD"
                 maxLength={10}
-                className="w-[145px] rounded-lg bg-white/10 px-3 py-2 text-sm text-white placeholder-gray-500 outline-none transition focus:bg-white/15"
+                className="w-36.25 rounded-lg bg-white/10 px-3 py-2 text-sm text-white placeholder-gray-500 outline-none transition focus:bg-white/15"
               />
             </div>
 
@@ -215,7 +215,7 @@ export function SystemLogsPage() {
           </div>
 
           {/* RIGHT DETAILS PANEL */}
-          <div className="w-[300px] space-y-4 rounded-xl bg-white/5 p-4">
+          <div className="w-75 space-y-4 rounded-xl bg-white/5 p-4">
 
             {selectedLog ? (
               <>

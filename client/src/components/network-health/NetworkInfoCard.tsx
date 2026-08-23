@@ -31,7 +31,7 @@ export function NetworkInfoCard() {
 
   return (
     <div
-      className="relative min-h-[400px] rounded-[32px] p-8 shadow-xl"
+      className="relative min-h-100 rounded-4xl p-8 shadow-xl"
       style={{
         background: 'linear-gradient(180deg, #F5A317 25%, #F8BB54 100%)',
       }}

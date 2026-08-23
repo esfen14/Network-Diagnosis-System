@@ -11,8 +11,8 @@ import { SummaryStatCard } from '../components/shared/SummaryStatCard'
 export function DashboardPage() {
   return (
     // Update these two lines:
-    <main className="flex-1 overflow-x-auto ml-[220px]">
-      <div className="min-w-[1300px] pl-6 pr-8"> 
+    <main className="flex-1 overflow-x-auto ml-55">
+      <div className="min-w-325 pl-6 pr-8"> 
         <div className="flex gap-0">
           <div className="min-w-0 flex-1 space-y-6 p-6">
 
