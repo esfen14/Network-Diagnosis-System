@@ -20,10 +20,7 @@ export function ReportsPage() {
     setIsRunning(true)
     setStatusMessage(null)
     try {
-      // TODO: replace with real backend call, e.g.:
-      // const res = await fetch(`/api/reports/run?view=${view}&date=${selectedDate}`, { method: 'POST' })
-      // if (!res.ok) throw new Error('Failed to run report')
-      await abang() // placeholder simulating backend latency
+      await abang()
       setStatusMessage({ type: 'success', text: 'Report generated successfully.' })
     } catch (err) {
       setStatusMessage({ type: 'error', text: 'Could not run report. Please try again.' })
@@ -36,11 +33,7 @@ export function ReportsPage() {
     setIsExporting(true)
     setStatusMessage(null)
     try {
-      // TODO: replace with real backend call, e.g.:
-      // const res = await fetch(`/api/reports/export?view=${view}&date=${selectedDate}`)
-      // const blob = await res.blob()
-      // trigger file download from blob here
-      await abang() // placeholder simulating backend latency
+      await abang()
       setStatusMessage({ type: 'success', text: 'Export ready for download.' })
     } catch (err) {
       setStatusMessage({ type: 'error', text: 'Export failed. Please try again.' })
@@ -49,7 +42,6 @@ export function ReportsPage() {
     }
   }
 
-  // Placeholder for the backend call 
   const abang = () => new Promise((resolve) => setTimeout(resolve, 900))
 
   return (
@@ -67,28 +59,13 @@ export function ReportsPage() {
         />
 
         {/* Tabs */}
-        <div className="flex gap-6 border-b border-white/10">
-          <button
-            type="button"
-            onClick={() => setView('all-devices')}
-            className={`pb-3 text-sm transition ${
-              view === 'all-devices'
-                ? 'border-b-2 border-white font-medium text-white'
-                : 'text-gray-500 hover:text-gray-300'
-            }`}
-          >
+        <div className="flex gap-6 border-b border-[var(--border)]">
+          <button type="button" onClick={() => setView('all-devices')}
+            className={`pb-3 text-sm transition ${view === 'all-devices' ? 'border-b-2 border-[var(--text)] font-medium text-[var(--text)]' : 'text-[var(--text-muted)] hover:text-[var(--text)]'}`}>
             All Devices
           </button>
-
-          <button
-            type="button"
-            onClick={() => setView('link-health')}
-            className={`pb-3 text-sm transition ${
-              view === 'link-health'
-                ? 'border-b-2 border-white font-medium text-white'
-                : 'text-gray-500 hover:text-gray-300'
-            }`}
-          >
+          <button type="button" onClick={() => setView('link-health')}
+            className={`pb-3 text-sm transition ${view === 'link-health' ? 'border-b-2 border-[var(--text)] font-medium text-[var(--text)]' : 'text-[var(--text-muted)] hover:text-[var(--text)]'}`}>
             Link Health
           </button>
         </div>
@@ -105,7 +82,6 @@ export function ReportsPage() {
                 icon={Activity}
                 gradient="linear-gradient(135deg,#FFB100,#F59E0B)"
               />
-
               <SummaryStatCard
                 title="Offline Devices"
                 value="8"
@@ -113,7 +89,6 @@ export function ReportsPage() {
                 icon={XCircle}
                 gradient="linear-gradient(135deg,#EF4444,#DC2626)"
               />
-
               <SummaryStatCard
                 title="Online Devices"
                 value="112"
@@ -131,7 +106,6 @@ export function ReportsPage() {
                 icon={Activity}
                 gradient="linear-gradient(135deg,#FFB100,#F59E0B)"
               />
-
               <SummaryStatCard
                 title="Active Links"
                 value="13"
@@ -139,7 +113,6 @@ export function ReportsPage() {
                 icon={CheckCircle2}
                 gradient="linear-gradient(135deg,#22C55E,#16A34A)"
               />
-
               <SummaryStatCard
                 title="Down Links"
                 value="2"
@@ -150,7 +123,6 @@ export function ReportsPage() {
             </>
           )}
 
-          {/* Spacer */}
           <div className="hidden md:block" />
         </div>
 
@@ -160,14 +132,14 @@ export function ReportsPage() {
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="rounded-lg bg-white/10 px-4 py-2 text-white outline-none"
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 outline-none"
           />
 
           <button
             type="button"
             onClick={handleRunReport}
             disabled={isRunning}
-            className="flex items-center gap-2 rounded-lg bg-white px-4 py-2 font-medium text-black transition disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isRunning && <Loader2 className="h-4 w-4 animate-spin" />}
             {isRunning ? 'Running...' : 'Run Report'}
@@ -177,7 +149,7 @@ export function ReportsPage() {
             type="button"
             onClick={handleExport}
             disabled={isExporting}
-            className="flex items-center gap-2 rounded-lg bg-[#ffb100] px-4 py-2 font-medium text-black transition disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex items-center gap-2 rounded-lg bg-[#ffb100] px-4 py-2 font-medium text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isExporting && <Loader2 className="h-4 w-4 animate-spin" />}
             {isExporting ? 'Exporting...' : 'Export'}
@@ -189,8 +161,8 @@ export function ReportsPage() {
           <div
             className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm ${
               statusMessage.type === 'success'
-                ? 'bg-green-500/10 text-green-400'
-                : 'bg-red-500/10 text-red-400'
+                ? 'bg-green-50 text-green-700 border border-green-200'
+                : 'bg-red-50 text-red-700 border border-red-200'
             }`}
           >
             {statusMessage.type === 'success' ? (

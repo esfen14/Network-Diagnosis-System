@@ -24,14 +24,11 @@ type PluginState =
 export function PluginsPage() {
   const [view, setView] = useState<View>('available')
   const [selected, setSelected] = useState<number[]>([])
-  const [pluginState, setPluginState] =
-    useState<PluginState>('idle')
+  const [pluginState, setPluginState] = useState<PluginState>('idle')
 
   const toggleSelect = (id: number) => {
     setSelected((prev) =>
-      prev.includes(id)
-        ? prev.filter((i) => i !== id)
-        : [...prev, id]
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
     )
   }
 
@@ -42,10 +39,6 @@ export function PluginsPage() {
 
   const confirmAdd = () => {
     setPluginState('adding')
-
-    // abang - swap this for the real install call
-    // POST /api/plugins/install { ids: selected }
-    // keep the modal open until the response comes back, don't just trust the timeout
     setTimeout(() => {
       setSelected([])
       setPluginState('idle')
@@ -59,9 +52,6 @@ export function PluginsPage() {
 
   const confirmDelete = () => {
     setPluginState('deleting')
-
-    // abang - same deal, wire this to DELETE /api/plugins { ids: selected }
-    // also need to handle partial failures if some plugins fail to delete
     setTimeout(() => {
       setSelected([])
       setPluginState('deleteSuccess')
@@ -79,7 +69,6 @@ export function PluginsPage() {
       />
 
       <div className="grid md:grid-cols-4 gap-5">
-        {/* these are hardcoded for now, hook up to /api/plugins/stats later */}
         <SummaryStatCard
           title="Available Plugins"
           value="50"
@@ -87,7 +76,6 @@ export function PluginsPage() {
           icon={Activity}
           gradient="linear-gradient(135deg,#FF8A00,#FF5C00)"
         />
-
         <SummaryStatCard
           title="Installed Plugins"
           value="15"
@@ -95,7 +83,6 @@ export function PluginsPage() {
           icon={Activity}
           gradient="linear-gradient(135deg,#FFB100,#F59E0B)"
         />
-
         <SummaryStatCard
           title="Active Monitoring Checks"
           value="6"
@@ -103,7 +90,6 @@ export function PluginsPage() {
           icon={Activity}
           gradient="linear-gradient(135deg,#FF4D4D,#DC2626)"
         />
-
         <SummaryStatCard
           title="Plugin Engine Status"
           value="running"
@@ -113,14 +99,15 @@ export function PluginsPage() {
         />
       </div>
 
-      <div className="flex gap-6 border-b border-white/10">
+      {/* Tabs */}
+      <div className="flex gap-6 border-b border-gray-200">
         <button
           type="button"
           onClick={() => setView('available')}
           className={`pb-3 text-sm transition ${
             view === 'available'
-              ? 'border-b-2 border-white font-medium text-white'
-              : 'text-gray-500 hover:text-gray-300'
+              ? 'border-b-2 border-gray-900 font-medium text-gray-900'
+              : 'text-gray-500 hover:text-gray-700'
           }`}
         >
           Available Plugins
@@ -131,8 +118,8 @@ export function PluginsPage() {
           onClick={() => setView('installed')}
           className={`pb-3 text-sm transition ${
             view === 'installed'
-              ? 'border-b-2 border-white font-medium text-white'
-              : 'text-gray-500 hover:text-gray-300'
+              ? 'border-b-2 border-gray-900 font-medium text-gray-900'
+              : 'text-gray-500 hover:text-gray-700'
           }`}
         >
           Installed Plugins
@@ -176,18 +163,16 @@ export function PluginsPage() {
       )}
 
       {pluginState !== 'idle' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="relative w-full max-w-sm rounded-3xl bg-white p-8 text-center shadow-xl">
 
-            {pluginState !== 'adding' &&
-              pluginState !== 'deleting' && (
-                <button
-                  onClick={closeModal}
-                  className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-5 w-5" />
-                </button>
+            {pluginState !== 'adding' && pluginState !== 'deleting' && (
+              <button
+                onClick={closeModal}
+                className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
             )}
 
             {pluginState === 'confirmAdd' && (
@@ -195,17 +180,12 @@ export function PluginsPage() {
                 <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#F4A90B]">
                   <HelpCircle className="h-7 w-7 text-white" />
                 </div>
-
                 <h2 className="text-lg font-semibold text-gray-900">
                   This action requires system reboot.
                 </h2>
-
                 <p className="mt-2 text-sm text-gray-500">
-                  Are you sure you want to add the selected plugins? This action
-                  will re-analyze all connected devices and update the current
-                  network health status.
+                  Are you sure you want to add the selected plugins? This action will re-analyze all connected devices.
                 </p>
-
                 <div className="mt-6 flex justify-center gap-3">
                   <button
                     onClick={closeModal}
@@ -213,7 +193,6 @@ export function PluginsPage() {
                   >
                     Cancel
                   </button>
-
                   <button
                     onClick={confirmAdd}
                     className="rounded-2xl bg-emerald-500 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-600"
@@ -229,16 +208,12 @@ export function PluginsPage() {
                 <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-500">
                   <HelpCircle className="h-7 w-7 text-white" />
                 </div>
-
                 <h2 className="text-lg font-semibold text-gray-900">
                   Confirm Plugin Deletion
                 </h2>
-
                 <p className="mt-2 text-sm text-gray-500">
-                  Deleting this plugin will remove it from your available plugins
-                  list. Do you want to continue?
+                  Deleting this plugin will remove it from your available plugins list. Do you want to continue?
                 </p>
-
                 <div className="mt-6 flex justify-center gap-3">
                   <button
                     onClick={closeModal}
@@ -246,7 +221,6 @@ export function PluginsPage() {
                   >
                     Cancel
                   </button>
-
                   <button
                     onClick={confirmDelete}
                     className="rounded-2xl bg-red-500 px-5 py-2 text-sm font-medium text-white hover:bg-red-600"
@@ -257,18 +231,11 @@ export function PluginsPage() {
               </>
             )}
 
-            {(pluginState === 'adding' ||
-              pluginState === 'deleting') && (
+            {(pluginState === 'adding' || pluginState === 'deleting') && (
               <>
                 <div className="mx-auto mb-4 h-14 w-14 animate-spin rounded-full border-4 border-blue-200 border-t-blue-500" />
-
-                <h2 className="text-lg font-semibold text-gray-900">
-                  System rebooting
-                </h2>
-
-                <p className="mt-2 text-sm text-gray-500">
-                  Please wait. Do not close the system.
-                </p>
+                <h2 className="text-lg font-semibold text-gray-900">System rebooting</h2>
+                <p className="mt-2 text-sm text-gray-500">Please wait. Do not close the system.</p>
               </>
             )}
 
@@ -277,11 +244,7 @@ export function PluginsPage() {
                 <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-blue-500">
                   <CheckCircle2 className="h-8 w-8 text-white" />
                 </div>
-
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Deletion completed.
-                </h2>
-
+                <h2 className="text-lg font-semibold text-gray-900">Deletion completed.</h2>
                 <div className="mt-6 flex justify-center">
                   <button
                     onClick={closeModal}

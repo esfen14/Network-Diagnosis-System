@@ -182,46 +182,14 @@ export function SecuritySettings() {
   )
 }
 
-function SecurityStatus({
-  title,
-  enabled,
-}: {
-  title: string
-  enabled: boolean
-}) {
+function SecurityStatus({ title, enabled }: { title: string; enabled: boolean }) {
   return (
-    <div className="rounded-2xl bg-[#20252c] p-5">
-      <p className="text-sm font-medium text-white">
-        {title}
-      </p>
-
+    <div className="rounded-2xl bg-[var(--card-alt)] border border-[var(--border)] p-5">
+      <p className="text-sm font-medium text-[var(--text)]">{title}</p>
       <div className="mt-3 flex items-center gap-2">
-        <span
-          className={`
-            h-2.5
-            w-2.5
-            rounded-full
-            ${
-              enabled
-                ? 'bg-pinpoint-green-bright'
-                : 'bg-gray-500'
-            }
-          `}
-        />
-
-        <span
-          className={`
-            text-sm
-            ${
-              enabled
-                ? 'text-pinpoint-green'
-                : 'text-gray-500'
-            }
-          `}
-        >
-          {enabled
-            ? 'Enabled'
-            : 'Disabled'}
+        <span className={`h-2.5 w-2.5 rounded-full ${enabled ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+        <span className={`text-sm ${enabled ? 'text-emerald-600' : 'text-[var(--text-muted)]'}`}>
+          {enabled ? 'Enabled' : 'Disabled'}
         </span>
       </div>
     </div>

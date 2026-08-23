@@ -174,7 +174,11 @@ export function Header() {
   }
 
   return (
+<<<<<<< HEAD
     <header className="relative flex items-center justify-between border-b border-black/10 px-4 py-4 dark:border-white/10">
+=======
+    <header className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--sidebar-bg)] px-4 py-4">
+>>>>>>> 45f66a80 (fix(client): update device count card and add manage roles page)
       <div className="flex items-center gap-2">
         <button
           type="button"

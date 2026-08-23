@@ -8,12 +8,13 @@ import { LoginPage } from './pages/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { NetworkHealthPage } from './pages/NetworkHealthPage'
 import { DeviceInventoryPage } from './pages/DeviceInventoryPage'
-import { TopologyPage } from './pages/TopologyPage'
+//import { TopologyPage } from './pages/TopologyPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { SystemLogsPage } from './pages/SystemLogsPage'
 import { ManageAccountsPage } from './pages/ManageAccountsPage'
 import { PluginsPage } from './pages/PluginsPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { ManageRolesPage } from './pages/ManageRolesPage'
 
 export default function App() {
   return (
@@ -74,6 +75,11 @@ export default function App() {
           element={<ManageAccountsPage />}
         />
 
+        <Route
+          path="manage-roles"
+          element={<ManageRolesPage />}
+        />
+        
         <Route
           path="plugins"
           element={<PluginsPage />}

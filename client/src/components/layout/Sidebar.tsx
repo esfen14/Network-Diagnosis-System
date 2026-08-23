@@ -8,6 +8,7 @@ import {
   LogOut,
   Network,
   Settings,
+  Shield,
   Users,
   Wrench,
 } from 'lucide-react'
@@ -62,6 +63,14 @@ const navItems = [
     icon: Users,
     roles: ['network_admin'],
   },
+
+  {
+  to: '/manage-roles',
+  label: 'Manage Roles',
+  icon: Shield,
+  roles: ['network_admin'],
+  },
+
   {
     to: '/settings',
     label: 'Settings',
@@ -90,7 +99,7 @@ export function Sidebar() {
 
   return (
     <>
-      <aside className="fixed left-0 top-0 flex h-screen w-[220px] flex-col border-r border-gray-200 bg-white px-4 py-4">
+      <aside className="fixed left-0 top-0 flex h-screen w-[220px] flex-col border-r bg-[var(--sidebar-bg)] border-[var(--border)] px-4 py-4">
         <div className="flex flex-1 flex-col">
           <div className="mb-6 flex items-center gap-2 px-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-pinpoint-btn">
@@ -110,8 +119,8 @@ export function Sidebar() {
                 className={({ isActive }) =>
                   `flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors ${
                     isActive
-                      ? 'bg-pinpoint-dark text-gray-100'
-                      : 'text-black hover:bg-gray-200'
+                      ? 'bg-[var(--text)] text-[var(--sidebar-bg)]'
+                      : 'text-[var(--text)] hover:bg-[var(--hover)]'
                   }`
                 }
               >
@@ -122,30 +131,30 @@ export function Sidebar() {
           </div>
         </div>
 
-        <div className="mt-4 border-t border-gray-200 pt-4">
+        <div className="mt-4 border-t border-[var(--border)] pt-4">
           <div className="group relative">
-            <div className="flex cursor-pointer items-center gap-3 rounded-2xl px-3 py-2 transition hover:bg-gray-100">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200">
-                <Users className="h-4 w-4 text-gray-600" />
+            <div className="flex cursor-pointer items-center gap-3 rounded-2xl px-3 py-2 transition hover:bg-[var(--hover)]">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card-alt,#e5e7eb)]">
+                <Users className="h-4 w-4 text-[var(--text-muted)]" />
               </div>
 
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-black">
+                <p className="truncate text-sm font-medium text-[var(--text)]">
                   {user.role === 'network_admin'
                     ? 'Network Admin'
                     : 'Network Technician'}
                 </p>
 
-                <p className="truncate text-xs text-gray-500">
+                <p className="truncate text-xs text-[var(--text-muted)]">
                   admin@pinpoint.local
                 </p>
               </div>
             </div>
 
-            <div className="absolute bottom-full left-0 mb-2 hidden w-full rounded-xl border border-gray-200 bg-white py-1 shadow-lg group-hover:block">
+            <div className="absolute bottom-full left-0 mb-2 hidden w-full rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] py-1 shadow-lg group-hover:block">
               <button
                 onClick={() => setShowLogoutModal(true)}
-                className="flex w-full items-center gap-2 px-4 py-2 text-sm text-red-600 transition hover:bg-red-50"
+                className="flex w-full items-center gap-2 px-4 py-2 text-sm text-red-600 transition hover:bg-red-50 dark:hover:bg-red-950"
               >
                 <LogOut className="h-4 w-4" />
                 Sign Out

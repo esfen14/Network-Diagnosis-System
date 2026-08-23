@@ -17,24 +17,27 @@ const bandwidthSparkline = [820, 840, 835, 860, 845, 850, 848]
 
 export function NetworkHealthPage() {
   return (
-    <main className="flex-1 overflow-x-auto ml-[220px]">
-      <div className="min-w-[1400px] pl-6 pr-8"> 
-        <div className="flex items-start gap-8">
-          <div className="min-w-0 flex-1">
-            <PageHeader
-              title="Network Health"
-              description="Overview of system performance."
-            />
-          </div>
+    <main className="ml-[220px] flex-1">
+      <div className="min-w-[1400px] py-6">
+        {/* Sticky header row */}
+        <div className="sticky top-0 z-10 -mx-4 bg-[var(--sticky-bg)] px-4 pb-3 pt-3">
+          <div className="flex items-start gap-8">
+            <div className="min-w-0 flex-1">
+              <PageHeader
+                title="Network Health"
+                description="Overview of system performance."
+              />
+            </div>
 
-          <div className="flex w-72 shrink-0 justify-center pl-4 pt-2">
-            <button
-              type="button"
-              className="flex items-center gap-2 rounded-3xl bg-[#F4A90B] px-4 py-2 text-sm font-medium text-white shadow-md transition hover:opacity-90"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Last Scan: 1 Hour Ago
-            </button>
+            <div className="flex w-72 shrink-0 justify-center pt-2">
+              <button
+                type="button"
+                className="flex items-center gap-2 rounded-3xl bg-[#F4A90B] px-4 py-2 text-sm font-medium text-white shadow-md transition hover:opacity-90"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Last Scan: 1 Hour Ago
+              </button>
+            </div>
           </div>
         </div>
 
@@ -77,7 +80,7 @@ export function NetworkHealthPage() {
           </div>
 
           <div className="flex w-72 shrink-0 flex-col gap-4">
-            <div className="space-y-4 border-l border-[#1D2633] pl-6">
+            <div className="space-y-4 border-l border-gray-200 pl-6">
               <SparklineMetricCard
                 title="Latency"
                 value="12.5"
