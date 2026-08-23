@@ -131,17 +131,21 @@ export function Header() {
   // log every actual page visit dito, may timestamp na para di na basta list lang ng paths
   // ayaw natin i-log ulit kung same page lang paulit ulit (avoid spam sa list)
   useEffect(() => {
-    setHistory((prev) => {
-      if (prev[0]?.path === pathname) return prev
+    const timeoutId = window.setTimeout(() => {
+      setHistory((prev) => {
+        if (prev[0]?.path === pathname) return prev
 
-      const next = [
-        { path: pathname, visitedAt: Date.now() },
-        ...prev.filter((entry) => entry.path !== pathname),
-      ].slice(0, MAX_HISTORY)
+        const next = [
+          { path: pathname, visitedAt: Date.now() },
+          ...prev.filter((entry) => entry.path !== pathname),
+        ].slice(0, MAX_HISTORY)
 
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(next))
-      return next
-    })
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(next))
+        return next
+      })
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
   }, [pathname])
 
   const clearHistory = () => {
@@ -170,15 +174,10 @@ export function Header() {
   }
 
   const toggleMenu = (menu: 'notifications' | 'history' | 'account') => {
-    setOpenMenu((prev) => (prev === menu ? null : menu))
-  }
-
+  setOpenMenu((prev) => (prev === menu ? null : menu))
+}
   return (
-<<<<<<< HEAD
     <header className="relative flex items-center justify-between border-b border-black/10 px-4 py-4 dark:border-white/10">
-=======
-    <header className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--sidebar-bg)] px-4 py-4">
->>>>>>> 45f66a80 (fix(client): update device count card and add manage roles page)
       <div className="flex items-center gap-2">
         <button
           type="button"

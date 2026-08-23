@@ -260,7 +260,7 @@ export function AllDevicesReportTable() {
 
           <button
             type="button"
-            className="rounded-lg bg-gray-900 px-3 py-1 text-white dark:bg-white/10"
+            className="rounded-lg bg-white border border-gray-200 px-3 py-1 text-gray-900 shadow-sm hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:border-transparent dark:hover:bg-white/20"
           >
             1
           </button>

@@ -130,15 +130,15 @@ export function ManageAccountsPage() {
 
         <div className="flex flex-wrap items-center justify-between gap-4">
 
-          <div className="flex gap-6 border-b border-gray-200">
+          <div className="flex gap-6 border-b border-gray-200 dark:border-white/10">
             {(['all', 'active', 'inactive', 'locked', 'suspended'] as StatusFilter[]).map((status) => (
               <button
                 key={status}
                 onClick={() => setStatusFilter(status)}
                 className={`pb-3 text-sm transition ${
                   statusFilter === status
-                    ? 'border-b-2 border-gray-900 font-medium text-gray-900'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'border-b-2 border-gray-900 font-medium text-gray-900 dark:border-white dark:text-white'
+                    : 'text-gray-500 hover:text-gray-900 dark:text-white/60 dark:hover:text-white'
                 }`}
               >
                 {status.charAt(0).toUpperCase() + status.slice(1)}
@@ -150,14 +150,14 @@ export function ManageAccountsPage() {
             <button
               onClick={handleExport}
               disabled={filteredUsers.length === 0}
-              className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
+              className="px-4 py-2 rounded-lg bg-white border border-gray-200 text-gray-800 shadow-sm hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:border-transparent dark:hover:bg-white/20 transition disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             >
               Export
             </button>
 
             <button
               onClick={() => setShowAddModal(true)}
-              className="px-4 py-2 rounded-lg bg-[#ffb100] text-black font-medium"
+              className="px-4 py-2 rounded-lg bg-[#ffb100] text-black dark:text-black font-semibold hover:brightness-105 transition shadow-sm cursor-pointer"
             >
               + Add User
             </button>
@@ -317,11 +317,9 @@ function EditAccountModal({
   onCancel: () => void
   onSave: (updated: User) => void
 }) {
-  const [nameParts, firstName, ...rest] = [
-    user.fullName.split(' '),
-    user.fullName.split(' ')[0] ?? '',
-    ...user.fullName.split(' ').slice(1),
-  ]
+  const parts = user.fullName.split(' ')
+  const firstName = parts[0] ?? ''
+  const rest = parts.slice(1)
   const lastName = rest[rest.length - 1] ?? ''
   const middleName = rest.slice(0, -1).join(' ')
 

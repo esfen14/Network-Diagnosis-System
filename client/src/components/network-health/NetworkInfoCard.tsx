@@ -12,62 +12,77 @@ const networkDetails = [
 
 type ScanState = 'idle' | 'confirm' | 'scanning' | 'success'
 
-export function NetworkInfoCard() {
-  const [scanState, setScanState] = useState<ScanState>('idle')
+type NetworkInfoCardProps = {
+  lastScanTime?: string
+  lastScanDate?: string
+  onStartScan?: () => void
+}
 
-  const startScan = () => setScanState('confirm')
-  const closeModal = () => setScanState('idle')
+export function NetworkInfoCard({
+  lastScanTime = '02:43 PM',
+  lastScanDate = 'Today',
+  onStartScan,
+}: NetworkInfoCardProps = {}) {
+  const [internalScanState, setInternalScanState] = useState<ScanState>('idle')
+
+  const isControlled = typeof onStartScan === 'function'
+  const startScan = isControlled ? onStartScan : () => setInternalScanState('confirm')
+  const closeModal = () => setInternalScanState('idle')
   const confirmScan = () => {
-    setScanState('scanning')
-    // Replace setTimeout with real backend call when available:
-    // await fetch('/api/network/rescan', { method: 'POST' })
-    setTimeout(() => setScanState('success'), 2500)
+    setInternalScanState('scanning')
+    setTimeout(() => setInternalScanState('success'), 2500)
   }
+
+  const scanState = internalScanState
 
   return (
     <>
       <div
-        className="min-h-[400px] rounded-[32px] p-8 shadow-xl"
+        className="flex min-h-[400px] flex-col justify-between rounded-[32px] p-8 shadow-xl"
         style={{ background: 'linear-gradient(180deg, #F5A317 25%, #F8BB54 100%)' }}
       >
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-semibold text-white">CICT Network</h2>
-            <p className="text-sm text-white/80">#AP455698</p>
-          </div>
-          <div className="text-right">
-            <p className="text-sm font-semibold text-white">Last Scan</p>
-            <div className="mt-1 flex items-center justify-end gap-3 text-sm text-white/80">
-              <span className="flex items-center gap-1">
-                <Calendar className="h-3.5 w-3.5" />
-                Today
-              </span>
-              <span className="flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5" />
-                02:43 PM
-              </span>
+        <div>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-semibold text-white">CICT Network</h2>
+              <p className="text-sm text-white/80">#AP455698</p>
             </div>
+            <div className="text-right">
+              <p className="text-sm font-semibold text-white">Last Scan</p>
+              <div className="mt-1 flex items-center justify-end gap-3 text-sm text-white/80">
+                <span className="flex items-center gap-1">
+                  <Calendar className="h-3.5 w-3.5" />
+                  {lastScanDate}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Clock className="h-3.5 w-3.5" />
+                  {lastScanTime}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            {networkDetails.map(({ label, value }) => (
+              <div key={label}>
+                <p className="text-sm font-semibold text-white">{label}</p>
+                <p className="text-sm text-white/80">{value}</p>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          {networkDetails.map(({ label, value }) => (
-            <div key={label}>
-              <p className="text-sm font-semibold text-white">{label}</p>
-              <p className="text-sm text-white/80">{value}</p>
-            </div>
-          ))}
+        {/* Full-width scan button placed neatly at bottom */}
+        <div className="pt-8">
+          <button
+            type="button"
+            onClick={startScan}
+            className="flex w-full items-center justify-center gap-2 rounded-full bg-[#0D1117] px-6 py-3.5 text-sm font-semibold text-white shadow-md transition hover:bg-black/90 active:scale-[0.99] cursor-pointer"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Rescan Network
+          </button>
         </div>
-
-        {/* Full-width scan button */}
-        <button
-          type="button"
-          onClick={startScan}
-          className="mt-6 flex w-full items-center justify-center gap-2 rounded-3xl bg-[#0D1117] px-6 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-black"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Rescan Network
-        </button>
       </div>
 
       {/* Scan modal */}

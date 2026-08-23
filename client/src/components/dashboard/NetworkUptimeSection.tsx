@@ -15,7 +15,7 @@ export function NetworkUptimeSection() {
           <MoreHorizontal className="h-4 w-4" />
         </button>
       </div>
-      <div className="h-56 w-full">
+      <div className="h-56 w-full min-w-0">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: 'var(--chart-text)', fontSize: 12 }} interval={2} />

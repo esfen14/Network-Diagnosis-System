@@ -15,7 +15,7 @@ export function NetworkStatusOverview() {
           <MoreHorizontal className="h-4 w-4" />
         </button>
       </div>
-      <div className="flex flex-1 items-center justify-center gap-8">
+      <div className="flex flex-1 flex-wrap items-center justify-center gap-6 sm:gap-8 min-w-0">
         <div className="h-48 w-48 shrink-0">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>

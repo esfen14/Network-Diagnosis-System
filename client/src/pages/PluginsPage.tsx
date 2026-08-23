@@ -100,14 +100,14 @@ export function PluginsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-6 border-b border-gray-200">
+      <div className="flex gap-6 border-b border-gray-200 dark:border-white/10">
         <button
           type="button"
           onClick={() => setView('available')}
           className={`pb-3 text-sm transition ${
             view === 'available'
-              ? 'border-b-2 border-gray-900 font-medium text-gray-900'
-              : 'text-gray-500 hover:text-gray-700'
+              ? 'border-b-2 border-gray-900 font-medium text-gray-900 dark:border-white dark:text-white'
+              : 'text-gray-500 hover:text-gray-900 dark:text-white/60 dark:hover:text-white'
           }`}
         >
           Available Plugins
@@ -118,8 +118,8 @@ export function PluginsPage() {
           onClick={() => setView('installed')}
           className={`pb-3 text-sm transition ${
             view === 'installed'
-              ? 'border-b-2 border-gray-900 font-medium text-gray-900'
-              : 'text-gray-500 hover:text-gray-700'
+              ? 'border-b-2 border-gray-900 font-medium text-gray-900 dark:border-white dark:text-white'
+              : 'text-gray-500 hover:text-gray-900 dark:text-white/60 dark:hover:text-white'
           }`}
         >
           Installed Plugins
@@ -148,14 +148,14 @@ export function PluginsPage() {
         <div className="flex gap-3">
           <button
             onClick={handleAdd}
-            className="bg-[#ffb100] px-5 py-2 rounded-lg text-black font-medium"
+            className="bg-[#ffb100] px-5 py-2 rounded-lg text-black dark:text-black font-semibold hover:brightness-105 transition active:scale-[0.99] cursor-pointer shadow-sm"
           >
             Add Selected Plugins
           </button>
 
           <button
             onClick={handleDelete}
-            className="bg-red-500 px-5 py-2 rounded-lg text-white"
+            className="bg-red-500 px-5 py-2 rounded-lg text-white font-medium hover:bg-red-600 transition active:scale-[0.99] cursor-pointer shadow-sm"
           >
             Delete Plugins
           </button>

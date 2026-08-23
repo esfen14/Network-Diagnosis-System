@@ -10,12 +10,12 @@ import { SummaryStatCard } from '../components/shared/SummaryStatCard'
 
 export function DashboardPage() {
   return (
-    <main className="ml-[220px] flex-1">
-      <div className="min-w-[1300px] flex gap-0">
+    <main className="ml-[220px] flex-1 min-w-0">
+      <div className="flex w-full min-w-0 gap-6">
         <div className="min-w-0 flex-1 space-y-6 py-6">
 
           {/* Sticky banner */}
-          <div className="sticky top-0 z-10 -mx-4 bg-[var(--sticky-bg)] px-4 pb-3 pt-3">
+          <div className="sticky top-0 z-10 bg-[var(--sticky-bg)] pb-3 pt-3">
             <div className="rounded-2xl bg-[var(--card)] border border-[var(--border)] p-6 shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>

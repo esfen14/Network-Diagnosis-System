@@ -104,7 +104,7 @@ export function DeviceInventoryPage() {
                   : 'border-b-2 border-white font-medium text-white'
                 : isLight
                   ? 'text-gray-500 hover:text-gray-900'
-                  : 'text-gray-500 hover:text-gray-300'
+                  : 'text-white/60 hover:text-white'
             }`}
           >
             All Devices
@@ -120,7 +120,7 @@ export function DeviceInventoryPage() {
                   : 'border-b-2 border-white font-medium text-white'
                 : isLight
                   ? 'text-gray-500 hover:text-gray-900'
-                  : 'text-gray-500 hover:text-gray-300'
+                  : 'text-white/60 hover:text-white'
             }`}
           >
             Router

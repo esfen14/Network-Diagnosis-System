@@ -39,11 +39,11 @@ function generateRoleId() {
 }
 
 const roleBadgeStyle: Record<string, string> = {
-  admin: 'bg-red-100 text-red-700',
-  manager: 'bg-amber-100 text-amber-700',
-  staff: 'bg-emerald-100 text-emerald-700',
+  admin: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+  manager: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  staff: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
 }
-const defaultBadgeStyle = 'bg-blue-100 text-blue-700'
+const defaultBadgeStyle = 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
 
 export function ManageRolesPage() {
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all')
@@ -130,15 +130,15 @@ export function ManageRolesPage() {
         />
 
         {/* Filter tabs */}
-        <div className="flex gap-6 border-b border-gray-200">
+        <div className="flex gap-6 border-b border-gray-200 dark:border-white/10">
           {(['all', 'admin', 'manager', 'staff'] as RoleFilter[]).map((role) => (
             <button
               key={role}
               onClick={() => setRoleFilter(role)}
               className={`pb-3 text-sm capitalize transition ${
                 roleFilter === role
-                  ? 'border-b-2 border-gray-900 font-medium text-gray-900'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'border-b-2 border-gray-900 font-medium text-gray-900 dark:border-white dark:text-white'
+                  : 'text-gray-500 hover:text-gray-900 dark:text-white/60 dark:hover:text-white'
               }`}
             >
               {role}
@@ -147,36 +147,36 @@ export function ManageRolesPage() {
         </div>
 
         {/* Table card */}
-        <div className="overflow-hidden rounded-2xl bg-white border border-gray-200 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-200 p-4">
-            <h2 className="text-lg font-semibold text-gray-900">All System Roles</h2>
+        <div className="overflow-hidden rounded-2xl bg-white border border-gray-200 shadow-sm dark:bg-[#171B20] dark:border-white/10">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-200 p-4 dark:border-white/10">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">All System Roles</h2>
 
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowAddModal(true)}
-                className="px-4 py-2 rounded-lg bg-[#ffb100] text-black text-sm font-medium"
+                className="px-4 py-2 rounded-lg bg-[#ffb100] text-black font-semibold text-sm hover:brightness-105 transition"
               >
                 + Add Role
               </button>
-              <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                <Search className="h-4 w-4 text-gray-500" />
+              <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-white/10 dark:bg-[#0D1117]">
+                <Search className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                 <input
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search"
-                  className="bg-transparent text-sm text-gray-900 placeholder:text-gray-500 outline-none"
+                  className="bg-transparent text-sm text-gray-900 placeholder:text-gray-500 outline-none dark:text-white dark:placeholder:text-gray-400"
                 />
               </div>
               <button
                 type="button"
-                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
                 aria-label="Filter"
               >
                 <Filter className="h-4 w-4" />
               </button>
               <button
                 type="button"
-                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
                 aria-label="Sort"
               >
                 <ArrowUpDown className="h-4 w-4" />
@@ -187,7 +187,7 @@ export function ManageRolesPage() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-left text-sm">
               <thead>
-                <tr className="border-b border-gray-200 text-xs text-gray-500">
+                <tr className="border-b border-gray-200 text-xs text-gray-500 dark:border-white/10 dark:text-gray-400">
                   <th className="px-4 py-3 font-normal">Full Name</th>
                   <th className="px-4 py-3 font-normal">Role ID</th>
                   <th className="px-4 py-3 font-normal">Username</th>
@@ -199,10 +199,10 @@ export function ManageRolesPage() {
               </thead>
               <tbody>
                 {filteredRoles.map((role) => (
-                  <tr key={role.id} className="border-b border-gray-100 transition hover:bg-gray-50">
-                    <td className="px-4 py-3 text-gray-900">{role.fullName}</td>
-                    <td className="px-4 py-3 text-gray-500">{role.roleId}</td>
-                    <td className="px-4 py-3 text-gray-500">{role.username}</td>
+                  <tr key={role.id} className="border-b border-gray-100 transition hover:bg-gray-50 dark:border-white/5 dark:hover:bg-white/5">
+                    <td className="px-4 py-3 text-gray-900 dark:text-white">{role.fullName}</td>
+                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{role.roleId}</td>
+                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{role.username}</td>
                     <td className="px-4 py-3">
                       <span
                         className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${
@@ -212,12 +212,12 @@ export function ManageRolesPage() {
                         {role.roleType}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-500">{role.assignedDate}</td>
-                    <td className="px-4 py-3 text-gray-500">{role.lastCommit}</td>
+                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{role.assignedDate}</td>
+                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{role.lastCommit}</td>
                     <td className="px-4 py-3">
                       <button
                         onClick={() => setEditingRole(role)}
-                        className="text-gray-400 hover:text-gray-700"
+                        className="text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
                         aria-label="Edit role"
                       >
                         <Pencil className="h-4 w-4" />
@@ -229,8 +229,29 @@ export function ManageRolesPage() {
             </table>
           </div>
 
-          <div className="border-t border-gray-200 px-4 py-3 text-sm text-gray-500">
-            Showing {filteredRoles.length} of {allRoles.length} roles
+          <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 text-sm text-gray-500 dark:border-white/10 dark:text-gray-400">
+            <span>Showing {filteredRoles.length} of {allRoles.length} roles</span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled
+                className="rounded-lg px-3 py-1 hover:bg-gray-100 disabled:cursor-not-allowed dark:hover:bg-white/10"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-white border border-gray-200 px-3 py-1 text-gray-900 shadow-sm hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:border-transparent dark:hover:bg-white/20"
+              >
+                1
+              </button>
+              <button
+                type="button"
+                className="rounded-lg px-3 py-1 hover:bg-gray-100 dark:hover:bg-white/10"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </div>
       </div>

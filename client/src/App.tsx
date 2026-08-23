@@ -54,10 +54,10 @@ export default function App() {
           element={<DeviceInventoryPage />}
         />
 
-        <Route
+        {/* <Route
           path="topology"
           element={<TopologyPage />}
-        />
+        /> */}
         
 
         <Route

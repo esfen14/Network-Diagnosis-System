@@ -2,25 +2,27 @@ import { useState } from 'react'
 import { ChevronDown, MoreHorizontal } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
-const monthlyData = [
+type ChartDataPoint = { month?: string; day?: string; cpu: number }
+
+const monthlyData: ChartDataPoint[] = [
   { month: 'Jan', cpu: 42 }, { month: 'Feb', cpu: 55 }, { month: 'Mar', cpu: 48 },
   { month: 'Apr', cpu: 62 }, { month: 'May', cpu: 58 }, { month: 'Jun', cpu: 47 },
 ]
 
 const daysInMonth: Record<string, number> = { Jan: 31, Feb: 28, Mar: 31, Apr: 30, May: 31, Jun: 30 }
 
-function getDailyData(month: string) {
+function getDailyData(month: string): ChartDataPoint[] {
   const total = daysInMonth[month] ?? 30
   return Array.from({ length: total }, (_, i) => ({ day: `${i + 1}`, cpu: Math.round(30 + Math.random() * 40) }))
 }
 
-const monthOptions = ['All', ...monthlyData.map((m) => m.month)]
+const monthOptions = ['All', ...monthlyData.map((m) => m.month!)]
 
 export function ResourceUtilizationSection() {
   const [selectedMonth, setSelectedMonth] = useState('All')
   const [isOpen, setIsOpen] = useState(false)
 
-  const chartData = selectedMonth === 'All' ? monthlyData : getDailyData(selectedMonth)
+  const chartData: ChartDataPoint[] = selectedMonth === 'All' ? monthlyData : getDailyData(selectedMonth)
   const xKey = selectedMonth === 'All' ? 'month' : 'day'
 
   return (
@@ -60,7 +62,7 @@ export function ResourceUtilizationSection() {
           </button>
         </div>
       </div>
-      <div className="h-96 w-full">
+      <div className="h-96 w-full min-w-0">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" vertical={false} />

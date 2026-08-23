@@ -20,15 +20,15 @@ export function SystemLogsPage() {
         <PageHeader title="System Logs" description="Monitor events and system activities." />
 
         {/* Tabs */}
-        <div className="flex gap-6 border-b border-[var(--border)]">
+        <div className="flex gap-6 border-b border-white/10">
           {(['all', 'session', 'account', 'network'] as LogType[]).map((type) => (
             <button
               key={type}
               onClick={() => setTypeFilter(type)}
               className={`pb-3 text-sm transition ${
                 typeFilter === type
-                  ? 'border-b-2 border-[var(--text)] font-medium text-[var(--text)]'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+                  ? 'border-b-2 border-white font-medium text-white'
+                  : 'text-white/60 hover:text-white'
               }`}
             >
               {type === 'all' ? 'All Types' : type.charAt(0).toUpperCase() + type.slice(1)}

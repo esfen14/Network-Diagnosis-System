@@ -122,7 +122,7 @@ export function UserTable({ users, title, onEdit }: UserTableProps) {
         <span>Showing {filtered.length} of {users.length} users</span>
         <div className="flex gap-2">
           <button type="button" className="rounded-lg px-3 py-1 hover:bg-[var(--hover)]" disabled>Previous</button>
-          <button type="button" className="rounded-lg bg-[var(--text)] px-3 py-1 text-[var(--card)]">1</button>
+          <button type="button" className="rounded-lg bg-white border border-gray-200 px-3 py-1 text-gray-900 shadow-sm hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:border-transparent dark:hover:bg-white/20">1</button>
           <button type="button" className="rounded-lg px-3 py-1 hover:bg-[var(--hover)]">Next</button>
         </div>
       </div>
