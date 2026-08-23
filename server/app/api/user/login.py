@@ -1,5 +1,5 @@
 from flask_login import login_user, logout_user, current_user, login_required
-from flask import request
+from flask import request, current_app
 from app.api.helper import (
     validate_json_data,
     validate_json_fields,
@@ -54,17 +54,11 @@ def login():
 
     user = get_user_by_email(normalized_email)
 
-    if user is None:
+    if user is None or not user.check_password(password):
         return {
             "message": "Invalid username or password."
         }, 401
 
-    if not user.check_password(password):
-        return {
-            "message": "Invalid username or password."
-        }, 401
-
-    # Check account status
     if user.Status.value != "Active":
         return {
             "message": "Account inactive."

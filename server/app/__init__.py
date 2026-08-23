@@ -5,7 +5,6 @@ from flask_login import LoginManager
 from config import Config
 from flask_cors import CORS
 
-import os
 
 # Instantiate the application
 app = Flask(__name__)
@@ -32,8 +31,6 @@ app.cli.add_command(seed_command)
 from app import system_models, history_models
 
 #where the bluprints are called and registered
-from app.api.user import user_bp
-app.register_blueprint(user_bp)
+from app.api import api_bp 
 
-from app.api.system import system_bp
-app.register_blueprint(system_bp)
+app.register_blueprint(api_bp)

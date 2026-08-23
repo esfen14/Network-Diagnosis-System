@@ -1,0 +1,9 @@
+{
+    "ssh": "check_ssh",
+    "http": "check_http",
+    "https": "check_http!-S",
+    "ftp": "check_ftp",
+    "smtp": "check_smtp",
+    "mysql": "check_mysql",
+    "dns": "check_dns"
+}
