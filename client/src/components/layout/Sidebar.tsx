@@ -6,8 +6,9 @@ import {
   HelpCircle,
   LayoutDashboard,
   LogOut,
-  //Network,
+  Network,
   Settings,
+  Shield,
   Users,
   Wrench,
 } from 'lucide-react'
@@ -32,13 +33,14 @@ const navItems = [
     icon: FolderOpen,
     roles: ['network_admin', 'network_technician'],
   },
-  // Hidden for now — re-enable when Topology View is ready
-  // {
-  //   to: '/topology',
-  //   label: 'Topology View',
-  //   icon: Network,
-  //   roles: ['network_admin', 'network_technician'],
-  // },
+
+{
+    to: '/topology',
+    label: 'System Status',
+    icon: Network,
+    roles: ['network_admin', 'network_technician'],
+  },
+
   {
     to: '/plugins',
     label: 'Plugins',
@@ -63,6 +65,14 @@ const navItems = [
     icon: Users,
     roles: ['network_admin'],
   },
+
+  {
+  to: '/manage-roles',
+  label: 'Manage Roles',
+  icon: Shield,
+  roles: ['network_admin'],
+  },
+
   {
     to: '/settings',
     label: 'Settings',
@@ -98,7 +108,7 @@ export function Sidebar() {
               <Wrench className="h-4 w-4 text-gray-100" />
             </div>
 
-            <span className="text-sm font-semibold text-black">
+            <span className="text-sm font-semibold text-gray-900">
               PinPoint
             </span>
           </div>
@@ -111,8 +121,8 @@ export function Sidebar() {
                 className={({ isActive }) =>
                   `flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors ${
                     isActive
-                      ? 'bg-pinpoint-dark text-gray-100'
-                      : 'text-black hover:bg-gray-200'
+                      ? 'bg-gray-900 text-white'
+                      : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
                   }`
                 }
               >
@@ -126,12 +136,12 @@ export function Sidebar() {
         <div className="mt-4 border-t border-gray-200 pt-4">
           <div className="group relative">
             <div className="flex cursor-pointer items-center gap-3 rounded-2xl px-3 py-2 transition hover:bg-gray-100">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200">
-                <Users className="h-4 w-4 text-gray-600" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100">
+                <Users className="h-4 w-4 text-gray-500" />
               </div>
 
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-black">
+                <p className="truncate text-sm font-medium text-gray-900">
                   {user.role === 'network_admin'
                     ? 'Network Admin'
                     : 'Network Technician'}

@@ -1,257 +1,103 @@
-import { useState, useCallback } from 'react'
-import { ReactFlow, Background, Controls, Handle, Position, useNodesState, useEdgesState, type Node, type Edge, type NodeProps } from '@xyflow/react'
-import '@xyflow/react/dist/style.css'
-import { Server, Router, Monitor } from 'lucide-react'
+import { useMemo } from 'react'
+import { PageHeader } from '../components/shared/PageHeader'
+import { SummaryStatCard } from '../components/shared/SummaryStatCard'
+import {
+  ServiceStatusTable,
+  type ServiceRow,
+} from '../components/system-status/ServiceStatusTable'
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  HelpCircle,
+  XCircle,
+} from 'lucide-react'
 
-function CustomNode({ data }: NodeProps) {
-  const Icon = data.icon as typeof Server
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-gray-600 bg-[#1a1f26] px-3 py-2 text-white text-xs">
-      <Handle type="target" position={Position.Top} className="bg-gray-500!" />
-      <Icon className="h-4 w-4 shrink-0" />
-      <span>{data.label as string}</span>
-      <Handle type="source" position={Position.Bottom} className="bg-gray-500!" />
-    </div>
-  )
-}
-
-const nodeTypes = { custom: CustomNode }
-
-type SelectedItem =
-  | { type: 'device'; id: string }
-  | { type: 'link'; source: string; target: string }
-  | null
-
-const initialNodes: Node[] = [
-  { id: 'core-sw', type: 'custom', position: { x: 400, y: 50 }, data: { label: 'Core Switch', icon: Server } },
-  { id: 'router-1', type: 'custom', position: { x: 200, y: 200 }, data: { label: 'Router 1', icon: Router } },
-  { id: 'router-2', type: 'custom', position: { x: 600, y: 200 }, data: { label: 'Router 2', icon: Router } },
-  { id: 'sw-01', type: 'custom', position: { x: 100, y: 350 }, data: { label: 'SW-01', icon: Server } },
-  { id: 'sw-02', type: 'custom', position: { x: 300, y: 350 }, data: { label: 'SW-02', icon: Server } },
-  { id: 'sw-03', type: 'custom', position: { x: 500, y: 350 }, data: { label: 'SW-03', icon: Server } },
-  { id: 'sw-04', type: 'custom', position: { x: 700, y: 350 }, data: { label: 'SW-04', icon: Server } },
-  { id: 'pc-01', type: 'custom', position: { x: 50, y: 500 }, data: { label: 'PC-001', icon: Monitor } },
-  { id: 'pc-02', type: 'custom', position: { x: 150, y: 500 }, data: { label: 'PC-002', icon: Monitor } },
-  { id: 'pc-03', type: 'custom', position: { x: 250, y: 500 }, data: { label: 'PC-003', icon: Monitor } },
-  { id: 'pc-04', type: 'custom', position: { x: 350, y: 500 }, data: { label: 'PC-004', icon: Monitor } },
-  { id: 'pc-05', type: 'custom', position: { x: 450, y: 500 }, data: { label: 'PC-005', icon: Monitor } },
-  { id: 'pc-06', type: 'custom', position: { x: 550, y: 500 }, data: { label: 'PC-006', icon: Monitor } },
-  { id: 'pc-07', type: 'custom', position: { x: 650, y: 500 }, data: { label: 'PC-007', icon: Monitor } },
-  { id: 'pc-08', type: 'custom', position: { x: 750, y: 500 }, data: { label: 'PC-008', icon: Monitor } },
+// abang - dummy data lang muna to base sa current network status screen,
+// palitan pag naka-connect na tayo sa monitoring backend (polling every 90s daw dati)
+const services: ServiceRow[] = [
+  { id: 1, host: '192.168.130.130.test.local', service: 'rtsp-5000-TCP', status: 'OK', lastCheck: '08-22-2026 09:08:04', duration: '0d 21h 10m 13s' },
+  { id: 2, host: '192.168.130.130.test.local', service: 'ssh-22-TCP', status: 'OK', lastCheck: '08-22-2026 09:10:34', duration: '0d 21h 7m 43s' },
+  { id: 3, host: '192.168.130.3.test.local', service: 'http-3128-TCP', status: 'OK', lastCheck: '08-22-2026 09:08:22', duration: '0d 21h 9m 55s' },
+  { id: 4, host: '192.168.130.3.test.local', service: 'rpcbind-111-TCP', status: 'OK', lastCheck: '08-22-2026 09:07:42', duration: '0d 21h 10m 52s' },
+  { id: 5, host: '192.168.130.3.test.local', service: 'ssh-22-TCP', status: 'OK', lastCheck: '08-22-2026 09:08:41', duration: '0d 21h 9m 36s' },
+  { id: 6, host: '_gateway', service: 'domain-53-UDP', status: 'Unknown', lastCheck: '08-22-2026 09:09:44', duration: '0d 21h 7m 46s' },
+  { id: 7, host: 'localhost', service: 'Current Load', status: 'OK', lastCheck: '08-22-2026 09:09:00', duration: '164d 20h 49m 49s' },
+  { id: 8, host: 'localhost', service: 'Current Users', status: 'OK', lastCheck: '08-22-2026 09:10:42', duration: '164d 20h 49m 11s' },
+  { id: 9, host: 'localhost', service: 'HTTP', status: 'OK', lastCheck: '08-22-2026 09:09:19', duration: '164d 20h 48m 34s' },
+  { id: 10, host: 'localhost', service: 'PING', status: 'OK', lastCheck: '08-22-2026 09:08:13', duration: '164d 20h 52m 56s' },
+  { id: 11, host: 'localhost', service: 'Root Partition', status: 'OK', lastCheck: '08-22-2026 09:09:37', duration: '164d 20h 52m 19s' },
+  { id: 12, host: 'localhost', service: 'SSH', status: 'OK', lastCheck: '08-22-2026 09:09:39', duration: '164d 20h 51m 41s' },
+  { id: 13, host: 'localhost', service: 'Swap Usage', status: 'OK', lastCheck: '08-22-2026 09:09:56', duration: '164d 20h 51m 4s' },
+  { id: 14, host: 'localhost', service: 'Total Processes', status: 'OK', lastCheck: '08-22-2026 09:09:21', duration: '164d 20h 50m 26s' },
+  { id: 15, host: 'nagios', service: 'http-80-TCP', status: 'OK', lastCheck: '08-22-2026 09:10:15', duration: '0d 21h 10m 37s' },
+  { id: 16, host: 'nagios', service: 'ssh-22-TCP', status: 'OK', lastCheck: '08-22-2026 09:07:26', duration: '0d 21h 8m 58s' },
 ]
-
-const initialEdges: Edge[] = [
-  { id: 'e1', source: 'core-sw', target: 'router-1', style: { stroke: '#10b981' } },
-  { id: 'e2', source: 'core-sw', target: 'router-2', style: { stroke: '#10b981' } },
-  { id: 'e3', source: 'router-1', target: 'sw-01', style: { stroke: '#f59e0b' } },
-  { id: 'e4', source: 'router-1', target: 'sw-02', style: { stroke: '#10b981' } },
-  { id: 'e5', source: 'router-2', target: 'sw-03', style: { stroke: '#10b981' } },
-  { id: 'e6', source: 'router-2', target: 'sw-04', style: { stroke: '#ef4444' } },
-  { id: 'e7', source: 'sw-01', target: 'pc-01', style: { stroke: '#10b981' } },
-  { id: 'e8', source: 'sw-01', target: 'pc-02', style: { stroke: '#10b981' } },
-  { id: 'e9', source: 'sw-02', target: 'pc-03', style: { stroke: '#f59e0b' } },
-  { id: 'e10', source: 'sw-02', target: 'pc-04', style: { stroke: '#10b981' } },
-  { id: 'e11', source: 'sw-03', target: 'pc-05', style: { stroke: '#10b981' } },
-  { id: 'e12', source: 'sw-03', target: 'pc-06', style: { stroke: '#ef4444' } },
-  { id: 'e13', source: 'sw-04', target: 'pc-07', style: { stroke: '#10b981' } },
-  { id: 'e14', source: 'sw-04', target: 'pc-08', style: { stroke: '#10b981' } },
-]
-
-const deviceInfo: Record<string, { deviceId: string; hostName: string; vendor: string; osVersion: string; powerStatus: string; uptime: string; lastScanned: string }> = {
-  'core-sw': { deviceId: 'D-001', hostName: 'Core-SW', vendor: 'Cisco', osVersion: 'IOS-XE 17.9', powerStatus: 'Online', uptime: '17:40:22', lastScanned: '2025-10-12 15:25:34' },
-  'router-1': { deviceId: 'D-002', hostName: 'R1', vendor: 'Cisco', osVersion: 'IOS-XE 17.6', powerStatus: 'Online', uptime: '10:22:11', lastScanned: '2025-10-12 15:25:34' },
-  'router-2': { deviceId: 'D-003', hostName: 'R2', vendor: 'Cisco', osVersion: 'IOS-XE 17.6', powerStatus: 'Online', uptime: '09:15:44', lastScanned: '2025-10-12 15:25:34' },
-  'sw-01': { deviceId: 'D-004', hostName: 'SW-01', vendor: 'Cisco', osVersion: 'IOS 15.2', powerStatus: 'Online', uptime: '05:30:00', lastScanned: '2025-10-12 15:25:34' },
-  'sw-02': { deviceId: 'D-005', hostName: 'SW-02', vendor: 'Cisco', osVersion: 'IOS 15.2', powerStatus: 'Offline', uptime: '00:00:00', lastScanned: '2025-10-12 15:25:34' },
-}
-
-const interfaceInfo: Record<string, { interfaceId: string; hostName: string; ipAddress: string; subnetMask: string; macAddress: string; duplexMode: string; speed: string; status: string; connectedTo: string }> = {
-  'core-sw': { interfaceId: 'INT-001', hostName: 'Core-SW', ipAddress: '192.168.200.1', subnetMask: '255.255.255.0', macAddress: '00:1A:2B:4C:6D:7E', duplexMode: 'Full-Duplex', speed: '1 Gbps', status: 'Up', connectedTo: 'INT-002' },
-  'router-1': { interfaceId: 'INT-002', hostName: 'R1', ipAddress: '192.168.200.2', subnetMask: '255.255.255.0', macAddress: '00:1A:2B:4C:6D:7F', duplexMode: 'Full-Duplex', speed: '1 Gbps', status: 'Up', connectedTo: 'INT-001' },
-  'router-2': { interfaceId: 'INT-003', hostName: 'R2', ipAddress: '192.168.200.3', subnetMask: '255.255.255.0', macAddress: '00:1A:2B:4C:6D:80', duplexMode: 'Full-Duplex', speed: '1 Gbps', status: 'Up', connectedTo: 'INT-001' },
-  'sw-01': { interfaceId: 'INT-004', hostName: 'SW-01', ipAddress: '192.168.201.1', subnetMask: '255.255.255.0', macAddress: '00:1A:2B:4C:6D:81', duplexMode: 'Half-Duplex', speed: '100 Mbps', status: 'Up', connectedTo: 'INT-002' },
-  'sw-02': { interfaceId: 'INT-005', hostName: 'SW-02', ipAddress: '192.168.201.2', subnetMask: '255.255.255.0', macAddress: '00:1A:2B:4C:6D:82', duplexMode: 'Half-Duplex', speed: '100 Mbps', status: 'Down', connectedTo: 'INT-002' },
-}
 
 export function TopologyPage() {
-  const [nodes, , onNodesChange] = useNodesState(initialNodes)
-  const [edges, , onEdgesChange] = useEdgesState(initialEdges)
-  const [selected, setSelected] = useState<SelectedItem>(null)
-  const [showInterface, setShowInterface] = useState(false)
-
-  const onNodeClick = useCallback((_: unknown, node: Node) => {
-    setSelected({ type: 'device', id: node.id })
-    setShowInterface(false)
+  const serviceTotals = useMemo(() => {
+    const counts = { ok: 0, warning: 0, unknown: 0, critical: 0, pending: 0 }
+    services.forEach((s) => {
+      if (s.status === 'OK') counts.ok++
+      else if (s.status === 'Warning') counts.warning++
+      else if (s.status === 'Unknown') counts.unknown++
+      else if (s.status === 'Critical') counts.critical++
+      else counts.pending++
+    })
+    return counts
   }, [])
-
-  const onEdgeClick = useCallback((_: unknown, edge: Edge) => {
-    setSelected({ type: 'link', source: edge.source, target: edge.target })
-    setShowInterface(false)
-  }, [])
-
-  const onPaneClick = useCallback(() => {
-    setSelected(null)
-    setShowInterface(false)
-  }, [])
-
-  const device = selected?.type === 'device' ? deviceInfo[selected.id] : null
-  const iface = selected?.type === 'device' ? interfaceInfo[selected.id] : null
 
   return (
-    <main className="ml-55 flex-1">
-      <div className="rounded-3xl bg-[#1a1f26] p-8 shadow-lg">
-        <h1 className="text-2xl font-semibold text-white">Topology</h1>
-        <p className="mt-2 text-gray-400">Visual representation of the network's structure and architecture.</p>
+    <main className="ml-[220px] flex-1">
+      <div className="space-y-6">
 
-        <div className="mt-6 flex gap-4">
-          {/* Network Map */}
-          <div className="rounded-2xl overflow-hidden bg-pinpoint-dark" style={{ height: '600px', width: '0', flexGrow: 1 }}>
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              nodeTypes={nodeTypes}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onNodeClick={onNodeClick}
-              onEdgeClick={onEdgeClick}
-              onPaneClick={onPaneClick}
-              fitView
-            >
-              <Background color="#333" />
-              <Controls />
-            </ReactFlow>
-          </div>
+        <PageHeader
+          title="Service Status"
+          highlight="Overview"
+          description="Live status of hosts and monitored services across your network."
+        />
 
-          {/* Side Panel */}
-          {selected && (
-            <div className="w-72 shrink-0 space-y-4">
-              {selected.type === 'device' && device && !showInterface && (
-                <>
-                  <div className="rounded-2xl bg-pinpoint-dark p-4 space-y-2">
-                    <div className="flex justify-between items-center">
-                      <h2 className="text-white font-semibold text-sm">Device Information</h2>
-                      <button
-                        onClick={() => setShowInterface(true)}
-                        className="text-xs text-blue-400 hover:text-blue-300 underline"
-                      >
-                        View Interface
-                      </button>
-                    </div>
-                    <div className="space-y-1 text-sm">
-                      <p className="text-gray-400">Device ID: <span className="text-white">{device.deviceId}</span></p>
-                      <p className="text-gray-400">Host Name: <span className="text-white">{device.hostName}</span></p>
-                      <p className="text-gray-400">Vendor: <span className="text-white">{device.vendor}</span></p>
-                      <p className="text-gray-400">OS Version: <span className="text-white">{device.osVersion}</span></p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl bg-pinpoint-dark p-4 space-y-2">
-                    <div className="flex justify-between items-center">
-                      <p className="text-white text-sm font-medium">Device Utilization</p>
-                      <p className="text-gray-400 text-xs">Last 5</p>
-                    </div>
-                    <div className="h-24 flex items-center justify-center">
-                      <p className="text-gray-500 text-xs">Chart goes here</p>
-                    </div>
-                    <div className="space-y-1 text-xs">
-                      <p className="text-gray-400">● Temperature</p>
-                      <p className="text-gray-400">● CPU Utilization</p>
-                      <p className="text-gray-400">● Memory Utilization</p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl bg-pinpoint-dark p-4 space-y-2 text-sm">
-                    <p className="text-gray-400">Power Status: <span className={device.powerStatus === 'Online' ? 'text-green-400' : 'text-red-400'}>{device.powerStatus}</span></p>
-                    <p className="text-gray-400">Uptime (HH:mm:ss): <span className="text-white">{device.uptime}</span></p>
-                    <p className="text-gray-400">Last Scanned: <span className="text-white">{device.lastScanned}</span></p>
-                  </div>
-                </>
-              )}
-
-              {selected.type === 'device' && iface && showInterface && (
-                <>
-                  <div className="rounded-2xl bg-poinpoint-dark p-4 space-y-2">
-                    <div className="flex justify-between items-center">
-                      <h2 className="text-white font-semibold text-sm">Interface Information</h2>
-                      <button
-                        onClick={() => setShowInterface(false)}
-                        className="text-xs text-blue-400 hover:text-blue-300 underline"
-                      >
-                        ← Back
-                      </button>
-                    </div>
-                    <div className="space-y-1 text-sm">
-                      <p className="text-gray-400">Interface ID: <span className="text-white">{iface.interfaceId}</span></p>
-                      <p className="text-gray-400">Host Name: <span className="text-white">{iface.hostName}</span></p>
-                      <p className="text-gray-400">IP Address: <span className="text-white">{iface.ipAddress}</span></p>
-                      <p className="text-gray-400">Subnet Mask: <span className="text-white">{iface.subnetMask}</span></p>
-                      <p className="text-gray-400">Mac Address: <span className="text-white">{iface.macAddress}</span></p>
-                      <p className="text-gray-400">Duplex Mode: <span className="text-white">{iface.duplexMode}</span></p>
-                      <p className="text-gray-400">Speed: <span className="text-white">{iface.speed}</span></p>
-                      <p className="text-gray-400">Status: <span className={iface.status === 'Up' ? 'text-green-400' : 'text-red-400'}>{iface.status}</span></p>
-                      <p className="text-gray-400">Connected to: <span className="text-white">{iface.connectedTo}</span></p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl bg-pinpoint-dark p-4 space-y-2">
-                    <h2 className="text-white font-semibold text-sm">Interface Health</h2>
-                    <div className="flex justify-between items-center">
-                      <p className="text-white text-sm font-medium">Ingress/Egress Traffic</p>
-                      <p className="text-gray-400 text-xs">Last 5 Hours</p>
-                    </div>
-                    <div className="h-24 flex items-center justify-center">
-                      <p className="text-gray-500 text-xs">Chart goes here</p>
-                    </div>
-                    <div className="space-y-1 text-xs">
-                      <p className="text-gray-400">● Ingress Traffic</p>
-                      <p className="text-gray-400">● Egress Traffic</p>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {selected.type === 'link' && (
-                <>
-                  <div className="rounded-2xl bg-pinpoint-dark p-4 space-y-2">
-                    <h2 className="text-white font-semibold text-sm">Link Summary</h2>
-                    <div className="space-y-1 text-sm">
-                      <p className="text-gray-400">From: <span className="text-white">{selected.source}</span></p>
-                      <p className="text-gray-400">To: <span className="text-white">{selected.target}</span></p>
-                      <p className="text-gray-400">Last Scanned: <span className="text-white">2025-10-12 15:25:34</span></p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl bg-pinpoint-dark p-4 space-y-2">
-                    <div className="flex justify-between items-center">
-                      <p className="text-white text-sm font-medium">Utilization</p>
-                      <p className="text-gray-400 text-xs">Last 5 Hours</p>
-                    </div>
-                    <div className="h-24 flex items-center justify-center">
-                      <p className="text-gray-500 text-xs">Chart goes here</p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl bg-pinpoint-dark p-4 space-y-2">
-                    <div className="flex justify-between items-center">
-                      <p className="text-white text-sm font-medium">Ingress/Egress Traffic</p>
-                      <p className="text-gray-400 text-xs">Last 5 Hours</p>
-                    </div>
-                    <div className="h-24 flex items-center justify-center">
-                      <p className="text-gray-500 text-xs">Chart goes here</p>
-                    </div>
-                    <div className="space-y-1 text-xs">
-                      <p className="text-gray-400">● Ingress Traffic</p>
-                      <p className="text-gray-400">● Egress Traffic</p>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-5">
+          <SummaryStatCard
+            title="OK"
+            value={String(serviceTotals.ok)}
+            subtitle="Running normally"
+            icon={CheckCircle2}
+            gradient="linear-gradient(135deg,#22C55E,#16A34A)"
+          />
+          <SummaryStatCard
+            title="Warning"
+            value={String(serviceTotals.warning)}
+            subtitle="Needs attention"
+            icon={AlertTriangle}
+            gradient="linear-gradient(135deg,#EAB308,#CA8A04)"
+          />
+          <SummaryStatCard
+            title="Unknown"
+            value={String(serviceTotals.unknown)}
+            subtitle="Check inconclusive"
+            icon={HelpCircle}
+            gradient="linear-gradient(135deg,#FF8A00,#FF5C00)"
+          />
+          <SummaryStatCard
+            title="Critical"
+            value={String(serviceTotals.critical)}
+            subtitle="Service down"
+            icon={XCircle}
+            gradient="linear-gradient(135deg,#EF4444,#DC2626)"
+          />
+          <SummaryStatCard
+            title="Pending"
+            value={String(serviceTotals.pending)}
+            subtitle="Awaiting first check"
+            icon={Activity}
+            gradient="linear-gradient(135deg,#6B7280,#4B5563)"
+          />
         </div>
+
+        <ServiceStatusTable services={services} />
+
       </div>
     </main>
   )
 }
-
-export default TopologyPage

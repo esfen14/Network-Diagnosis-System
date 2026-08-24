@@ -20,39 +20,48 @@ type ScanState = 'idle' | 'confirm' | 'scanning' | 'success'
 
 export function NetworkHealthPage() {
   const [scanState, setScanState] = useState<ScanState>('idle')
+  const [lastScanText, setLastScanText] = useState('1 Hour Ago')
+  const [lastScanTime, setLastScanTime] = useState('02:43 PM')
+  const [lastScanDate, setLastScanDate] = useState('Today')
 
   const startScan = () => setScanState('confirm')
   const closeModal = () => setScanState('idle')
 
   const confirmScan = () => {
     setScanState('scanning')
-    // Placeholder delay - replace with an actual await fetch(...) call to the
-    // backend's rescan endpoint once it exists, then setScanState('success') on response.
     setTimeout(() => {
+      const now = new Date()
+      const formattedTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      setLastScanText('Just now')
+      setLastScanTime(formattedTime)
+      setLastScanDate('Today')
       setScanState('success')
     }, 2500)
   }
 
   return (
-    <main className="flex-1 overflow-x-auto ml-55">
-      <div className="min-w-350 pl-6 pr-8"> 
-        <div className="flex items-start gap-8">
-          <div className="min-w-0 flex-1">
-            <PageHeader
-              title="Network Health"
-              description="Overview of system performance."
-            />
-          </div>
+    <main className="ml-[220px] flex-1">
+      <div className="min-w-[1400px] py-6">
+        {/* Sticky header row */}
+        <div className="sticky top-0 z-10 bg-[var(--sticky-bg)] pb-3 pt-3">
+          <div className="flex items-start gap-8">
+            <div className="min-w-0 flex-1">
+              <PageHeader
+                title="Network Health"
+                description="Overview of system performance."
+              />
+            </div>
 
-          <div className="flex w-72 shrink-0 justify-center pl-4 pt-2">
-            <button
-              type="button"
-              onClick={startScan}
-              className="flex items-center gap-2 rounded-3xl bg-[#F4A90B] px-4 py-2 text-sm font-medium text-white shadow-md transition hover:opacity-90"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Last Scan: 1 Hour Ago
-            </button>
+            <div className="flex w-72 shrink-0 justify-center pt-2">
+              <button
+                type="button"
+                onClick={startScan}
+                className="flex items-center gap-2 rounded-3xl bg-[#F4A90B] px-4 py-2 text-sm font-medium text-white shadow-md transition hover:opacity-90 active:scale-[0.99] cursor-pointer"
+              >
+                <RefreshCw className={`h-4 w-4 ${scanState === 'scanning' ? 'animate-spin' : ''}`} />
+                Last Scan: {lastScanText}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -60,7 +69,11 @@ export function NetworkHealthPage() {
           <div className="min-w-0 flex-1 space-y-6">
             <div className="grid grid-cols-12 items-stretch gap-4">
               <div className="col-span-5 flex flex-col gap-4">
-                <NetworkInfoCard />
+                <NetworkInfoCard
+                  lastScanTime={lastScanTime}
+                  lastScanDate={lastScanDate}
+                  onStartScan={startScan}
+                />
                 <div className="flex-1">
                   <ResourceUsageCard />
                 </div>
@@ -95,7 +108,7 @@ export function NetworkHealthPage() {
           </div>
 
           <div className="flex w-72 shrink-0 flex-col gap-4">
-            <div className="space-y-4 border-l border-[#1D2633] pl-6">
+            <div className="space-y-4 border-l border-gray-200 pl-6">
               <SparklineMetricCard
                 title="Latency"
                 value="12.5"
@@ -140,15 +153,16 @@ export function NetworkHealthPage() {
         </div>
       </div>
 
+      {/* Rescan Modal */}
       {scanState !== 'idle' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="relative w-full max-w-sm rounded-3xl bg-white p-8 text-center shadow-xl">
             {scanState !== 'scanning' && (
               <button
                 type="button"
                 onClick={closeModal}
                 aria-label="Close"
-                className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
+                className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -159,26 +173,23 @@ export function NetworkHealthPage() {
                 <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#F4A90B]">
                   <HelpCircle className="h-7 w-7 text-white" />
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Confirm Network Rescan
-                </h3>
+                <h3 className="text-lg font-semibold text-gray-900">Confirm Network Rescan</h3>
                 <p className="mt-2 text-sm text-gray-500">
-                  Are you sure you want to rescan the network? This action will
-                  re-analyze all connected devices and update the current
-                  network health status.
+                  Are you sure you want to rescan the network? This will re-analyze all connected
+                  devices and update the current network health status.
                 </p>
                 <div className="mt-6 flex justify-center gap-3">
                   <button
                     type="button"
                     onClick={closeModal}
-                    className="rounded-2xl border border-gray-300 px-5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    className="rounded-2xl border border-gray-300 px-5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
                     onClick={confirmScan}
-                    className="rounded-2xl bg-emerald-500 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-600"
+                    className="rounded-2xl bg-emerald-500 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-600 cursor-pointer"
                   >
                     Confirm
                   </button>
@@ -189,28 +200,25 @@ export function NetworkHealthPage() {
             {scanState === 'scanning' && (
               <>
                 <div className="mx-auto mb-4 h-14 w-14 animate-spin rounded-full border-4 border-blue-200 border-t-blue-500" />
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Scanning in Progress
-                </h3>
-                <p className="mt-2 text-sm text-gray-500">
-                  Please wait. Do not close the system.
-                </p>
+                <h3 className="text-lg font-semibold text-gray-900">Scanning in Progress</h3>
+                <p className="mt-2 text-sm text-gray-500">Please wait. Do not close the system.</p>
               </>
             )}
 
             {scanState === 'success' && (
               <>
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-blue-500">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500">
                   <CheckCircle2 className="h-8 w-8 text-white" />
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Rescan successful!
-                </h3>
+                <h3 className="text-lg font-semibold text-gray-900">Rescan successful!</h3>
+                <p className="mt-2 text-sm text-gray-500">
+                  Network health metrics and device status have been refreshed.
+                </p>
                 <div className="mt-6 flex justify-center">
                   <button
                     type="button"
                     onClick={closeModal}
-                    className="rounded-2xl bg-emerald-500 px-8 py-2 text-sm font-medium text-white hover:bg-emerald-600"
+                    className="rounded-2xl bg-emerald-500 px-8 py-2 text-sm font-medium text-white hover:bg-emerald-600 cursor-pointer"
                   >
                     OK
                   </button>

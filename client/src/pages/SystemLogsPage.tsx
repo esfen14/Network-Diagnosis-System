@@ -59,253 +59,88 @@ export function SystemLogsPage() {
   }
 
   return (
-    <main className="ml-55 flex-1 text-white">
+    <main className="ml-[220px] flex-1">
       <div className="space-y-6">
 
-        {/* HEADER */}
-        <PageHeader
-          title="System Logs"
-          description="Monitor events and system activities."
-        />
+        <PageHeader title="System Logs" description="Monitor events and system activities." />
 
-        {/* TABS + DATE RANGE */}
-        <div className="flex items-end justify-between border-b border-white/10">
+      {/* Tabs */}
+      <div className="flex gap-6 border-b border-[var(--border)]">
+        {(['all', 'session', 'account', 'network'] as LogType[]).map((type) => (
+          <button
+            key={type}
+            onClick={() => setTypeFilter(type)}
+            className={`pb-3 text-sm transition ${
+              typeFilter === type
+                ? 'border-b-2 border-[var(--text)] font-medium text-[var(--text)]'
+                : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+            }`}
+          >
+            {type === 'all' ? 'All Types' : type.charAt(0).toUpperCase() + type.slice(1)}
+          </button>
+        ))}
+      </div>
 
-          {/* TABS */}
-          <div className="flex gap-6">
-
-            {(
-              [
-                'activity',
-                'configurationChange',
-                'networkDiscovery',
-                'ncpaDeployment',
-                'exportLog',
-              ] as LogTab[]
-            ).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => {
-                  setActiveTab(tab)
-                  setSelectedLog(null)
-                }}
-                className={`pb-3 text-sm transition ${
-                  activeTab === tab
-                    ? 'border-b-2 border-white font-medium text-white'
-                    : 'text-gray-500 hover:text-gray-300'
-                }`}
-              >
-                {getTabLabel(tab)}
-              </button>
-            ))}
-
-          </div>
-
-          {/* DATE RANGE */}
-          <div className="flex items-end gap-3 pb-2">
-
-            {/* START DATE */}
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-gray-400">
-                Start Date
-              </label>
-
-              <input
-                type="text"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                placeholder="YYYY-MM-DD"
-                maxLength={10}
-                className="w-36.25 rounded-lg bg-white/10 px-3 py-2 text-sm text-white placeholder-gray-500 outline-none transition focus:bg-white/15"
-              />
-            </div>
-
-            {/* END DATE */}
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-gray-400">
-                End Date
-              </label>
-
-              <input
-                type="text"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                placeholder="YYYY-MM-DD"
-                maxLength={10}
-                className="w-36.25 rounded-lg bg-white/10 px-3 py-2 text-sm text-white placeholder-gray-500 outline-none transition focus:bg-white/15"
-              />
-            </div>
-
-          </div>
-        </div>
-
-        {/* CONTENT */}
         <div className="flex gap-6">
-
-          {/* LOG TABLE */}
+          {/* Log list */}
           <div className="flex-1 space-y-4">
-
-            {/* TABLE HEADER */}
-            <div className="grid grid-cols-[180px_1fr_120px] gap-4 px-4 text-sm text-gray-400">
-              <span>
-                Timestamp
-              </span>
-
-              <span>
-                {getTabLabel(activeTab)}
-              </span>
-
-              <span>
-                Tag ID
-              </span>
+            <div className="grid grid-cols-[1fr_180px_120px] px-4 text-sm text-[var(--text-muted)]">
+              <span>Activity</span><span>Timestamp</span><span>Tag ID</span>
             </div>
-
-            {/* TABLE ROWS */}
             <div className="space-y-2">
 
               {filteredLogs.map((log) => (
                 <div
                   key={log.id}
                   onClick={() => setSelectedLog(log)}
-                  className="grid grid-cols-[180px_1fr_120px] items-center gap-4 rounded-lg bg-white/5 px-4 py-3 transition cursor-pointer hover:bg-white/10"
+                  className={`grid grid-cols-[1fr_180px_120px] items-center px-4 py-3 rounded-xl cursor-pointer border transition ${
+                    selectedLog?.id === log.id
+                      ? 'border-[var(--border)] bg-[var(--hover)]'
+                      : 'border-[var(--border)] bg-[var(--card)] hover:bg-[var(--hover)]'
+                  }`}
                 >
-
-                  {/* TIMESTAMP */}
-                  <span className="text-sm text-gray-400">
-                    {log.timestamp}
-                  </span>
-
-                  {/* LOG INFORMATION */}
                   <div className="flex items-center gap-3">
-
-                    <LogIcon type={log.type} />
-
-                    <div className="flex flex-col">
-
-                      <span className="text-sm font-medium text-white">
-                        {log.title}
-                      </span>
-
-                      <span className="text-xs text-gray-400">
-                        {log.description}
-                      </span>
-
-                    </div>
-
+                    <div className={`w-6 h-6 flex items-center justify-center rounded font-bold text-xs ${
+                      log.type === 'account' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300'
+                      : log.type === 'network' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'
+                      : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                    }`}>!</div>
+                    <span className="text-sm text-[var(--text)]">
+                      <strong>{log.title}</strong>{' '}
+                      <span className="text-[var(--text-muted)]">{log.description}</span>
+                    </span>
                   </div>
-
-                  {/* TAG ID */}
-                  <span className="text-sm text-gray-400">
-                    {log.tagId}
-                  </span>
-
+                  <span className="text-[var(--text-muted)] text-sm">{log.timestamp}</span>
+                  <span className="text-[var(--text-muted)] text-sm">{log.tagId}</span>
                 </div>
               ))}
 
             </div>
-
-            {/* EMPTY STATE */}
-            {filteredLogs.length === 0 && (
-              <div className="py-10 text-center text-sm text-gray-500">
-                No logs found for the selected date range.
-              </div>
-            )}
-
           </div>
 
-          {/* RIGHT DETAILS PANEL */}
-          <div className="w-75 space-y-4 rounded-xl bg-white/5 p-4">
-
+          {/* Detail panel */}
+          <div className="w-[300px] bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 space-y-4">
             {selectedLog ? (
               <>
-
-                {/* TITLE */}
-                <h3 className="border-b border-white/10 pb-2 text-sm font-semibold text-white">
-                  {selectedLog.title}
-                </h3>
-
-                {/* DESCRIPTION */}
-                <p className="text-sm text-gray-300">
-                  {selectedLog.description}
-                </p>
-
-                {/* DETAILS */}
-                <div className="space-y-1 text-xs text-gray-400">
-
-                  <p>
-                    Type: {selectedLog.type}
-                  </p>
-
-                  <p>
-                    Tag ID: {selectedLog.tagId}
-                  </p>
-
-                  <p>
-                    Date & Time: {selectedLog.timestamp}
-                  </p>
-
-                  <p>
-                    User: {selectedLog.user}
-                  </p>
-
+                <h3 className="text-sm font-semibold border-b border-[var(--border)] pb-2 text-[var(--text)]">{selectedLog.title}</h3>
+                <p className="text-sm text-[var(--text-muted)]">{selectedLog.description}</p>
+                <div className="text-xs text-[var(--text-muted)] space-y-1">
+                  <p>Tag ID: {selectedLog.tagId}</p>
+                  <p>Date &amp; Time: {selectedLog.timestamp}</p>
                 </div>
-
-                {/* ACTION BUTTONS */}
                 <div className="flex gap-2 pt-4">
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLog(null)}
-                    className="flex-1 rounded-md bg-white py-2 text-black transition hover:bg-gray-200"
-                  >
-                    Exit
-                  </button>
-
-                  <button
-                    type="button"
-                    className="flex-1 rounded-md bg-white/10 py-2 text-white transition hover:bg-white/20"
-                  >
-                    Log out
-                  </button>
-
+                  <button onClick={() => setSelectedLog(null)} className="flex-1 bg-[var(--text)] text-[var(--card)] py-2 rounded-lg text-sm">Close</button>
+                  <button className="flex-1 bg-[var(--hover)] border border-[var(--border)] py-2 rounded-lg text-sm text-[var(--text)] hover:bg-[var(--card-alt)]">Export</button>
                 </div>
 
               </>
             ) : (
-              <div className="text-sm text-gray-400">
-                Select a log to view details
-              </div>
+              <div className="text-[var(--text-muted)] text-sm">Select a log to view details</div>
             )}
-
           </div>
-
         </div>
+
       </div>
     </main>
-  )
-}
-
-/* LOG ICON */
-function LogIcon({ type }: { type: string }) {
-  const iconStyle =
-    type === 'account'
-      ? 'bg-yellow-500/20 text-yellow-400'
-      : type === 'network'
-      ? 'bg-orange-500/20 text-orange-400'
-      : type === 'deployment'
-      ? 'bg-blue-500/20 text-blue-400'
-      : type === 'configuration'
-      ? 'bg-purple-500/20 text-purple-400'
-      : type === 'export'
-      ? 'bg-green-500/20 text-green-400'
-      : 'bg-red-500/20 text-red-400'
-
-  return (
-    <div
-      className={`flex h-6 w-6 items-center justify-center rounded ${iconStyle}`}
-    >
-      !
-    </div>
   )
 }

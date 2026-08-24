@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
+import { Activity, CheckCircle2, XCircle } from 'lucide-react'
 import { DeviceTable } from '../components/device-inventory/DeviceTable.tsx'
 import { PageHeader } from '../components/shared/PageHeader'
+import { SummaryStatCard } from '../components/shared/SummaryStatCard'
 import { devices, routers } from '../data/devices'
 import { useSystemSettings } from '../contexts/SystemSettingsContext'
 
@@ -18,6 +20,16 @@ export function DeviceInventoryPage() {
     if (viewMode === 'all') return devices
     return devices.filter((d) => d.router === activeRouter)
   }, [viewMode, activeRouter])
+
+  const hostTotals = useMemo(() => {
+    const online = filteredDevices.filter((d) => d.status === 'Online').length
+    const offline = filteredDevices.filter((d) => d.status === 'Offline').length
+    return {
+      total: filteredDevices.length,
+      online,
+      offline,
+    }
+  }, [filteredDevices])
 
   const titleHighlight =
     viewMode === 'all'
@@ -40,7 +52,7 @@ export function DeviceInventoryPage() {
       <div className="space-y-6">
 
         <PageHeader
-          title="Device Inventory"
+          title="Host Inventory"
           highlight={titleHighlight}
           description={
             viewMode === 'all'
@@ -48,6 +60,32 @@ export function DeviceInventoryPage() {
               : 'Overview of connected devices based on each router in your network infrastructure.'
           }
         />
+
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+          <SummaryStatCard
+            title="Total Hosts"
+            value={String(hostTotals.total)}
+            subtitle={viewMode === 'all' ? 'Across all routers' : `On Router ${activeRouter}`}
+            icon={Activity}
+            gradient="linear-gradient(135deg,#FFB100,#F59E0B)"
+          />
+
+          <SummaryStatCard
+            title="Online"
+            value={String(hostTotals.online)}
+            subtitle="Currently reachable"
+            icon={CheckCircle2}
+            gradient="linear-gradient(135deg,#22C55E,#16A34A)"
+          />
+
+          <SummaryStatCard
+            title="Offline"
+            value={String(hostTotals.offline)}
+            subtitle="Currently unreachable"
+            icon={XCircle}
+            gradient="linear-gradient(135deg,#EF4444,#DC2626)"
+          />
+        </div>
 
         <div
           className={`flex gap-6 border-b ${
@@ -66,7 +104,7 @@ export function DeviceInventoryPage() {
                   : 'border-b-2 border-white font-medium text-white'
                 : isLight
                   ? 'text-gray-500 hover:text-gray-900'
-                  : 'text-gray-500 hover:text-gray-300'
+                  : 'text-white/60 hover:text-white'
             }`}
           >
             All Devices
@@ -82,7 +120,7 @@ export function DeviceInventoryPage() {
                   : 'border-b-2 border-white font-medium text-white'
                 : isLight
                   ? 'text-gray-500 hover:text-gray-900'
-                  : 'text-gray-500 hover:text-gray-300'
+                  : 'text-white/60 hover:text-white'
             }`}
           >
             Router

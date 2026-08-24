@@ -218,50 +218,14 @@ export function SystemSettings() {
   )
 }
 
-function StatusCard({
-  icon: Icon,
-  title,
-  status,
-  active,
-}: {
-  icon: typeof Wrench
-  title: string
-  status: string
-  active: boolean
-}) {
+function StatusCard({ icon: Icon, title, status, active }: { icon: typeof Wrench; title: string; status: string; active: boolean }) {
   return (
-    <div className="rounded-2xl bg-[#20252c] p-5">
-
-      <Icon
-        size={20}
-        className="text-pinpoint-orange"
-      />
-
-      <p className="mt-4 text-sm font-medium text-white">
-        {title}
-      </p>
-
+    <div className="rounded-2xl bg-[var(--card-alt)] border border-[var(--border)] p-5">
+      <Icon size={20} className="text-[#ffb100]" />
+      <p className="mt-4 text-sm font-medium text-[var(--text)]">{title}</p>
       <div className="mt-2 flex items-center gap-2">
-
-        <span
-          className={`
-            h-2
-            w-2
-            rounded-full
-            ${
-              active
-                ? 'bg-pinpoint-green-bright'
-                : 'bg-gray-500'
-            }
-          `}
-        />
-
-        <span
-          className="text-xs text-gray-400"
-        >
-          {status}
-        </span>
-
+        <span className={`h-2 w-2 rounded-full ${active ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+        <span className="text-xs text-[var(--text-muted)]">{status}</span>
       </div>
     </div>
   )

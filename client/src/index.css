@@ -2,34 +2,28 @@
 
 /*
 |--------------------------------------------------------------------------
-| Dark mode variant
+| Dark mode variant — triggers on data-theme="dark" on <html>
 |--------------------------------------------------------------------------
-
 */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @theme {
   --font-sans: 'Inter', system-ui, sans-serif;
   --color-pinpoint-dark: #0d1117;
-  --color-pinpoint-card: #232323;
+  --color-pinpoint-card: #ffffff;
   --color-pinpoint-sidebar: #f5f5f6;
-  --color-pinpoint-green: #30d158;
-  --color-pinpoint-green-bright: #00f546;
-  --color-pinpoint-gray-300: #d1d5db;
+  --color-pinpoint-green: #16a34a;
+  --color-pinpoint-green-bright: #22c55e;
+  --color-pinpoint-gray-300: #374151;
   --color-pinpoint-gray-50: #f9fafb;
-  --color-pinpoint-slate-400: #94a3b8;
-  --color-pinpoint-input-border: #424242;
-  --color-pinpoint-input-dark: #100f0f;
+  --color-pinpoint-slate-400: #64748b;
+  --color-pinpoint-input-border: #d1d5db;
   --color-pinpoint-btn: #212121;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
-html,
-body,
-#root {
+html, body, #root {
   margin: 0;
   min-height: 100vh;
   font-family: var(--font-sans);
@@ -38,230 +32,143 @@ body,
 
 /*
 |--------------------------------------------------------------------------
-| Theme variables 
+| Theme tokens — light (default)
 |--------------------------------------------------------------------------
 */
+:root,
+html[data-theme='light'] {
+  --bg:          #f5f6f8;
+  --sidebar-bg:  #ffffff;
+  --card:        #ffffff;
+  --card-alt:    #f3f4f6;
+  --text:        #111827;
+  --text-muted:  #6b7280;
+  --text-faint:  #9ca3af;
+  --border:      #e5e7eb;
+  --input-bg:    #f9fafb;
+  --hover:       #f3f4f6;
+  --chart-grid:  #e5e7eb;
+  --chart-text:  #6b7280;
+  --tooltip-bg:  #ffffff;
+  --tooltip-border: #e5e7eb;
+  --tooltip-text: #111827;
+  --sticky-bg:   #f5f6f8;
+}
 
+/*
+|--------------------------------------------------------------------------
+| Theme tokens — dark
+|--------------------------------------------------------------------------
+*/
 html[data-theme='dark'] {
-  --system-bg: #0d1117;
-  --system-card: #1a1f26;
-  --system-card-secondary: #20252c;
-  --system-text: #ffffff;
-  --system-text-secondary: #9ca3af;
-  --system-border: #2c323a;
-
-  --pinpoint-system-bg: #0d1117;
-  --pinpoint-system-card: #1a1f26;
-  --pinpoint-system-card-secondary: #20252c;
-  --pinpoint-system-text: #ffffff;
-  --pinpoint-system-text-secondary: #9ca3af;
-  --pinpoint-system-border: #2c323a;
-
-  --admin-layout-bg: #f5f5f6;
-  --admin-main-bg: #0d1117;
-}
-
-html[data-theme='light'] {
-  --system-bg: #f5f6f8;
-  --system-card: #ffffff;
-  --system-card-secondary: #f0f1f3;
-  --system-text: #111827;
-  --system-text-secondary: #6b7280;
-  --system-border: #d1d5db;
-
-  --pinpoint-system-bg: #f5f6f8;
-  --pinpoint-system-card: #ffffff;
-  --pinpoint-system-card-secondary: #eef0f3;
-  --pinpoint-system-text: #111827;
-  --pinpoint-system-text-secondary: #6b7280;
-  --pinpoint-system-border: #d1d5db;
-
-  --admin-layout-bg: #151a21;
-  --admin-main-bg: #f5f6f8;
-}
-
-html[data-theme='dark'],
-html[data-theme='light'] {
-  transition:
-    background-color 200ms ease,
-    color 200ms ease;
-}
-
-html[data-theme='dark'] body,
-html[data-theme='light'] body {
-  background-color: var(--system-bg);
-  color: var(--system-text);
-  transition:
-    background-color 200ms ease,
-    color 200ms ease;
+  --bg:          #0d1117;
+  --sidebar-bg:  #161b22;
+  --card:        #1a1f26;
+  --card-alt:    #20252c;
+  --text:        #f0f6fc;
+  --text-muted:  #8b949e;
+  --text-faint:  #6e7681;
+  --border:      #30363d;
+  --input-bg:    #0d1117;
+  --hover:       #ffffff0d;
+  --chart-grid:  #30363d;
+  --chart-text:  #8b949e;
+  --tooltip-bg:  #1a1f26;
+  --tooltip-border: #30363d;
+  --tooltip-text: #f0f6fc;
+  --sticky-bg:   #0d1117;
 }
 
 /*
 |--------------------------------------------------------------------------
-| Form control theming
+| Base — body/html pick up the theme token
 |--------------------------------------------------------------------------
 */
-
-html[data-theme='light'] input,
-html[data-theme='light'] select,
-html[data-theme='light'] textarea {
-  background-color: #ffffff;
-  color: #111827;
-  border-color: #cbd5e1;
+html, body {
+  background-color: var(--bg);
+  color: var(--text);
+  transition: background-color 200ms ease, color 200ms ease;
 }
 
 /*
 |--------------------------------------------------------------------------
-| Manual overrides for hardcoded utility classes
+| Admin layout helpers (consumed by AdminLayout.tsx class names)
 |--------------------------------------------------------------------------
-
 */
+.admin-bg      { background-color: var(--bg); }
+.admin-card    { background-color: var(--card); }
+.admin-sidebar { background-color: var(--sidebar-bg); }
+.theme-text        { color: var(--text); }
+.theme-text-muted  { color: var(--text-muted); }
+.theme-border      { border-color: var(--border); }
 
-html[data-theme='light'] .bg-\[\#1a1f26\] {
-  background-color: var(--pinpoint-system-card) !important;
+/*
+|--------------------------------------------------------------------------
+| Custom Scrollbar
+|--------------------------------------------------------------------------
+*/
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
-
-html[data-theme='light'] .bg-\[\#20252c\] {
-  background-color: var(--pinpoint-system-card-secondary) !important;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
-
-html[data-theme='light'] .text-white {
-  color: var(--pinpoint-system-text) !important;
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.35);
+  border-radius: 4px;
 }
-
-html[data-theme='light'] .text-gray-400 {
-  color: var(--pinpoint-system-text-secondary) !important;
-}
-
-html[data-theme='light'] .text-gray-300 {
-  color: #374151 !important;
-}
-
-html[data-theme='light'] .border-\[\#2c323a\] {
-  border-color: var(--pinpoint-system-border) !important;
-}
-
-html[data-theme='light'] .border-gray-600 {
-  border-color: #cbd5e1 !important;
-}
-
-html[data-theme='dark'] .bg-\[\#1a1f26\] {
-  background-color: #1a1f26;
-}
-
-html[data-theme='dark'] .bg-\[\#20252c\] {
-  background-color: #20252c;
-}
-
-html[data-theme='dark'] .text-white {
-  color: #ffffff;
-}
-
-html[data-theme='dark'] .text-gray-400 {
-  color: #9ca3af;
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.55);
 }
 
 /*
 |--------------------------------------------------------------------------
-| Admin layout
+| Font faces
 |--------------------------------------------------------------------------
 */
-
-.admin-layout {
-  display: flex;
-  min-height: 100vh;
-  background: var(--admin-layout-bg);
-}
-
-.admin-main {
-  display: flex;
-  min-height: 100vh;
-  flex: 1;
-  flex-direction: column;
-  background: var(--admin-main-bg);
-}
-
-.admin-header {
-  margin-left: 215px;
-}
-
-.admin-content {
-  flex: 1;
-  overflow-y: auto;
-  padding-left: 1rem;
-  padding-right: 1rem;
-  padding-bottom: 2rem;
-  background: var(--admin-main-bg);
-}
-
 @font-face {
   font-family: 'Inter';
   src: url('/fonts/Inter_18pt-Regular.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
+  font-weight: 400; font-style: normal; font-display: swap;
 }
-
 @font-face {
   font-family: 'Inter';
   src: url('/fonts/Inter_18pt-Medium.woff2') format('woff2');
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
+  font-weight: 500; font-style: normal; font-display: swap;
 }
-
 @font-face {
   font-family: 'Inter';
   src: url('/fonts/Inter_18pt-Bold.woff2') format('woff2');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
+  font-weight: 700; font-style: normal; font-display: swap;
 }
-
 @font-face {
   font-family: 'Roboto';
   src: url('/fonts/Roboto_Condensed-Regular.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
+  font-weight: 400; font-style: normal; font-display: swap;
 }
-
 @font-face {
   font-family: 'Roboto';
   src: url('/fonts/Roboto_Condensed-Medium.woff2') format('woff2');
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
+  font-weight: 500; font-style: normal; font-display: swap;
 }
-
 @font-face {
   font-family: 'Roboto';
   src: url('/fonts/Roboto_Condensed-Bold.woff2') format('woff2');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
+  font-weight: 700; font-style: normal; font-display: swap;
 }
-
 @font-face {
   font-family: 'Open Sans';
   src: url('/fonts/OpenSans_Condensed-Regular.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
+  font-weight: 400; font-style: normal; font-display: swap;
 }
-
 @font-face {
   font-family: 'Open Sans';
   src: url('/fonts/OpenSans_Condensed-Medium.woff2') format('woff2');
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
+  font-weight: 500; font-style: normal; font-display: swap;
 }
-
 @font-face {
   font-family: 'Open Sans';
   src: url('/fonts/OpenSans_Condensed-Bold.woff2') format('woff2');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
+  font-weight: 700; font-style: normal; font-display: swap;
 }

@@ -347,37 +347,16 @@ export function GeneralSettings() {
           }
         />
 
-        <div className="rounded-2xl bg-[#20252c] p-4 lg:col-span-1">
-          <p className="text-xs uppercase tracking-wide text-gray-500">
-            Current Scan Schedule
-          </p>
-
-          <p className="mt-2 text-sm font-medium text-white">
-            {getScanDescription(
-              settings.scanFrequency
-            )}
-          </p>
-
-          <p className="mt-1 text-xs text-gray-500">
-            This setting will control automated
-            diagnostic scans once connected to
-            the backend.
-          </p>
+        <div className="rounded-2xl bg-[var(--card-alt)] border border-[var(--border)] p-4 lg:col-span-1">
+          <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Current Scan Schedule</p>
+          <p className="mt-2 text-sm font-medium text-[var(--text)]">{getScanDescription(settings.scanFrequency)}</p>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">This setting will control automated diagnostic scans once connected to the backend.</p>
         </div>
 
-        <div className="rounded-2xl bg-[#20252c] p-4 lg:col-span-1">
-          <p className="text-xs uppercase tracking-wide text-gray-500">
-            System Scope
-          </p>
-
-          <p className="mt-2 text-sm font-medium text-pinpoint-green">
-            Global
-          </p>
-
-          <p className="mt-1 text-xs text-gray-500">
-            Changes made here are intended to
-            affect the entire application.
-          </p>
+        <div className="rounded-2xl bg-[var(--card-alt)] border border-[var(--border)] p-4 lg:col-span-1">
+          <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">System Scope</p>
+          <p className="mt-2 text-sm font-medium text-emerald-600">Global</p>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">Changes made here are intended to affect the entire application.</p>
         </div>
 
       </div>
