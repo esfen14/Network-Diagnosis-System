@@ -1,6 +1,5 @@
 # PinPoint — Diagnostic System
 
-Add info
 
 ## Stack
 

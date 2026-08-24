@@ -20,7 +20,8 @@ from app.system_models import \
     NCPADeployment, \
     AgentStatus 
 from app.logging import create_network_discovery_status, update_network_discovery_status, calculate_progress
-from app.system_models import DiscoveryStatus
+from app.logging.deployment_history import update_ncpa_deployment_status
+from app.system_models import DiscoveryStatus, DeploymentStatus
 import socket
 import ipaddress
 
@@ -61,6 +62,10 @@ BACKUP_DIR = PROJECT_ROOT / "running-host-config-backup"
 # ====================================================================
 
 PROGRESS_WEIGHT = [40,50,55,60,70,80,90,95,100]
+
+# Progress stages for add_ncpa_port: adding the port to the db, reloading
+# hosts, generating the config, validating, and applying it
+ADD_NCPA_PORT_PROGRESS_WEIGHT = [40, 55, 70, 85, 100]
 
 # Nagios live config
 NAGIOS_HOST_CFG = Path("/usr/local/nagios/etc/objects/hosts.cfg")
@@ -565,7 +570,7 @@ def _backup_running_host_cfg():
 
     return backup_path
 
-def _load_monitored_hosts(network_discovery_id, progress_weight):
+def _load_monitored_hosts(network_discovery_id=None, progress_weight=None):
     """
     Rebuilds a discovered_hosts dict from the database, in the same
     shape as discover_network()'s output:
@@ -638,22 +643,23 @@ def _load_monitored_hosts(network_discovery_id, progress_weight):
         }
 
         processed_hosts += 1
-        
-        progress = calculate_progress(
-            processed_hosts,
-            total_hosts,
-            progress_weight - 10,
-            progress_weight
-        )
-        
-        if processed_hosts % 10 == 0 or processed_hosts == total_hosts:
+
+        if network_discovery_id is not None and (
+            processed_hosts % 10 == 0 or processed_hosts == total_hosts
+        ):
+            progress = calculate_progress(
+                processed_hosts,
+                total_hosts,
+                progress_weight - 10,
+                progress_weight
+            )
             update_network_discovery_status(
                 network_discovery_id,
                 DiscoveryStatus.RUNNING,
                 progress,
                 "Loading discovered hosts from database"
             )
-    
+
     return discovered_hosts
 
 import tempfile
@@ -1022,3 +1028,175 @@ def discover_network_create_hosts(app, user_id, stop_event):
                     datetime.now(timezone.utc),
                     str(e)
                 )
+
+def add_ncpa_port(app, successful_device, ncpa_deployment_status_id, stop_event):
+    with app.app_context():
+        try:
+            total_devices = len(successful_device)
+            processed_devices = 0
+
+            # Add the NCPA port to Open_TCP_Services for each device that was
+            # successfully deployed. Unlike discover_network_create_hosts,
+            # there's no nmap scan here — the port was already verified open
+            # by the caller (after NCPA install), so we just insert an
+            # Open_TCP_Services entry for NCPA_PORT on each device.
+            for device_id in successful_device:
+                if stop_event.is_set():
+                    update_ncpa_deployment_status(
+                        ncpa_deployment_status_id,
+                        DeploymentStatus.INTERRUPTED,
+                        calculate_progress(processed_devices, total_devices, 0, ADD_NCPA_PORT_PROGRESS_WEIGHT[0]),
+                        "Adding NCPA port was stopped by user."
+                    )
+                    return
+
+                existing_service = db.session.scalar(
+                    sa.select(Open_TCP_Services)
+                    .join(NetworkDiscovery, 
+                          Open_TCP_Services.NetDiscoveryID == NetworkDiscovery.NetDiscoveryID)
+                    .where(
+                        Open_TCP_Services.NetDiscoveryID == device_id,
+                        Open_TCP_Services.Port_Number == int(NCPA_PORT),
+                        NetworkDiscovery.Include_Device_In_Scanning.is_(True)
+                    )
+                )
+
+                if existing_service is None:
+                    new_service = Open_TCP_Services(
+                        Port_Number=int(NCPA_PORT),
+                        Service_Name="ncpa",
+                        NetDiscoveryID=device_id
+                    )
+                    db.session.add(new_service)
+
+                processed_devices += 1
+
+                progress = calculate_progress(
+                    processed_devices,
+                    total_devices,
+                    0,
+                    ADD_NCPA_PORT_PROGRESS_WEIGHT[0]
+                )
+
+                if processed_devices % 10 == 0 or processed_devices == total_devices:
+                    update_ncpa_deployment_status(
+                        ncpa_deployment_status_id,
+                        DeploymentStatus.RUNNING,
+                        progress,
+                        "Adding NCPA port to database."
+                    )
+
+            db.session.commit()
+
+            if stop_event.is_set():
+                update_ncpa_deployment_status(
+                    ncpa_deployment_status_id,
+                    DeploymentStatus.INTERRUPTED,
+                    ADD_NCPA_PORT_PROGRESS_WEIGHT[0],
+                    "Adding NCPA port was stopped by user."
+                )
+                return
+
+            # Reload the monitored hosts from the database so the newly added
+            # port is reflected in the generated config
+            system_hosts = _load_monitored_hosts()
+            update_ncpa_deployment_status(
+                ncpa_deployment_status_id,
+                DeploymentStatus.RUNNING,
+                ADD_NCPA_PORT_PROGRESS_WEIGHT[1],
+                "Loaded monitored hosts from database."
+            )
+
+            if stop_event.is_set():
+                update_ncpa_deployment_status(
+                    ncpa_deployment_status_id,
+                    DeploymentStatus.INTERRUPTED,
+                    ADD_NCPA_PORT_PROGRESS_WEIGHT[1],
+                    "Adding NCPA port was stopped by user."
+                )
+                return
+
+            # Generate a new Nagios host config file from the updated hosts
+            new_cfg = _create_host_cfg_file(system_hosts)
+            print(f"Created: {new_cfg}")
+            update_ncpa_deployment_status(
+                ncpa_deployment_status_id,
+                DeploymentStatus.RUNNING,
+                ADD_NCPA_PORT_PROGRESS_WEIGHT[2],
+                "Generated new Nagios configuration."
+            )
+
+            if stop_event.is_set():
+                update_ncpa_deployment_status(
+                    ncpa_deployment_status_id,
+                    DeploymentStatus.INTERRUPTED,
+                    ADD_NCPA_PORT_PROGRESS_WEIGHT[2],
+                    "Adding NCPA port was stopped by user."
+                )
+                return
+
+            # Validate the candidate config against the live nagios.cfg
+            # before touching anything live
+            is_valid, result = _validate_config(new_cfg)
+            update_ncpa_deployment_status(
+                ncpa_deployment_status_id,
+                DeploymentStatus.RUNNING,
+                ADD_NCPA_PORT_PROGRESS_WEIGHT[3],
+                "Validated new Nagios configuration."
+            )
+
+            if stop_event.is_set():
+                update_ncpa_deployment_status(
+                    ncpa_deployment_status_id,
+                    DeploymentStatus.INTERRUPTED,
+                    ADD_NCPA_PORT_PROGRESS_WEIGHT[3],
+                    "Adding NCPA port was stopped by user."
+                )
+                return
+
+            # If valid, apply it as the new live config: backs up the running
+            # hosts.cfg, copies the new one into place, reloads Nagios, and
+            # rolls back automatically if the reload fails
+            if is_valid:
+                applied, apply_message = _apply_new_host_cfg(new_cfg)
+
+                if applied:
+                    update_ncpa_deployment_status(
+                        ncpa_deployment_status_id,
+                        DeploymentStatus.SUCCESS,
+                        ADD_NCPA_PORT_PROGRESS_WEIGHT[4],
+                        "New host.cfg successfully applied.",
+                        datetime.now(timezone.utc)
+                    )
+                else:
+                    update_ncpa_deployment_status(
+                        ncpa_deployment_status_id,
+                        DeploymentStatus.FAILED,
+                        ADD_NCPA_PORT_PROGRESS_WEIGHT[4],
+                        "Config not applied.",
+                        datetime.now(timezone.utc),
+                        apply_message
+                    )
+                print(apply_message)
+            else:
+                update_ncpa_deployment_status(
+                    ncpa_deployment_status_id,
+                    DeploymentStatus.FAILED,
+                    ADD_NCPA_PORT_PROGRESS_WEIGHT[4],
+                    "Config failed to validate.",
+                    datetime.now(timezone.utc),
+                    result
+                )
+                print(result)
+
+        except Exception as e:
+            db.session.rollback()
+            app.logger.exception("Failed to add NCPA port")
+            update_ncpa_deployment_status(
+                ncpa_deployment_status_id,
+                DeploymentStatus.FAILED,
+                100,
+                "Failed to add NCPA port.",
+                datetime.now(timezone.utc),
+                str(e)
+            )

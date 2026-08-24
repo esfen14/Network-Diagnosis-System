@@ -95,6 +95,8 @@ PERMISSION_NAMES = [
     "monitoring.notifications",
     "monitoring.dashboard",
     "monitoring.network_health",
+    "system.notifications",
+    "system.report",
 ]
 
 

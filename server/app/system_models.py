@@ -385,3 +385,110 @@ class NCPADeployment(db.Model):
     back_populate sepcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
     """
     Deployment_Status: so.Mapped[NCPADeploymentStatus] = so.relationship(back_populates='Device_Deployment')
+
+"""
+SystemSettings is a singleton table — there will only ever be one row (Id=1).
+This holds system-wide configuration that applies regardless of which
+user is logged in (general, security, and system tabs on the Settings page).
+"""
+class SystemSettings(db.Model):
+    # Table Name
+    __tablename__ = "SYSTEM_SETTINGS"
+
+    # Table Fields
+    Id: so.Mapped[int] = so.mapped_column(primary_key=True)
+
+    # General
+    System_Language: so.Mapped[str] = so.mapped_column(sa.String(20), default="English")
+    Theme: so.Mapped[str] = so.mapped_column(sa.String(10), default="dark")
+    Time_Zone: so.Mapped[str] = so.mapped_column(sa.String(20), default="UTC+08:00")
+    Date_Time_Format: so.Mapped[str] = so.mapped_column(sa.String(20), default="DD/MM/YYYY")
+    System_Font: so.Mapped[str] = so.mapped_column(sa.String(30), default="Default")
+    System_Font_Size: so.Mapped[str] = so.mapped_column(sa.String(10), default="medium")
+    Dashboard_Refresh_Rate: so.Mapped[int] = so.mapped_column(sa.Integer(), default=5)
+    Scan_Frequency: so.Mapped[int] = so.mapped_column(sa.Integer(), default=6)
+    Dashboard_Layout: so.Mapped[str] = so.mapped_column(sa.String(15), default="default")
+    Notifications: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=True)
+    Export_Formats: so.Mapped[str] = so.mapped_column(sa.String(50), default="CSV,PDF,XLS")
+
+    # Security
+    Session_Timeout: so.Mapped[int] = so.mapped_column(sa.Integer(), default=30)
+    Strong_Password_Policy: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=True)
+    Failed_Login_Monitoring: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=True)
+    Audit_Logging: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=True)
+    Security_Check_Frequency: so.Mapped[str] = so.mapped_column(sa.String(10), default="weekly")
+
+    # System
+    System_Update_Frequency: so.Mapped[str] = so.mapped_column(sa.String(10), default="monthly")
+    Maintenance_Mode: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)
+    Automatic_Backups: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=True)
+    Log_Retention_Days: so.Mapped[int] = so.mapped_column(sa.Integer(), default=30)
+    Diagnostic_History_Retention_Days: so.Mapped[int] = so.mapped_column(sa.Integer(), default=90)
+
+    # Concurrency + audit trail
+    Version: so.Mapped[int] = so.mapped_column(sa.Integer(), default=1)
+    Updated_At: so.Mapped[datetime] = so.mapped_column(
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    Updated_By: so.Mapped[Optional[int]] = so.mapped_column(sa.ForeignKey(User.UserID), index=True)
+
+    """
+    Serializes this row into the shape the frontend expects
+    (camelCase keys matching the SystemSettings TS type).
+    """
+    def to_dict(self):
+        return {
+            "systemLanguage": self.System_Language,
+            "theme": self.Theme,
+            "timeZone": self.Time_Zone,
+            "dateTimeFormat": self.Date_Time_Format,
+            "systemFont": self.System_Font,
+            "systemFontSize": self.System_Font_Size,
+            "dashboardRefreshRate": self.Dashboard_Refresh_Rate,
+            "scanFrequency": self.Scan_Frequency,
+            "dashboardLayout": self.Dashboard_Layout,
+            "notifications": self.Notifications,
+            "exportFormats": self.Export_Formats.split(",") if self.Export_Formats else [],
+            "sessionTimeout": self.Session_Timeout,
+            "strongPasswordPolicy": self.Strong_Password_Policy,
+            "failedLoginMonitoring": self.Failed_Login_Monitoring,
+            "auditLogging": self.Audit_Logging,
+            "securityCheckFrequency": self.Security_Check_Frequency,
+            "systemUpdateFrequency": self.System_Update_Frequency,
+            "maintenanceMode": self.Maintenance_Mode,
+            "automaticBackups": self.Automatic_Backups,
+            "logRetentionDays": self.Log_Retention_Days,
+            "diagnosticHistoryRetentionDays": self.Diagnostic_History_Retention_Days,
+            "version": self.Version,
+            "updatedAt": self.Updated_At.isoformat(),
+        }
+
+class NotificationCursor(db.Model):
+    """
+    Tracks the read/unread boundary for Nagios notifications per user.
+
+    One row per user.  last_seen_ts is the UNIX timestamp of the most-recent
+    notification the user has acknowledged (i.e. opened the notification panel).
+
+    Any Nagios notification whose timestamp > last_seen_ts is considered "unread"
+    for that user.  A value of 0 (default) means the user has never read anything,
+    so everything is unread.
+    """
+    __tablename__ = "NOTIFICATION_CURSOR"
+
+    UserID: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey(User.UserID, ondelete="CASCADE"),
+        primary_key=True,
+    )
+    last_seen_ts: so.Mapped[int] = so.mapped_column(
+        sa.BigInteger(),
+        default=0,
+        nullable=False,
+    )
+    Updated_At: so.Mapped[datetime] = so.mapped_column(
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    User: so.Mapped['User'] = so.relationship()

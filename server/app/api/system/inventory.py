@@ -1,8 +1,31 @@
+"""System Inventory API module.
+
+Provides read-only endpoints for querying discovered network devices,
+their open TCP ports, and their open UDP ports. All routes require
+authentication and the "system.inventory" permission.
+
+Routes
+------
+GET /inventory
+    Paginated, searchable, sortable list of all discovered network devices.
+    Returns device details (hostname, IP, MAC, OS, device type, host status, etc.)
+    with pagination metadata.
+
+GET /inventory/<int:device_id>/ports/tcp
+    Returns a list of all open TCP ports for a specific device.
+    Each entry includes the port number and service name.
+
+GET /inventory/<int:device_id>/ports/udp
+    Returns a list of all open UDP ports for a specific device.
+    Each entry includes the port number and service name.
+"""
+
 from flask_login import login_required, current_user
 from app import app, db
 import sqlalchemy as sa
 from flask import request, current_app
 from app.api.helper.database_access.permissions import require_permission
+from app.api.helper import success, error
 from app.system_models import \
 NetworkDiscovery,\
 Open_TCP_Services, \
@@ -17,6 +40,54 @@ from app.api.system import system_bp
 @login_required
 @require_permission("system.inventory")
 def query_system_devices():
+    """Query and paginate all discovered network devices with optional search and sorting.
+
+    Retrieves the list of network devices discovered by the system, supports
+    pagination, full-text search across multiple fields, and sorting on any
+    supported column.
+
+    Inputs (query parameters):
+        page (int, default=1): Page number (must be >= 1).
+        per_page (int, default=10): Items per page (must be 1-100).
+        sort_by (str, default="hostname"): Column to sort by. One of:
+            "id", "hostname", "ip_address", "network", "mac_address",
+            "os_type", "device_type", "scanned_at".
+        order (str, default="asc"): Sort direction — "asc" or "desc".
+        search (str, default=""): Free-text search applied across
+            hostname, ip_address, network, mac_address, os_type, device_type.
+
+    Returns (JSON):
+        {
+            "success": true,
+            "data": {
+                "items": [
+                    {
+                        "id": int,
+                        "hostname": str,
+                        "ip_address": str,
+                        "network": str,
+                        "mac_address": str,
+                        "os_type": str | null,
+                        "device_type": str,
+                        "ncpa_eligible": bool,
+                        "include_in_scanning": bool,
+                        "scanned_at": str (ISO-8601) | null,
+                        "host_status": int | null
+                    }
+                ],
+                "page": int,
+                "per_page": int,
+                "pages": int,
+                "total": int,
+                "has_next": bool,
+                "has_prev": bool
+            }
+        }
+
+    Raises (JSON error):
+        400: Invalid page, per_page out of range, invalid sort field, or invalid order.
+        500: Unexpected server error.
+    """
     try:
         page = request.args.get("page", default=1, type=int)
         per_page = request.args.get("per_page", default=10, type=int)
@@ -25,10 +96,10 @@ def query_system_devices():
         search = request.args.get("search", default="", type=str)
 
         if page < 1:
-            return {"message": "Page must be greater than 0"}, 400
+            return error("Page must be greater than 0", 400)
 
         if per_page < 1 or per_page > 100:
-            return {"message": "per_page must be between 1 and 100"}, 400
+            return error("per_page must be between 1 and 100", 400)
 
         allowed_sorts = {
             "id": NetworkDiscovery.NetDiscoveryID,
@@ -44,7 +115,7 @@ def query_system_devices():
         sort_column = allowed_sorts.get(sort_by)
 
         if sort_column is None:
-            return {"message": "Invalid sort field"}, 400
+            return error("Invalid sort field", 400)
 
         query = sa.select(NetworkDiscovery)
 
@@ -53,7 +124,7 @@ def query_system_devices():
         elif order == "desc":
             query = query.order_by(sort_column.desc())
         else:
-            return {"message": "Invalid order."}, 400
+            return error("Invalid order.", 400)
 
         if search:
             search_pattern = f"%{search}%"
@@ -112,7 +183,7 @@ def query_system_devices():
                 )
             })
 
-        return {
+        return success({
             "items": items,
             "page": devices.page,
             "per_page": devices.per_page,
@@ -120,28 +191,49 @@ def query_system_devices():
             "total": devices.total,
             "has_next": devices.has_next,
             "has_prev": devices.has_prev
-        }, 200
+        })
 
     except Exception:
         current_app.logger.exception(
             "An unexpected error occurred while querying system devices."
         )
+        return error("An unexpected error occurred.", 500)
 
-        return {
-            "message": "An unexpected error occurred."
-        }, 500
 
 @system_bp.get('/inventory/<int:device_id>/ports/tcp')
 @login_required
 @require_permission("system.inventory")
 def device_tcp_ports(device_id):
+    """Retrieve all open TCP ports for a specific discovered device.
+
+    Inputs (URL parameters):
+        device_id (int): The NetworkDiscovery ID of the target device.
+
+    Returns (JSON):
+        {
+            "success": true,
+            "data": {
+                "device_id": int,
+                "protocol": "TCP",
+                "ports": [
+                    {
+                        "id": int,
+                        "port": int,
+                        "service": str
+                    }
+                ]
+            }
+        }
+
+    Raises (JSON error):
+        404: Device with the given ID does not exist.
+        500: Unexpected server error.
+    """
     try:
         device = db.session.get(NetworkDiscovery, device_id)
 
         if device is None:
-            return {
-                "message": "Device not found."
-            }, 404
+            return error("Device not found.", 404)
 
         query = (
             sa.select(Open_TCP_Services)
@@ -160,32 +252,53 @@ def device_tcp_ports(device_id):
                 "service": port.Service_Name
             })
 
-        return {
+        return success({
             "device_id": device_id,
             "protocol": "TCP",
             "ports": port_list
-        }, 200
+        })
 
     except Exception:
         current_app.logger.exception(
             "An unexpected error occurred while querying TCP ports."
         )
+        return error("An unexpected error occurred.", 500)
 
-        return {
-            "message": "An unexpected error occurred."
-        }, 500
 
 @system_bp.get('/inventory/<int:device_id>/ports/udp')
 @login_required
 @require_permission("system.inventory")
 def device_udp_ports(device_id):
+    """Retrieve all open UDP ports for a specific discovered device.
+
+    Inputs (URL parameters):
+        device_id (int): The NetworkDiscovery ID of the target device.
+
+    Returns (JSON):
+        {
+            "success": true,
+            "data": {
+                "device_id": int,
+                "protocol": "UDP",
+                "ports": [
+                    {
+                        "id": int,
+                        "port": int,
+                        "service": str
+                    }
+                ]
+            }
+        }
+
+    Raises (JSON error):
+        404: Device with the given ID does not exist.
+        500: Unexpected server error.
+    """
     try:
         device = db.session.get(NetworkDiscovery, device_id)
 
         if device is None:
-            return {
-                "message": "Device not found."
-            }, 404
+            return error("Device not found.", 404)
 
         query = (
             sa.select(Open_UDP_Services)
@@ -204,18 +317,14 @@ def device_udp_ports(device_id):
                 "service": port.Service_Name
             })
 
-        return {
+        return success({
             "device_id": device_id,
             "protocol": "UDP",
             "ports": port_list
-        }, 200
+        })
 
     except Exception:
         current_app.logger.exception(
             "An unexpected error occurred while querying UDP ports."
         )
-
-        return {
-            "message": "An unexpected error occurred."
-        }, 500
-    
+        return error("An unexpected error occurred.", 500)

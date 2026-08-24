@@ -1,17 +1,24 @@
-import { ArrowUpDown, Filter, Plus, Search, Edit, Download } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import {
+  ArrowUpDown,
+  Filter,
+  Search,
+  Edit,
+} from 'lucide-react'
 import type { User } from '../../data/users'
 
 type UserTableProps = {
   users: User[]
   title: string
+  onEdit: (user: User) => void
 }
 
 function StatusBadge({ status }: { status: User['status'] }) {
   const styles = {
     active: 'bg-emerald-500/20 text-emerald-400',
-    inactive: 'bg-gray-500/20 text-gray-400',
-    locked: 'bg-yellow-500/20 text-yellow-400',
-    suspended: 'bg-red-500/20 text-red-400',
+    inactive: 'bg-gray-500/20 text-gray-500 dark:text-gray-400',
+    locked: 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400',
+    suspended: 'bg-red-500/20 text-red-500 dark:text-red-400',
   }
 
   const dotStyles = {
@@ -25,123 +32,255 @@ function StatusBadge({ status }: { status: User['status'] }) {
     <span
       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status]}`}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${dotStyles[status]}`} />
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${dotStyles[status]}`}
+      />
       {status}
     </span>
   )
 }
 
-export function UserTable({ users, title }: UserTableProps) {
-  return (
-    <div className="overflow-hidden rounded-2xl bg-[#171B20] shadow-sm">
+export function UserTable({
+  users,
+  title,
+  onEdit,
+}: UserTableProps) {
+  const [query, setQuery] = useState('')
+  const [sortAsc, setSortAsc] = useState(true)
+  const [showFilter, setShowFilter] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<'All' | User['status']>('All')
 
-      {/* HEADER */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-4">
-        <h2 className="text-lg font-semibold text-white">{title}</h2>
+  const statuses = useMemo(
+    () => ['All', ...Array.from(new Set(users.map((u) => u.status)))] as const,
+    [users]
+  )
+
+  const filtered = useMemo(() => {
+    let result = users
+
+    if (statusFilter !== 'All') {
+      result = result.filter((u) => u.status === statusFilter)
+    }
+
+    if (query.trim()) {
+      const q = query.toLowerCase()
+      result = result.filter(
+        (u) =>
+          u.fullName.toLowerCase().includes(q) ||
+          u.userId.toLowerCase().includes(q) ||
+          u.username.toLowerCase().includes(q)
+      )
+    }
+
+    result = [...result].sort((a, b) =>
+      sortAsc
+        ? a.fullName.localeCompare(b.fullName)
+        : b.fullName.localeCompare(a.fullName)
+    )
+
+    return result
+  }, [users, query, statusFilter, sortAsc])
+
+  return (
+    <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[#171B20]">
+
+      <div className="relative flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 p-4 dark:border-white/10">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+          {title}
+        </h2>
 
         <div className="flex flex-wrap items-center gap-2">
 
-          <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#0D1117] px-3 py-2">
+          <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-white/10 dark:bg-[#0D1117]">
             <Search className="h-4 w-4 text-gray-500" />
+
             <input
               type="search"
               placeholder="Search"
-              className="w-32 bg-transparent text-sm text-white placeholder:text-gray-500 outline-none"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="w-32 bg-transparent text-sm text-gray-800 placeholder:text-gray-500 outline-none dark:text-white dark:placeholder:text-gray-500"
             />
           </div>
 
-          <button className="rounded-lg p-2 text-gray-400 hover:bg-white/10 hover:text-white">
-            <Plus className="h-4 w-4" />
-          </button>
+          {/* Filter */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowFilter((v) => !v)}
+              className={`rounded-lg p-2 ${
+                showFilter || statusFilter !== 'All'
+                  ? 'bg-gray-200 text-gray-900 dark:bg-white/20 dark:text-white'
+                  : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white'
+              }`}
+            >
+              <Filter className="h-4 w-4" />
+            </button>
 
-          <button className="rounded-lg p-2 text-gray-400 hover:bg-white/10 hover:text-white">
-            <Filter className="h-4 w-4" />
-          </button>
+            {showFilter && (
+              <div className="absolute right-0 top-full z-10 mt-2 w-40 rounded-xl border border-gray-200 bg-white p-2 shadow-lg dark:border-white/10 dark:bg-[#171B20]">
+                <span className="block px-2 py-1 text-xs font-medium text-gray-400">
+                  Status
+                </span>
+                {statuses.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => {
+                      setStatusFilter(s)
+                      setShowFilter(false)
+                    }}
+                    className={`block w-full rounded-lg px-2 py-1.5 text-left text-sm capitalize ${
+                      statusFilter === s
+                        ? 'bg-[#ffb100]/20 text-[#ffb100]'
+                        : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/10'
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-          <button className="rounded-lg p-2 text-gray-400 hover:bg-white/10 hover:text-white">
+          {/* Sort */}
+          <button
+            type="button"
+            onClick={() => setSortAsc((v) => !v)}
+            title={sortAsc ? 'Sorted A → Z' : 'Sorted Z → A'}
+            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
+          >
             <ArrowUpDown className="h-4 w-4" />
           </button>
 
         </div>
       </div>
 
-      {/* TABLE */}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[900px] text-left text-sm">
 
           <thead>
-            <tr className="border-b border-white/10 text-xs text-gray-500">
-              <th className="px-4 py-3">
-                <input type="checkbox" className="rounded border-gray-600" />
+            <tr className="border-b border-gray-200 text-xs text-gray-500 dark:border-white/10 dark:text-gray-500">
+              <th className="px-4 py-3 font-normal">
+                Full Name
               </th>
 
-              <th className="px-4 py-3 font-normal">Full Name</th>
-              <th className="px-4 py-3 font-normal">User ID</th>
-              <th className="px-4 py-3 font-normal">Username</th>
-              <th className="px-4 py-3 font-normal">Status</th>
-              <th className="px-4 py-3 font-normal">Joined Date</th>
-              <th className="px-4 py-3 font-normal">Last Commit</th>
-              <th className="px-4 py-3 font-normal">Actions</th>
+              <th className="px-4 py-3 font-normal">
+                User ID
+              </th>
+
+              <th className="px-4 py-3 font-normal">
+                Username
+              </th>
+
+              <th className="px-4 py-3 font-normal">
+                Status
+              </th>
+
+              <th className="px-4 py-3 font-normal">
+                Joined Date
+              </th>
+
+              <th className="px-4 py-3 font-normal">
+                Last Commit
+              </th>
+
+              <th className="px-4 py-3 font-normal">
+                Actions
+              </th>
             </tr>
           </thead>
 
           <tbody>
-            {users.map((user) => (
-              <tr
-                key={user.id}
-                className="border-b border-white/5 transition hover:bg-white/5"
-              >
-
-                <td className="px-4 py-3">
-                  <input type="checkbox" className="rounded border-gray-600" />
+            {filtered.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={7}
+                  className="px-4 py-8 text-center text-gray-500 dark:text-gray-400"
+                >
+                  No users match your search or filter
                 </td>
-
-                <td className="px-4 py-3 text-white">{user.fullName}</td>
-                <td className="px-4 py-3 text-white">{user.userId}</td>
-                <td className="px-4 py-3 text-white">{user.username}</td>
-
-                <td className="px-4 py-3">
-                  <StatusBadge status={user.status} />
-                </td>
-
-                <td className="px-4 py-3 text-white">{user.joinedDate}</td>
-                <td className="px-4 py-3 text-white">{user.lastActive}</td>
-
-                <td className="px-4 py-3">
-                  <div className="flex gap-3 text-gray-400">
-                    <button className="hover:text-white" title="Edit">
-                      <Edit className="h-4 w-4" />
-                    </button>
-
-                    <button className="hover:text-white" title="Download">
-                      <Download className="h-4 w-4" />
-                    </button>
-                  </div>
-                </td>
-
               </tr>
-            ))}
+            ) : (
+              filtered.map((user) => (
+                <tr
+                  key={user.id}
+                  className="border-b border-gray-100 transition hover:bg-gray-50 dark:border-white/5 dark:hover:bg-white/5"
+                >
+                  <td className="px-4 py-3 text-gray-900 dark:text-white">
+                    {user.fullName}
+                  </td>
+
+                  <td className="px-4 py-3 text-gray-900 dark:text-white">
+                    {user.userId}
+                  </td>
+
+                  <td className="px-4 py-3 text-gray-900 dark:text-white">
+                    {user.username}
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <StatusBadge status={user.status} />
+                  </td>
+
+                  <td className="px-4 py-3 text-gray-900 dark:text-white">
+                    {user.joinedDate}
+                  </td>
+
+                  <td className="px-4 py-3 text-gray-900 dark:text-white">
+                    {user.lastActive}
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <div className="flex gap-3 text-gray-500 dark:text-gray-400">
+
+                      <button
+                        type="button"
+                        onClick={() => onEdit(user)}
+                        className="hover:text-gray-900 dark:hover:text-white"
+                        title="Edit"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
 
         </table>
       </div>
 
-      {/* FOOTER */}
-      <div className="flex items-center justify-between border-t border-white/10 px-4 py-3 text-sm text-gray-400">
-        <span>Showing {users.length} users</span>
+      <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 text-sm text-gray-500 dark:border-white/10 dark:text-gray-400">
+        <span>
+          Showing {filtered.length} of {users.length} users
+        </span>
 
         <div className="flex gap-2">
-          <button className="rounded-lg px-3 py-1 hover:bg-white/10" disabled>
+
+          <button
+            type="button"
+            className="rounded-lg px-3 py-1 hover:bg-gray-100 dark:hover:bg-white/10"
+            disabled
+          >
             Previous
           </button>
 
-          <button className="rounded-lg bg-white/10 px-3 py-1 text-white">
+          <button
+            type="button"
+            className="rounded-lg bg-gray-900 px-3 py-1 text-white dark:bg-white/10"
+          >
             1
           </button>
 
-          <button className="rounded-lg px-3 py-1 hover:bg-white/10">
+          <button
+            type="button"
+            className="rounded-lg px-3 py-1 hover:bg-gray-100 dark:hover:bg-white/10"
+          >
             Next
           </button>
+
         </div>
       </div>
 

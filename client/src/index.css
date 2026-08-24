@@ -1,5 +1,13 @@
 @import 'tailwindcss';
 
+/*
+|--------------------------------------------------------------------------
+| Dark mode variant
+|--------------------------------------------------------------------------
+
+*/
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 @theme {
   --font-sans: 'Inter', system-ui, sans-serif;
   --color-pinpoint-dark: #0d1117;
@@ -26,4 +34,234 @@ body,
   min-height: 100vh;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Theme variables 
+|--------------------------------------------------------------------------
+*/
+
+html[data-theme='dark'] {
+  --system-bg: #0d1117;
+  --system-card: #1a1f26;
+  --system-card-secondary: #20252c;
+  --system-text: #ffffff;
+  --system-text-secondary: #9ca3af;
+  --system-border: #2c323a;
+
+  --pinpoint-system-bg: #0d1117;
+  --pinpoint-system-card: #1a1f26;
+  --pinpoint-system-card-secondary: #20252c;
+  --pinpoint-system-text: #ffffff;
+  --pinpoint-system-text-secondary: #9ca3af;
+  --pinpoint-system-border: #2c323a;
+
+  --admin-layout-bg: #f5f5f6;
+  --admin-main-bg: #0d1117;
+}
+
+html[data-theme='light'] {
+  --system-bg: #f5f6f8;
+  --system-card: #ffffff;
+  --system-card-secondary: #f0f1f3;
+  --system-text: #111827;
+  --system-text-secondary: #6b7280;
+  --system-border: #d1d5db;
+
+  --pinpoint-system-bg: #f5f6f8;
+  --pinpoint-system-card: #ffffff;
+  --pinpoint-system-card-secondary: #eef0f3;
+  --pinpoint-system-text: #111827;
+  --pinpoint-system-text-secondary: #6b7280;
+  --pinpoint-system-border: #d1d5db;
+
+  --admin-layout-bg: #151a21;
+  --admin-main-bg: #f5f6f8;
+}
+
+html[data-theme='dark'],
+html[data-theme='light'] {
+  transition:
+    background-color 200ms ease,
+    color 200ms ease;
+}
+
+html[data-theme='dark'] body,
+html[data-theme='light'] body {
+  background-color: var(--system-bg);
+  color: var(--system-text);
+  transition:
+    background-color 200ms ease,
+    color 200ms ease;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Form control theming
+|--------------------------------------------------------------------------
+*/
+
+html[data-theme='light'] input,
+html[data-theme='light'] select,
+html[data-theme='light'] textarea {
+  background-color: #ffffff;
+  color: #111827;
+  border-color: #cbd5e1;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Manual overrides for hardcoded utility classes
+|--------------------------------------------------------------------------
+
+*/
+
+html[data-theme='light'] .bg-\[\#1a1f26\] {
+  background-color: var(--pinpoint-system-card) !important;
+}
+
+html[data-theme='light'] .bg-\[\#20252c\] {
+  background-color: var(--pinpoint-system-card-secondary) !important;
+}
+
+html[data-theme='light'] .text-white {
+  color: var(--pinpoint-system-text) !important;
+}
+
+html[data-theme='light'] .text-gray-400 {
+  color: var(--pinpoint-system-text-secondary) !important;
+}
+
+html[data-theme='light'] .text-gray-300 {
+  color: #374151 !important;
+}
+
+html[data-theme='light'] .border-\[\#2c323a\] {
+  border-color: var(--pinpoint-system-border) !important;
+}
+
+html[data-theme='light'] .border-gray-600 {
+  border-color: #cbd5e1 !important;
+}
+
+html[data-theme='dark'] .bg-\[\#1a1f26\] {
+  background-color: #1a1f26;
+}
+
+html[data-theme='dark'] .bg-\[\#20252c\] {
+  background-color: #20252c;
+}
+
+html[data-theme='dark'] .text-white {
+  color: #ffffff;
+}
+
+html[data-theme='dark'] .text-gray-400 {
+  color: #9ca3af;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Admin layout
+|--------------------------------------------------------------------------
+*/
+
+.admin-layout {
+  display: flex;
+  min-height: 100vh;
+  background: var(--admin-layout-bg);
+}
+
+.admin-main {
+  display: flex;
+  min-height: 100vh;
+  flex: 1;
+  flex-direction: column;
+  background: var(--admin-main-bg);
+}
+
+.admin-header {
+  margin-left: 215px;
+}
+
+.admin-content {
+  flex: 1;
+  overflow-y: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  padding-bottom: 2rem;
+  background: var(--admin-main-bg);
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter_18pt-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter_18pt-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter_18pt-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Roboto';
+  src: url('/fonts/Roboto_Condensed-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Roboto';
+  src: url('/fonts/Roboto_Condensed-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Roboto';
+  src: url('/fonts/Roboto_Condensed-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Open Sans';
+  src: url('/fonts/OpenSans_Condensed-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Open Sans';
+  src: url('/fonts/OpenSans_Condensed-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Open Sans';
+  src: url('/fonts/OpenSans_Condensed-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
 }

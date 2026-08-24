@@ -26,12 +26,19 @@ PERMISSIONS = [
     "account.info",
     "system.discover",
     "system.deploy.ncpa",
+<<<<<<< HEAD
     "system.inventory",
     # monitoring permissions
     "monitoring.alerts",
     "monitoring.notifications",
     "monitoring.dashboard",
     "monitoring.network_health",
+=======
+    "system.logs",
+    "system.inventory",
+    "system.report",
+    "system.notifications",
+>>>>>>> api
 ]
 
 ROLES = [
@@ -247,3 +254,10 @@ def seed_command(remove, permissions_only, reset):
     except Exception as e:
         db.session.rollback()
         click.echo(f"❌ Seed failed: {e}")
+
+    from app.system_models import SystemSettings
+
+    def seed_system_settings():
+        if db.session.get(SystemSettings, 1) is None:
+            db.session.add(SystemSettings(Id=1))
+            db.session.commit()

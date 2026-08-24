@@ -11,7 +11,7 @@ import shlex
 import requests
 import os
 import textwrap
-
+from app.network_discovery.create_host_cfg import add_ncpa_port, ADD_NCPA_PORT_PROGRESS_WEIGHT
 
 
 home = str(os.getenv("HOME"))
@@ -786,6 +786,7 @@ def install_process(app, user_id, device_list, stop_event):
         processed_devices = 0
         progress = 0
         failed_deployment = []
+        successful_deployment = []
         try: 
             total_devices = len(device_list)
             for entry in device_list:
@@ -810,6 +811,8 @@ def install_process(app, user_id, device_list, stop_event):
                     if not installed_ncpa:
                         app.logger.error(f"Cannot install ncpa in device {device_id}, {ip_address}.")
                         failed_deployment.append(device_id)
+                    else:
+                        successful_deployment.append(device_id)
 
                 else:
                     app.logger.error(f"Cannot install key in device {device_id}, {ip_address}.")
@@ -817,13 +820,17 @@ def install_process(app, user_id, device_list, stop_event):
 
                 processed_devices += 1
 
-                progress = calculate_progress(processed_devices, total_devices, 0, 100)
+                progress = calculate_progress(processed_devices, total_devices, 0, ADD_NCPA_PORT_PROGRESS_WEIGHT[0])
                 update_ncpa_deployment_status(
                     ncpa_deployment_status_id,
                     DeploymentStatus.RUNNING,
                     progress,
                     "Deploying NCPA."
                 )
+
+            if successful_deployment:
+                add_ncpa_port(app, successful_deployment, ncpa_deployment_status_id, stop_event)
+                        
             if not failed_deployment:
                 update_ncpa_deployment_status(
                     ncpa_deployment_status_id, DeploymentStatus.SUCCESS, 100,
@@ -835,6 +842,8 @@ def install_process(app, user_id, device_list, stop_event):
                     f"Deployment completed with {len(failed_deployment)} failure(s).",
                     error=str(failed_deployment)
                 )
+
+            
 
         except Exception as e:
             app.logger.exception(f"NCPA Deployment failed")
