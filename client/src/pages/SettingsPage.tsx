@@ -25,7 +25,7 @@ export function SettingsPage() {
           <p className="mt-1 text-sm text-[var(--text-muted)]">Setup and edit system settings and preferences</p>
         </div>
 
-        <div className="border-b border-white/10">
+        <div className="border-b border-[var(--border)]">
           <div className="flex gap-8">
             {tabs.map((tab) => {
               const Icon = tab.icon
@@ -33,7 +33,7 @@ export function SettingsPage() {
               return (
                 <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)}
                   className={`flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium transition ${
-                    active ? 'border-[#ffb100] text-white' : 'border-transparent text-white/60 hover:text-white'
+                    active ? 'border-[#ffb100] text-[var(--text)]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text)]'
                   }`}
                 >
                   <Icon size={15} />

@@ -6,7 +6,7 @@ const pageTitles: Record<string, { section: string; page: string }> = {
   '/dashboard': { section: 'Dashboards', page: 'Overview' },
   '/network-health': { section: 'Network Health', page: 'Overview' },
   '/device-inventory': { section: 'Host Inventory', page: 'Overview' },
-  '/topology': { section: 'Service Status', page: 'All Hosts' },
+  '/topology': { section: 'System Status', page: 'All Hosts' },
   '/plugins': { section: 'Plugins', page: 'System Plugins' },
   '/reports': { section: 'Reports', page: 'System Reports' },
   '/system-logs': { section: 'System Logs', page: 'All' },
@@ -69,8 +69,7 @@ function formatRelativeTime(timestamp: number) {
   return new Date(timestamp).toLocaleDateString()
 }
 
-// pag naiwan yung lumang data (yung dati stringsAra lang na array, wala pang timestamp),
-// i-clean out dito para di na lumabas yung "Invalid Date" sa dropdown
+// pag naiwan yung lumang data (yung dati stringsAra lang na array, wala pang timestamp)
 function loadHistory(): HistoryEntry[] {
   try {
     const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')

@@ -6,7 +6,7 @@ import {
   HelpCircle,
   LayoutDashboard,
   LogOut,
-  //Network,
+  Network,
   Settings,
   Shield,
   Users,
@@ -33,12 +33,12 @@ const navItems = [
     icon: FolderOpen,
     roles: ['network_admin', 'network_technician'],
   },
-  //{
-    //to: '/topology',
-    //label: 'Topology View',
-    //icon: Network,
-    //roles: ['network_admin', 'network_technician'],
-  //},
+{
+    to: '/topology',
+    label: 'System Status',
+    icon: Network,
+    roles: ['network_admin', 'network_technician'],
+  },
   {
     to: '/plugins',
     label: 'Plugins',
