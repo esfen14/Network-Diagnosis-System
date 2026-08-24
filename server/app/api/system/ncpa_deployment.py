@@ -67,6 +67,7 @@ def get_ncpa_eligible_devices():
         devices = db.session.scalars(
             sa.select(NetworkDiscovery)
             .where(NetworkDiscovery.NCPA_Eligible.is_(True))
+            .where(NetworkDiscovery.Include_Device_In_Scanning.is_(True))
             .order_by(NetworkDiscovery.Hostname.asc())
         ).all()
 
@@ -113,6 +114,9 @@ def get_device_fingerprint(device_id):
         if device is None:
             return error("Device not found.", 404)
 
+        if not device.Include_Device_In_Scanning:
+            return error("Device not included in scanning.", 404)
+
         try:
             fingerprint = get_host_key_fingerprint(device.IP_Address)
         except Exception:
@@ -156,6 +160,9 @@ def confirm_device_trust(device_id):
 
         if device is None:
             return error("Device not found.", 404)
+
+        if not device.Include_Device_In_Scanning:
+            return error("Device not included in scanning.", 404)
 
         # Recreate the fingerprint server-side rather than trusting the client
         fingerprint = get_host_key_fingerprint(device.IP_Address)
@@ -236,6 +243,13 @@ def deploy_ncpa():
             rejected_entries.append({
                 "device_id": device_id,
                 "reason": "Device does not exist."
+            })
+            continue
+
+        if not device.Include_Device_In_Scanning:
+            rejected_entries.append({
+                "device_id": device_id,
+                "reason": "Device is not included in scanning."
             })
             continue
 
@@ -399,7 +413,8 @@ def get_trusted_devices():
             )
             .where(
                 SSHCredentials.Key_Fingerprint.is_not(None),
-                NCPADeployment.Agent_Status == AgentStatus.PENDING_NCPA
+                NCPADeployment.Agent_Status == AgentStatus.PENDING_NCPA,
+                NetworkDiscovery.Include_Device_In_Scanning.is_(True)
             )
         ).all()
 
