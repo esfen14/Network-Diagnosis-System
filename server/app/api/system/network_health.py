@@ -1,18 +1,13 @@
 from flask_login import login_required
 from flask import request, current_app
 from app.api.helper.database_access.permissions import require_permission
-from app.api.monitoring import monitoring_bp
+from app.api.system import system_bp
 from app.nagios.notifications import (
     request_alerts_history,
     request_current_alerts,
     request_current_alert_count,
     request_alerts_last,
     request_alert_count_last,
-    request_notifications_history,
-    request_current_notifications,
-    request_current_alert_notification,
-    request_notifications_last,
-    request_notifications_count_last,
 )
 from app import db
 from app.history_models import HostStatus, ServiceStatus
@@ -23,9 +18,9 @@ import sqlalchemy as sa
 # ALERTS
 # ─────────────────────────────────────────────────────────────────────────────
 
-@monitoring_bp.get('/alerts')
+@system_bp.get('/alerts')
 @login_required
-@require_permission("monitoring.alerts")
+@require_permission("system.alerts")
 def get_alerts():
     """
     Query alert history from Nagios archivejson.
@@ -72,13 +67,13 @@ def get_alerts():
         return {"data": data}, 200
 
     except Exception:
-        current_app.logger.exception("Unexpected error in GET /monitoring/alerts")
+        current_app.logger.exception("Unexpected error in GET /system/alerts")
         return {"message": "An unexpected error occurred."}, 500
 
 
-@monitoring_bp.get('/alerts/current')
+@system_bp.get('/alerts/current')
 @login_required
-@require_permission("monitoring.alerts")
+@require_permission("system.alerts")
 def get_current_alerts():
     """Return today's alert list."""
     try:
@@ -87,91 +82,17 @@ def get_current_alerts():
             return {"message": "Failed to retrieve current alerts from Nagios."}, 502
         return {"data": data}, 200
     except Exception:
-        current_app.logger.exception("Unexpected error in GET /monitoring/alerts/current")
+        current_app.logger.exception("Unexpected error in GET /system/alerts/current")
         return {"message": "An unexpected error occurred."}, 500
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# NOTIFICATIONS
-# ─────────────────────────────────────────────────────────────────────────────
-
-@monitoring_bp.get('/notifications')
-@login_required
-@require_permission("monitoring.notifications")
-def get_notifications():
-    """
-    Query notification history from Nagios archivejson.
-
-    Query params (all optional):
-        start_date  — YYYY-MM-DD
-        start_time  — HH:MM:SS  (requires start_date)
-        end_date    — YYYY-MM-DD
-        end_time    — HH:MM:SS  (requires end_date)
-        hostname    — filter to one host
-        service     — filter to one service
-        last_days   — shorthand: notifications from the last N days
-        count_only  — if "true", return only the count
-    """
-    try:
-        last_days = request.args.get("last_days", type=int)
-        count_only = request.args.get("count_only", "false").lower() == "true"
-
-        if last_days is not None:
-            if count_only:
-                data = request_notifications_count_last(last_days)
-            else:
-                data = request_notifications_last(last_days)
-        else:
-            start_date = request.args.get("start_date")
-            start_time = request.args.get("start_time")
-            end_date = request.args.get("end_date")
-            end_time = request.args.get("end_time")
-            hostname = request.args.get("hostname")
-            service = request.args.get("service")
-
-            if count_only:
-                data = request_current_alert_notification()
-            else:
-                data = request_notifications_history(
-                    start_date, start_time,
-                    end_date, end_time,
-                    hostname, service
-                )
-
-        if data is None:
-            return {"message": "Failed to retrieve notification data from Nagios."}, 502
-
-        return {"data": data}, 200
-
-    except Exception:
-        current_app.logger.exception("Unexpected error in GET /monitoring/notifications")
-        return {"message": "An unexpected error occurred."}, 500
-
-
-@monitoring_bp.get('/notifications/current')
-@login_required
-@require_permission("monitoring.notifications")
-def get_current_notifications():
-    """Return today's notification list."""
-    try:
-        data = request_current_notifications()
-        if data is None:
-            return {"message": "Failed to retrieve current notifications from Nagios."}, 502
-        return {"data": data}, 200
-    except Exception:
-        current_app.logger.exception(
-            "Unexpected error in GET /monitoring/notifications/current"
-        )
-        return {"message": "An unexpected error occurred."}, 500
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # NETWORK HEALTH — host + service status queries from the local history DB
 # ─────────────────────────────────────────────────────────────────────────────
 
-@monitoring_bp.get('/network-health')
+# needs to be revised
+@system_bp.get('/network-health')
 @login_required
-@require_permission("monitoring.network_health")
+@require_permission("system.network_health")
 def get_network_health():
     """
     Return a paginated list of the latest host + service statuses
@@ -298,6 +219,6 @@ def get_network_health():
 
     except Exception:
         current_app.logger.exception(
-            "Unexpected error in GET /monitoring/network-health"
+            "Unexpected error in GET /system/network-health"
         )
         return {"message": "An unexpected error occurred."}, 500

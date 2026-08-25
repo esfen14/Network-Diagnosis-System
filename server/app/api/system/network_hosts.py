@@ -2,20 +2,20 @@
 
 Provides read-only endpoints for querying discovered network devices,
 their open TCP ports, and their open UDP ports. All routes require
-authentication and the "system.inventory" permission.
+authentication and the "system.hosts" permission.
 
 Routes
 ------
-GET /inventory
+GET /hosts
     Paginated, searchable, sortable list of all discovered network devices.
     Returns device details (hostname, IP, MAC, OS, device type, host status, etc.)
     with pagination metadata.
 
-GET /inventory/<int:device_id>/ports/tcp
+GET /hosts/<int:device_id>/ports/tcp
     Returns a list of all open TCP ports for a specific device.
     Each entry includes the port number and service name.
 
-GET /inventory/<int:device_id>/ports/udp
+GET /hosts/<int:device_id>/ports/udp
     Returns a list of all open UDP ports for a specific device.
     Each entry includes the port number and service name.
 """
@@ -36,9 +36,9 @@ HostStatus
 from app.api.system import system_bp
 
 
-@system_bp.get('/inventory')
+@system_bp.get('/hosts')
 @login_required
-@require_permission("system.inventory")
+@require_permission("system.hosts")
 def query_system_devices():
     """Query and paginate all discovered network devices with optional search and sorting.
 
@@ -200,9 +200,9 @@ def query_system_devices():
         return error("An unexpected error occurred.", 500)
 
 
-@system_bp.get('/inventory/<int:device_id>/ports/tcp')
+@system_bp.get('/hosts/<int:device_id>/ports/tcp')
 @login_required
-@require_permission("system.inventory")
+@require_permission("system.hosts")
 def device_tcp_ports(device_id):
     """Retrieve all open TCP ports for a specific discovered device.
 
@@ -265,9 +265,9 @@ def device_tcp_ports(device_id):
         return error("An unexpected error occurred.", 500)
 
 
-@system_bp.get('/inventory/<int:device_id>/ports/udp')
+@system_bp.get('/hosts/<int:device_id>/ports/udp')
 @login_required
-@require_permission("system.inventory")
+@require_permission("system.hosts")
 def device_udp_ports(device_id):
     """Retrieve all open UDP ports for a specific discovered device.
 

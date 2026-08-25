@@ -26,19 +26,12 @@ PERMISSIONS = [
     "account.info",
     "system.discover",
     "system.deploy.ncpa",
-<<<<<<< HEAD
-    "system.inventory",
-    # monitoring permissions
-    "monitoring.alerts",
-    "monitoring.notifications",
-    "monitoring.dashboard",
-    "monitoring.network_health",
-=======
+    "system.hosts",
     "system.logs",
-    "system.inventory",
     "system.report",
     "system.notifications",
->>>>>>> api
+    "system.services",
+    "system.services",
 ]
 
 ROLES = [
