@@ -160,6 +160,8 @@ class ActivityLog(db.Model):
     Config_Logs: so.WriteOnlyMapped['ConfigurationChanges'] = so.relationship(back_populates='Logs')
     Export_Logs: so.WriteOnlyMapped['ExportLog'] = so.relationship(back_populates='Logs')
     NetDiscover_Logs: so.WriteOnlyMapped['NetworkDiscoveryStatus'] = so.relationship(back_populates='Logs')
+    Plugin_History_Logs: so.WriteOnlyMapped['PluginHistory'] = so.relationship(back_populates='Logs')
+    Plugin_Override_Logs: so.WriteOnlyMapped['PluginCommandOverride'] = so.relationship(back_populates='Logs')
     
 class ConfigurationChanges( db.Model):
     # Table Name
@@ -236,7 +238,7 @@ class NetworkDiscoveryStatus(db.Model):
     LogID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(ActivityLog.LogID), index=True)
 
     Logs: so.Mapped[ActivityLog] = so.relationship(back_populates='NetDiscover_Logs')
-    Devices: so.Mapped[NetworkDiscovery] = so.relationship(back_populates='DiscoveryRecord')
+    Devices: so.Mapped['NetworkDiscovery'] = so.relationship(back_populates='DiscoveryRecord')
 
 """
 ScanStatus Enum so that Scan_Status is consistent
@@ -342,7 +344,7 @@ class NCPADeploymentStatus(db.Model):
 
     # Relationships
     Logs: so.Mapped[ActivityLog] = so.relationship(back_populates='Deployment_Logs')
-    Device_Deployment: so.Mapped[NCPADeployment] = so.relationship(back_populates='Deployment_Status')
+    Device_Deployment: so.Mapped['NCPADeployment'] = so.relationship(back_populates='Deployment_Status')
 """
 AgentStatus Enum so that Agent_Status is consistent
 To call use "NRPEDeployment.Agent_Status = AgentStatus.DISCOVERED"
