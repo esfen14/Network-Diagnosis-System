@@ -1,330 +1,500 @@
-"""System Inventory API module.
+"""
+network_hosts.py — API routes for the Host Status Table (§2.2).
 
-Provides read-only endpoints for querying discovered network devices,
-their open TCP ports, and their open UDP ports. All routes require
-authentication and the "system.hosts" permission.
+Routes:
+  GET  /system/network-health/hosts
+      Full paginated, filterable host status table.
+      Supports filter by state, ack status, and free-text hostname search.
 
-Routes
-------
-GET /hosts
-    Paginated, searchable, sortable list of all discovered network devices.
-    Returns device details (hostname, IP, MAC, OS, device type, host status, etc.)
-    with pagination metadata.
+  GET  /system/network-health/hosts/<hostname>/detail
+      Inline host detail panel: perf data with thresholds, associated service
+      mini-list, and full set of host timestamps.
 
-GET /hosts/<int:device_id>/ports/tcp
-    Returns a list of all open TCP ports for a specific device.
-    Each entry includes the port number and service name.
+  POST /system/network-health/hosts/acknowledge
+      Acknowledge a host-level alert (requires system.acknowledge_alerts).
 
-GET /hosts/<int:device_id>/ports/udp
-    Returns a list of all open UDP ports for a specific device.
-    Each entry includes the port number and service name.
+  DELETE /system/network-health/hosts/acknowledge
+      Unacknowledge a host-level alert (requires system.acknowledge_alerts).
+
+All routes require login and "system.network_health" permission, except the
+acknowledge routes which require "system.acknowledge_alerts".
 """
 
-from flask_login import login_required, current_user
-from app import app, db
+from datetime import datetime, timezone
+
 import sqlalchemy as sa
 from flask import request, current_app
+from flask_login import current_user, login_required
+from sqlalchemy.exc import IntegrityError
+
+from app import db
 from app.api.helper.database_access.permissions import require_permission
-from app.api.helper import success, error
-from app.system_models import \
-NetworkDiscovery,\
-Open_TCP_Services, \
-Open_UDP_Services
-from app.history_models import \
-HostStatus
-
+from app.api.helper.responses import success, error
 from app.api.system import system_bp
+from app.history_models import (
+    HostStatus,
+    HostPerfData,
+    HostStateType,
+    ServiceStatus,
+    ServiceStateType,
+)
+from app.system_models import AlertAcknowledgement, AckHistory, AckAction
 
+# ---------------------------------------------------------------------------
+# §2.2  Host Status Table
+# ---------------------------------------------------------------------------
 
-@system_bp.get('/hosts')
+@system_bp.get("/network-health/hosts")
 @login_required
-@require_permission("system.hosts")
-def query_system_devices():
-    """Query and paginate all discovered network devices with optional search and sorting.
+@require_permission("system.network_health")
+def list_hosts():
+    """
+    Return a paginated, filterable list of the latest host status snapshot.
 
-    Retrieves the list of network devices discovered by the system, supports
-    pagination, full-text search across multiple fields, and sorting on any
-    supported column.
+    Query params:
+        page            — default 1
+        per_page        — default 25, max 100
+        sort_by         — hostname (default) | state | last_check | check_latency
+        order           — asc (default) | desc
+        search          — partial match on hostname
+        state           — UP | DOWN | UNREACHABLE
+        ack_filter      — all (default) | acknowledged | unacknowledged
 
-    Inputs (query parameters):
-        page (int, default=1): Page number (must be >= 1).
-        per_page (int, default=10): Items per page (must be 1-100).
-        sort_by (str, default="hostname"): Column to sort by. One of:
-            "id", "hostname", "ip_address", "network", "mac_address",
-            "os_type", "device_type", "scanned_at".
-        order (str, default="asc"): Sort direction — "asc" or "desc".
-        search (str, default=""): Free-text search applied across
-            hostname, ip_address, network, mac_address, os_type, device_type.
-
-    Returns (JSON):
-        {
-            "success": true,
-            "data": {
-                "items": [
-                    {
-                        "id": int,
-                        "hostname": str,
-                        "ip_address": str,
-                        "network": str,
-                        "mac_address": str,
-                        "os_type": str | null,
-                        "device_type": str,
-                        "ncpa_eligible": bool,
-                        "include_in_scanning": bool,
-                        "scanned_at": str (ISO-8601) | null,
-                        "host_status": int | null
-                    }
-                ],
-                "page": int,
-                "per_page": int,
-                "pages": int,
-                "total": int,
-                "has_next": bool,
-                "has_prev": bool
-            }
+    Each item:
+    {
+        "hostname":        str,
+        "state":           str,         // UP / DOWN / UNREACHABLE
+        "state_type":      str,         // Soft / Hard
+        "last_check":      str | null,  // ISO-8601
+        "check_latency":   float,       // seconds
+        "plugin_output":   str,
+        "is_flapping":     bool,
+        "in_downtime":     bool,
+        "nagios_ack":      str,         // Nagios-side acknowledgement type
+        "ack": null | {
+            "comment":          str,
+            "acknowledged_by":  str,
+            "acknowledged_at":  str,
         }
-
-    Raises (JSON error):
-        400: Invalid page, per_page out of range, invalid sort field, or invalid order.
-        500: Unexpected server error.
+    }
     """
     try:
-        page = request.args.get("page", default=1, type=int)
-        per_page = request.args.get("per_page", default=10, type=int)
-        sort_by = request.args.get("sort_by", default="hostname", type=str)
-        order = request.args.get("order", default="asc", type=str)
-        search = request.args.get("search", default="", type=str)
+        page       = request.args.get("page", default=1, type=int)
+        per_page   = min(request.args.get("per_page", default=25, type=int), 100)
+        sort_by    = request.args.get("sort_by", default="hostname", type=str)
+        order      = request.args.get("order", default="asc", type=str).lower()
+        search     = request.args.get("search", default="", type=str)
+        state_arg  = request.args.get("state", default="", type=str).upper()
+        ack_filter = request.args.get("ack_filter", default="all", type=str).lower()
 
         if page < 1:
-            return error("Page must be greater than 0", 400)
+            return error("Page must be greater than 0.", 400)
+        if per_page < 1:
+            return error("per_page must be at least 1.", 400)
+        if order not in ("asc", "desc"):
+            return error("order must be 'asc' or 'desc'.", 400)
+        if ack_filter not in ("all", "acknowledged", "unacknowledged"):
+            return error("ack_filter must be 'all', 'acknowledged', or 'unacknowledged'.", 400)
 
-        if per_page < 1 or per_page > 100:
-            return error("per_page must be between 1 and 100", 400)
-
-        allowed_sorts = {
-            "id": NetworkDiscovery.NetDiscoveryID,
-            "hostname": NetworkDiscovery.Hostname,
-            "ip_address": NetworkDiscovery.IP_Address,
-            "network": NetworkDiscovery.Network,
-            "mac_address": NetworkDiscovery.MAC_Address,
-            "os_type": NetworkDiscovery.OS_Type,
-            "device_type": NetworkDiscovery.Device_Type,
-            "scanned_at": NetworkDiscovery.Scanned_At,
+        _sort_map = {
+            "hostname":      HostStatus.Hostname,
+            "state":         HostStatus.Current_State,
+            "last_check":    HostStatus.Last_Check,
+            "check_latency": HostStatus.Check_Latency,
         }
+        sort_col = _sort_map.get(sort_by)
+        if sort_col is None:
+            return error(f"sort_by must be one of: {list(_sort_map)}", 400)
 
-        sort_column = allowed_sorts.get(sort_by)
+        # Subquery: most recent snapshot per host.
+        latest_subq = (
+            sa.select(
+                HostStatus.Hostname,
+                sa.func.max(HostStatus.Timestamp).label("max_ts"),
+            )
+            .group_by(HostStatus.Hostname)
+            .subquery()
+        )
 
-        if sort_column is None:
-            return error("Invalid sort field", 400)
-
-        query = sa.select(NetworkDiscovery)
-
-        if order == "asc":
-            query = query.order_by(sort_column.asc())
-        elif order == "desc":
-            query = query.order_by(sort_column.desc())
-        else:
-            return error("Invalid order.", 400)
+        query = (
+            sa.select(HostStatus)
+            .join(
+                latest_subq,
+                sa.and_(
+                    HostStatus.Hostname  == latest_subq.c.Hostname,
+                    HostStatus.Timestamp == latest_subq.c.max_ts,
+                ),
+            )
+        )
 
         if search:
-            search_pattern = f"%{search}%"
+            query = query.where(HostStatus.Hostname.ilike(f"%{search}%"))
 
+        if state_arg:
+            try:
+                state_enum = HostStateType[state_arg]
+                query = query.where(HostStatus.Current_State == state_enum)
+            except KeyError:
+                return error(f"Invalid state: {state_arg}. Must be UP, DOWN, or UNREACHABLE.", 400)
+
+        query = query.order_by(
+            sort_col.asc() if order == "asc" else sort_col.desc()
+        )
+
+        # Load all current acknowledgements for the ack_filter and ack field.
+        ack_rows = db.session.scalars(
+            sa.select(AlertAcknowledgement).where(
+                AlertAcknowledgement.Service_Name.is_(None)
+            )
+        ).all()
+        ack_map: dict[str, AlertAcknowledgement] = {a.Hostname: a for a in ack_rows}
+
+        # Apply ack filter by building a set of acknowledged hostnames.
+        if ack_filter == "acknowledged":
             query = query.where(
-                sa.or_(
-                    NetworkDiscovery.Hostname.ilike(search_pattern),
-                    NetworkDiscovery.IP_Address.ilike(search_pattern),
-                    NetworkDiscovery.Network.ilike(search_pattern),
-                    NetworkDiscovery.MAC_Address.ilike(search_pattern),
-                    NetworkDiscovery.OS_Type.ilike(search_pattern),
-                    NetworkDiscovery.Device_Type.ilike(search_pattern),
-                )
+                HostStatus.Hostname.in_(list(ack_map.keys()))
+            )
+        elif ack_filter == "unacknowledged":
+            query = query.where(
+                HostStatus.Hostname.notin_(list(ack_map.keys()))
             )
 
-        devices = db.paginate(
-            query,
-            page=page,
-            per_page=per_page,
-            error_out=False
-        )
+        page_result = db.paginate(query, page=page, per_page=per_page, error_out=False)
 
         items = []
-
-        for device in devices.items:
-
-            # Get the latest Nagios host status
-            host_status = db.session.scalars(
-                sa.select(HostStatus)
-                .where(HostStatus.Hostname == device.Hostname)
-                .order_by(
-                    HostStatus.Timestamp.desc()
-                )
-                .limit(1)
-            ).first()
-
+        for h in page_result.items:
+            ack = ack_map.get(h.Hostname)
             items.append({
-                "id": device.NetDiscoveryID,
-                "hostname": device.Hostname,
-                "ip_address": device.IP_Address,
-                "network": device.Network,
-                "mac_address": device.MAC_Address,
-                "os_type": device.OS_Type,
-                "device_type": device.Device_Type,
-                "ncpa_eligible": device.NCPA_Eligible,
-                "include_in_scanning": device.Include_Device_In_Scanning,
-                "scanned_at": (
-                    device.Scanned_At.isoformat()
-                    if device.Scanned_At is not None
-                    else None
+                "hostname":      h.Hostname,
+                "state":         h.Current_State.value,
+                "state_type":    h.State_Type.value,
+                "last_check":    h.Last_Check.isoformat() if h.Last_Check else None,
+                "check_latency": h.Check_Latency,
+                "plugin_output": h.Plugin_Output,
+                "is_flapping":   h.Is_Flapping,
+                "in_downtime":   h.Scheduled_Downtime_Depth > 0,
+                "nagios_ack":    h.Acknowledgement_Type.value,
+                "ack":           _serialize_ack(ack),
+            })
+
+        return success({
+            "items":    items,
+            "page":     page_result.page,
+            "per_page": page_result.per_page,
+            "pages":    page_result.pages,
+            "total":    page_result.total,
+            "has_next": page_result.has_next,
+            "has_prev": page_result.has_prev,
+        })
+
+    except Exception:
+        current_app.logger.exception(
+            "Unexpected error in GET /system/network-health/hosts"
+        )
+        return error("An unexpected error occurred.", 500)
+
+
+# ---------------------------------------------------------------------------
+# §2.2  Host Detail Panel
+# ---------------------------------------------------------------------------
+
+@system_bp.get("/network-health/hosts/<hostname>/detail")
+@login_required
+@require_permission("system.network_health")
+def host_detail(hostname: str):
+    """
+    Return the inline detail panel for a single host row.
+
+    Includes:
+      - All performance metrics with current value, unit, warn/crit thresholds
+      - Full set of state timestamps
+      - Mini service list with current state badges
+      - Acknowledgement if present
+
+    Response shape:
+    {
+        "hostname":                 str,
+        "state":                    str,
+        "state_type":               str,
+        "plugin_output":            str,
+        "last_check":               str | null,
+        "last_state_change":        str | null,
+        "last_hard_state_change":   str | null,
+        "last_time_up":             str | null,
+        "last_time_down":           str | null,
+        "last_time_unreachable":    str | null,
+        "check_latency":            float,
+        "check_execution_time":     float,
+        "is_flapping":              bool,
+        "in_downtime":              bool,
+        "nagios_ack":               str,
+        "ack": null | { "comment", "acknowledged_by", "acknowledged_at" },
+        "perf_data": [
+            {
+                "metric":    str,
+                "value":     float,
+                "unit":      str | null,
+                "warn":      float | null,
+                "crit":      float | null,
+                "min":       float | null,
+                "max":       float | null,
+            }
+        ],
+        "services": [
+            {
+                "service":  str,
+                "state":    str,
+                "plugin_output": str,
+                "last_check":    str | null,
+            }
+        ]
+    }
+    """
+    try:
+        # Latest HostStatus row for this hostname.
+        latest_subq = (
+            sa.select(sa.func.max(HostStatus.Timestamp))
+            .where(HostStatus.Hostname == hostname)
+            .scalar_subquery()
+        )
+        host = db.session.scalar(
+            sa.select(HostStatus).where(
+                HostStatus.Hostname  == hostname,
+                HostStatus.Timestamp == latest_subq,
+            )
+        )
+
+        if host is None:
+            return error(f"Host '{hostname}' not found.", 404)
+
+        # Performance data for this host status row.
+        perf_rows = db.session.scalars(
+            sa.select(HostPerfData).where(
+                HostPerfData.HostStatusID == host.HostStatusID
+            )
+        ).all()
+
+        perf_data = [
+            {
+                "metric": p.Metric,
+                "value":  p.Measured_Value,
+                "unit":   p.Unit,
+                "warn":   p.Warning_Threshold,
+                "crit":   p.Critical_Threshold,
+                "min":    p.Minimum,
+                "max":    p.Maximum,
+            }
+            for p in perf_rows
+        ]
+
+        # Latest service for each service on this host.
+        svc_subq = (
+            sa.select(
+                ServiceStatus.Service,
+                sa.func.max(ServiceStatus.Timestamp).label("max_ts"),
+            )
+            .where(ServiceStatus.Hostname == hostname)
+            .group_by(ServiceStatus.Service)
+            .subquery()
+        )
+        svc_rows = db.session.scalars(
+            sa.select(ServiceStatus).join(
+                svc_subq,
+                sa.and_(
+                    ServiceStatus.Service   == svc_subq.c.Service,
+                    ServiceStatus.Timestamp == svc_subq.c.max_ts,
                 ),
-                "host_status": (
-                    host_status.Current_State.value
-                    if host_status is not None
-                    else None
-                )
-            })
+            ).where(ServiceStatus.Hostname == hostname)
+        ).all()
+
+        services = [
+            {
+                "service":       s.Service,
+                "state":         s.Current_State.value,
+                "plugin_output": s.Plugin_Output,
+                "last_check":    s.Last_Check.isoformat() if s.Last_Check else None,
+            }
+            for s in svc_rows
+        ]
+
+        # Acknowledgement for this host (service_name IS NULL).
+        ack = db.session.scalar(
+            sa.select(AlertAcknowledgement).where(
+                AlertAcknowledgement.Hostname     == hostname,
+                AlertAcknowledgement.Service_Name.is_(None),
+            )
+        )
 
         return success({
-            "items": items,
-            "page": devices.page,
-            "per_page": devices.per_page,
-            "pages": devices.pages,
-            "total": devices.total,
-            "has_next": devices.has_next,
-            "has_prev": devices.has_prev
+            "hostname":               host.Hostname,
+            "state":                  host.Current_State.value,
+            "state_type":             host.State_Type.value,
+            "plugin_output":          host.Plugin_Output,
+            "last_check":             host.Last_Check.isoformat() if host.Last_Check else None,
+            "last_state_change":      host.Last_State_Change.isoformat() if host.Last_State_Change else None,
+            "last_hard_state_change": host.Last_Hard_State_Change.isoformat() if host.Last_Hard_State_Change else None,
+            "last_time_up":           host.Last_Time_Up.isoformat() if host.Last_Time_Up else None,
+            "last_time_down":         host.Last_Time_Down.isoformat() if host.Last_Time_Down else None,
+            "last_time_unreachable":  host.Last_Time_Unreachable.isoformat() if host.Last_Time_Unreachable else None,
+            "check_latency":          host.Check_Latency,
+            "check_execution_time":   host.Check_Execution_Time,
+            "is_flapping":            host.Is_Flapping,
+            "in_downtime":            host.Scheduled_Downtime_Depth > 0,
+            "nagios_ack":             host.Acknowledgement_Type.value,
+            "ack":                    _serialize_ack(ack),
+            "perf_data":              perf_data,
+            "services":               services,
         })
 
     except Exception:
         current_app.logger.exception(
-            "An unexpected error occurred while querying system devices."
+            f"Unexpected error in GET /system/network-health/hosts/{hostname}/detail"
         )
         return error("An unexpected error occurred.", 500)
 
 
-@system_bp.get('/hosts/<int:device_id>/ports/tcp')
+# ---------------------------------------------------------------------------
+# §4  Acknowledge / Unacknowledge a host alert (from the host table)
+# ---------------------------------------------------------------------------
+
+@system_bp.post("/network-health/hosts/acknowledge")
 @login_required
-@require_permission("system.hosts")
-def device_tcp_ports(device_id):
-    """Retrieve all open TCP ports for a specific discovered device.
+@require_permission("system.acknowledge_alerts")
+def acknowledge_host():
+    """
+    Acknowledge a host-level alert from the Network Health host table.
 
-    Inputs (URL parameters):
-        device_id (int): The NetworkDiscovery ID of the target device.
+    Request body (JSON):
+    {
+        "hostname": str,
+        "comment":  str   // required, must not be blank
+    }
 
-    Returns (JSON):
-        {
-            "success": true,
-            "data": {
-                "device_id": int,
-                "protocol": "TCP",
-                "ports": [
-                    {
-                        "id": int,
-                        "port": int,
-                        "service": str
-                    }
-                ]
-            }
-        }
-
-    Raises (JSON error):
-        404: Device with the given ID does not exist.
-        500: Unexpected server error.
+    Returns 201 on success, 409 if already acknowledged, 404 if no active alert.
     """
     try:
-        device = db.session.get(NetworkDiscovery, device_id)
+        body     = request.get_json(silent=True) or {}
+        hostname = (body.get("hostname") or "").strip()
+        comment  = (body.get("comment") or "").strip()
 
-        if device is None:
-            return error("Device not found.", 404)
+        if not hostname:
+            return error("hostname is required.", 400)
+        if not comment:
+            return error("comment is required and must not be blank.", 400)
 
-        query = (
-            sa.select(Open_TCP_Services)
-            .where(Open_TCP_Services.NetDiscoveryID == device_id)
-            .order_by(Open_TCP_Services.Port_Number.asc())
+        # Verify the host is actually in a problem state.
+        latest_subq = (
+            sa.select(sa.func.max(HostStatus.Timestamp))
+            .where(HostStatus.Hostname == hostname)
+            .scalar_subquery()
+        )
+        host = db.session.scalar(
+            sa.select(HostStatus).where(
+                HostStatus.Hostname  == hostname,
+                HostStatus.Timestamp == latest_subq,
+            )
         )
 
-        ports = db.session.scalars(query).all()
+        if host is None:
+            return error(f"Host '{hostname}' not found.", 404)
+        if host.Current_State == HostStateType.UP:
+            return error("Host is currently UP — no active alert to acknowledge.", 409)
 
-        port_list = []
+        now = datetime.now(timezone.utc)
+        ack = AlertAcknowledgement(
+            Hostname        = hostname,
+            Service_Name    = None,
+            Comment         = comment,
+            Acknowledged_At = now,
+            AcknowledgedBy  = current_user.UserID,
+        )
+        db.session.add(ack)
+        db.session.add(AckHistory(
+            Hostname     = hostname,
+            Service_Name = None,
+            Action       = AckAction.ACKNOWLEDGED,
+            Actioned_At  = now,
+            ActorUserID  = current_user.UserID,
+            Comment      = comment,
+        ))
+        db.session.commit()
 
-        for port in ports:
-            port_list.append({
-                "id": port.OpenPortID,
-                "port": port.Port_Number,
-                "service": port.Service_Name
-            })
+        return success(_serialize_ack(ack), message="Host alert acknowledged.", status=201)
 
-        return success({
-            "device_id": device_id,
-            "protocol": "TCP",
-            "ports": port_list
-        })
-
+    except IntegrityError:
+        db.session.rollback()
+        return error("This host alert is already acknowledged.", 409)
     except Exception:
+        db.session.rollback()
         current_app.logger.exception(
-            "An unexpected error occurred while querying TCP ports."
+            "Unexpected error in POST /system/network-health/hosts/acknowledge"
         )
         return error("An unexpected error occurred.", 500)
 
 
-@system_bp.get('/hosts/<int:device_id>/ports/udp')
+@system_bp.delete("/network-health/hosts/acknowledge")
 @login_required
-@require_permission("system.hosts")
-def device_udp_ports(device_id):
-    """Retrieve all open UDP ports for a specific discovered device.
+@require_permission("system.acknowledge_alerts")
+def unacknowledge_host():
+    """
+    Remove a host-level acknowledgement from the Network Health host table.
 
-    Inputs (URL parameters):
-        device_id (int): The NetworkDiscovery ID of the target device.
+    Request body (JSON):
+    {
+        "hostname": str
+    }
 
-    Returns (JSON):
-        {
-            "success": true,
-            "data": {
-                "device_id": int,
-                "protocol": "UDP",
-                "ports": [
-                    {
-                        "id": int,
-                        "port": int,
-                        "service": str
-                    }
-                ]
-            }
-        }
-
-    Raises (JSON error):
-        404: Device with the given ID does not exist.
-        500: Unexpected server error.
+    Returns 200 on success, 404 if no acknowledgement exists.
     """
     try:
-        device = db.session.get(NetworkDiscovery, device_id)
+        body     = request.get_json(silent=True) or {}
+        hostname = (body.get("hostname") or "").strip()
 
-        if device is None:
-            return error("Device not found.", 404)
+        if not hostname:
+            return error("hostname is required.", 400)
 
-        query = (
-            sa.select(Open_UDP_Services)
-            .where(Open_UDP_Services.NetDiscoveryID == device_id)
-            .order_by(Open_UDP_Services.Port_Number.asc())
+        ack = db.session.scalar(
+            sa.select(AlertAcknowledgement).where(
+                AlertAcknowledgement.Hostname     == hostname,
+                AlertAcknowledgement.Service_Name.is_(None),
+            )
         )
 
-        ports = db.session.scalars(query).all()
+        if ack is None:
+            return error("No acknowledgement found for this host.", 404)
 
-        port_list = []
+        db.session.delete(ack)
+        db.session.add(AckHistory(
+            Hostname     = hostname,
+            Service_Name = None,
+            Action       = AckAction.UNACKNOWLEDGED,
+            Actioned_At  = datetime.now(timezone.utc),
+            ActorUserID  = current_user.UserID,
+            Comment      = None,
+        ))
+        db.session.commit()
 
-        for port in ports:
-            port_list.append({
-                "id": port.OpenPortID,
-                "port": port.Port_Number,
-                "service": port.Service_Name
-            })
-
-        return success({
-            "device_id": device_id,
-            "protocol": "UDP",
-            "ports": port_list
-        })
+        return success(message="Acknowledgement removed.")
 
     except Exception:
+        db.session.rollback()
         current_app.logger.exception(
-            "An unexpected error occurred while querying UDP ports."
+            "Unexpected error in DELETE /system/network-health/hosts/acknowledge"
         )
         return error("An unexpected error occurred.", 500)
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _serialize_ack(ack: AlertAcknowledgement | None) -> dict | None:
+    if ack is None:
+        return None
+    user      = ack.User
+    full_name = f"{user.First_Name} {user.Last_Name}"
+    return {
+        "comment":         ack.Comment,
+        "acknowledged_by": full_name,
+        "acknowledged_at": ack.Acknowledged_At.isoformat(),
+    }
