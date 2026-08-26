@@ -93,7 +93,16 @@ export function Sidebar() {
     item.roles.includes(user.role)
   )
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/user/logout', {
+        method: 'POST',
+        credentials: 'include',
+      })
+    } catch (error) {
+      console.error('Logout request failed:', error)
+    }
+
     localStorage.clear()
     sessionStorage.clear()
     navigate('/login', { replace: true })

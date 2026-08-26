@@ -17,7 +17,7 @@ export function SummaryStatCard({
 }: SummaryStatCardProps) {
   return (
     <div
-      className="rounded-3xl p-5 shadow-sm"
+      className="rounded-3xl p-[var(--dash-stat-padding)] shadow-sm"
       style={{ background: gradient }}
     >
       <div className="flex items-start justify-between">

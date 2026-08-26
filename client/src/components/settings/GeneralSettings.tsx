@@ -7,17 +7,6 @@ import {
   useSystemSettings,
 } from '../../contexts/SystemSettingsContext'
 
-const languageOptions = [
-  {
-    value: 'English',
-    label: 'English',
-  },
-  {
-    value: 'Filipino',
-    label: 'Filipino',
-  },
-]
-
 const themeOptions = [
   {
     value: 'dark',
@@ -186,24 +175,11 @@ export function GeneralSettings() {
   return (
     <SettingsCard
       title="General Settings"
-      description="Configure system-wide application behavior and preferences."
+      description="Personal display preferences plus shared diagnostic and export behavior."
     >
       <div className="grid gap-x-8 gap-y-7 lg:grid-cols-3">
 
         {/* COLUMN 1 */}
-
-        <SettingsSelect
-          label="System Language"
-          value={
-            settings.systemLanguage
-          }
-          options={languageOptions}
-          onChange={(value) =>
-            updateSettings({
-              systemLanguage: value,
-            })
-          }
-        />
 
         <SettingsSelect
           label="Theme"
@@ -354,9 +330,9 @@ export function GeneralSettings() {
         </div>
 
         <div className="rounded-2xl bg-[var(--card-alt)] border border-[var(--border)] p-4 lg:col-span-1">
-          <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">System Scope</p>
-          <p className="mt-2 text-sm font-medium text-emerald-600">Global</p>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">Changes made here are intended to affect the entire application.</p>
+          <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Setting Scope</p>
+          <p className="mt-2 text-sm font-medium text-[var(--text)]">Mixed</p>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">Display preferences (theme, fonts, layout, refresh rate) apply only to your account. Scan frequency, notifications, and export formats are shared system-wide.</p>
         </div>
 
       </div>

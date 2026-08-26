@@ -165,8 +165,16 @@ export function Header() {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
   }
 
-  const handleLogout = () => {
-    // abang - dito ilagay yung real logout call (clear token/session muna bago i-redirect)
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/user/logout', {
+        method: 'POST',
+        credentials: 'include',
+      })
+    } catch (error) {
+      console.error('Logout request failed:', error)
+    }
+
     localStorage.clear()
     sessionStorage.clear()
     navigate('/login', { replace: true })

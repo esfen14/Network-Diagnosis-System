@@ -25,8 +25,6 @@ def get_settings():
 @system_bp.route("", methods=["PUT"])
 @login_required
 def update_settings():
-    # TODO: replace @login_required with a permission check once
-    # we confirm how Role/Permission is enforced elsewhere.
     row = _get_singleton_row()
     payload = request.get_json(force=True)
 
@@ -37,29 +35,24 @@ def update_settings():
             "message": "Settings were updated by someone else. Reload and try again.",
         }), 409
 
-    row.System_Language = payload["systemLanguage"]
-    row.Theme = payload["theme"]
-    row.Time_Zone = payload["timeZone"]
-    row.Date_Time_Format = payload["dateTimeFormat"]
-    row.System_Font = payload["systemFont"]
-    row.System_Font_Size = payload["systemFontSize"]
-    row.Dashboard_Refresh_Rate = payload["dashboardRefreshRate"]
-    row.Scan_Frequency = payload["scanFrequency"]
-    row.Dashboard_Layout = payload["dashboardLayout"]
-    row.Notifications = payload["notifications"]
-    row.Export_Formats = ",".join(payload["exportFormats"])
+    row.Scan_Frequency = payload.get("scanFrequency", row.Scan_Frequency)
+    row.Notifications = payload.get("notifications", row.Notifications)
+    if "exportFormats" in payload:
+        row.Export_Formats = ",".join(payload["exportFormats"])
 
-    row.Session_Timeout = payload["sessionTimeout"]
-    row.Strong_Password_Policy = payload["strongPasswordPolicy"]
-    row.Failed_Login_Monitoring = payload["failedLoginMonitoring"]
-    row.Audit_Logging = payload["auditLogging"]
-    row.Security_Check_Frequency = payload["securityCheckFrequency"]
+    row.Session_Timeout = payload.get("sessionTimeout", row.Session_Timeout)
+    row.Strong_Password_Policy = payload.get("strongPasswordPolicy", row.Strong_Password_Policy)
+    row.Failed_Login_Monitoring = payload.get("failedLoginMonitoring", row.Failed_Login_Monitoring)
+    row.Audit_Logging = payload.get("auditLogging", row.Audit_Logging)
+    row.Security_Check_Frequency = payload.get("securityCheckFrequency", row.Security_Check_Frequency)
 
-    row.System_Update_Frequency = payload["systemUpdateFrequency"]
-    row.Maintenance_Mode = payload["maintenanceMode"]
-    row.Automatic_Backups = payload["automaticBackups"]
-    row.Log_Retention_Days = payload["logRetentionDays"]
-    row.Diagnostic_History_Retention_Days = payload["diagnosticHistoryRetentionDays"]
+    row.System_Update_Frequency = payload.get("systemUpdateFrequency", row.System_Update_Frequency)
+    row.Maintenance_Mode = payload.get("maintenanceMode", row.Maintenance_Mode)
+    row.Automatic_Backups = payload.get("automaticBackups", row.Automatic_Backups)
+    row.Log_Retention_Days = payload.get("logRetentionDays", row.Log_Retention_Days)
+    row.Diagnostic_History_Retention_Days = payload.get(
+        "diagnosticHistoryRetentionDays", row.Diagnostic_History_Retention_Days
+    )
 
     row.Version += 1
     row.Updated_By = current_user.UserID

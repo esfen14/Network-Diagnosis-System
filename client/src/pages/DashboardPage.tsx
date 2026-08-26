@@ -11,12 +11,12 @@ import { SummaryStatCard } from '../components/shared/SummaryStatCard'
 export function DashboardPage() {
   return (
     <main className="ml-[220px] flex-1 min-w-0">
-      <div className="flex w-full min-w-0 gap-6">
-        <div className="min-w-0 flex-1 space-y-6 py-6">
+      <div className="flex w-full min-w-0 gap-[var(--dash-grid-gap)]">
+        <div className="min-w-0 flex-1 space-y-[var(--dash-section-gap)] py-6">
 
           {/* Sticky banner */}
           <div className="sticky top-0 z-10 bg-[var(--sticky-bg)] pb-3 pt-3">
-            <div className="rounded-2xl bg-[var(--card)] border border-[var(--border)] p-6 shadow-sm">
+            <div className="rounded-2xl bg-[var(--card)] border border-[var(--border)] p-[var(--dash-card-padding)] shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-semibold text-[var(--text)]">CICT Network</h2>
@@ -33,7 +33,7 @@ export function DashboardPage() {
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-[var(--dash-grid-gap-sm)] sm:grid-cols-2 xl:grid-cols-4">
             <SummaryStatCard
               title="Total Devices"
               value="387"
@@ -64,7 +64,7 @@ export function DashboardPage() {
             />
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid gap-[var(--dash-grid-gap)] lg:grid-cols-2">
             <NetworkStatusOverview />
             <NetworkPerformanceSection />
           </div>

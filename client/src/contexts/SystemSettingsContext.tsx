@@ -11,10 +11,47 @@ import {
 import type { SystemSettings } from '../types/settings'
 
 const CACHE_KEY = 'pinpoint-system-settings-cache'
-const SETTINGS_ENDPOINT = '/api/settings'
+const SETTINGS_ENDPOINT = '/api/system'
+const PREFERENCES_ENDPOINT = '/api/user/preferences'
+
+// Fields that live in UserPreferences (per-user) instead of
+// SystemSettings (shared singleton). Keep this in sync with
+// UserPreferences.to_dict() on the backend.
+const PREFERENCE_KEYS = [
+  'theme',
+  'timeZone',
+  'dateTimeFormat',
+  'systemFont',
+  'systemFontSize',
+  'dashboardLayout',
+  'dashboardRefreshRate',
+] as const
+
+type PreferenceKey = (typeof PREFERENCE_KEYS)[number]
+
+function pick<T extends object, K extends keyof T>(
+  obj: T,
+  keys: readonly K[]
+): Pick<T, K> {
+  const result = {} as Pick<T, K>
+  keys.forEach((key) => {
+    result[key] = obj[key]
+  })
+  return result
+}
+
+function omit<T extends object, K extends keyof T>(
+  obj: T,
+  keys: readonly K[]
+): Omit<T, K> {
+  const result = { ...obj }
+  keys.forEach((key) => {
+    delete result[key]
+  })
+  return result
+}
 
 export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
-  systemLanguage: 'English',
   theme: 'dark',
   timeZone: 'UTC+08:00',
   dateTimeFormat: 'DD/MM/YYYY',
@@ -90,11 +127,13 @@ function writeCache(settings: SystemSettings) {
 
 /*
 |--------------------------------------------------------------------------
-| Backend calls
+| Backend calls — two sources merged into one settings object.
+| GET/PUT /api/system      -> shared, system-wide fields
+| GET/PUT /api/user/preferences -> per-user display preferences
 |--------------------------------------------------------------------------
 */
 
-async function fetchSettings(): Promise<SystemSettings> {
+async function fetchSystemSettings(): Promise<Omit<SystemSettings, PreferenceKey>> {
   const res = await fetch(SETTINGS_ENDPOINT, {
     credentials: 'include',
   })
@@ -106,7 +145,7 @@ async function fetchSettings(): Promise<SystemSettings> {
   const data = await res.json()
 
   return {
-    ...DEFAULT_SYSTEM_SETTINGS,
+    ...omit(DEFAULT_SYSTEM_SETTINGS, PREFERENCE_KEYS),
     ...data,
     exportFormats: Array.isArray(data.exportFormats)
       ? data.exportFormats
@@ -114,9 +153,38 @@ async function fetchSettings(): Promise<SystemSettings> {
   }
 }
 
-async function persistSettings(
+async function fetchPreferences(): Promise<Pick<SystemSettings, PreferenceKey>> {
+  const res = await fetch(PREFERENCES_ENDPOINT, {
+    credentials: 'include',
+  })
+
+  if (!res.ok) {
+    throw new Error(`Failed to load preferences (${res.status})`)
+  }
+
+  const data = await res.json()
+
+  return {
+    ...pick(DEFAULT_SYSTEM_SETTINGS, PREFERENCE_KEYS),
+    ...data,
+  }
+}
+
+async function fetchSettings(): Promise<SystemSettings> {
+  const [system, preferences] = await Promise.all([
+    fetchSystemSettings(),
+    fetchPreferences(),
+  ])
+
+  return {
+    ...system,
+    ...preferences,
+  } as SystemSettings
+}
+
+async function persistSystemSettings(
   settings: SystemSettings
-): Promise<SystemSettings> {
+): Promise<Omit<SystemSettings, PreferenceKey>> {
   const res = await fetch(SETTINGS_ENDPOINT, {
     method: 'PUT',
     credentials: 'include',
@@ -134,6 +202,37 @@ async function persistSettings(
   }
 
   return res.json()
+}
+
+async function persistPreferences(
+  settings: SystemSettings
+): Promise<Pick<SystemSettings, PreferenceKey>> {
+  const res = await fetch(PREFERENCES_ENDPOINT, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(pick(settings, PREFERENCE_KEYS)),
+  })
+
+  if (!res.ok) {
+    throw new Error(`Failed to save preferences (${res.status})`)
+  }
+
+  return res.json()
+}
+
+async function persistSettings(
+  settings: SystemSettings
+): Promise<SystemSettings> {
+  const [system, preferences] = await Promise.all([
+    persistSystemSettings(settings),
+    persistPreferences(settings),
+  ])
+
+  return {
+    ...system,
+    ...preferences,
+  } as SystemSettings
 }
 
 /*
@@ -250,16 +349,24 @@ export function SystemSettingsProvider({
   | Apply display-only settings to the current DOM/tab.
   | NOTE: this affects only this browser tab's rendering — it is not
   | what makes settings "global". The backend calls above are.
+  |
+  | Scoped to the lifetime of this provider (mounted only inside the
+  | authenticated app shell — see AdminLayout). The cleanup below resets
+  | these back to defaults on unmount so unauthenticated routes like
+  | /login never inherit a signed-in user's theme/font/layout.
+  |
+  | Text size is applied as a root font-size percentage rather than a
+  | body-level px override: Tailwind's spacing/type scale is rem-based,
+  | so scaling the root scales every rem-driven utility in the app
+  | proportionally instead of only affecting unstyled text.
   |--------------------------------------------------------------------------
   */
 
   useEffect(() => {
     const root = document.documentElement
 
-    root.setAttribute('lang', settings.systemLanguage === 'Filipino' ? 'fil' : 'en')
-
-    const fontSizes = { small: '14px', medium: '15px', large: '17px' }
-    document.body.style.fontSize = fontSizes[settings.systemFontSize]
+    const rootFontSizes = { small: '87.5%', medium: '100%', large: '112.5%' }
+    root.style.fontSize = rootFontSizes[settings.systemFontSize]
 
     const fonts: Record<string, string> = {
       Default: 'Inter, system-ui, sans-serif',
@@ -268,25 +375,25 @@ export function SystemSettingsProvider({
       'Open Sans': '"Open Sans", sans-serif',
     }
 
-    // Set the --font-sans CSS variable on <html> rather than an inline
-    // style on <body>. Tailwind's own base reset applies font-family to
-    // <html> via var(--default-font-family) -> var(--font-sans), so
-    // setting an inline style on <body> alone left descendant elements
-    // (h1, p, etc.) still inheriting Inter from <html> instead of the
-    // chosen font. Updating the variable at the source fixes it for
-    // every element that inherits normally, with no per-element overrides.
     root.style.setProperty(
       '--font-sans',
       fonts[settings.systemFont] ?? fonts.Default
     )
 
     root.dataset.theme = settings.theme
-    root.dataset.language = settings.systemLanguage
     root.dataset.dashboardLayout = settings.dashboardLayout
     root.dataset.notifications = String(settings.notifications)
     root.dataset.maintenance = String(settings.maintenanceMode)
+
+    return () => {
+      root.style.fontSize = ''
+      root.style.removeProperty('--font-sans')
+      root.dataset.theme = DEFAULT_SYSTEM_SETTINGS.theme
+      root.dataset.dashboardLayout = DEFAULT_SYSTEM_SETTINGS.dashboardLayout
+      root.dataset.notifications = String(DEFAULT_SYSTEM_SETTINGS.notifications)
+      root.dataset.maintenance = String(DEFAULT_SYSTEM_SETTINGS.maintenanceMode)
+    }
   }, [
-    settings.systemLanguage,
     settings.theme,
     settings.systemFont,
     settings.systemFontSize,

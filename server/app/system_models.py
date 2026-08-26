@@ -389,7 +389,9 @@ class NCPADeployment(db.Model):
 """
 SystemSettings is a singleton table — there will only ever be one row (Id=1).
 This holds system-wide configuration that applies regardless of which
-user is logged in (general, security, and system tabs on the Settings page).
+user is logged in (security and system tabs on the Settings page).
+Personal display preferences (theme, language, font, dashboard layout,
+time zone, date format) live in UserPreferences instead, one row per user.
 """
 class SystemSettings(db.Model):
     # Table Name
@@ -398,16 +400,8 @@ class SystemSettings(db.Model):
     # Table Fields
     Id: so.Mapped[int] = so.mapped_column(primary_key=True)
 
-    # General
-    System_Language: so.Mapped[str] = so.mapped_column(sa.String(20), default="English")
-    Theme: so.Mapped[str] = so.mapped_column(sa.String(10), default="dark")
-    Time_Zone: so.Mapped[str] = so.mapped_column(sa.String(20), default="UTC+08:00")
-    Date_Time_Format: so.Mapped[str] = so.mapped_column(sa.String(20), default="DD/MM/YYYY")
-    System_Font: so.Mapped[str] = so.mapped_column(sa.String(30), default="Default")
-    System_Font_Size: so.Mapped[str] = so.mapped_column(sa.String(10), default="medium")
-    Dashboard_Refresh_Rate: so.Mapped[int] = so.mapped_column(sa.Integer(), default=5)
+    # General (system-wide only)
     Scan_Frequency: so.Mapped[int] = so.mapped_column(sa.Integer(), default=6)
-    Dashboard_Layout: so.Mapped[str] = so.mapped_column(sa.String(15), default="default")
     Notifications: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=True)
     Export_Formats: so.Mapped[str] = so.mapped_column(sa.String(50), default="CSV,PDF,XLS")
 
@@ -439,15 +433,7 @@ class SystemSettings(db.Model):
     """
     def to_dict(self):
         return {
-            "systemLanguage": self.System_Language,
-            "theme": self.Theme,
-            "timeZone": self.Time_Zone,
-            "dateTimeFormat": self.Date_Time_Format,
-            "systemFont": self.System_Font,
-            "systemFontSize": self.System_Font_Size,
-            "dashboardRefreshRate": self.Dashboard_Refresh_Rate,
             "scanFrequency": self.Scan_Frequency,
-            "dashboardLayout": self.Dashboard_Layout,
             "notifications": self.Notifications,
             "exportFormats": self.Export_Formats.split(",") if self.Export_Formats else [],
             "sessionTimeout": self.Session_Timeout,
@@ -462,4 +448,49 @@ class SystemSettings(db.Model):
             "diagnosticHistoryRetentionDays": self.Diagnostic_History_Retention_Days,
             "version": self.Version,
             "updatedAt": self.Updated_At.isoformat(),
+        }
+
+"""
+UserPreferences holds per-user personal display settings — one row per
+user, unlike SystemSettings which is a shared singleton. These are things
+a user would reasonably expect to be "theirs" on this account, not shared
+system-wide config.
+"""
+class UserPreferences(db.Model):
+    __tablename__ = "USER_PREFERENCES"
+
+    Id: so.Mapped[int] = so.mapped_column(primary_key=True)
+    UserID: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey(User.UserID), unique=True, index=True
+    )
+
+    Theme: so.Mapped[str] = so.mapped_column(sa.String(10), default="dark")
+    Time_Zone: so.Mapped[str] = so.mapped_column(sa.String(20), default="UTC+08:00")
+    Date_Time_Format: so.Mapped[str] = so.mapped_column(sa.String(20), default="DD/MM/YYYY")
+    System_Font: so.Mapped[str] = so.mapped_column(sa.String(30), default="Default")
+    System_Font_Size: so.Mapped[str] = so.mapped_column(sa.String(10), default="medium")
+    Dashboard_Layout: so.Mapped[str] = so.mapped_column(sa.String(15), default="default")
+    Dashboard_Refresh_Rate: so.Mapped[int] = so.mapped_column(sa.Integer(), default=5)
+
+    Updated_At: so.Mapped[datetime] = so.mapped_column(
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    User: so.Mapped["User"] = so.relationship()
+
+    """
+    Serializes this row into the shape the frontend expects
+    (camelCase keys matching the SystemSettings TS type, since the
+    frontend currently merges these fields into that same object).
+    """
+    def to_dict(self):
+        return {
+            "theme": self.Theme,
+            "timeZone": self.Time_Zone,
+            "dateTimeFormat": self.Date_Time_Format,
+            "systemFont": self.System_Font,
+            "systemFontSize": self.System_Font_Size,
+            "dashboardLayout": self.Dashboard_Layout,
+            "dashboardRefreshRate": self.Dashboard_Refresh_Rate,
         }

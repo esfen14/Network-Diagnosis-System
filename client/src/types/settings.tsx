@@ -22,7 +22,6 @@ export type SecurityFrequency =
 
 export interface SystemSettings {
   // General
-  systemLanguage: string
   theme: Theme
 
   timeZone: string

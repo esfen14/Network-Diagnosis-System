@@ -92,6 +92,37 @@ html, body {
 
 /*
 |--------------------------------------------------------------------------
+| Dashboard Layout density — driven by data-dashboard-layout on <html>
+| (set from the user's Dashboard Layout preference). Consumed by
+| DashboardPage.tsx and SummaryStatCard.tsx via arbitrary-value classes,
+| e.g. gap-[var(--dash-grid-gap)].
+|--------------------------------------------------------------------------
+*/
+:root,
+html[data-dashboard-layout='default'] {
+  --dash-section-gap:   1.5rem;
+  --dash-grid-gap:      1.5rem;
+  --dash-grid-gap-sm:   1rem;
+  --dash-card-padding:  1.5rem;
+  --dash-stat-padding:  1.25rem;
+}
+html[data-dashboard-layout='compact'] {
+  --dash-section-gap:   0.75rem;
+  --dash-grid-gap:      0.75rem;
+  --dash-grid-gap-sm:   0.5rem;
+  --dash-card-padding:  1rem;
+  --dash-stat-padding:  0.75rem;
+}
+html[data-dashboard-layout='expanded'] {
+  --dash-section-gap:   2.5rem;
+  --dash-grid-gap:      2rem;
+  --dash-grid-gap-sm:   1.5rem;
+  --dash-card-padding:  2rem;
+  --dash-stat-padding:  1.75rem;
+}
+
+/*
+|--------------------------------------------------------------------------
 | Admin layout helpers (consumed by AdminLayout.tsx class names)
 |--------------------------------------------------------------------------
 */
