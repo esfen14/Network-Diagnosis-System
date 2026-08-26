@@ -52,7 +52,7 @@ def create_contactgroup(contactgroup):
     )
 
 def create_multi_host_service(host_group_name, service_name, command, contactgroup):
-    return _load_template("contactgroup.cfg.tpl").format(
+    return _load_template("multi_host_service.cfg.tpl").format(
         host_group_name=host_group_name,
         service_name=service_name,
         command=command,

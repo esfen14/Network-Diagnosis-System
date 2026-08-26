@@ -97,6 +97,11 @@ PERMISSION_NAMES = [
     "monitoring.network_health",
     "system.notifications",
     "system.report",
+    # dashboard / network health / ack permissions
+    "system.dashboard",
+    "system.network_health",
+    "system.acknowledge_alerts",
+    "system.history",
 ]
 
 

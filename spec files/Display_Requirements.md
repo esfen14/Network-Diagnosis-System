@@ -1,6 +1,6 @@
 # Display Requirements — Dashboard & Network Health
 **Detech-IT / 4D-G2 Capstone**
-**Last Updated:** 2026-08-26 (rev. 2 — added §4 Alert Acknowledgement)
+**Last Updated:** 2026-08-26 (rev. 3 — updated §2.5 plugin key derivation to reflect command map lookup)
 
 ---
 
@@ -67,6 +67,10 @@ being monitored.
 | Active host checks enabled | Yes / No |
 | Active service checks enabled | Yes / No |
 | Notifications globally enabled | Yes / No |
+| Flap detection enabled | Yes / No |
+
+**API field name:** `enable_flap_detection` (bool) on the `nagios` object returned by
+`GET /system/dashboard/status`. See §API Response Shapes below.
 
 **Nagios server resource data to show** (from local `check_load`, `check_disk`,
 `check_swap` services on the Nagios host):
@@ -95,6 +99,48 @@ glance before trusting anything else.
 **Recommended component:** A status bar or compact card at the top of the page.
 Should not dominate the layout — it is context, not the main focus.
 
+**API — `GET /system/dashboard/status` response shape:**
+
+```json
+{
+    "nagios": {
+        "running":               true,
+        "pid":                   12345,
+        "version":               "4.4.6",
+        "program_start_time":    "2026-08-25T10:00:00+00:00",
+        "last_status_update":    "2026-08-26T16:30:00+00:00",
+        "active_host_checks":    true,
+        "active_service_checks": true,
+        "notifications_enabled": true,
+        "enable_flap_detection": true
+    },
+    "server_resources": {
+        "cpu_load": {
+            "configured": true,
+            "load1":  0.42,
+            "load5":  0.38,
+            "load15": 0.31
+        },
+        "disk": {
+            "configured": true,
+            "mounts": [
+                { "mount": "/", "used_bytes": 12345678, "warn": 10000000, "crit": 15000000 },
+                { "mount": "/boot", "used_bytes": 345678, "warn": null, "crit": null }
+            ]
+        },
+        "swap": {
+            "configured": true,
+            "swap_used_mb": 128.0,
+            "warn": 512.0,
+            "crit": 1024.0
+        }
+    }
+}
+```
+
+All nullable fields are `null` when the plugin is not configured
+(`configured: false`) or when no Nagios status data has been received yet.
+
 ---
 
 ### 1.2 Summary Stat Cards
@@ -115,6 +161,62 @@ monitored network. Always visible.
   (i.e., "all clear" is a meaningful state, not just the absence of a problem).
 - Flapping hosts and services are a secondary concern. Show flapping counts as
   a badge or footnote on the Hosts or Services card rather than a separate card.
+
+**API — `GET /system/dashboard/summary` response shape:**
+
+```json
+{
+    "hosts": {
+        "total":       22,
+        "up":          20,
+        "down":         1,
+        "unreachable":  1,
+        "flapping":     0,
+        "in_downtime":  2
+    },
+    "services": {
+        "total":       148,
+        "ok":          140,
+        "warning":       4,
+        "critical":      3,
+        "unknown":       1,
+        "flapping":      0,
+        "in_downtime":   5
+    },
+    "active_alerts": {
+        "total":    8,
+        "critical": 4,
+        "warning":  3,
+        "unknown":  1
+    },
+    "ping_metrics": {
+        "configured":          true,
+        "avg_rta_ms":          12.3,
+        "avg_packet_loss_pct": 0.5,
+        "host_count":          20
+    },
+    "ncpa_metrics": null
+}
+```
+
+`ping_metrics` notes:
+- `configured: false` when no `rta`/`pl` perf data exists in `HostPerfData`
+  (see §3.6 — ping runs as the host check, not as a separate service).
+- When `host_count < 2`, `avg_rta_ms` and `avg_packet_loss_pct` are `null`
+  and `insufficient_data: true` is added to the object.
+
+`ncpa_metrics` is `null` when no NCPA services are deployed (hide the UI
+block entirely). When NCPA data is present:
+```json
+{
+    "ncpa_host_count":  12,
+    "total_host_count": 22,
+    "avg_cpu_pct":      45.2,
+    "avg_disk_pct":     61.0,
+    "avg_memory_pct":   52.8
+}
+```
+Any average field is `null` when fewer than 2 data points are available.
 
 **Recommended component:** Stat cards / metric tiles.
 
@@ -141,6 +243,15 @@ configured.
 - Averaging logic: only include hosts that have reported data within the last
   check cycle. Note how many hosts are included (e.g., "avg. across 18 hosts").
 
+**Implementation note — data source for ping metrics:**
+In Pinpoint, `check_ping` (or `check_icmp`) is configured as the **host check**
+rather than as a separate service. This means ping `rta` and `pl` metrics land
+in `HostPerfData` (linked to `HostStatus` rows), not in `ServicePerfData`.
+The `avg_ping_metrics()` function in `statistics.py` queries `HostPerfData`
+accordingly. Front-end developers do not need to handle this distinction — the
+backend resolves it — but it is relevant context for anyone writing tests or
+extending the data layer.
+
 **Recommended component:** Metric tiles or a compact metric strip. Can be
 grouped with or near the Summary Stat Cards (§1.2) since they are all
 high-level numbers.
@@ -163,8 +274,13 @@ metrics represent the devices being monitored.
 | Average memory usage | `check_ncpa` | `memory/virtual/percent` | % |
 
 **Notes:**
-- NCPA metric paths may vary depending on how NCPA is configured on each host.
-  The backend is responsible for normalizing these into the above categories.
+- NCPA services are registered in Nagios with descriptions that include a
+  qualifier suffix: `ncpa_cpu_usage-5693-TCP`, `ncpa_memory_usage-5693-TCP`,
+  `ncpa_disk_usage-5693-TCP` (or the per-partition form `ncpa-5693-TCP-disk_usage_/`).
+  All of these variants resolve to the `check_ncpa` plugin key via the
+  command map lookup in `statistics.py` (see §2.5 for full derivation logic).
+  The backend is responsible for this normalisation — the front-end always
+  sees a single `NCPA` group with combined CPU, memory, and disk data.
 - If NCPA is deployed on some hosts but not all, note the coverage:
   "avg. across 12 of 30 hosts — 18 hosts have no NCPA data."
 - If no hosts have NCPA deployed, show a message:
@@ -199,32 +315,91 @@ A live list of all hosts and services currently in a problem state. This is
 the most actionable section of the dashboard. "Active" means right now — not
 historical.
 
+**Data source:** `archivejson.cgi` `alertlist` query (last 7 days). The backend
+reduces the full event list to the **most recent event per (hostname, service)**
+and keeps only those entities whose latest state is still a problem state
+(not OK / UP / RECOVERY). This gives a live view of what is currently broken,
+sourced directly from Nagios' own alert history rather than the `history.db`
+snapshots.
+
 **Data to show per row:**
 
 | Field | Notes |
 |---|---|
 | Host name | |
-| Service name | Blank for host-level alerts |
+| Service name | Blank / null for host-level alerts |
 | Current state | WARNING / CRITICAL / UNKNOWN / DOWN / UNREACHABLE |
-| State type | Soft or Hard — soft states may self-resolve; hard states have been confirmed |
-| Duration | How long in this state, derived from `lastStateChange` |
+| State type | SOFT or HARD (if provided by Nagios); null otherwise |
+| Timestamp | UNIX timestamp of the state-change event from Nagios |
+| Duration | Seconds elapsed since the state-change event |
 | Plugin output | Raw plugin output text, e.g., "PING CRITICAL — Packet loss = 100%" |
-| Acknowledged | Visual indicator if this alert has been acknowledged |
-| Downtime | Visual indicator if the host is in scheduled downtime |
+| Acknowledged | Visual indicator if this alert has been acknowledged via the app (see §4) |
+| Downtime | Visual indicator if the host/service is in scheduled downtime |
 
 **Behavior:**
-- Sort order: CRITICAL / DOWN first, then WARNING, then UNKNOWN /
-  UNREACHABLE. Within each severity, sort by duration descending
-  (longest-running problems first, as they are most likely to need attention).
-- Show a maximum of 10–15 rows by default. Provide a "View all" link to the
-  full service/host status tables on Network Health.
-- Acknowledged alerts should remain visible but be visually de-emphasized
+- Sort order applied by the API: downtime last → then by severity (CRITICAL/DOWN
+  first, WARNING next, UNKNOWN/UNREACHABLE last) → then unacknowledged before
+  acknowledged of the same severity → then longest duration first within each group.
+  This means "new, unnoticed, severe problems" always float to the top.
+- The `limit` query param controls how many rows are returned (default 15, max 100).
+  Provide a "View all" link to the full service/host status tables on Network Health.
+- Acknowledged alerts remain visible but are visually de-emphasized
   (e.g., muted colors). Hiding acknowledged alerts removes important context.
-- Hosts in scheduled downtime should be shown at the bottom of the list or
-  separated, since downtime is expected and less urgent.
+- Hosts/services in scheduled downtime are placed at the very bottom of the list,
+  since downtime is expected and less urgent.
 - If there are no active alerts, show a clear positive message:
   "All hosts and services are healthy." This is not an empty state — it is
   meaningful information.
+
+**Query params for `GET /system/dashboard/alerts`:**
+
+| Param | Values | Default | Notes |
+|---|---|---|---|
+| `limit` | 1–100 | 15 | Max rows returned |
+| `ack_filter` | `all` \| `unacknowledged` \| `acknowledged` | `all` | Filter by app-side ack state |
+
+**API — `GET /system/dashboard/alerts` response shape:**
+
+```json
+{
+    "alerts": [
+        {
+            "type":              "host",
+            "hostname":          "router-01",
+            "service_name":      null,
+            "state":             "DOWN",
+            "state_type":        "HARD",
+            "timestamp":         1724688000,
+            "duration_seconds":  3720,
+            "plugin_output":     "PING CRITICAL - Packet loss = 100%",
+            "in_downtime":       false,
+            "ack": null
+        },
+        {
+            "type":              "service",
+            "hostname":          "web-01",
+            "service_name":      "http-80-TCP",
+            "state":             "WARNING",
+            "state_type":        "SOFT",
+            "timestamp":         1724691600,
+            "duration_seconds":  120,
+            "plugin_output":     "HTTP WARNING: Response time 4.2s",
+            "in_downtime":       false,
+            "ack": {
+                "comment":         "Looking into it",
+                "acknowledged_by": "Jane Doe",
+                "acknowledged_at": "2026-08-26T16:29:00+00:00"
+            }
+        }
+    ],
+    "total_shown": 2
+}
+```
+
+Note: unlike the host/service detail panels (§2.2, §2.3), the alerts feed does
+not include a `nagios_ack` field. The `archivejson.cgi` alertlist does not carry
+Nagios' own acknowledgement type. The `ack` object reflects the application's
+acknowledgement record only (see §4).
 
 **Recommended component:** A compact table or feed list. Rows should be dense
 enough to show 10+ items without scrolling on a standard monitor. Plugin output
@@ -242,19 +417,52 @@ has since recovered.
 
 **Data to show per row:**
 
-| Field | Notes |
-|---|---|
-| Timestamp | |
-| Type | HOST or SERVICE |
-| Host / Service | |
-| State at notification time | e.g., DOWN, CRITICAL, RECOVERY |
-| Message | Notification text, truncated |
+| Field | API field | Notes |
+|---|---|---|
+| Timestamp | `timestamp` | UNIX timestamp from Nagios archivejson |
+| Type | `type` | `"HOST"` or `"SERVICE"` |
+| Host / Service | `hostname`, `service_name` | `service_name` is `null` for host notifications |
+| State at notification time | `state` | Sourced from `notificationreason`; falls back to Nagios `state` field if `notificationreason` is absent |
+| Contact | `contact` | The Nagios contact that received the notification |
+| Message | `message` | Notification text, truncated to 200 characters |
 
 **Behavior:**
 - Show the 5 most recent notifications.
 - Link to the full notification history page.
 - This section is secondary to the Active Alerts feed. It should not compete
   with §1.6 for visual weight.
+
+**API — `GET /system/dashboard/notifications` response shape:**
+
+```json
+{
+    "notifications": [
+        {
+            "timestamp":    1724688000,
+            "type":         "HOST",
+            "hostname":     "router-01",
+            "service_name": null,
+            "state":        "DOWNTIMESTART",
+            "contact":      "admin",
+            "message":      "Host router-01 entered scheduled downtime."
+        },
+        {
+            "timestamp":    1724684400,
+            "type":         "SERVICE",
+            "hostname":     "web-01",
+            "service_name": "http-80-TCP",
+            "state":        "CRITICAL",
+            "contact":      "admin",
+            "message":      "HTTP CRITICAL: Response code = 503"
+        }
+    ]
+}
+```
+
+`state` is populated from Nagios' `notificationreason` field. If
+`notificationreason` is absent in the Nagios response, the raw `state` field
+is used instead. Examples of `notificationreason` values: `"PROBLEM"`,
+`"RECOVERY"`, `"DOWNTIMESTART"`, `"DOWNTIMEEND"`, `"ACKNOWLEDGEMENT"`.
 
 **Recommended component:** A compact list or mini-feed. Not a full table.
 
@@ -340,6 +548,100 @@ navigate away) showing:
 - A mini list of services associated with this host, with their current
   state badges
 
+**API — `GET /system/network-health/hosts` query params:**
+
+| Param | Values | Default | Notes |
+|---|---|---|---|
+| `page` | int ≥ 1 | 1 | Page number |
+| `per_page` | 1–100 | 25 | Rows per page |
+| `sort_by` | `hostname` \| `state` \| `last_check` \| `check_latency` | `hostname` | Column to sort by |
+| `order` | `asc` \| `desc` | `asc` | Sort direction |
+| `search` | string | — | Partial match on hostname |
+| `state` | `UP` \| `DOWN` \| `UNREACHABLE` | — | Filter by state |
+| `ack_filter` | `all` \| `acknowledged` \| `unacknowledged` | `all` | Filter by ack state |
+
+**API — `GET /system/network-health/hosts` response shape:**
+
+```json
+{
+    "items": [
+        {
+            "hostname":      "router-01",
+            "state":         "Down",
+            "state_type":    "Hard",
+            "last_check":    "2026-08-26T16:30:00+00:00",
+            "check_latency": 0.012,
+            "plugin_output": "PING CRITICAL - Packet loss = 100%",
+            "is_flapping":   false,
+            "in_downtime":   false,
+            "nagios_ack":    "No Acknowledgement",
+            "ack": null
+        }
+    ],
+    "page":     1,
+    "per_page": 25,
+    "pages":    3,
+    "total":    72,
+    "has_next": true,
+    "has_prev": false
+}
+```
+
+**API — `GET /system/network-health/hosts/<hostname>/detail` response shape:**
+
+```json
+{
+    "hostname":               "router-01",
+    "state":                  "Down",
+    "state_type":             "Hard",
+    "plugin_output":          "PING CRITICAL - Packet loss = 100%",
+    "last_check":             "2026-08-26T16:30:00+00:00",
+    "last_state_change":      "2026-08-26T15:28:00+00:00",
+    "last_hard_state_change": "2026-08-26T15:30:00+00:00",
+    "last_time_up":           "2026-08-26T14:00:00+00:00",
+    "last_time_down":         "2026-08-26T15:28:00+00:00",
+    "last_time_unreachable":  null,
+    "check_latency":          0.012,
+    "check_execution_time":   0.045,
+    "is_flapping":            false,
+    "in_downtime":            false,
+    "nagios_ack":             "No Acknowledgement",
+    "ack": null,
+    "perf_data": [
+        {
+            "metric": "rta",
+            "value":  0.0,
+            "unit":   "ms",
+            "warn":   100.0,
+            "crit":   500.0,
+            "min":    0.0,
+            "max":    null
+        },
+        {
+            "metric": "pl",
+            "value":  100.0,
+            "unit":   "%",
+            "warn":   20.0,
+            "crit":   60.0,
+            "min":    0.0,
+            "max":    null
+        }
+    ],
+    "services": [
+        {
+            "service":       "http-80-TCP",
+            "state":         "Ok",
+            "plugin_output": "HTTP OK: Status line output matched",
+            "last_check":    "2026-08-26T16:29:00+00:00"
+        }
+    ]
+}
+```
+
+`check_execution_time` is the time Nagios spent running the plugin check
+(float, seconds). It is distinct from `check_latency`, which is the time
+between the scheduled check and when the check was actually run.
+
 **Recommended component:** Expandable table rows or a master-detail split
 layout. The goal is to let the user browse hosts and inspect one without losing
 their place in the list.
@@ -384,6 +686,87 @@ When the user selects a service row, show:
 - State timestamps: last time OK, last time WARNING, last time CRITICAL,
   last time UNKNOWN
 
+**API — `GET /system/network-health/services` query params:**
+
+| Param | Values | Default | Notes |
+|---|---|---|---|
+| `page` | int ≥ 1 | 1 | Page number |
+| `per_page` | 1–100 | 25 | Rows per page |
+| `sort_by` | `hostname` \| `service` \| `state` \| `last_check` \| `check_latency` | `hostname` | Column to sort by |
+| `order` | `asc` \| `desc` | `asc` | Sort direction |
+| `search` | string | — | Partial match on hostname OR service name |
+| `hostname` | string | — | Exact hostname filter (different from `search`) |
+| `state` | `OK` \| `WARNING` \| `CRITICAL` \| `UNKNOWN` | — | Filter by state |
+| `ack_filter` | `all` \| `acknowledged` \| `unacknowledged` | `all` | Filter by ack state |
+
+**API — `GET /system/network-health/services` response shape:**
+
+```json
+{
+    "items": [
+        {
+            "hostname":      "web-01",
+            "service":       "http-80-TCP",
+            "state":         "Warning",
+            "state_type":    "Soft",
+            "last_check":    "2026-08-26T16:29:00+00:00",
+            "check_latency": 0.008,
+            "plugin_output": "HTTP WARNING: Response time 4.2s",
+            "is_flapping":   false,
+            "in_downtime":   false,
+            "nagios_ack":    "No Acknowledgement",
+            "ack": null
+        }
+    ],
+    "page":     1,
+    "per_page": 25,
+    "pages":    6,
+    "total":    148,
+    "has_next": true,
+    "has_prev": false
+}
+```
+
+**API — `GET /system/network-health/services/<hostname>/<path:service_name>/detail` response shape:**
+
+```json
+{
+    "hostname":               "web-01",
+    "service":                "http-80-TCP",
+    "state":                  "Warning",
+    "state_type":             "Soft",
+    "plugin_output":          "HTTP WARNING: Response time 4.2s",
+    "last_check":             "2026-08-26T16:29:00+00:00",
+    "last_state_change":      "2026-08-26T16:28:00+00:00",
+    "last_hard_state_change": null,
+    "last_time_ok":           "2026-08-26T16:25:00+00:00",
+    "last_time_warning":      "2026-08-26T16:28:00+00:00",
+    "last_time_critical":     null,
+    "last_time_unknown":      null,
+    "check_latency":          0.008,
+    "check_execution_time":   0.031,
+    "is_flapping":            false,
+    "in_downtime":            false,
+    "nagios_ack":             "No Acknowledgement",
+    "ack": null,
+    "perf_data": [
+        {
+            "metric": "time",
+            "value":  4.2,
+            "unit":   "s",
+            "warn":   2.0,
+            "crit":   10.0,
+            "min":    0.0,
+            "max":    null
+        }
+    ]
+}
+```
+
+Note: service names can contain slashes (e.g., NCPA metric paths like
+`cpu/percent`). The URL rule uses `<path:service_name>` so these are routed
+correctly. See also §2.5 on the `_plugin_key()` service name format.
+
 **Recommended component:** Same pattern as the host table. Expandable rows or
 master-detail. No separate page.
 
@@ -423,6 +806,61 @@ The user should be able to select the time window for all charts in this
 section (e.g., last 1 hour, 6 hours, 24 hours, 7 days). All charts should
 respond to the same selection.
 
+**API — `GET /system/network-health/trends` query params:**
+
+| Param | Values | Default | Notes |
+|---|---|---|---|
+| `hours` | `1` \| `6` \| `24` \| `168` | `24` | Time window (168 = 7 days) |
+| `buckets` | 1–168 | `24` | Number of data points per chart |
+
+**API — `GET /system/network-health/trends` response shape:**
+
+Each `bucket` entry: `{ "bucket_start": ISO-8601, "avg_value": float | null, "unit": str | null }`
+`avg_value` is `null` when no data was recorded in that bucket.
+
+```json
+{
+    "hours":   24,
+    "buckets": 24,
+    "ping": {
+        "configured":  true,
+        "rta":         [ { "bucket_start": "2026-08-25T16:00:00+00:00", "avg_value": 12.3, "unit": "ms" }, "..." ],
+        "packet_loss": [ { "bucket_start": "2026-08-25T16:00:00+00:00", "avg_value": 0.5,  "unit": "%" },  "..." ]
+    },
+    "ncpa": null,
+    "nagios_server": {
+        "cpu_load": {
+            "configured": true,
+            "load1":  [ { "bucket_start": "...", "avg_value": 0.42, "unit": null } ],
+            "load5":  [ { "bucket_start": "...", "avg_value": 0.38, "unit": null } ],
+            "load15": [ { "bucket_start": "...", "avg_value": 0.31, "unit": null } ]
+        },
+        "swap": {
+            "configured": true,
+            "swap": [ { "bucket_start": "...", "avg_value": 128.0, "unit": "MB" } ]
+        },
+        "disk": {
+            "configured": true,
+            "mounts": {
+                "/":     [ { "bucket_start": "...", "avg_value": 12345678.0, "unit": "B" } ],
+                "/boot": [ { "bucket_start": "...", "avg_value": 345678.0,  "unit": "B" } ]
+            }
+        }
+    }
+}
+```
+
+`ping.configured: false` means no ping/ICMP checks are set up — the ping
+section renders as "plugin not configured" (§3.2). `ncpa: null` means no
+NCPA services exist — hide that section entirely (conditional, §1.4). The
+`nagios_server` sub-sections each carry their own `configured` flag.
+
+`nagios_server.disk.mounts` is a dict keyed by mount-point path. Each value
+is the same bucketed array shape. Mount points are discovered dynamically
+from the `check_disk` service's perf data on the Nagios server; inode metrics
+are excluded from the `mounts` dict (they are tracked separately via the
+`*_inode_percent` metric keys in the raw perf data).
+
 **Recommended component:** Line charts for time-series data. Gauges or
 horizontal bar charts for current percentage-based values (disk, memory).
 Group related metrics together visually.
@@ -435,41 +873,95 @@ A grouped summary showing the health of services broken down by plugin type.
 Answers "are all my ping checks OK?" or "how many HTTP services are in
 warning?" without scanning every row in the service table.
 
+**How service names map to plugin groups:**
+
+Service descriptions in the database follow the format `{name}-{port}-{protocol}`,
+as generated by Pinpoint's host configuration builder. Examples:
+`http-80-TCP`, `ssh-22-TCP`, `ncpa-5693-TCP`, `ncpa_cpu_usage-5693-TCP`,
+`ncpa_memory_usage-5693-TCP`, `snmp-161-UDP`.
+
+The backend resolves a service description to its check plugin via a two-step
+lookup:
+
+1. Split on `-` and take the first segment (the "dash-prefix"):
+   - `http-80-TCP` → `http`
+   - `ncpa_cpu_usage-5693-TCP` → `ncpa_cpu_usage`
+   - `ncpa_memory_usage-5693-TCP` → `ncpa_memory_usage`
+2. That dash-prefix is looked up in the combined TCP+UDP command map
+   (`command_maps/tcp_commands.json` and `udp_commands.json`). If a match is
+   found, the mapped command name is returned directly:
+   - `http` → `check_http`
+   - `ncpa_cpu_usage` → `check_ncpa`
+   - `ncpa_memory_usage` → `check_ncpa`
+   - `ncpa_disk_usage` → `check_ncpa`
+3. If the dash-prefix is not in the map, split it again on `_` and take the
+   first part, then look that up:
+   - `ncpa_cpu_usage` → `ncpa` → `check_ncpa` (fallback path)
+4. If still not found, fall back to `check_{prefix}`.
+
+This means all NCPA service variants — `ncpa`, `ncpa_cpu_usage`,
+`ncpa_memory_usage`, `ncpa_disk_usage` — all resolve to `check_ncpa` and are
+grouped together under the **NCPA** display name.
+
+The `display_name` is derived by stripping the `check_` prefix from the
+resolved plugin key and uppercasing the result:
+- `check_http` → `HTTP`
+- `check_ncpa` → `NCPA`
+- `check_snmp` → `SNMP`
+
+The `display_name` field is returned directly by the API — the front-end
+does not need to perform any name derivation itself.
+
+**The command map is the single source of truth** for service-name → plugin
+mappings. Both `create_host_cfg.py` (which generates Nagios config) and
+`statistics.py` (which groups services for display) read from the same
+`command_maps/tcp_commands.json` and `command_maps/udp_commands.json` files.
+Adding a new service type requires only an entry in the appropriate map file.
+
 **Data to show per plugin group:**
 
 | Field | Notes |
 |---|---|
-| Plugin name | Human-readable (e.g., "Ping" not "check_ping") — see label table below |
+| Display name | Derived from plugin key (e.g., `check_ncpa` → `NCPA`, `check_http` → `HTTP`) |
 | Total services using this plugin | |
 | State breakdown | Count of OK, WARNING, CRITICAL, UNKNOWN for that plugin |
 | Overall health indicator | A visual indicator of the worst current state in this group |
 
-**Plugin display name mapping:**
+The `display_name` field is returned directly by the API — the front-end
+does not need to perform any name derivation itself.
 
-| Plugin key | Display name |
-|---|---|
-| `check_ping` / `check_icmp` / `check_fping` | Ping / ICMP |
-| `check_http` | HTTP |
-| `check_tcp` | TCP Port |
-| `check_ssh` | SSH |
-| `check_smtp` | SMTP |
-| `check_dns` / `check_dig` | DNS |
-| `check_disk` | Disk (local) |
-| `check_load` | CPU Load (local) |
-| `check_swap` | Swap (local) |
-| `check_ncpa` | NCPA Agent |
-| `check_snmp` | SNMP |
-| `check_ntp_time` / `check_ntp_peer` | NTP |
-| `check_mysql` / `check_mysql_query` | MySQL |
-| `check_pgsql` | PostgreSQL |
-| `check_ldap` | LDAP |
-| `check_ups` | UPS |
-| `check_apt` | Package Updates |
-| `check_procs` | Processes |
-| `check_users` | Users |
-| `check_uptime` | Uptime |
-| `check_ifstatus` / `check_ifoperstatus` | Network Interfaces |
-| All others | Use the plugin name as-is, strip `check_` prefix |
+**API — `GET /system/network-health/plugins` response shape:**
+
+```json
+{
+    "groups": [
+        {
+            "display_name": "HTTP",
+            "total":        12,
+            "ok":           10,
+            "warning":       2,
+            "critical":      0,
+            "unknown":       0,
+            "worst_state":  "warning"
+        },
+        {
+            "display_name": "NCPA",
+            "total":        24,
+            "ok":           24,
+            "warning":       0,
+            "critical":      0,
+            "unknown":       0,
+            "worst_state":  "ok"
+        }
+    ]
+}
+```
+
+Note: NCPA contributes multiple service rows per host (CPU, memory, disk) but
+they are all grouped under the single `NCPA` display name because all three
+service description variants resolve to `check_ncpa`.
+
+Groups are sorted by worst severity first (CRITICAL → WARNING → UNKNOWN → OK).
 
 **Ordering:** Show plugin groups with the most severe problems first
 (groups with CRITICAL services before WARNING before all-OK). Fully healthy
@@ -744,6 +1236,91 @@ deleted, only deactivated), and `Comment` (populated only for ACKNOWLEDGED
 actions). Both tables intentionally live in `system_models.py` — acknowledgement
 data is system-generated, not Nagios-sourced, and does not belong in
 `history_models.py`.
+
+### 4.10 API Endpoint Reference
+
+There are two sets of acknowledge/unacknowledge routes — one on the dashboard
+feed and one on the network health tables. They share the same data model but
+have slightly different request shapes suited to their context.
+
+#### Dashboard routes (`dashboard.py`)
+
+**`POST /system/dashboard/alerts/acknowledge`** — acknowledge a single alert.
+```json
+{ "hostname": "router-01", "service_name": null, "comment": "Looking into it" }
+```
+- `service_name`: `null` for host-level alerts, string for service alerts.
+- Returns `201` on success. `409` if already acknowledged. `404` if no active alert.
+
+**`POST /system/dashboard/alerts/acknowledge-all`** — acknowledge a batch.
+```json
+{
+    "comment": "Scheduled maintenance window",
+    "alerts": [
+        { "hostname": "router-01", "service_name": null },
+        { "hostname": "web-01",    "service_name": "http-80-TCP" }
+    ]
+}
+```
+- Already-acknowledged alerts in the list are silently skipped.
+- Returns `200` with `{ "acknowledged": N, "skipped": M }`.
+
+**`DELETE /system/dashboard/alerts/acknowledge`** — unacknowledge a single alert.
+```json
+{ "hostname": "router-01", "service_name": null }
+```
+- Returns `200` on success. `404` if no acknowledgement exists.
+
+---
+
+#### Network Health — host routes (`network_hosts.py`)
+
+**`POST /system/network-health/hosts/acknowledge`** — acknowledge a host alert.
+```json
+{ "hostname": "router-01", "comment": "Looking into it" }
+```
+- No `service_name` field — this route is host-only.
+- Returns `201` on success. `409` if already acknowledged or host is UP. `404` if host not found.
+
+**`DELETE /system/network-health/hosts/acknowledge`** — unacknowledge a host.
+```json
+{ "hostname": "router-01" }
+```
+- Returns `200` on success. `404` if no acknowledgement exists.
+
+---
+
+#### Network Health — service routes (`network_services.py`)
+
+**`POST /system/network-health/services/acknowledge`** — acknowledge a service alert.
+```json
+{ "hostname": "web-01", "service_name": "http-80-TCP", "comment": "Investigating" }
+```
+- `service_name` is required (unlike the dashboard route where it can be null).
+- Returns `201` on success. `409` if already acknowledged or service is OK. `404` if not found.
+
+**`DELETE /system/network-health/services/acknowledge`** — unacknowledge a service.
+```json
+{ "hostname": "web-01", "service_name": "http-80-TCP" }
+```
+- Returns `200` on success. `404` if no acknowledgement exists.
+
+---
+
+All acknowledge routes require the `system.acknowledge_alerts` permission.
+All successful acknowledge operations return:
+```json
+{ "comment": "...", "acknowledged_by": "Jane Doe", "acknowledged_at": "2026-08-26T16:29:00+00:00" }
+```
+
+**Permission reference for all routes in this document:**
+
+| Permission | Routes protected |
+|---|---|
+| `system.dashboard` | All `GET /system/dashboard/*` routes |
+| `system.network_health` | All `GET /system/network-health/*` routes |
+| `system.acknowledge_alerts` | All `POST` and `DELETE` acknowledge routes |
+| `system.history` | All `GET /system/history/*` routes (defined in `Alerts_Notifications_History_Requirements.md`) |
 
 ---
 

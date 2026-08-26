@@ -36,7 +36,6 @@ from app.history_models import (
     HostPerfData,
     HostStateType,
     ServiceStatus,
-    ServiceStateType,
 )
 from app.system_models import AlertAcknowledgement, AckHistory, AckAction
 

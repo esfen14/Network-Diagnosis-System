@@ -5,5 +5,12 @@
     "ftp": "check_ftp",
     "smtp": "check_smtp",
     "mysql": "check_mysql",
-    "dns": "check_dns"
+    "dns": "check_dns",
+    "ncpa": "check_ncpa",
+    "ncpa_cpu_usage": "check_ncpa",
+    "ncpa_memory_usage": "check_ncpa",
+    "ncpa_disk_usage": "check_ncpa",
+    "load": "check_load",
+    "disk": "check_disk",
+    "swap": "check_swap"
 }

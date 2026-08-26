@@ -47,12 +47,12 @@ UDP_SERVICE_OVERRIDES = {
 SNMP_COMMUNITY_STRING = "public"
 
 SNMP_OID = {
-    "1.3.6.1.2.1.1.3.0":"Uptime",
-    "1.3.6.1.2.1.1.1.0":"System Description",
-    "1.3.6.1.2.1.2.2.1.8.3":"LAN Status",
-    "1.3.6.1.2.1.2.2.1.10.3":"LAN In Octets",
-    "1.3.6.1.2.1.2.2.1.16.3":"LAN Out Octets",
-    "1.3.6.1.4.1.2021.4.5.0":"Memory Total",
+    "1.3.6.1.2.1.1.3.0":"uptime",
+    "1.3.6.1.2.1.1.1.0":"system_description",
+    "1.3.6.1.2.1.2.2.1.8.3":"lan_status",
+    "1.3.6.1.2.1.2.2.1.10.3":"lan_in_octets",
+    "1.3.6.1.2.1.2.2.1.16.3":"lan_out_octets",
+    "1.3.6.1.4.1.2021.4.5.0":"memory_total",
 }
 
 SNMP_PORT = "161"
@@ -392,6 +392,7 @@ def _create_host_cfg_file(discovered_hosts):
         host_config.append(_add_space(4))
 
         for oid, description in SNMP_OID.items():
+            service_name = f"snmp{description}-{port}-UDP"
             command = _get_command(
                             "snmp",
                             "161",
@@ -401,7 +402,7 @@ def _create_host_cfg_file(discovered_hosts):
                         )
             snmp_service = create_multi_host_service(
                                 "snmp-devices",
-                                description,
+                                service_name,
                                 command,
                                 "system_users"
                             )
@@ -432,9 +433,10 @@ def _create_host_cfg_file(discovered_hosts):
 
         if devices is not None:
             for device, ncpa_deployment in devices:
+                service_name = f"{"ncpa"}_cpu_usage-{port}-TCP"
                 ncpa_cpu_usage = {
                     "hostname":device.Hostname,
-                    "service_name": "CPU Usage",
+                    "service_name": service_name,
                     "contact_groups": "system_users"
                 }
                 command = _get_command(
@@ -451,9 +453,10 @@ def _create_host_cfg_file(discovered_hosts):
 
                 host_config.append(service)
 
+                service_name = f"{"ncpa"}_memory_usage-{port}-TCP"
                 ncpa_memory_usage = {
                     "hostname":device.Hostname,
-                    "service_name": "Memory Usage",
+                    "service_name": service_name,
                     "contact_groups": "system_users"
                 }
                 command = _get_command(
@@ -483,9 +486,10 @@ def _create_host_cfg_file(discovered_hosts):
 
                 if partitions:
                     for partition in partitions:
+                        service_name = f"{"ncpa"}-{port}-TCP-disk_usage_{partition.Name}"
                         ncpa_disk_usage = {
                             "hostname": device.Hostname,
-                            "service_name": f"Disk Usage ({partition.Name})",
+                            "service_name": service_name,
                             "contact_groups": "system_users"
                         }
                         command = _get_command(
@@ -493,7 +497,7 @@ def _create_host_cfg_file(discovered_hosts):
                             NCPA_PORT,
                             UDP_COMMANDS,
                             DEFAULT_TCP_COMMAND,
-                            f' -t {ncpa_deployment.Token} -P {NCPA_PORT} -M disk/logical/{partition.Name}/percent -w 70 -c 95 -u Gi'
+                            f' -t {ncpa_deployment.Token} -P {NCPA_PORT} -M disk/logical/{partition.Name}/percent -w 70 -c 95'
                         )
                         service = create_service(
                             ncpa_disk_usage,
@@ -503,9 +507,10 @@ def _create_host_cfg_file(discovered_hosts):
                 else:
                     # Fallback: no partition data stored — use the generic
                     # disk/logical endpoint so the service is still generated
+                    service_name = f"{"ncpa"}_disk_usage-{port}-TCP"
                     ncpa_disk_usage = {
                         "hostname": device.Hostname,
-                        "service_name": "Disk Usage",
+                        "service_name": service_name,
                         "contact_groups": "system_users"
                     }
                     command = _get_command(

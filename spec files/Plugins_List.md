@@ -716,6 +716,10 @@ This document catalogs all 57 Nagios plugins with their exact output formats, pe
 **Output Format (error)**: `UNKNOWN: An error occured connecting to API. (HTTP error: '{code}')`
 **Performance Data**: Depends on remote metric
 **Status Keywords**: Varies (passthrough from NCPA agent)
+**Example Outputs**: 
+cpu/percent: `OK: Percent was 0.97 % | 'percent'=0.97%;70;90;`
+disk/logical/|/used_percent: `OK: Used_percent was 15.60 % | 'used_percent'=15.60%;60;96;`
+memory/virtual/percent: `OK: Percent was 13.30 % | 'percent'=13.30%;60;90;`
 
 **Arguments**:
 | Flag | Long Option | Required | Description |
