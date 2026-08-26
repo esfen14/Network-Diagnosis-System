@@ -386,6 +386,39 @@ class NCPADeployment(db.Model):
     """
     Deployment_Status: so.Mapped[NCPADeploymentStatus] = so.relationship(back_populates='Device_Deployment')
 
+    """
+    WriteOnlyMapped to the partition rows collected during NCPA installation.
+    One deployment can have many partitions.
+    """
+    Partitions: so.WriteOnlyMapped['NCPADevicePartition'] = so.relationship(back_populates='Deployment')
+
+
+class NCPADevicePartition(db.Model):
+    """
+    Stores the logical partitions (block devices) discovered on a remote
+    machine during NCPA installation.  One row per partition per deployment.
+
+    The Name field holds the partition identifier exactly as reported by
+    lsblk (e.g. 'sda1', 'nvme0n1p2', 'vda').
+    """
+    # Table Name
+    __tablename__ = "NCPA_DEVICE_PARTITION"
+
+    # Table Fields
+    PartitionID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Name: so.Mapped[str] = so.mapped_column(sa.String(64))
+
+    # Foreign Key Field — links to the specific NCPA deployment
+    NCPADeployID: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey('NCPA_DEPLOYMENT.NCPADeployID'), index=True
+    )
+
+    """
+    Back-reference to the NCPADeployment this partition belongs to.
+    back_populates specifies that you can access this table from either side.
+    """
+    Deployment: so.Mapped['NCPADeployment'] = so.relationship(back_populates='Partitions')
+
 """
 SystemSettings is a singleton table — there will only ever be one row (Id=1).
 This holds system-wide configuration that applies regardless of which

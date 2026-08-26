@@ -18,12 +18,14 @@ from app.system_models import \
     Open_UDP_Services, \
     SSHCredentials, \
     NCPADeployment, \
+    NCPADevicePartition, \
     AgentStatus 
 from app.logging import create_network_discovery_status, update_network_discovery_status, calculate_progress
 from app.logging.deployment_history import update_ncpa_deployment_status
 from app.system_models import DiscoveryStatus, DeploymentStatus
 import socket
 import ipaddress
+import tempfile
 
 # what names to will be placed to ports from nmap
 TCP_SERVICE_OVERRIDES = {
@@ -35,12 +37,25 @@ TCP_SERVICE_OVERRIDES = {
 }
 
 UDP_SERVICE_OVERRIDES = {
-    "5693": "ncpa",
     "5666": "nrpe",
     "22": "ssh",
     "80": "http",
     "443": "https",
+    "161": "snmp",
 }
+
+SNMP_COMMUNITY_STRING = "public"
+
+SNMP_OID = {
+    "1.3.6.1.2.1.1.3.0":"Uptime",
+    "1.3.6.1.2.1.1.1.0":"System Description",
+    "1.3.6.1.2.1.2.2.1.8.3":"LAN Status",
+    "1.3.6.1.2.1.2.2.1.10.3":"LAN In Octets",
+    "1.3.6.1.2.1.2.2.1.16.3":"LAN Out Octets",
+    "1.3.6.1.4.1.2021.4.5.0":"Memory Total",
+}
+
+SNMP_PORT = "161"
 
 # for the default hostname given to hosts ip.test.local
 # example 192.168.130.10.test.local
@@ -60,6 +75,10 @@ BACKUP_DIR = PROJECT_ROOT / "running-host-config-backup"
 # Any constants above the line should be added to the settings menu (except the Projecdt Root)
 
 # ====================================================================
+
+DEFAULT_TCP_COMMAND = "check_tcp"
+
+DEFAULT_UDP_COMMAND = "check_udp"
 
 PROGRESS_WEIGHT = [40,50,55,60,70,80,90,95,100]
 
@@ -93,11 +112,22 @@ def _add_space(spaces):
 # this is the function that will give a command based on the service name
 # if its not in the map, you'll have to make your own default command
 # ex: checkudp!63
-def _get_command(service_name, port, command_map, default_command):
+def _get_command(service_name, port, command_map, default_command, args=None):
+
     command = command_map.get(service_name)
 
-    if command is None:
+    # ------------------------------------------------------------------ #
+    # No map entry — fall back to the supplied default                    #
+    # ------------------------------------------------------------------ #
+    if default_command == DEFAULT_UDP_COMMAND:
+        # check_udp requires -s and -e; supply empty strings so the plugin
+        # runs and returns a result instead of aborting with an error.
+        command = f'{default_command}!{port}!-s "" -e ""'
+    else:
         command = f"{default_command}!{port}"
+
+    if args is not None:
+        command += f"!{args}"
 
     return command
 
@@ -229,6 +259,10 @@ def _create_host_cfg_file(discovered_hosts):
 
             }
 
+    SNMP_Devices = []
+
+    NCPA_Devices = []
+
     for hosts in discovered_hosts.values():
         for ip, host_data in hosts.items():
             host = {}
@@ -264,7 +298,8 @@ def _create_host_cfg_file(discovered_hosts):
             for port, service_data in tcp_services.items():
                 service_name = f"{service_data['service_name']}-{port}-TCP"
 
-                command = _get_command(service_name,port,TCP_COMMANDS,"check_tcp")
+                command = _get_command(service_name,port,TCP_COMMANDS,DEFAULT_TCP_COMMAND)
+
                 service = {
                     "host_name": host_data["data"]["hostname"],
                     "service_name": service_name,
@@ -280,8 +315,12 @@ def _create_host_cfg_file(discovered_hosts):
 
             for port, service_data in udp_services.items():
                 service_name = f"{service_data['service_name']}-{port}-UDP"
-            
-                command = _get_command(service_name,port,UDP_COMMANDS,"check_udp")
+
+                if service_name == "snmp":
+                    SNMP_Devices.append(host_data["data"]["hostname"])
+                else:
+                    command = _get_command(service_name,port,UDP_COMMANDS,DEFAULT_UDP_COMMAND)
+
                 service = {
                     "host_name": host_data["data"]["hostname"],
                     "service_name": service_name,
@@ -303,6 +342,19 @@ def _create_host_cfg_file(discovered_hosts):
         """
     )
 
+    host_config.append(_add_space(4))
+
+    host_config.append(
+            f"""
+    
+            #
+            # Define OS Groups
+            #  
+    
+            """
+    )
+
+
     for os, group_devices in hostgroups.items():
 
         devices = group_devices["devices"]
@@ -318,6 +370,156 @@ def _create_host_cfg_file(discovered_hosts):
         host_config.append(create_hostgroup(host_group))
         host_config.append(_add_space(4))
 
+    if SNMP_Devices is not None:
+        host_config.append(
+                f"""
+            
+                #
+                # Define SNMP Devices
+                #  
+            
+                """
+        )
+
+        host_group={
+            "group_name": "snmp-devices",
+            "alias_name": "SNMP Devices",
+            "member_list": ",".join(SNMP_Devices)
+        }
+
+        host_config.append(host_group)
+
+        host_config.append(_add_space(4))
+
+        for oid, description in SNMP_OID.items():
+            command = _get_command(
+                            "snmp",
+                            "161",
+                            UDP_COMMANDS,
+                            DEFAULT_UDP_COMMAND,
+                            f"-C {SNMP_COMMUNITY_STRING} {oid}"
+                        )
+            snmp_service = create_multi_host_service(
+                                "snmp-devices",
+                                description,
+                                command,
+                                "system_users"
+                            )
+            host_config.append(snmp_service)
+
+        host_config.append(_add_space(4))
+
+    if SNMP_Devices is not None:
+        host_config.append(
+                f"""
+            
+                #
+                # Define NCPA Service
+                #  
+            
+                """
+        )
+
+        devices = db.session.execute(
+            sa.select(NetworkDiscovery, NCPADeployment).join(
+                NCPADeployment,
+                NetworkDiscovery.NetDiscoveryID == NCPADeployment.NetworkDiscoveryID
+            ).where(
+                NetworkDiscovery.Hostname.in_(NCPA_Devices),
+                NetworkDiscovery.NCPA_Eligible.is_(True)
+            )
+        ).all()
+
+        if devices is not None:
+            for device, ncpa_deployment in devices:
+                ncpa_cpu_usage = {
+                    "hostname":device.Hostname,
+                    "service_name": "CPU Usage",
+                    "contact_groups": "system_users"
+                }
+                command = _get_command(
+                    "ncpa",
+                    NCPA_PORT,
+                    UDP_COMMANDS,
+                    DEFAULT_TCP_COMMAND,
+                    f' -t {ncpa_deployment.Token} -P {NCPA_PORT} -M cpu/percent -w 50 -c 80 -q "aggregate=avg" '
+                )
+                service = create_service(
+                    ncpa_cpu_usage,
+                    command
+                )
+
+                host_config.append(service)
+
+                ncpa_memory_usage = {
+                    "hostname":device.Hostname,
+                    "service_name": "Memory Usage",
+                    "contact_groups": "system_users"
+                }
+                command = _get_command(
+                    "ncpa",
+                    NCPA_PORT,
+                    UDP_COMMANDS,
+                    DEFAULT_TCP_COMMAND,
+                    f' -t {ncpa_deployment.Token} -P {NCPA_PORT} -M memory/virtual/percent -w 50 -c 80 -u Gi '
+                )
+                service = create_service(
+                    ncpa_memory_usage,
+                    command
+                )
+
+                host_config.append(service)
+
+                # --- Per-partition disk usage services ---
+                # Query the partitions that were discovered on this device
+                # during NCPA installation and stored in NCPADevicePartition.
+                # Each partition gets its own Nagios service so the dashboard
+                # can track them individually.
+                partitions = db.session.scalars(
+                    sa.select(NCPADevicePartition).where(
+                        NCPADevicePartition.NCPADeployID == ncpa_deployment.NCPADeployID
+                    )
+                ).all()
+
+                if partitions:
+                    for partition in partitions:
+                        ncpa_disk_usage = {
+                            "hostname": device.Hostname,
+                            "service_name": f"Disk Usage ({partition.Name})",
+                            "contact_groups": "system_users"
+                        }
+                        command = _get_command(
+                            "ncpa",
+                            NCPA_PORT,
+                            UDP_COMMANDS,
+                            DEFAULT_TCP_COMMAND,
+                            f' -t {ncpa_deployment.Token} -P {NCPA_PORT} -M disk/logical/{partition.Name}/percent -w 70 -c 95 -u Gi'
+                        )
+                        service = create_service(
+                            ncpa_disk_usage,
+                            command
+                        )
+                        host_config.append(service)
+                else:
+                    # Fallback: no partition data stored — use the generic
+                    # disk/logical endpoint so the service is still generated
+                    ncpa_disk_usage = {
+                        "hostname": device.Hostname,
+                        "service_name": "Disk Usage",
+                        "contact_groups": "system_users"
+                    }
+                    command = _get_command(
+                        "ncpa",
+                        NCPA_PORT,
+                        UDP_COMMANDS,
+                        DEFAULT_TCP_COMMAND,
+                        f' -t {ncpa_deployment.Token} -P {NCPA_PORT} -M disk/logical/percent -w 70 -c 95 '
+                    )
+                    service = create_service(
+                        ncpa_disk_usage,
+                        command
+                    )
+                    host_config.append(service)
 
     with open(cfg_path, "w") as f:
         # remember to f.write("string") here after you're done with discovering devices
@@ -550,7 +752,6 @@ def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weig
         db.session.rollback()
         current_app.logger.exception(f"Failed to insert new hosts: {e}")
 
-
 def _backup_running_host_cfg():
     """
     Creates a backup of Nagios' currently running hosts.cfg.
@@ -590,7 +791,7 @@ def _load_monitored_hosts(network_discovery_id=None, progress_weight=None):
     discovered_hosts = {}
 
     devices = db.session.scalars(
-        sa.select(NetworkDiscovery).where(NetworkDiscovery.Include_Device_In_Scanning == True)
+        sa.select(NetworkDiscovery).where(NetworkDiscovery.Include_Device_In_Scanning.is_(True))
     ).all()
 
     if not devices:
@@ -662,8 +863,6 @@ def _load_monitored_hosts(network_discovery_id=None, progress_weight=None):
 
     return discovered_hosts
 
-import tempfile
-
 def _build_temp_cfg_lines(main_cfg_lines, candidate_cfg_path):
     """
     Takes the real nagios.cfg's lines and returns a new list of lines
@@ -689,7 +888,6 @@ def _build_temp_cfg_lines(main_cfg_lines, candidate_cfg_path):
 
     return new_lines, replaced
 
-
 def _write_temp_cfg(lines):
     """
     Writes the given lines to a throwaway temp file and returns its path.
@@ -697,7 +895,6 @@ def _write_temp_cfg(lines):
     with tempfile.NamedTemporaryFile(mode="w", suffix=".cfg", delete=False) as f:
         f.writelines(lines)
         return Path(f.name)
-
 
 def _run_nagios_verify(main_cfg_path):
     """
@@ -721,7 +918,6 @@ def _run_nagios_verify(main_cfg_path):
 
     except FileNotFoundError:
         return False, f"Nagios binary not found at {NAGIOS_BIN}."
-
 
 def _validate_config(cfg_path):
     """

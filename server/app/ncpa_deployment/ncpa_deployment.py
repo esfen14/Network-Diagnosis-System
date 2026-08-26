@@ -1,7 +1,7 @@
 import paramiko
 from flask import current_app
 from app.logging.deployment_history import *
-from app.system_models import SSHCredentials, NCPADeployment, DeploymentMethod, AgentStatus, NetworkDiscovery
+from app.system_models import SSHCredentials, NCPADeployment, NCPADevicePartition, DeploymentMethod, AgentStatus, NetworkDiscovery
 from datetime import datetime, timezone
 import hashlib
 import base64
@@ -418,6 +418,14 @@ def install_deployment_helper(client, password):
         echo "$NCPA_STATUS_OUTPUT" >&2
         exit 1
     fi
+
+    # Output logical partition names to stdout so the calling process can
+    # capture and store them.  Only TYPE=part rows are printed — one name
+    # per line — prefixed with a sentinel so the caller can reliably locate
+    # the block even if NCPA writes other text above it.
+    echo "PARTITIONS_BEGIN"
+    lsblk -ln -o NAME,TYPE | awk '$2=="part"{print $1}'
+    echo "PARTITIONS_END"
     ''').lstrip('\n')
 
     try:
@@ -643,6 +651,33 @@ def verify_ncpa_reachable(ip_address, token, timeout=5):
             "message": "NCPA reachability check failed."
         }
 
+def _parse_partitions(stdout_text: str) -> list[str]:
+    """
+    Extract partition names from the helper script's stdout.
+
+    The script wraps the lsblk block with sentinels:
+        PARTITIONS_BEGIN
+        sda1
+        sda2
+        PARTITIONS_END
+
+    Returns a list of stripped, non-empty partition name strings.
+    Any text outside the sentinels is ignored so incidental apt/dpkg
+    output doesn't pollute the result.
+    """
+    names: list[str] = []
+    inside = False
+    for raw_line in stdout_text.splitlines():
+        line = raw_line.strip()
+        if line == "PARTITIONS_BEGIN":
+            inside = True
+            continue
+        if line == "PARTITIONS_END":
+            break
+        if inside and line:
+            names.append(line)
+    return names
+
 def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
 
     client = None
@@ -727,6 +762,21 @@ def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
         ncpa_deployment.NCPADeploymentStatusID = (
             ncpa_deployment_status_id
         )
+
+        # --- Parse partition names from the helper script's stdout ----------
+        # The helper wraps lsblk output with PARTITIONS_BEGIN / PARTITIONS_END
+        # sentinels.  Extract every non-empty line between those markers and
+        # store one NCPADevicePartition row per name.
+        stdout_text = result.get("output", "")
+        partition_names = _parse_partitions(stdout_text)
+
+        for name in partition_names:
+            db.session.add(
+                NCPADevicePartition(
+                    Name=name,
+                    NCPADeployID=ncpa_deployment.NCPADeployID
+                )
+            )
 
         db.session.commit()
 

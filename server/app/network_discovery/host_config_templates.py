@@ -50,3 +50,11 @@ def create_contactgroup(contactgroup):
         alias=contactgroup["alias_name"],
         members=contactgroup["member_list"] 
     )
+
+def create_multi_host_service(host_group_name, service_name, command, contactgroup):
+    return _load_template("contactgroup.cfg.tpl").format(
+        host_group_name=host_group_name,
+        service_name=service_name,
+        command=command,
+        contact_groups=contactgroup
+    )

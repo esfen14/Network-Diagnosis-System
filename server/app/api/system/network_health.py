@@ -18,6 +18,7 @@ import sqlalchemy as sa
 # ALERTS
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Need to be placed somewhere else
 @system_bp.get('/alerts')
 @login_required
 @require_permission("system.alerts")
