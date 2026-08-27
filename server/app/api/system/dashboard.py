@@ -65,6 +65,298 @@ from app.nagios.notifications import request_notifications_last
 from app.system_models import AlertAcknowledgement, AckHistory, AckAction
 
 # ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _build_alert_row(
+    type_: str,
+    hostname: str,
+    service_name: str | None,
+    state: str,
+    state_type: str,
+    changed_at: datetime,
+    plugin_output: str,
+    in_downtime: bool,
+    ack: AlertAcknowledgement | None,
+    now_ts: int,
+) -> dict:
+    """Build a single alert row for the active alerts feed from a HostStatus/ServiceStatus row."""
+    if changed_at.tzinfo is None:
+        changed_at = changed_at.replace(tzinfo=timezone.utc)
+    ts = int(changed_at.timestamp())
+    return {
+        "type":             type_,
+        "hostname":         hostname,
+        "service_name":     service_name,
+        "state":            state,
+        "state_type":       state_type,
+        "timestamp":        ts,
+        "duration_seconds": max(now_ts - ts, 0),
+        "plugin_output":    plugin_output,
+        "in_downtime":      in_downtime,
+        "ack":              _serialize_ack(ack),
+    }
+
+
+def _serialize_ack(ack: AlertAcknowledgement | None) -> dict | None:
+    """Serialize an AlertAcknowledgement row (or None) into a frontend-ready dict."""
+    if ack is None:
+        return None
+    user      = ack.User
+    full_name = f"{user.First_Name} {user.Last_Name}"
+    return {
+        "comment":         ack.Comment,
+        "acknowledged_by": full_name,
+        "acknowledged_at": ack.Acknowledged_At.isoformat(),
+    }
+
+
+def _host_is_active_alert(hostname: str) -> bool:
+    """True if the latest HostStatus row for this host is in a problem state."""
+    subq = (
+        sa.select(sa.func.max(HostStatus.Timestamp))
+        .where(HostStatus.Hostname == hostname)
+        .scalar_subquery()
+    )
+    row = db.session.scalar(
+        sa.select(HostStatus).where(
+            HostStatus.Hostname  == hostname,
+            HostStatus.Timestamp == subq,
+        )
+    )
+    return row is not None and row.Current_State != HostStateType.UP
+
+
+def _service_is_active_alert(hostname: str, service_name: str) -> bool:
+    """True if the latest ServiceStatus row for this (host, service) is in a problem state."""
+    subq = (
+        sa.select(sa.func.max(ServiceStatus.Timestamp))
+        .where(
+            ServiceStatus.Hostname == hostname,
+            ServiceStatus.Service  == service_name,
+        )
+        .scalar_subquery()
+    )
+    row = db.session.scalar(
+        sa.select(ServiceStatus).where(
+            ServiceStatus.Hostname  == hostname,
+            ServiceStatus.Service   == service_name,
+            ServiceStatus.Timestamp == subq,
+        )
+    )
+    return row is not None and row.Current_State != ServiceStateType.OK
+
+
+def _build_nagios_info(prog: ProgramStatus | None) -> dict:
+    """Build the "nagios" section of GET /dashboard/status from the latest
+    ProgramStatus row, or an all-None dict if Nagios has never reported."""
+    if prog is None:
+        return {
+            "running":               False,
+            "pid":                   None,
+            "version":               None,
+            "program_start_time":    None,
+            "last_status_update":    None,
+            "active_host_checks":    None,
+            "active_service_checks": None,
+            "notifications_enabled": None,
+            "enable_flap_detection": None,
+        }
+
+    program_start_time = None
+    if prog.Program_Start_Time is not None:
+        program_start_time = prog.Program_Start_Time.isoformat()
+
+    return {
+        # Nagios is considered "running" if it reported a PID.
+        "running":               prog.NagiosPID is not None,
+        "pid":                   prog.NagiosPID,
+        "version":               prog.Version,
+        "program_start_time":    program_start_time,
+        # Timestamp of the most-recent status write is the ProgramStatus row timestamp.
+        "last_status_update":    prog.Timestamp.isoformat(),
+        "active_host_checks":    prog.Active_Host_Checks_Enabled,
+        "active_service_checks": prog.Active_Service_Checks_Enabled,
+        "notifications_enabled": prog.Enable_Notifications,
+        "enable_flap_detection": prog.Enable_Flap_Detection,
+    }
+
+
+def _build_ack_map() -> dict[tuple, AlertAcknowledgement]:
+    """Return all app-side acknowledgements keyed by (hostname, service_name)."""
+    ack_rows = db.session.scalars(sa.select(AlertAcknowledgement)).all()
+    ack_map: dict[tuple, AlertAcknowledgement] = {}
+    for a in ack_rows:
+        ack_map[(a.Hostname, a.Service_Name)] = a
+    return ack_map
+
+
+def _passes_ack_filter(ack_filter: str, ack: AlertAcknowledgement | None) -> bool:
+    """True if an alert with the given acknowledgement (or None) should be
+    included under the requested ack_filter ("all" | "unacknowledged" | "acknowledged")."""
+    if ack_filter == "unacknowledged" and ack is not None:
+        return False
+    if ack_filter == "acknowledged" and ack is None:
+        return False
+    return True
+
+
+def _collect_active_alerts(
+    ack_filter: str,
+    ack_map: dict[tuple, AlertAcknowledgement],
+    now_ts: int,
+) -> list[dict]:
+    """Build the unsorted active alerts feed (§1.6) from the latest history.db
+    snapshot per host/service, applying ack_filter along the way."""
+    alerts: list[dict] = []
+
+    for h in get_latest_hosts():
+        if h.Current_State == HostStateType.UP:
+            continue
+        ack = ack_map.get((h.Hostname, None))
+        if not _passes_ack_filter(ack_filter, ack):
+            continue
+
+        changed_at = h.Timestamp
+        if h.Last_State_Change is not None:
+            changed_at = h.Last_State_Change
+
+        in_downtime = h.Scheduled_Downtime_Depth > 0
+
+        alerts.append(_build_alert_row(
+            type_         = "host",
+            hostname      = h.Hostname,
+            service_name  = None,
+            state         = h.Current_State.name,
+            state_type    = h.State_Type.name,
+            changed_at    = changed_at,
+            plugin_output = h.Plugin_Output,
+            in_downtime   = in_downtime,
+            ack           = ack,
+            now_ts        = now_ts,
+        ))
+
+    for s in get_latest_services():
+        if s.Current_State == ServiceStateType.OK:
+            continue
+        ack = ack_map.get((s.Hostname, s.Service))
+        if not _passes_ack_filter(ack_filter, ack):
+            continue
+
+        changed_at = s.Timestamp
+        if s.Last_State_Change is not None:
+            changed_at = s.Last_State_Change
+
+        in_downtime = s.Scheduled_Downtime_Depth > 0
+
+        alerts.append(_build_alert_row(
+            type_         = "service",
+            hostname      = s.Hostname,
+            service_name  = s.Service,
+            state         = s.Current_State.name,
+            state_type    = s.State_Type.name,
+            changed_at    = changed_at,
+            plugin_output = s.Plugin_Output,
+            in_downtime   = in_downtime,
+            ack           = ack,
+            now_ts        = now_ts,
+        ))
+
+    return alerts
+
+
+# Severity rank used by _alert_sort_key() — lower sorts first.
+_ALERT_SEVERITY = {
+    "down":         0,
+    "unreachable":  1,
+    "critical":     0,
+    "warning":      1,
+    "unknown":      2,
+}
+
+
+def _alert_sort_key(alert: dict) -> tuple:
+    """Sort key for the active alerts feed: downtime last → severity →
+    acked below unacked → longest duration first within each group."""
+    sev = _ALERT_SEVERITY.get(alert["state"].lower(), 2)
+
+    acked = 0
+    if alert["ack"] is not None:
+        acked = 1
+
+    downtime = 0
+    if alert["in_downtime"]:
+        downtime = 1
+
+    return (downtime, sev, acked, -alert["duration_seconds"])
+
+
+def _new_ack(
+    hostname: str,
+    service_name: str | None,
+    comment: str,
+    acknowledged_at: datetime,
+) -> AlertAcknowledgement:
+    """Build a new (unsaved) AlertAcknowledgement row for the current user."""
+    return AlertAcknowledgement(
+        Hostname        = hostname,
+        Service_Name    = service_name,
+        Comment         = comment,
+        Acknowledged_At = acknowledged_at,
+        AcknowledgedBy  = current_user.UserID,
+    )
+
+
+def _new_ack_history(
+    hostname: str,
+    service_name: str | None,
+    action: AckAction,
+    actioned_at: datetime,
+    comment: str | None = None,
+) -> AckHistory:
+    """Build a new (unsaved) AckHistory row for the current user."""
+    return AckHistory(
+        Hostname     = hostname,
+        Service_Name = service_name,
+        Action       = action,
+        Actioned_At  = actioned_at,
+        ActorUserID  = current_user.UserID,
+        Comment      = comment,
+    )
+
+
+def _normalize_notification(item: dict) -> dict:
+    """Normalize one raw Nagios archivejson notification event into the
+    frontend-ready shape used by GET /dashboard/notifications.
+
+    Field names differ between archivejson versions/mock data — handles
+    "hostname"/"host_name" and millisecond vs. second timestamps.
+    """
+    hostname = item.get("hostname") or item.get("host_name") or ""
+    raw_ts   = item.get("timestamp") or 0
+
+    # Convert millisecond timestamps to seconds if needed.
+    ts_sec = raw_ts
+    if raw_ts > 9_999_999_999:
+        ts_sec = raw_ts // 1000
+
+    return {
+        "timestamp":    ts_sec,
+        "type":         (item.get("notificationtype") or "").upper(),
+        "hostname":     hostname,
+        "service_name": item.get("servicedesc") or item.get("description") or None,
+        "state":        item.get("notificationreason") or item.get("state") or "",
+        "contact":      item.get("contact") or "",
+        "message":      (item.get("output") or item.get("plugin_output") or "")[:200],
+    }
+
+
+def _notification_sort_key(notification: dict) -> int:
+    """Sort key for GET /dashboard/notifications — used with reverse=True so
+    the most recent notification (highest timestamp) comes first."""
+    return notification["timestamp"] or 0
+
+# ---------------------------------------------------------------------------
 # §1.1  Monitoring System Status
 # ---------------------------------------------------------------------------
 
@@ -118,36 +410,7 @@ def dashboard_status():
             .limit(1)
         )
 
-        if prog:
-            nagios_info = {
-                # Nagios is considered "running" if it reported a PID.
-                "running":               prog.NagiosPID is not None,
-                "pid":                   prog.NagiosPID,
-                "version":               prog.Version,
-                "program_start_time":    (
-                    prog.Program_Start_Time.isoformat()
-                    if prog.Program_Start_Time else None
-                ),
-                # Timestamp of the most-recent status write is the ProgramStatus row timestamp.
-                "last_status_update":    prog.Timestamp.isoformat(),
-                "active_host_checks":    prog.Active_Host_Checks_Enabled,
-                "active_service_checks": prog.Active_Service_Checks_Enabled,
-                "notifications_enabled": prog.Enable_Notifications,
-                "enable_flap_detection": prog.Enable_Flap_Detection,
-            }
-        else:
-            # No status data at all — Nagios has never reported or DB is empty.
-            nagios_info = {
-                "running":               False,
-                "pid":                   None,
-                "version":               None,
-                "program_start_time":    None,
-                "last_status_update":    None,
-                "active_host_checks":    None,
-                "active_service_checks": None,
-                "notifications_enabled": None,
-                "enable_flap_detection": None,
-            }
+        nagios_info = _build_nagios_info(prog)
 
         # ── Nagios server resource checks ────────────────────────────────────
         latest_services = get_latest_services()
@@ -274,59 +537,11 @@ def dashboard_alerts():
         if ack_filter not in ("all", "unacknowledged", "acknowledged"):
             return error("ack_filter must be 'all', 'unacknowledged', or 'acknowledged'.", 400)
 
-        # Load app-side acknowledgements keyed by (hostname, service_name).
-        ack_rows = db.session.scalars(sa.select(AlertAcknowledgement)).all()
-        ack_map: dict[tuple, AlertAcknowledgement] = {
-            (a.Hostname, a.Service_Name): a for a in ack_rows
-        }
+        ack_map = _build_ack_map()
+        now_ts  = int(datetime.now(timezone.utc).timestamp())
 
-        now_ts = int(datetime.now(timezone.utc).timestamp())
-        alerts: list[dict] = []
-
-        for h in get_latest_hosts():
-            if h.Current_State == HostStateType.UP:
-                continue
-            ack = ack_map.get((h.Hostname, None))
-            if ack_filter == "unacknowledged" and ack is not None:
-                continue
-            if ack_filter == "acknowledged" and ack is None:
-                continue
-            alerts.append(_build_alert_row(
-                "host", h.Hostname, None, h.Current_State.name, h.State_Type.name,
-                h.Last_State_Change or h.Timestamp, h.Plugin_Output,
-                h.Scheduled_Downtime_Depth > 0, ack, now_ts,
-            ))
-
-        for s in get_latest_services():
-            if s.Current_State == ServiceStateType.OK:
-                continue
-            ack = ack_map.get((s.Hostname, s.Service))
-            if ack_filter == "unacknowledged" and ack is not None:
-                continue
-            if ack_filter == "acknowledged" and ack is None:
-                continue
-            alerts.append(_build_alert_row(
-                "service", s.Hostname, s.Service, s.Current_State.name, s.State_Type.name,
-                s.Last_State_Change or s.Timestamp, s.Plugin_Output,
-                s.Scheduled_Downtime_Depth > 0, ack, now_ts,
-            ))
-
-        # ── Sort: downtime last → severity → acked below unacked → duration desc ──
-        _SEVERITY = {
-            "down":         0,
-            "unreachable":  1,
-            "critical":     0,
-            "warning":      1,
-            "unknown":      2,
-        }
-
-        def _sort_key(a: dict) -> tuple:
-            sev      = _SEVERITY.get(a["state"].lower(), 2)
-            acked    = 1 if a["ack"] is not None else 0
-            downtime = 1 if a["in_downtime"] else 0
-            return (downtime, sev, acked, -a["duration_seconds"])
-
-        alerts.sort(key=_sort_key)
+        alerts = _collect_active_alerts(ack_filter, ack_map, now_ts)
+        alerts.sort(key=_alert_sort_key)
         alerts = alerts[:limit]
 
         return success({
@@ -384,22 +599,9 @@ def acknowledge_alert():
             )
 
         now = datetime.now(timezone.utc)
-        ack = AlertAcknowledgement(
-            Hostname        = hostname,
-            Service_Name    = service_name,
-            Comment         = comment,
-            Acknowledged_At = now,
-            AcknowledgedBy  = current_user.UserID,
-        )
+        ack = _new_ack(hostname, service_name, comment, now)
         db.session.add(ack)
-        db.session.add(AckHistory(
-            Hostname     = hostname,
-            Service_Name = service_name,
-            Action       = AckAction.ACKNOWLEDGED,
-            Actioned_At  = now,
-            ActorUserID  = current_user.UserID,
-            Comment      = comment,
-        ))
+        db.session.add(_new_ack_history(hostname, service_name, AckAction.ACKNOWLEDGED, now, comment))
         db.session.commit()
 
         return success(
@@ -474,21 +676,8 @@ def acknowledge_all_alerts():
                 skipped += 1
                 continue
 
-            db.session.add(AlertAcknowledgement(
-                Hostname        = hostname,
-                Service_Name    = service_name,
-                Comment         = comment,
-                Acknowledged_At = now,
-                AcknowledgedBy  = current_user.UserID,
-            ))
-            db.session.add(AckHistory(
-                Hostname     = hostname,
-                Service_Name = service_name,
-                Action       = AckAction.ACKNOWLEDGED,
-                Actioned_At  = now,
-                ActorUserID  = current_user.UserID,
-                Comment      = comment,
-            ))
+            db.session.add(_new_ack(hostname, service_name, comment, now))
+            db.session.add(_new_ack_history(hostname, service_name, AckAction.ACKNOWLEDGED, now, comment))
             created += 1
 
         db.session.commit()
@@ -544,13 +733,8 @@ def unacknowledge_alert():
             return error("No acknowledgement found for the given host/service.", 404)
 
         db.session.delete(ack)
-        db.session.add(AckHistory(
-            Hostname     = hostname,
-            Service_Name = service_name,
-            Action       = AckAction.UNACKNOWLEDGED,
-            Actioned_At  = datetime.now(timezone.utc),
-            ActorUserID  = current_user.UserID,
-            Comment      = None,
+        db.session.add(_new_ack_history(
+            hostname, service_name, AckAction.UNACKNOWLEDGED, datetime.now(timezone.utc)
         ))
         db.session.commit()
 
@@ -609,22 +793,10 @@ def dashboard_notifications():
         # Normalise field names: archivejson uses "host_name" in some versions.
         notifications = []
         for item in (raw or []):
-            hostname = item.get("hostname") or item.get("host_name") or ""
-            raw_ts   = item.get("timestamp") or 0
-            # Convert millisecond timestamps to seconds if needed.
-            ts_sec   = raw_ts // 1000 if raw_ts > 9_999_999_999 else raw_ts
-            notifications.append({
-                "timestamp":    ts_sec,
-                "type":         (item.get("notificationtype") or "").upper(),
-                "hostname":     hostname,
-                "service_name": item.get("servicedesc") or item.get("description") or None,
-                "state":        item.get("notificationreason") or item.get("state") or "",
-                "contact":      item.get("contact") or "",
-                "message":      (item.get("output") or item.get("plugin_output") or "")[:200],
-            })
+            notifications.append(_normalize_notification(item))
 
         # Sort newest first and cap at 5.
-        notifications.sort(key=lambda n: n["timestamp"] or 0, reverse=True)
+        notifications.sort(key=_notification_sort_key, reverse=True)
         notifications = notifications[:5]
 
         return success({"notifications": notifications})
@@ -636,84 +808,3 @@ def dashboard_notifications():
         return error("An unexpected error occurred.", 500)
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-def _build_alert_row(
-    type_: str,
-    hostname: str,
-    service_name: str | None,
-    state: str,
-    state_type: str,
-    changed_at: datetime,
-    plugin_output: str,
-    in_downtime: bool,
-    ack: AlertAcknowledgement | None,
-    now_ts: int,
-) -> dict:
-    """Build a single alert row for the active alerts feed from a HostStatus/ServiceStatus row."""
-    if changed_at.tzinfo is None:
-        changed_at = changed_at.replace(tzinfo=timezone.utc)
-    ts = int(changed_at.timestamp())
-    return {
-        "type":             type_,
-        "hostname":         hostname,
-        "service_name":     service_name,
-        "state":            state,
-        "state_type":       state_type,
-        "timestamp":        ts,
-        "duration_seconds": max(now_ts - ts, 0),
-        "plugin_output":    plugin_output,
-        "in_downtime":      in_downtime,
-        "ack":              _serialize_ack(ack),
-    }
-
-
-def _serialize_ack(ack: AlertAcknowledgement | None) -> dict | None:
-    """Serialize an AlertAcknowledgement row (or None) into a frontend-ready dict."""
-    if ack is None:
-        return None
-    user      = ack.User
-    full_name = f"{user.First_Name} {user.Last_Name}"
-    return {
-        "comment":         ack.Comment,
-        "acknowledged_by": full_name,
-        "acknowledged_at": ack.Acknowledged_At.isoformat(),
-    }
-
-
-def _host_is_active_alert(hostname: str) -> bool:
-    """True if the latest HostStatus row for this host is in a problem state."""
-    subq = (
-        sa.select(sa.func.max(HostStatus.Timestamp))
-        .where(HostStatus.Hostname == hostname)
-        .scalar_subquery()
-    )
-    row = db.session.scalar(
-        sa.select(HostStatus).where(
-            HostStatus.Hostname  == hostname,
-            HostStatus.Timestamp == subq,
-        )
-    )
-    return row is not None and row.Current_State != HostStateType.UP
-
-
-def _service_is_active_alert(hostname: str, service_name: str) -> bool:
-    """True if the latest ServiceStatus row for this (host, service) is in a problem state."""
-    subq = (
-        sa.select(sa.func.max(ServiceStatus.Timestamp))
-        .where(
-            ServiceStatus.Hostname == hostname,
-            ServiceStatus.Service  == service_name,
-        )
-        .scalar_subquery()
-    )
-    row = db.session.scalar(
-        sa.select(ServiceStatus).where(
-            ServiceStatus.Hostname  == hostname,
-            ServiceStatus.Service   == service_name,
-            ServiceStatus.Timestamp == subq,
-        )
-    )
-    return row is not None and row.Current_State != ServiceStateType.OK

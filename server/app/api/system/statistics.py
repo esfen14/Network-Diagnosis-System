@@ -455,21 +455,12 @@ def nagios_server_resources(services: list[ServiceStatus]) -> dict:
     nagios_svcs = {s.Service: s for s in services if s.Hostname == NAGIOS_HOST}
 
     # ── check_load ──────────────────────────────────────────────────────────
-    load_svc = next(
-        (s for name, s in nagios_svcs.items() if _plugin_key(name) == LOAD_PLUGIN),
-        None,
-    )
+    load_svc = _find_service_by_plugin(nagios_svcs, LOAD_PLUGIN)
     cpu_load: dict = {"configured": False, "load1": None, "load5": None, "load15": None}
 
     if load_svc:
-        perf = db.session.execute(
-            sa.select(ServicePerfData).where(
-                ServicePerfData.ServiceStatusID == load_svc.ServiceStatusID
-            )
-        ).scalars().all()
-
         cpu_load["configured"] = True
-        for p in perf:
+        for p in _perf_data_for(load_svc.ServiceStatusID):
             if p.Metric == "load1":
                 cpu_load["load1"] = p.Measured_Value
             elif p.Metric == "load5":
@@ -478,21 +469,12 @@ def nagios_server_resources(services: list[ServiceStatus]) -> dict:
                 cpu_load["load15"] = p.Measured_Value
 
     # ── check_disk ──────────────────────────────────────────────────────────
-    disk_svc = next(
-        (s for name, s in nagios_svcs.items() if _plugin_key(name) == DISK_PLUGIN),
-        None,
-    )
+    disk_svc = _find_service_by_plugin(nagios_svcs, DISK_PLUGIN)
     disk: dict = {"configured": False, "mounts": []}
 
     if disk_svc:
-        perf = db.session.execute(
-            sa.select(ServicePerfData).where(
-                ServicePerfData.ServiceStatusID == disk_svc.ServiceStatusID
-            )
-        ).scalars().all()
-
         disk["configured"] = True
-        for p in perf:
+        for p in _perf_data_for(disk_svc.ServiceStatusID):
             # Disk metric keys look like "/", "/boot", "/home", etc.
             if p.Metric.startswith("/") and "inode" not in p.Metric:
                 disk["mounts"].append({
@@ -503,21 +485,12 @@ def nagios_server_resources(services: list[ServiceStatus]) -> dict:
                 })
 
     # ── check_swap ──────────────────────────────────────────────────────────
-    swap_svc = next(
-        (s for name, s in nagios_svcs.items() if _plugin_key(name) == SWAP_PLUGIN),
-        None,
-    )
+    swap_svc = _find_service_by_plugin(nagios_svcs, SWAP_PLUGIN)
     swap: dict = {"configured": False, "swap_used_mb": None, "warn": None, "crit": None}
 
     if swap_svc:
-        perf = db.session.execute(
-            sa.select(ServicePerfData).where(
-                ServicePerfData.ServiceStatusID == swap_svc.ServiceStatusID
-            )
-        ).scalars().all()
-
         swap["configured"] = True
-        for p in perf:
+        for p in _perf_data_for(swap_svc.ServiceStatusID):
             if p.Metric == "swap":
                 swap["swap_used_mb"] = p.Measured_Value
                 swap["warn"] = p.Warning_Threshold
@@ -673,3 +646,34 @@ def perf_trends(
             })
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _find_service_by_plugin(
+    services_by_name: dict[str, ServiceStatus],
+    plugin_key: str,
+) -> Optional[ServiceStatus]:
+    """
+    Return the first service in a {service_name: ServiceStatus} map whose
+    resolved plugin key (via _plugin_key()) matches plugin_key, or None if
+    no service matches.
+
+    Used by nagios_server_resources() to pick out check_load/check_disk/
+    check_swap among a host's services.
+    """
+    for name, service in services_by_name.items():
+        if _plugin_key(name) == plugin_key:
+            return service
+    return None
+
+
+def _perf_data_for(service_status_id: int) -> list[ServicePerfData]:
+    """Return all ServicePerfData rows linked to the given ServiceStatusID."""
+    query = sa.select(ServicePerfData).where(
+        ServicePerfData.ServiceStatusID == service_status_id
+    )
+    rows = db.session.execute(query).scalars().all()
+    return rows
