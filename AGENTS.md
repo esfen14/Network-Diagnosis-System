@@ -126,7 +126,10 @@ flask db init --multidb
 **Dashboard routes (`api/system/dashboard.py`)**
 - `GET /system/dashboard/status` — Nagios process health + server resources
 - `GET /system/dashboard/summary` — stat cards, ping metrics, NCPA averages
-- `GET /system/dashboard/alerts` — active alerts feed with ack filter
+- `GET /system/dashboard/alerts` — active alerts feed with ack filter. Sourced
+  from the latest `history.db` snapshot per host/service (same source as the
+  `active_alerts` count in `/summary`) — not from `archivejson.cgi`. See
+  [Key Facts](#8-key-facts-that-are-easy-to-get-wrong) below.
 - `POST /system/dashboard/alerts/acknowledge` — single alert ack
 - `POST /system/dashboard/alerts/acknowledge-all` — batch ack
 - `DELETE /system/dashboard/alerts/acknowledge` — unacknowledge
@@ -464,6 +467,20 @@ manually unless you know exactly what you are doing.
 - **`NAGIOS_HOST = "localhost"`** — the Nagios server identifies itself as
   `localhost` in `status.dat`. This constant is defined in `statistics.py`.
   Do not change it without also updating the Nagios config.
+- **"Current state" vs. "historical events" — two data sources, not
+  interchangeable.** `history.db` holds the latest polled snapshot per
+  host/service (from `statusjson.cgi` via `status.py`); Nagios'
+  `archivejson.cgi` holds the durable state-change event log. Anything
+  answering "what's happening right now" (dashboard stat cards, the active
+  alerts feed) must use `history.db` via `statistics.py`'s
+  `get_latest_hosts()`/`get_latest_services()` — it's simpler and can't drift
+  from Nagios' own current state. Anything answering "what happened between
+  two dates" (`api/system/history.py`, the Alerts & Notifications History
+  page) must use `archivejson.cgi` — periodic snapshots can silently miss
+  state changes that happened and reverted between two poll cycles. Do not
+  "unify" these two by making one source stand in for the other; they answer
+  different questions and are supposed to disagree with each other's timing
+  in the ways described above.
 - **Two databases, one ORM session** — `db.session` is shared, but
   `__bind_key__ = "history"` on history models routes queries to `history.db`
   automatically. You do not need separate sessions.

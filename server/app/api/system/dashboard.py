@@ -18,11 +18,18 @@ acknowledge routes which additionally require "system.acknowledge_alerts".
 
 Alert data source
 -----------------
-The active alerts feed (§1.6) sources data from Nagios' archivejson.cgi
-alertlist query rather than from the history.db snapshots. The alertlist
-returns state-change events; we determine "currently active" alerts by
-reducing to the most recent event per (hostname, servicedesc) and keeping
-only those still in a problem state (i.e., not OK / UP / RECOVERY).
+The active alerts feed (§1.6) sources data from the same history.db snapshots
+as the "Active Alerts" stat card on GET /dashboard/summary (see statistics.py
+active_alert_count()). An alert is any host/service whose latest polled
+snapshot is in a problem state (not UP / OK). This keeps the stat card and
+the feed always in agreement, and reflects "right now" as of the last poll
+cycle rather than reconstructing state from Nagios' archived event log.
+
+Historical alert *events* (state-change history over an arbitrary time range)
+are a different concern, served by GET /system/history/alerts in history.py,
+which does query Nagios' archivejson.cgi — that endpoint needs the durable
+event log because it answers "what happened between two dates", a question
+periodic history.db snapshots cannot answer without gaps.
 """
 
 from datetime import datetime, timezone, timedelta
@@ -54,22 +61,8 @@ from app.history_models import (
     ServiceStateType,
     ProgramStatus,
 )
-from app.nagios.notifications import request_alerts_last, request_notifications_last
+from app.nagios.notifications import request_notifications_last
 from app.system_models import AlertAcknowledgement, AckHistory, AckAction
-
-# States that mean "recovered / no longer a problem" in archivejson alertlist.
-# String form (mock / older Nagios): "ok", "up", "recovery"
-# Integer form (Nagios archivejson): 0 = HOST_UP / SERVICE_OK
-_OK_STATES = {"ok", "up", "recovery"}
-_OK_STATE_INTS = {0}
-
-# Nagios archivejson integer state → human-readable string.
-# HOST states: 0=UP, 1=DOWN, 2=UNREACHABLE
-# SERVICE states: 0=OK, 16=WARNING, 32=CRITICAL, 48=UNKNOWN
-# object_type: 1=HOST, 2=SERVICE
-_HOST_STATE_MAP    = {0: "UP", 1: "DOWN", 2: "UNREACHABLE"}
-_SERVICE_STATE_MAP = {0: "OK", 16: "WARNING", 32: "CRITICAL", 48: "UNKNOWN"}
-_STATE_TYPE_MAP    = {1: "SOFT", 2: "HARD"}
 
 # ---------------------------------------------------------------------------
 # §1.1  Monitoring System Status
@@ -244,15 +237,13 @@ def dashboard_summary():
 @require_permission("system.dashboard")
 def dashboard_alerts():
     """
-    Return the active alerts feed sourced from Nagios archivejson.cgi alertlist.
+    Return the active alerts feed sourced from the latest history.db snapshot
+    per host/service — the same source as the "Active Alerts" stat card on
+    GET /dashboard/summary.
 
-    We query the alertlist for the last 7 days, then reduce to the most recent
-    event per (hostname, servicedesc). Any entity whose most recent event is
-    still in a problem state (not OK / UP / RECOVERY) is considered an active
-    alert and included in the feed.
-
-    This means the feed reflects what Nagios has recorded as the latest known
-    state for each monitored entity, without relying on the history.db snapshots.
+    Any host not in HostStateType.UP, or service not in ServiceStateType.OK,
+    is considered an active alert. This reflects Nagios' current state as of
+    the last poll cycle.
 
     Query params:
         limit       — max rows to return (default 15, max 100)
@@ -264,8 +255,8 @@ def dashboard_alerts():
         "hostname":          str,
         "service_name":      str | null,
         "state":             str,           // e.g. WARNING, CRITICAL, DOWN
-        "state_type":        str | null,    // "SOFT" | "HARD" | null if not provided
-        "timestamp":         int,           // UNIX timestamp of the state-change event
+        "state_type":        str,           // "SOFT" | "HARD"
+        "timestamp":         int,           // UNIX timestamp of the last state change
         "duration_seconds":  int,           // seconds since the state-change event
         "plugin_output":     str,
         "in_downtime":       bool,
@@ -283,105 +274,42 @@ def dashboard_alerts():
         if ack_filter not in ("all", "unacknowledged", "acknowledged"):
             return error("ack_filter must be 'all', 'unacknowledged', or 'acknowledged'.", 400)
 
-        # ── Fetch alert events from archivejson.cgi ──────────────────────────
-        raw = request_alerts_last(day=7)
-
-        if raw is None:
-            return error("Failed to retrieve alert data from Nagios.", 502)
-
-        # archivejson returns a dict keyed by string index or a list.
-        if isinstance(raw, dict):
-            events = list(raw.values())
-        else:
-            events = list(raw)
-
-        # ── Reduce to most-recent event per (hostname, servicedesc) ─────────
-        # Key: (hostname, service_name_or_None)
-        # Nagios archivejson uses "host_name" and "description"; older/mock
-        # data may use "hostname" and "servicedesc" — handle both.
-        latest: dict[tuple, dict] = {}
-        for ev in events:
-            hostname = ev.get("host_name") or ev.get("hostname") or ""
-            svc      = ev.get("description") or ev.get("servicedesc") or None
-            svc      = svc if svc else None   # empty string → None
-            raw_ts   = ev.get("timestamp") or 0
-            # archivejson returns timestamps in milliseconds; convert to seconds.
-            ts = raw_ts // 1000 if raw_ts > 9_999_999_999 else raw_ts
-            key = (hostname, svc)
-            if key not in latest or ts > (latest[key].get("_ts_sec", 0)):
-                ev["_ts_sec"] = ts   # cache converted timestamp on the event
-                latest[key] = ev
-
-        # ── Keep only those still in a problem state ─────────────────────────
-        now_ts = int(datetime.now(timezone.utc).timestamp())
-
         # Load app-side acknowledgements keyed by (hostname, service_name).
         ack_rows = db.session.scalars(sa.select(AlertAcknowledgement)).all()
         ack_map: dict[tuple, AlertAcknowledgement] = {
             (a.Hostname, a.Service_Name): a for a in ack_rows
         }
 
+        now_ts = int(datetime.now(timezone.utc).timestamp())
         alerts: list[dict] = []
 
-        for (hostname, svc), ev in latest.items():
-            raw_state = ev.get("state")
-
-            # Nagios archivejson returns integer state codes.
-            # Determine object type: "object_type" 1=host, 2=service.
-            # Fall back to presence of svc when the field is absent.
-            obj_type = ev.get("object_type")
-            is_service = (obj_type == 2) if obj_type is not None else bool(svc)
-
-            if isinstance(raw_state, int):
-                if raw_state in _OK_STATE_INTS:
-                    continue  # recovered
-                state_map = _SERVICE_STATE_MAP if is_service else _HOST_STATE_MAP
-                state_str = state_map.get(raw_state, str(raw_state))
-            else:
-                # String state from mock data or older Nagios versions.
-                state_str_lower = str(raw_state or "").strip().lower()
-                if state_str_lower in _OK_STATES:
-                    continue  # recovered
-                state_str = str(raw_state or "").strip().upper()
-
-            ack = ack_map.get((hostname, svc))
-            is_acked = ack is not None
-
-            if ack_filter == "unacknowledged" and is_acked:
+        for h in get_latest_hosts():
+            if h.Current_State == HostStateType.UP:
                 continue
-            if ack_filter == "acknowledged" and not is_acked:
+            ack = ack_map.get((h.Hostname, None))
+            if ack_filter == "unacknowledged" and ack is not None:
                 continue
+            if ack_filter == "acknowledged" and ack is None:
+                continue
+            alerts.append(_build_alert_row(
+                "host", h.Hostname, None, h.Current_State.name, h.State_Type.name,
+                h.Last_State_Change or h.Timestamp, h.Plugin_Output,
+                h.Scheduled_Downtime_Depth > 0, ack, now_ts,
+            ))
 
-            ev_ts    = ev.get("_ts_sec", 0)
-            duration = max(now_ts - ev_ts, 0)
-
-            # state_type may be an int (2=HARD, 1=SOFT) or a string.
-            raw_st = ev.get("state_type") or ev.get("statetype")
-            if isinstance(raw_st, int):
-                state_type_str = _STATE_TYPE_MAP.get(raw_st)
-            else:
-                state_type_str = str(raw_st).upper() if raw_st else None
-
-            # plugin_output key differs between archivejson versions.
-            output = (
-                ev.get("plugin_output")
-                or ev.get("output")
-                or ev.get("pluginoutput")
-                or ""
-            )
-
-            alerts.append({
-                "type":             "service" if is_service else "host",
-                "hostname":         hostname,
-                "service_name":     svc,
-                "state":            state_str,
-                "state_type":       state_type_str,
-                "timestamp":        ev_ts,
-                "duration_seconds": duration,
-                "plugin_output":    output,
-                "in_downtime":      bool(ev.get("indowntime")),
-                "ack":              _serialize_ack(ack),
-            })
+        for s in get_latest_services():
+            if s.Current_State == ServiceStateType.OK:
+                continue
+            ack = ack_map.get((s.Hostname, s.Service))
+            if ack_filter == "unacknowledged" and ack is not None:
+                continue
+            if ack_filter == "acknowledged" and ack is None:
+                continue
+            alerts.append(_build_alert_row(
+                "service", s.Hostname, s.Service, s.Current_State.name, s.State_Type.name,
+                s.Last_State_Change or s.Timestamp, s.Plugin_Output,
+                s.Scheduled_Downtime_Depth > 0, ack, now_ts,
+            ))
 
         # ── Sort: downtime last → severity → acked below unacked → duration desc ──
         _SEVERITY = {
@@ -711,6 +639,36 @@ def dashboard_notifications():
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _build_alert_row(
+    type_: str,
+    hostname: str,
+    service_name: str | None,
+    state: str,
+    state_type: str,
+    changed_at: datetime,
+    plugin_output: str,
+    in_downtime: bool,
+    ack: AlertAcknowledgement | None,
+    now_ts: int,
+) -> dict:
+    """Build a single alert row for the active alerts feed from a HostStatus/ServiceStatus row."""
+    if changed_at.tzinfo is None:
+        changed_at = changed_at.replace(tzinfo=timezone.utc)
+    ts = int(changed_at.timestamp())
+    return {
+        "type":             type_,
+        "hostname":         hostname,
+        "service_name":     service_name,
+        "state":            state,
+        "state_type":       state_type,
+        "timestamp":        ts,
+        "duration_seconds": max(now_ts - ts, 0),
+        "plugin_output":    plugin_output,
+        "in_downtime":      in_downtime,
+        "ack":              _serialize_ack(ack),
+    }
+
 
 def _serialize_ack(ack: AlertAcknowledgement | None) -> dict | None:
     """Serialize an AlertAcknowledgement row (or None) into a frontend-ready dict."""

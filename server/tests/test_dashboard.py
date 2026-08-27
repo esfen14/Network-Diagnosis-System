@@ -6,7 +6,7 @@ Tests for app/api/system/dashboard.py.
 Routes tested:
   GET  /api/system/dashboard/status
   GET  /api/system/dashboard/summary
-  GET  /api/system/dashboard/alerts          (Nagios archivejson — mocked)
+  GET  /api/system/dashboard/alerts          (history.db snapshots — seeded)
   GET  /api/system/dashboard/notifications   (Nagios archivejson — mocked)
   POST /api/system/dashboard/alerts/acknowledge
   POST /api/system/dashboard/alerts/acknowledge-all
@@ -27,22 +27,21 @@ from tests.seed_helpers import (
     NCPA_CPU_SERVICE, NCPA_MEMORY_SERVICE, NCPA_DISK_SERVICE,
 )
 
-# Patch targets for Nagios helpers used inside dashboard.py
-_ALERTS_PATH = "app.api.system.dashboard.request_alerts_last"
+# Patch target for the Nagios helper used inside dashboard.py
 _NOTIFS_PATH = "app.api.system.dashboard.request_notifications_last"
 
-# Sample Nagios archivejson payloads
-FAKE_ACTIVE_ALERTS = [
-    {"hostname": "dbserver", "servicedesc": None, "state": "DOWN",
-     "statetype": "HARD", "timestamp": 1700000000,
-     "output": "PING CRITICAL - Packet loss = 100%", "indowntime": False},
-    {"hostname": "webserver", "servicedesc": "mysql-3306-TCP", "state": "CRITICAL",
-     "statetype": "HARD", "timestamp": 1700001000,
-     "output": "CRITICAL: Cannot connect to MySQL on port 3306", "indowntime": False},
-    {"hostname": "fileserver", "servicedesc": "disk-0-TCP", "state": "WARNING",
-     "statetype": "HARD", "timestamp": 1700002000,
-     "output": "DISK WARNING - free space: / 512 MiB (8%)", "indowntime": False},
-]
+
+def _seed_active_alerts(db_session):
+    """Seed the three active alerts used by the alerts-feed tests directly
+    into history.db, mirroring the old FAKE_ACTIVE_ALERTS fixture."""
+    _make_host(db_session, "dbserver", HostStateType.DOWN,
+               plugin_output="PING CRITICAL - Packet loss = 100%")
+    _make_service(db_session, "webserver", "mysql-3306-TCP", ServiceStateType.CRITICAL,
+                  plugin_output="CRITICAL: Cannot connect to MySQL on port 3306")
+    _make_service(db_session, "fileserver", "disk-0-TCP", ServiceStateType.WARNING,
+                  plugin_output="DISK WARNING - free space: / 512 MiB (8%)")
+    db_session.session.commit()
+
 
 FAKE_NOTIFICATIONS = [
     {"timestamp": 1700009000, "notificationtype": "PROBLEM",
@@ -265,75 +264,73 @@ class TestDashboardSummary:
 class TestDashboardAlerts:
 
     def test_returns_alerts(self, logged_in_client, db_session):
-        with patch(_ALERTS_PATH, return_value=FAKE_ACTIVE_ALERTS):
-            resp = logged_in_client.get("/api/system/dashboard/alerts")
+        _seed_active_alerts(db_session)
+        resp = logged_in_client.get("/api/system/dashboard/alerts")
         assert resp.status_code == 200
         data = resp.get_json()["data"]
         assert "alerts" in data
         assert data["total_shown"] == 3
 
-    def test_nagios_failure_returns_502(self, logged_in_client, db_session):
-        with patch(_ALERTS_PATH, return_value=None):
-            resp = logged_in_client.get("/api/system/dashboard/alerts")
-        assert resp.status_code == 502
+    def test_empty_db_returns_no_alerts(self, logged_in_client, db_session):
+        resp = logged_in_client.get("/api/system/dashboard/alerts")
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["total_shown"] == 0
 
     def test_ok_and_up_states_excluded(self, logged_in_client, db_session):
-        alerts = FAKE_ACTIVE_ALERTS + [
-            {"hostname": "h-ok", "servicedesc": None, "state": "OK",
-             "statetype": "HARD", "timestamp": 1700005000,
-             "output": "PING OK", "indowntime": False},
-            {"hostname": "h-up", "servicedesc": None, "state": "UP",
-             "statetype": "HARD", "timestamp": 1700006000,
-             "output": "PING OK", "indowntime": False},
-        ]
-        with patch(_ALERTS_PATH, return_value=alerts):
-            resp = logged_in_client.get("/api/system/dashboard/alerts")
-        states = {a["state"] for a in resp.get_json()["data"]["alerts"]}
+        _seed_active_alerts(db_session)
+        _make_host(db_session, "h-up", HostStateType.UP)
+        _make_service(db_session, "h-up", "http-80-TCP", ServiceStateType.OK)
+        db_session.session.commit()
+        states = {a["state"] for a in
+                  logged_in_client.get("/api/system/dashboard/alerts").get_json()["data"]["alerts"]}
         assert "OK" not in states
         assert "UP" not in states
 
     def test_ack_filter_invalid_returns_400(self, logged_in_client, db_session):
-        with patch(_ALERTS_PATH, return_value=FAKE_ACTIVE_ALERTS):
-            resp = logged_in_client.get("/api/system/dashboard/alerts?ack_filter=badvalue")
+        _seed_active_alerts(db_session)
+        resp = logged_in_client.get("/api/system/dashboard/alerts?ack_filter=badvalue")
         assert resp.status_code == 400
 
     def test_limit_param(self, logged_in_client, db_session):
-        with patch(_ALERTS_PATH, return_value=FAKE_ACTIVE_ALERTS):
-            resp = logged_in_client.get("/api/system/dashboard/alerts?limit=1")
+        _seed_active_alerts(db_session)
+        resp = logged_in_client.get("/api/system/dashboard/alerts?limit=1")
         assert resp.get_json()["data"]["total_shown"] == 1
 
     def test_ack_filter_acknowledged(self, logged_in_client, db_session):
-        _make_host(db_session, "dbserver", HostStateType.DOWN)
-        db_session.session.commit()
-        with patch(_ALERTS_PATH, return_value=FAKE_ACTIVE_ALERTS):
-            logged_in_client.post(
-                "/api/system/dashboard/alerts/acknowledge",
-                json={"hostname": "dbserver", "service_name": None, "comment": "on it"},
-            )
-            resp = logged_in_client.get("/api/system/dashboard/alerts?ack_filter=acknowledged")
+        _seed_active_alerts(db_session)
+        logged_in_client.post(
+            "/api/system/dashboard/alerts/acknowledge",
+            json={"hostname": "dbserver", "service_name": None, "comment": "on it"},
+        )
+        resp = logged_in_client.get("/api/system/dashboard/alerts?ack_filter=acknowledged")
         acked = [a for a in resp.get_json()["data"]["alerts"] if a["hostname"] == "dbserver"]
         assert len(acked) == 1
         assert acked[0]["ack"] is not None
         assert acked[0]["ack"]["comment"] == "on it"
 
     def test_ack_filter_unacknowledged_excludes_acked(self, logged_in_client, db_session):
-        _make_host(db_session, "dbserver", HostStateType.DOWN)
-        db_session.session.commit()
-        with patch(_ALERTS_PATH, return_value=FAKE_ACTIVE_ALERTS):
-            logged_in_client.post(
-                "/api/system/dashboard/alerts/acknowledge",
-                json={"hostname": "dbserver", "service_name": None, "comment": "ack"},
-            )
-            resp = logged_in_client.get(
-                "/api/system/dashboard/alerts?ack_filter=unacknowledged"
-            )
+        _seed_active_alerts(db_session)
+        logged_in_client.post(
+            "/api/system/dashboard/alerts/acknowledge",
+            json={"hostname": "dbserver", "service_name": None, "comment": "ack"},
+        )
+        resp = logged_in_client.get(
+            "/api/system/dashboard/alerts?ack_filter=unacknowledged"
+        )
         hostnames = {a["hostname"] for a in resp.get_json()["data"]["alerts"]}
         assert "dbserver" not in hostnames
 
+    def test_in_downtime_sorted_last(self, logged_in_client, db_session):
+        _make_host(db_session, "down-in-downtime", HostStateType.DOWN, downtime_depth=1)
+        _make_host(db_session, "down-not-in-downtime", HostStateType.DOWN)
+        db_session.session.commit()
+        alerts = logged_in_client.get("/api/system/dashboard/alerts").get_json()["data"]["alerts"]
+        assert alerts[-1]["hostname"] == "down-in-downtime"
+        assert alerts[-1]["in_downtime"] is True
+
     def test_alert_item_shape(self, logged_in_client, db_session):
-        with patch(_ALERTS_PATH, return_value=FAKE_ACTIVE_ALERTS):
-            resp = logged_in_client.get("/api/system/dashboard/alerts")
-        alert = resp.get_json()["data"]["alerts"][0]
+        _seed_active_alerts(db_session)
+        alert = logged_in_client.get("/api/system/dashboard/alerts").get_json()["data"]["alerts"][0]
         for key in ("type", "hostname", "service_name", "state", "state_type",
                     "timestamp", "duration_seconds", "plugin_output",
                     "in_downtime", "ack"):

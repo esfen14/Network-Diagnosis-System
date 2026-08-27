@@ -315,12 +315,18 @@ A live list of all hosts and services currently in a problem state. This is
 the most actionable section of the dashboard. "Active" means right now — not
 historical.
 
-**Data source:** `archivejson.cgi` `alertlist` query (last 7 days). The backend
-reduces the full event list to the **most recent event per (hostname, service)**
-and keeps only those entities whose latest state is still a problem state
-(not OK / UP / RECOVERY). This gives a live view of what is currently broken,
-sourced directly from Nagios' own alert history rather than the `history.db`
-snapshots.
+**Data source:** the latest `history.db` snapshot per host/service (the same
+source as the "Active Alerts" stat card in §1.2). Any host not in the UP
+state, or service not in the OK state, is an active alert. This is the same
+underlying data as the stat card, so the two always agree — no separate
+reduction of Nagios' event log is needed to answer "what's broken right now."
+
+Historical alert *events* over an arbitrary date range are a different
+question, served by the Alerts & Notifications History page
+(`Alerts_Notifications_History_Requirements.md`), which does query
+`archivejson.cgi` — that page needs the durable event log because periodic
+`history.db` snapshots can miss a state change that happened and reverted
+between two poll cycles.
 
 **Data to show per row:**
 
@@ -329,8 +335,8 @@ snapshots.
 | Host name | |
 | Service name | Blank / null for host-level alerts |
 | Current state | WARNING / CRITICAL / UNKNOWN / DOWN / UNREACHABLE |
-| State type | SOFT or HARD (if provided by Nagios); null otherwise |
-| Timestamp | UNIX timestamp of the state-change event from Nagios |
+| State type | SOFT or HARD |
+| Timestamp | UNIX timestamp of the last state change (`Last_State_Change`) |
 | Duration | Seconds elapsed since the state-change event |
 | Plugin output | Raw plugin output text, e.g., "PING CRITICAL — Packet loss = 100%" |
 | Acknowledged | Visual indicator if this alert has been acknowledged via the app (see §4) |
