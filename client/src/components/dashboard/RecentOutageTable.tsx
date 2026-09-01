@@ -1,4 +1,6 @@
 import { MoreHorizontal } from 'lucide-react'
+import { useSystemSettings } from '../../contexts/SystemSettingsContext'
+import { formatDateTime, parseMockDate } from '../../utils/formatDateTime'
 
 type OutageStatus = 'In Progress' | 'Resolved' | 'Warning' | 'Completed'
 type OutageRow = { device: string; dateTime: string; cause: string; status: OutageStatus }
@@ -19,6 +21,8 @@ const outages: OutageRow[] = [
 ]
 
 export function RecentOutageTable() {
+  const { settings } = useSystemSettings()
+
   return (
     <div className="rounded-2xl bg-[var(--card)] border border-[var(--border)] p-6 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
@@ -41,7 +45,9 @@ export function RecentOutageTable() {
             {outages.map((row) => (
               <tr key={row.device + row.dateTime} className="border-t border-[var(--border)]">
                 <td className="py-3 pr-4 text-[var(--text)]">{row.device}</td>
-                <td className="py-3 pr-4 text-[var(--text-muted)]">{row.dateTime}</td>
+                <td className="py-3 pr-4 text-[var(--text-muted)]">
+                  {formatDateTime(parseMockDate(row.dateTime), settings.dateTimeFormat, settings.timeZone)}
+                </td>
                 <td className="py-3 pr-4 text-[var(--text-muted)]">{row.cause}</td>
                 <td className="py-3">
                   <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusStyles[row.status]}`}>{row.status}</span>

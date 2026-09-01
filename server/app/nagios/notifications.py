@@ -2,17 +2,18 @@ import requests
 from app.api.helper import get_range_day
 from flask import current_app
 
-# Test only, remember to change this to localhost
-NAGIOS_URL = "http://192.168.130.10/nagios/cgi-bin/archivejson.cgi"
-
-USERNAME = "nagiosadmin"
-PASSWORD = "password"
+# NAGIOS_URL/USERNAME/PASSWORD now live in server/config.py's Config
+# class as NAGIOS_ARCHIVE_URL, NAGIOS_USERNAME, NAGIOS_PASSWORD — read
+# into same-named locals inside _request_archive() below.
 
 def _request_archive(query, params):
+    NAGIOS_URL = current_app.config['NAGIOS_ARCHIVE_URL']
+    USERNAME = current_app.config['NAGIOS_USERNAME']
+    PASSWORD = current_app.config['NAGIOS_PASSWORD']
     try:
-        
+
         params["query"] = query
-        
+
         response = requests.get(
             NAGIOS_URL,
             params=params,

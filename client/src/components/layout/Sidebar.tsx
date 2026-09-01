@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Activity,
   FileText,
@@ -81,10 +81,43 @@ const navItems = [
   },
 ]
 
+type CurrentUser = {
+  firstName: string
+  lastName: string
+  email: string
+  role: string
+}
+
 export function Sidebar() {
   const navigate = useNavigate()
   const [showLogoutModal, setShowLogoutModal] = useState(false)
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
 
+  useEffect(() => {
+    let cancelled = false
+
+    fetch('/api/user/me', { credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : Promise.reject(res)))
+      .then((data) => {
+        if (cancelled) return
+        setCurrentUser({
+          firstName: data.first_name,
+          lastName: data.last_name,
+          email: data.email,
+          role: data.role,
+        })
+      })
+      .catch((error) => {
+        console.error('Unable to load current user:', error)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Nav visibility is unrelated to the account panel above — every
+  // authenticated user currently sees the full menu regardless of role.
   const user = {
     role: 'network_admin',
   }
@@ -151,13 +184,13 @@ export function Sidebar() {
 
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-gray-900">
-                  {user.role === 'network_admin'
-                    ? 'Network Admin'
-                    : 'Network Technician'}
+                  {currentUser
+                    ? `${currentUser.firstName} ${currentUser.lastName}`
+                    : 'Loading...'}
                 </p>
 
                 <p className="truncate text-xs text-gray-500">
-                  admin@pinpoint.local
+                  {currentUser?.email ?? ''}
                 </p>
               </div>
             </div>

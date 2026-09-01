@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { AlertTriangle, Gauge, Server, Wifi } from 'lucide-react'
 import { NetworkPerformanceSection } from '../components/dashboard/NetworkPerformanceSection'
 import { NetworkStatusOverview } from '../components/dashboard/NetworkStatusOverview'
@@ -7,8 +8,39 @@ import { RescanButton } from '../components/dashboard/RescanButton'
 import { ResourceUtilizationSection } from '../components/dashboard/ResourceUtilizationSection'
 import { ServiceOverview } from '../components/dashboard/ServiceOverview'
 import { SummaryStatCard } from '../components/shared/SummaryStatCard'
+import { useSystemSettings } from '../contexts/SystemSettingsContext'
+import { formatDateTime } from '../utils/formatDateTime'
 
 export function DashboardPage() {
+  const { settings } = useSystemSettings()
+  const [lastScan, setLastScan] = useState(() => new Date())
+  const [lastRefreshed, setLastRefreshed] = useState(() => new Date())
+
+  // Dashboard Refresh Rate (per-user, minutes). 0 = Manual: no auto-refresh.
+  useEffect(() => {
+    if (settings.dashboardRefreshRate <= 0) return
+
+    const intervalMs = settings.dashboardRefreshRate * 60 * 1000
+    const id = window.setInterval(() => {
+      setLastRefreshed(new Date())
+    }, intervalMs)
+
+    return () => window.clearInterval(id)
+  }, [settings.dashboardRefreshRate])
+
+  // Scan Frequency (system-wide, hours). Automatically re-scans the
+  // network on the configured cadence, independent of manual rescans.
+  useEffect(() => {
+    if (settings.scanFrequency <= 0) return
+
+    const intervalMs = settings.scanFrequency * 60 * 60 * 1000
+    const id = window.setInterval(() => {
+      setLastScan(new Date())
+    }, intervalMs)
+
+    return () => window.clearInterval(id)
+  }, [settings.scanFrequency])
+
   return (
     <main className="ml-[220px] flex-1 min-w-0">
       <div className="flex w-full min-w-0 gap-[var(--dash-grid-gap)]">
@@ -20,14 +52,21 @@ export function DashboardPage() {
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-semibold text-[var(--text)]">CICT Network</h2>
-                  <p className="text-sm text-[var(--text-muted)]">Last Scan: Today 02:52:08 PM</p>
+                  <p className="text-sm text-[var(--text-muted)]">
+                    Last Scan: {formatDateTime(lastScan, settings.dateTimeFormat, settings.timeZone)}
+                  </p>
+                  <p className="text-xs text-[var(--text-faint)]">
+                    {settings.dashboardRefreshRate > 0
+                      ? `Auto-refreshing every ${settings.dashboardRefreshRate} min · Updated ${formatDateTime(lastRefreshed, settings.dateTimeFormat, settings.timeZone)}`
+                      : 'Auto-refresh: Manual'}
+                  </p>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2">
                     <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
                     <span className="text-sm text-emerald-600">Online</span>
                   </div>
-                  <RescanButton />
+                  <RescanButton onScanComplete={() => setLastScan(new Date())} />
                 </div>
               </div>
             </div>

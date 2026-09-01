@@ -7,11 +7,9 @@ from datetime import datetime, timezone
 from app.nagios.version import latest, last_checked
 from app.api.helper import convert_host_state_type_enum, convert_plugin_status_type_enum, convert_acknowledgement_type_enum, convert_connection_state_type_enum, convert_service_state_type_enum, convert_to_UTC, parse_perf_token
 
-# If nagios is installed externally (for some reason, or in a docker container, what is the IP, though this may net be needed)
-NAGIOS_URL = "http://192.168.130.10/nagios/cgi-bin/statusjson.cgi"
-
-USERNAME = "nagiosadmin"
-PASSWORD = "password"
+# NAGIOS_URL/USERNAME/PASSWORD now live in server/config.py's Config
+# class as NAGIOS_STATUS_URL, NAGIOS_USERNAME, NAGIOS_PASSWORD — read
+# into same-named locals inside get_status() below.
 
 def insert_programstatus_data(data):
     try:
@@ -179,6 +177,9 @@ def insert_service_status_data(service, data):
         current_app.logger.exception("Failed to insert service status")
 
 def get_status():
+    NAGIOS_URL = current_app.config['NAGIOS_STATUS_URL']
+    USERNAME = current_app.config['NAGIOS_USERNAME']
+    PASSWORD = current_app.config['NAGIOS_PASSWORD']
     try:
         programStatusParams = {
             "query": "programstatus"

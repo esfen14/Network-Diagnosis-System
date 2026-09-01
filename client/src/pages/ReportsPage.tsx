@@ -3,17 +3,21 @@ import { Activity, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 
 import { PageHeader } from '../components/shared/PageHeader'
 import { SummaryStatCard } from '../components/shared/SummaryStatCard'
+import { ExportMenu } from '../components/shared/ExportMenu'
 import { AllDevicesReportTable } from '../components/reports/AllDevicesReportTable'
 import { LinkHealthReportTable } from '../components/reports/LinkHealthReportTable'
 import { reports } from '../data/reports'
+import { useSystemSettings } from '../contexts/SystemSettingsContext'
+import { exportRows } from '../utils/exportData'
+import type { ExportFormat } from '../types/settings'
 
 type ReportView = 'all-devices' | 'link-health'
 
 export function ReportsPage() {
+  const { settings } = useSystemSettings()
   const [view, setView] = useState<ReportView>('all-devices')
   const [selectedDate, setSelectedDate] = useState('')
   const [isRunning, setIsRunning] = useState(false)
-  const [isExporting, setIsExporting] = useState(false)
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const handleRunReport = async () => {
@@ -29,16 +33,15 @@ export function ReportsPage() {
     }
   }
 
-  const handleExport = async () => {
-    setIsExporting(true)
-    setStatusMessage(null)
+  const handleExport = (format: ExportFormat) => {
+    const rows = view === 'all-devices' ? [] : reports
+    const filename = view === 'all-devices' ? 'all-devices-report' : 'link-health-report'
+
     try {
-      await abang()
+      exportRows(rows, format, filename)
       setStatusMessage({ type: 'success', text: 'Export ready for download.' })
     } catch (err) {
       setStatusMessage({ type: 'error', text: 'Export failed. Please try again.' })
-    } finally {
-      setIsExporting(false)
     }
   }
 
@@ -145,15 +148,12 @@ export function ReportsPage() {
             {isRunning ? 'Running...' : 'Run Report'}
           </button>
 
-          <button
-            type="button"
-            onClick={handleExport}
-            disabled={isExporting}
-            className="flex items-center gap-2 rounded-lg bg-[#ffb100] px-4 py-2 font-medium text-black dark:text-black transition hover:opacity-90 shadow-sm disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
-          >
-            {isExporting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {isExporting ? 'Exporting...' : 'Export'}
-          </button>
+          <ExportMenu
+            allowedFormats={settings.exportFormats}
+            onExport={handleExport}
+            label
+            buttonClassName="rounded-lg bg-[#ffb100] px-4 py-2 font-medium text-black shadow-sm transition hover:opacity-90 cursor-pointer"
+          />
         </div>
 
         {/* Status message */}
