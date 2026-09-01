@@ -7,6 +7,7 @@ from app.api.helper import (
     get_user_by_email,
     normalize_email
 )
+from app.api.helper.responses import success, error
 from app.api.user import user_bp
 
 
@@ -22,56 +23,48 @@ def login():
     }
 
     Returns:
-        {"message": "description"}, HTTP response code
+        Standardized JSON response
     """
 
     data = request.get_json()
 
-    error = validate_json_data(data)
-    if error is not None:
-        return error
+    err = validate_json_data(data)
+    if err is not None:
+        return err
 
     fields = {
         "email": str,
         "password": str
     }
 
-    error = validate_json_fields(data, fields)
-    if error is not None:
-        return error
+    err = validate_json_fields(data, fields)
+    if err is not None:
+        return err
 
     email = data.get("email")
     password = data.get("password")
 
-    error = validate_user_email(email)
-    if error is not None:
-        return error
+    err = validate_user_email(email)
+    if err is not None:
+        return err
 
     normalized_email = normalize_email(email)
 
     user = get_user_by_email(normalized_email)
 
     if user is None or not user.check_password(password):
-        return {
-            "message": "Invalid username or password."
-        }, 401
+        return error("Invalid username or password.", 401)
 
     if user.Status.value != "Active":
-        return {
-            "message": "Account inactive."
-        }, 403
+        return error("Account inactive.", 403)
 
     login_user(user)
 
-    return {
-        "message": "User logged in."
-    }, 200
+    return success(message="User logged in.")
 
 
 @user_bp.post('/logout')
 @login_required
 def logout():
     logout_user()
-    return {
-        "message": "User logged out."
-    }, 200
+    return success(message="User logged out.")

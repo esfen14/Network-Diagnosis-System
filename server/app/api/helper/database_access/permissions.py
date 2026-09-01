@@ -1,19 +1,22 @@
 import sqlalchemy as sa
+from flask import jsonify
 from app import db
 from flask_login import current_user
 from app.system_models import Permission, RolePermission, Role
 from functools import wraps
 
+
 def _has_permission(permission_name):
     # Get the permission id of the input
-    permission_id = db.session.scalar(sa.select(Permission.PermissionID)
+    permission_id = db.session.scalar(
+        sa.select(Permission.PermissionID)
         .where(Permission.Name == permission_name)
     )
-    
-    # check if the input is a valid permission 
+
+    # Check if the input is a valid permission
     if permission_id is None:
-        return {"message": "Permission does not exist."}, 400
-   
+        return jsonify({"success": False, "message": "Permission does not exist."}), 400
+
     query = (
         sa.select(RolePermission)
         .join(Role)
@@ -26,26 +29,20 @@ def _has_permission(permission_name):
 
     exists = db.session.scalar(sa.select(sa.exists(query)))
     if not exists:
-        return {"message": "User has no permission."}, 403
-    
+        return jsonify({"success": False, "message": "User has no permission."}), 403
+
     return None
 
 
-"""_summary_
-    expects:
-    input of string "permission_name"
-    
-    Returns:
-    {"message" : "error message"}, http status code
-    
-This is a decorator to simply the usage of has_permissiosn()
-    
-it will beu use like this:
-@require_permission("permission_name")
-it will automatically give an error if the user doesn't have the permission
-    
 """
-# Stores permission_name
+Decorator to enforce a named permission on a route.
+
+Usage:
+    @require_permission("permission_name")
+
+Returns a standardized 400/403 JSON error if the check fails;
+otherwise calls the decorated route function normally.
+"""
 def require_permission(permission_name):
 
     if permission_name is None:
@@ -57,38 +54,32 @@ def require_permission(permission_name):
     if permission_name.strip() == "":
         raise ValueError("permission_name must not be empty.")
 
-    # Stores the function
     def decorator(func):
         @wraps(func)
-        # Runs on requests
         def wrapper(*args, **kwargs):
-            # Runs the check first
-            error = _has_permission(permission_name)
-            if error is not None:
-                return error
-            
-            # If no errors occur, run the function
+            err = _has_permission(permission_name)
+            if err is not None:
+                return err
             return func(*args, **kwargs)
         return wrapper
     return decorator
 
+
 # ============ Checks From Database ===================
+
 def exists_permission_by_id(permission_id):
     return db.session.scalar(
         sa.select(
-            sa.exists() 
-            .where(
-                Permission.PermissionID == permission_id
-            )
+            sa.exists()
+            .where(Permission.PermissionID == permission_id)
         )
     )
+
 
 def exists_permission_by_name(permission_name):
     return db.session.scalar(
         sa.select(
-            sa.exists() 
-            .where(
-                Permission.Name == permission_name
-            )
+            sa.exists()
+            .where(Permission.Name == permission_name)
         )
     )

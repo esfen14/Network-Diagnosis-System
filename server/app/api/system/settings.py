@@ -1,8 +1,9 @@
-from flask import jsonify, request
+from flask import request, current_app
 from flask_login import login_required, current_user
 
 from app import db
 from app.api.system import system_bp
+from app.api.helper import success, error
 from app.system_models import SystemSettings
 
 
@@ -18,44 +19,57 @@ def _get_singleton_row():
 @system_bp.route("", methods=["GET"])
 @login_required
 def get_settings():
-    row = _get_singleton_row()
-    return jsonify(row.to_dict())
+    try:
+        row = _get_singleton_row()
+        return success(row.to_dict())
+    except Exception:
+        current_app.logger.exception("An unexpected error occurred while fetching settings.")
+        return error("An unexpected error occurred.", 500)
 
 
 @system_bp.route("", methods=["PUT"])
 @login_required
 def update_settings():
-    row = _get_singleton_row()
-    payload = request.get_json(force=True)
+    # TODO: replace @login_required with a permission check once
+    # we confirm how Role/Permission is enforced elsewhere.
+    try:
+        row = _get_singleton_row()
+        payload = request.get_json(force=True)
 
-    incoming_version = payload.get("version")
-    if incoming_version != row.Version:
-        return jsonify({
-            "error": "conflict",
-            "message": "Settings were updated by someone else. Reload and try again.",
-        }), 409
+        if payload is None:
+            return error("No JSON data provided.", 400)
 
-    row.Scan_Frequency = payload.get("scanFrequency", row.Scan_Frequency)
-    row.Notifications = payload.get("notifications", row.Notifications)
-    if "exportFormats" in payload:
+        incoming_version = payload.get("version")
+        if incoming_version != row.Version:
+            return error(
+                "Settings were updated by someone else. Reload and try again.",
+                409,
+            )
+
+        row.Scan_Frequency = payload["scanFrequency"]
+        row.Notifications = payload["notifications"]
         row.Export_Formats = ",".join(payload["exportFormats"])
 
-    row.Session_Timeout = payload.get("sessionTimeout", row.Session_Timeout)
-    row.Strong_Password_Policy = payload.get("strongPasswordPolicy", row.Strong_Password_Policy)
-    row.Failed_Login_Monitoring = payload.get("failedLoginMonitoring", row.Failed_Login_Monitoring)
-    row.Audit_Logging = payload.get("auditLogging", row.Audit_Logging)
-    row.Security_Check_Frequency = payload.get("securityCheckFrequency", row.Security_Check_Frequency)
+        row.Session_Timeout = payload["sessionTimeout"]
+        row.Strong_Password_Policy = payload["strongPasswordPolicy"]
+        row.Failed_Login_Monitoring = payload["failedLoginMonitoring"]
+        row.Audit_Logging = payload["auditLogging"]
+        row.Security_Check_Frequency = payload["securityCheckFrequency"]
 
-    row.System_Update_Frequency = payload.get("systemUpdateFrequency", row.System_Update_Frequency)
-    row.Maintenance_Mode = payload.get("maintenanceMode", row.Maintenance_Mode)
-    row.Automatic_Backups = payload.get("automaticBackups", row.Automatic_Backups)
-    row.Log_Retention_Days = payload.get("logRetentionDays", row.Log_Retention_Days)
-    row.Diagnostic_History_Retention_Days = payload.get(
-        "diagnosticHistoryRetentionDays", row.Diagnostic_History_Retention_Days
-    )
+        row.System_Update_Frequency = payload["systemUpdateFrequency"]
+        row.Maintenance_Mode = payload["maintenanceMode"]
+        row.Automatic_Backups = payload["automaticBackups"]
+        row.Log_Retention_Days = payload["logRetentionDays"]
+        row.Diagnostic_History_Retention_Days = payload["diagnosticHistoryRetentionDays"]
 
-    row.Version += 1
-    row.Updated_By = current_user.UserID
+        row.Version += 1
+        row.Updated_By = current_user.UserID
 
-    db.session.commit()
-    return jsonify(row.to_dict())
+        db.session.commit()
+        return success(row.to_dict(), message="Settings updated.")
+
+    except KeyError as exc:
+        return error(f"Missing required field: {exc}", 400)
+    except Exception:
+        current_app.logger.exception("An unexpected error occurred while updating settings.")
+        return error("An unexpected error occurred.", 500)

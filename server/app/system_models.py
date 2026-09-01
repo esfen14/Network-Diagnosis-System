@@ -386,6 +386,39 @@ class NCPADeployment(db.Model):
     """
     Deployment_Status: so.Mapped[NCPADeploymentStatus] = so.relationship(back_populates='Device_Deployment')
 
+    """
+    WriteOnlyMapped to the partition rows collected during NCPA installation.
+    One deployment can have many partitions.
+    """
+    Partitions: so.WriteOnlyMapped['NCPADevicePartition'] = so.relationship(back_populates='Deployment')
+
+
+class NCPADevicePartition(db.Model):
+    """
+    Stores the logical partitions (block devices) discovered on a remote
+    machine during NCPA installation.  One row per partition per deployment.
+
+    The Name field holds the partition identifier exactly as reported by
+    lsblk (e.g. 'sda1', 'nvme0n1p2', 'vda').
+    """
+    # Table Name
+    __tablename__ = "NCPA_DEVICE_PARTITION"
+
+    # Table Fields
+    PartitionID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Name: so.Mapped[str] = so.mapped_column(sa.String(64))
+
+    # Foreign Key Field — links to the specific NCPA deployment
+    NCPADeployID: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey('NCPA_DEPLOYMENT.NCPADeployID'), index=True
+    )
+
+    """
+    Back-reference to the NCPADeployment this partition belongs to.
+    back_populates specifies that you can access this table from either side.
+    """
+    Deployment: so.Mapped['NCPADeployment'] = so.relationship(back_populates='Partitions')
+
 """
 SystemSettings is a singleton table — there will only ever be one row (Id=1).
 This holds system-wide configuration that applies regardless of which
@@ -494,3 +527,143 @@ class UserPreferences(db.Model):
             "dashboardLayout": self.Dashboard_Layout,
             "dashboardRefreshRate": self.Dashboard_Refresh_Rate,
         }
+
+
+class NotificationCursor(db.Model):
+    """
+    Tracks the read/unread boundary for Nagios notifications per user.
+
+    One row per user.  last_seen_ts is the UNIX timestamp of the most-recent
+    notification the user has acknowledged (i.e. opened the notification panel).
+
+    Any Nagios notification whose timestamp > last_seen_ts is considered "unread"
+    for that user.  A value of 0 (default) means the user has never read anything,
+    so everything is unread.
+    """
+    __tablename__ = "NOTIFICATION_CURSOR"
+
+    UserID: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey(User.UserID, ondelete="CASCADE"),
+        primary_key=True,
+    )
+    last_seen_ts: so.Mapped[int] = so.mapped_column(
+        sa.BigInteger(),
+        default=0,
+        nullable=False,
+    )
+    Updated_At: so.Mapped[datetime] = so.mapped_column(
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    User: so.Mapped['User'] = so.relationship()
+
+class AlertAcknowledgement(db.Model):
+    """
+    Tracks acknowledgements made by users for active alerts (host or service
+    problems). Acknowledgements are managed entirely within this system —
+    nothing is written back to Nagios.
+
+    An acknowledgement identifies an alert by (Hostname, Service_Name) where
+    Service_Name is NULL for host-level alerts.
+
+    One active acknowledgement per alert is enforced by the unique constraint.
+    When an alert resolves (returns to OK/UP), its acknowledgement record is
+    cleared by the backend. History is retained separately in the history DB.
+
+    See Display_Requirements.md §4 for full business rules.
+    """
+    __tablename__ = "ALERT_ACKNOWLEDGEMENT"
+
+    __table_args__ = (
+        # Only one active acknowledgement per (host, service) pair.
+        # Service_Name is nullable (NULL = host-level alert).
+        sa.UniqueConstraint(
+            'Hostname', 'Service_Name',
+            name='uq_alert_acknowledgement_host_service'
+        ),
+    )
+
+    # Table Fields
+    AckID: so.Mapped[int] = so.mapped_column(primary_key=True)
+
+    # The host the acknowledged alert belongs to.
+    Hostname: so.Mapped[str] = so.mapped_column(sa.String(100), index=True)
+
+    # NULL for host-level alerts; populated for service-level alerts.
+    Service_Name: so.Mapped[Optional[str]] = so.mapped_column(
+        sa.String(150), nullable=True, index=True
+    )
+
+    # Required comment from the acknowledging user (spec §4.4 step 1).
+    Comment: so.Mapped[str] = so.mapped_column(sa.String(500))
+
+    # When this acknowledgement was created.
+    Acknowledged_At: so.Mapped[datetime] = so.mapped_column(
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    # Foreign key to the user who acknowledged the alert.
+    AcknowledgedBy: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey(User.UserID), index=True
+    )
+
+    # Relationship to the acknowledging user.
+    User: so.Mapped['User'] = so.relationship()
+
+class AckAction(Enum):
+    ACKNOWLEDGED   = "Acknowledged"
+    UNACKNOWLEDGED = "Unacknowledged"
+    AUTO_RESOLVED  = "Auto-Resolved"   # cleared by the system when alert returns to OK/UP
+
+class AckHistory(db.Model):
+    """
+    Append-only log of every acknowledgement lifecycle event.
+
+    One row is written each time an alert is:
+      - Acknowledged   (AckAction.ACKNOWLEDGED)
+      - Unacknowledged manually by a user (AckAction.UNACKNOWLEDGED)
+      - Cleared automatically when the alert resolves (AckAction.AUTO_RESOLVED)
+
+    This table is the source of truth for the History page's
+    "Acknowledged" badge and detail panel (§3.1, §3.2 of
+    Alerts_Notifications_History_Requirements.md).
+
+    Intentionally kept in system_models (main DB) alongside
+    AlertAcknowledgement — both are system-generated, not Nagios-sourced.
+
+    Users cannot be deleted in this system (only deactivated), so ActorUserID
+    uses a proper FK constraint. Service_Name is NULL for host-level alerts.
+    """
+    __tablename__ = "ACK_HISTORY"
+
+    # Table Fields
+    AckHistoryID: so.Mapped[int] = so.mapped_column(primary_key=True)
+
+    # The alert this action relates to.
+    Hostname: so.Mapped[str] = so.mapped_column(sa.String(100), index=True)
+    Service_Name: so.Mapped[Optional[str]] = so.mapped_column(
+        sa.String(150), nullable=True, index=True
+    )
+
+    # The action taken.
+    Action: so.Mapped[AckAction] = so.mapped_column(sa.Enum(AckAction))
+
+    # When the action was taken.
+    Actioned_At: so.Mapped[datetime] = so.mapped_column(
+        index=True, default=lambda: datetime.now(timezone.utc)
+    )
+
+    # Who took the action. NULL for AUTO_RESOLVED (system action).
+    # FK is safe because users are never deleted, only deactivated.
+    ActorUserID: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey(User.UserID), nullable=True, index=True
+    )
+
+    # Comment — only populated for ACKNOWLEDGED actions.
+    Comment: so.Mapped[Optional[str]] = so.mapped_column(
+        sa.String(500), nullable=True
+    )
+
+    # Relationship to the acting user.
+    Actor: so.Mapped[Optional['User']] = so.relationship()
