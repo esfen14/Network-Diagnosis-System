@@ -24,54 +24,18 @@ from app.system_models import DiscoveryStatus
 import socket
 import ipaddress
 
-# what names to will be placed to ports from nmap
-TCP_SERVICE_OVERRIDES = {
-    "5693": "ncpa",
-    "5666": "nrpe",
-    "22": "ssh",
-    "80": "http",
-    "443": "https",
-}
-
-UDP_SERVICE_OVERRIDES = {
-    "5693": "ncpa",
-    "5666": "nrpe",
-    "22": "ssh",
-    "80": "http",
-    "443": "https",
-}
-
-# for the default hostname given to hosts ip.test.local
-# example 192.168.130.10.test.local
-DOMAIN = "test.local"
-
-NCPA_PORT = "5693"
-
-# Project root (pin-point/)
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-# Folder where generated configs are stored
-HOST_CONFIG_DIR = PROJECT_ROOT / "host-config-files"
-
-# Folder where backups of the running config are stored
-BACKUP_DIR = PROJECT_ROOT / "running-host-config-backup"
-
-# Any constants above the line should be added to the settings menu (except the Projecdt Root)
-
-# ====================================================================
+# Network discovery / host-config settings (TCP_SERVICE_OVERRIDES,
+# UDP_SERVICE_OVERRIDES, DOMAIN, NCPA_PORT, HOST_CONFIG_DIR, BACKUP_DIR)
+# and the advanced Nagios settings (NAGIOS_HOST_CFG, NAGIOS_BIN,
+# NAGIOS_MAIN_CFG) now live in server/config.py's Config class. Each
+# function below that needs one reads it from current_app.config into a
+# same-named local at the top of the function, so the settings are
+# centralized without a Settings UI needing to touch call sites here.
 
 PROGRESS_WEIGHT = [40,50,55,60,70,80,90,95,100]
 
-# Nagios live config
-NAGIOS_HOST_CFG = Path("/usr/local/nagios/etc/objects/hosts.cfg")
-
 # Get the folder for command maps
 MAP_DIR = Path(__file__).parent / "command_maps"
-
-# Nagios binary and main config, needed for -v validation
-NAGIOS_BIN = Path("/usr/local/nagios/bin/nagios")
-
-NAGIOS_MAIN_CFG = Path("/usr/local/nagios/etc/nagios.cfg")
 
 # get the tcp command map
 with open(MAP_DIR / "tcp_commands.json") as f:
@@ -104,6 +68,7 @@ def _create_host_cfg_file(discovered_hosts):
         pathlib.Path: Path to the newly created file.
     """
 
+    HOST_CONFIG_DIR = current_app.config['HOST_CONFIG_DIR']
     HOST_CONFIG_DIR.mkdir(exist_ok=True)
 
     timestamp = datetime.now().strftime("%d-%m-%Y-%H-%M")
@@ -554,6 +519,8 @@ def _backup_running_host_cfg():
         pathlib.Path: Path to the backup file.
     """
 
+    BACKUP_DIR = current_app.config['BACKUP_DIR']
+    NAGIOS_HOST_CFG = current_app.config['NAGIOS_HOST_CFG']
     BACKUP_DIR.mkdir(exist_ok=True)
 
     timestamp = datetime.now().strftime("%d-%m-%Y-%H-%M")
@@ -667,6 +634,7 @@ def _build_temp_cfg_lines(main_cfg_lines, candidate_cfg_path):
     Returns:
         tuple[list[str], bool]: (new_lines, was_replaced)
     """
+    NAGIOS_HOST_CFG = current_app.config['NAGIOS_HOST_CFG']
     new_lines = []
     replaced = False
     for line in main_cfg_lines:
@@ -700,6 +668,7 @@ def _run_nagios_verify(main_cfg_path):
     Returns:
         tuple[bool, str]: (is_valid, output)
     """
+    NAGIOS_BIN = current_app.config['NAGIOS_BIN']
     try:
         result = subprocess.run(
             [str(NAGIOS_BIN), "-v", str(main_cfg_path)],
@@ -735,6 +704,9 @@ def _validate_config(cfg_path):
     Returns:
         tuple[bool, str]: (is_valid, output)
     """
+    NAGIOS_MAIN_CFG = current_app.config['NAGIOS_MAIN_CFG']
+    NAGIOS_HOST_CFG = current_app.config['NAGIOS_HOST_CFG']
+
     if not NAGIOS_MAIN_CFG.exists():
         return False, f"Nagios main config not found at {NAGIOS_MAIN_CFG}"
 
@@ -784,6 +756,7 @@ def _apply_new_host_cfg(cfg_path):
             success - True if the config was applied and Nagios reloaded cleanly
             message - human-readable detail, useful for logging/UI feedback
     """
+    NAGIOS_HOST_CFG = current_app.config['NAGIOS_HOST_CFG']
     try:
         backup_path = _backup_running_host_cfg()
     except Exception as e:
@@ -817,6 +790,7 @@ def _apply_new_host_cfg(cfg_path):
     return True, f"Applied {cfg_path} successfully. Backup stored at {backup_path}"
 
 def _create_hostname(network_discovery_id, discovered_hosts, progress_weight):
+    DOMAIN = current_app.config['DOMAIN']
     total_hosts = sum(len(hosts) for hosts in discovered_hosts.values())
     processed_hosts = 0
 
@@ -905,6 +879,8 @@ def discover_network_create_hosts(app, user_id, stop_event):
    
     with app.app_context():
         try:
+            TCP_SERVICE_OVERRIDES = current_app.config['TCP_SERVICE_OVERRIDES']
+            UDP_SERVICE_OVERRIDES = current_app.config['UDP_SERVICE_OVERRIDES']
 
             print("Created Log")
             network_discovery_id = create_network_discovery_status(user_id).DiscoveryStatusID

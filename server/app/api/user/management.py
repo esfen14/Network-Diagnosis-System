@@ -721,6 +721,7 @@ def user_permission():
         return {
             "first_name": current_user.First_Name,
             "last_name": current_user.Last_Name,
+            "email": current_user.Email,
             "role": role_name,
             "permissions": permission_array
                 },200

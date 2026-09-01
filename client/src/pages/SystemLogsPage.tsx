@@ -1,6 +1,10 @@
 import { useMemo, useState } from 'react'
 import { PageHeader } from '../components/shared/PageHeader'
 import { logs } from '../data/logs'
+import { useSystemSettings } from '../contexts/SystemSettingsContext'
+import { formatDateTime, parseMockDate } from '../utils/formatDateTime'
+import { exportRows } from '../utils/exportData'
+import { ExportMenu } from '../components/shared/ExportMenu'
 
 type LogTab =
   | 'activity'
@@ -12,6 +16,7 @@ type LogTab =
 type Log = (typeof logs)[number]
 
 export function SystemLogsPage() {
+  const { settings } = useSystemSettings()
   const [activeTab, setActiveTab] = useState<LogTab>('activity')
   const [selectedLog, setSelectedLog] = useState<Log | null>(null)
 
@@ -66,19 +71,48 @@ export function SystemLogsPage() {
 
       {/* Tabs */}
       <div className="flex gap-6 border-b border-[var(--border)]">
-        {(['all', 'session', 'account', 'network'] as LogType[]).map((type) => (
+        {(['activity', 'configurationChange', 'networkDiscovery', 'ncpaDeployment', 'exportLog'] as LogTab[]).map((tab) => (
           <button
-            key={type}
-            onClick={() => setTypeFilter(type)}
+            key={tab}
+            onClick={() => setActiveTab(tab)}
             className={`pb-3 text-sm transition ${
-              typeFilter === type
+              activeTab === tab
                 ? 'border-b-2 border-[var(--text)] font-medium text-[var(--text)]'
                 : 'text-[var(--text-muted)] hover:text-[var(--text)]'
             }`}
           >
-            {type === 'all' ? 'All Types' : type.charAt(0).toUpperCase() + type.slice(1)}
+            {getTabLabel(tab)}
           </button>
         ))}
+      </div>
+
+      {/* Date range filter */}
+      <div className="flex items-center gap-2">
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          className="rounded-lg border border-[var(--border)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text)] outline-none"
+        />
+        <span className="text-sm text-[var(--text-muted)]">to</span>
+        <input
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          className="rounded-lg border border-[var(--border)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text)] outline-none"
+        />
+        {(startDate || endDate) && (
+          <button
+            type="button"
+            onClick={() => {
+              setStartDate('')
+              setEndDate('')
+            }}
+            className="text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
         <div className="flex gap-6">
@@ -110,7 +144,9 @@ export function SystemLogsPage() {
                       <span className="text-[var(--text-muted)]">{log.description}</span>
                     </span>
                   </div>
-                  <span className="text-[var(--text-muted)] text-sm">{log.timestamp}</span>
+                  <span className="text-[var(--text-muted)] text-sm">
+                    {formatDateTime(parseMockDate(log.timestamp), settings.dateTimeFormat, settings.timeZone)}
+                  </span>
                   <span className="text-[var(--text-muted)] text-sm">{log.tagId}</span>
                 </div>
               ))}
@@ -126,11 +162,18 @@ export function SystemLogsPage() {
                 <p className="text-sm text-[var(--text-muted)]">{selectedLog.description}</p>
                 <div className="text-xs text-[var(--text-muted)] space-y-1">
                   <p>Tag ID: {selectedLog.tagId}</p>
-                  <p>Date &amp; Time: {selectedLog.timestamp}</p>
+                  <p>Date &amp; Time: {formatDateTime(parseMockDate(selectedLog.timestamp), settings.dateTimeFormat, settings.timeZone)}</p>
                 </div>
                 <div className="flex gap-2 pt-4">
                   <button onClick={() => setSelectedLog(null)} className="flex-1 bg-[var(--text)] text-[var(--card)] py-2 rounded-lg text-sm">Close</button>
-                  <button className="flex-1 bg-[var(--hover)] border border-[var(--border)] py-2 rounded-lg text-sm text-[var(--text)] hover:bg-[var(--card-alt)]">Export</button>
+                  <ExportMenu
+                    allowedFormats={settings.exportFormats}
+                    className="flex-1"
+                    buttonClassName="w-full bg-[var(--hover)] border border-[var(--border)] py-2 rounded-lg text-sm text-[var(--text)] hover:bg-[var(--card-alt)]"
+                    onExport={(format) =>
+                      exportRows([selectedLog], format, `log-${selectedLog.tagId}`)
+                    }
+                  />
                 </div>
 
               </>

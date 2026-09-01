@@ -1,10 +1,13 @@
 import { useState, useMemo } from 'react'
 import {
   ArrowUpDown,
-  Download,
   Filter,
   Search,
 } from 'lucide-react'
+import { useSystemSettings } from '../../contexts/SystemSettingsContext'
+import { formatDateTime, parseMockDate } from '../../utils/formatDateTime'
+import { exportRows } from '../../utils/exportData'
+import { ExportMenu } from '../shared/ExportMenu'
 
 function StatusBadge({
   status,
@@ -45,6 +48,7 @@ export function AllDevicesReportTable() {
 
   const devices = useMemo<Device[]>(() => [], [])
 
+  const { settings } = useSystemSettings()
   const [query, setQuery] = useState('')
   const [sortAsc, setSortAsc] = useState(true)
   const [showFilter, setShowFilter] = useState(false)
@@ -146,12 +150,10 @@ export function AllDevicesReportTable() {
             <ArrowUpDown className="h-4 w-4" />
           </button>
 
-          <button
-            type="button"
-            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/10"
-          >
-            <Download className="h-4 w-4" />
-          </button>
+          <ExportMenu
+            allowedFormats={settings.exportFormats}
+            onExport={(format) => exportRows(filtered, format, 'all-devices-report')}
+          />
 
         </div>
       </div>
@@ -232,7 +234,7 @@ export function AllDevicesReportTable() {
                   </td>
 
                   <td className="px-4 py-3 text-gray-900 dark:text-white">
-                    {device.timestamp}
+                    {formatDateTime(parseMockDate(device.timestamp), settings.dateTimeFormat, settings.timeZone)}
                   </td>
                 </tr>
               ))

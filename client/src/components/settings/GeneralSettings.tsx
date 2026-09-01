@@ -244,7 +244,11 @@ export function GeneralSettings() {
           options={dateFormatOptions}
           onChange={(value) =>
             updateSettings({
-              dateTimeFormat: value,
+              dateTimeFormat:
+                value as
+                  | 'DD/MM/YYYY'
+                  | 'MM/DD/YYYY'
+                  | 'YYYY-MM-DD',
             })
           }
         />
@@ -302,7 +306,8 @@ export function GeneralSettings() {
           onChange={(value) =>
             updateSettings({
               exportFormats:
-                value.split(','),
+                value.split(',') as
+                  ('CSV' | 'PDF' | 'XLS')[],
             })
           }
         />

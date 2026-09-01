@@ -1,17 +1,12 @@
 import nmap3
 import xml.etree.ElementTree as ET
+from flask import current_app
 from app.logging import update_network_discovery_status, calculate_progress
 from app.system_models import DiscoveryStatus
 
-# this needs to be part of the settings
-
-# What networks will be scanned
-# prevent the user from adding localhost (might also check that in the backend) to prevent errors
-NETWORKS = ["192.168.130.0/24"]
-# What tcp ports will be scanned
-TCP_PORTS = ["1-6000"]
-# what udp ports will be scanned
-UDP_PORTS = [53,67,68,69,123,161,162,514]
+# NETWORKS, TCP_PORTS, UDP_PORTS now live in server/config.py's Config
+# class, read into a same-named local at the top of each function that
+# needs one (see below) instead of as module-level constants here.
 
 def _print_xml(xml):
     # print the XML file from the NMAP scan
@@ -76,6 +71,7 @@ def _discover_host(subnet):
     return host_dict
 
 def _discover_host_tcp_port(ip):
+    TCP_PORTS = current_app.config['TCP_PORTS']
     nmap = nmap3.Nmap(path="/usr/local/bin/nmap-sudo")
 
     args = "--open"
@@ -133,8 +129,9 @@ def _discover_host_tcp_port(ip):
     return service_dict, os_name
 
 def _discover_host_udp_port(ip):
+    UDP_PORTS = current_app.config['UDP_PORTS']
     nmap = nmap3.Nmap(path="/usr/local/bin/nmap-sudo")
-    
+
     args = "--open"
 
     if UDP_PORTS:
@@ -174,6 +171,7 @@ def _discover_host_udp_port(ip):
     return service_dict
 
 def discover_network(network_discvovery_status_id, progress_weight, stop_event):
+    NETWORKS = current_app.config['NETWORKS']
     hosts = {}
 
     total_networks = len(NETWORKS)

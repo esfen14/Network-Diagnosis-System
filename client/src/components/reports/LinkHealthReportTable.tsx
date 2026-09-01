@@ -1,11 +1,14 @@
 import { useState, useMemo } from 'react'
 import {
   ArrowUpDown,
-  Download,
   Filter,
   Search,
 } from 'lucide-react'
 import type { Report } from '../../data/reports'
+import { useSystemSettings } from '../../contexts/SystemSettingsContext'
+import { formatDateTime, parseMockDate } from '../../utils/formatDateTime'
+import { exportRows } from '../../utils/exportData'
+import { ExportMenu } from '../shared/ExportMenu'
 
 type LinkHealthReportTableProps = {
   reports: Report[]
@@ -16,6 +19,7 @@ export function LinkHealthReportTable({
   reports,
   title = 'Link Health Report',
 }: LinkHealthReportTableProps) {
+  const { settings } = useSystemSettings()
   const [query, setQuery] = useState('')
   const [sortAsc, setSortAsc] = useState(true)
   const [showFilter, setShowFilter] = useState(false)
@@ -126,12 +130,10 @@ export function LinkHealthReportTable({
             <ArrowUpDown className="h-4 w-4" />
           </button>
 
-          <button
-            type="button"
-            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
-          >
-            <Download className="h-4 w-4" />
-          </button>
+          <ExportMenu
+            allowedFormats={settings.exportFormats}
+            onExport={(format) => exportRows(filtered, format, 'link-health-report')}
+          />
 
         </div>
       </div>
@@ -228,7 +230,7 @@ export function LinkHealthReportTable({
                   </td>
 
                   <td className="px-4 py-3 text-gray-900 dark:text-white">
-                    {report.timestamp}
+                    {formatDateTime(parseMockDate(report.timestamp), settings.dateTimeFormat, settings.timeZone)}
                   </td>
                 </tr>
               ))
