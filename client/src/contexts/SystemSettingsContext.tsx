@@ -142,7 +142,8 @@ async function fetchSystemSettings(): Promise<Omit<SystemSettings, PreferenceKey
     throw new Error(`Failed to load settings (${res.status})`)
   }
 
-  const data = await res.json()
+  const body = await res.json()
+  const data = body.data ?? body
 
   return {
     ...omit(DEFAULT_SYSTEM_SETTINGS, PREFERENCE_KEYS),
@@ -201,7 +202,8 @@ async function persistSystemSettings(
     throw new Error(`Failed to save settings (${res.status})`)
   }
 
-  return res.json()
+  const body = await res.json()
+  return body.data ?? body
 }
 
 async function persistPreferences(

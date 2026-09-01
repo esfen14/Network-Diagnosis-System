@@ -170,6 +170,8 @@ export function GeneralSettings() {
     discardChanges,
     resetSettings,
     hasUnsavedChanges,
+    isSaving,
+    saveError,
   } = useSystemSettings()
 
   return (
@@ -347,6 +349,8 @@ export function GeneralSettings() {
         onSave={saveSettings}
         onDiscard={discardChanges}
         onReset={resetSettings}
+        isSaving={isSaving}
+        saveError={saveError}
       />
     </SettingsCard>
   )

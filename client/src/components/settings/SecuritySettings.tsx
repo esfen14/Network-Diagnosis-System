@@ -52,6 +52,8 @@ export function SecuritySettings() {
     saveSettings,
     discardChanges,
     hasUnsavedChanges,
+    isSaving,
+    saveError,
   } = useSystemSettings()
 
   return (
@@ -145,6 +147,8 @@ export function SecuritySettings() {
           hasChanges={hasUnsavedChanges}
           onSave={saveSettings}
           onDiscard={discardChanges}
+          isSaving={isSaving}
+          saveError={saveError}
         />
       </SettingsCard>
 

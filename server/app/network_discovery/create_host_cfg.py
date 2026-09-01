@@ -41,6 +41,12 @@ DEFAULT_UDP_COMMAND = "check_udp"
 
 PROGRESS_WEIGHT = [40,50,55,60,70,80,90,95,100]
 
+# Progress stages for add_ncpa_port: adding the port to the db, reloading
+# hosts, generating the config, validating, and applying it. Imported
+# directly by app/ncpa_deployment/ncpa_deployment.py, so this must stay
+# a real module-level constant (not a config-backed local alias).
+ADD_NCPA_PORT_PROGRESS_WEIGHT = [40, 55, 70, 85, 100]
+
 # Get the folder for command maps
 MAP_DIR = Path(__file__).parent / "command_maps"
 
@@ -87,6 +93,9 @@ def _create_host_cfg_file(discovered_hosts):
     """
 
     HOST_CONFIG_DIR = current_app.config['HOST_CONFIG_DIR']
+    NCPA_PORT = current_app.config['NCPA_PORT']
+    SNMP_COMMUNITY_STRING = current_app.config['SNMP_COMMUNITY_STRING']
+    SNMP_OID = current_app.config['SNMP_OID']
     HOST_CONFIG_DIR.mkdir(exist_ok=True)
 
     timestamp = datetime.now().strftime("%d-%m-%Y-%H-%M")
@@ -1192,6 +1201,7 @@ def discover_network_create_hosts(app, user_id, stop_event):
 def add_ncpa_port(app, successful_device, ncpa_deployment_status_id, stop_event):
     with app.app_context():
         try:
+            NCPA_PORT = current_app.config['NCPA_PORT']
             total_devices = len(successful_device)
             processed_devices = 0
 

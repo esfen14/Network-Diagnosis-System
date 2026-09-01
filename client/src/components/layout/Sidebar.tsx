@@ -98,8 +98,9 @@ export function Sidebar() {
 
     fetch('/api/user/me', { credentials: 'include' })
       .then((res) => (res.ok ? res.json() : Promise.reject(res)))
-      .then((data) => {
+      .then((body) => {
         if (cancelled) return
+        const data = body.data ?? body
         setCurrentUser({
           firstName: data.first_name,
           lastName: data.last_name,

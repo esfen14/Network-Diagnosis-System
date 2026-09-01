@@ -38,17 +38,30 @@ class Config:
         "443": "https",
     }
     UDP_SERVICE_OVERRIDES = {
-        "5693": "ncpa",
         "5666": "nrpe",
         "22": "ssh",
         "80": "http",
         "443": "https",
+        "161": "snmp",
     }
 
     # Default hostname suffix given to discovered hosts: <ip>.<DOMAIN>
     # e.g. 192.168.130.10.test.local
     DOMAIN = "test.local"
     NCPA_PORT = "5693"
+
+    # SNMP polling settings, used when a discovered host exposes SNMP
+    # instead of (or alongside) NCPA/NRPE.
+    SNMP_COMMUNITY_STRING = os.environ.get('SNMP_COMMUNITY_STRING') or "public"
+    SNMP_PORT = "161"
+    SNMP_OID = {
+        "1.3.6.1.2.1.1.3.0": "uptime",
+        "1.3.6.1.2.1.1.1.0": "system_description",
+        "1.3.6.1.2.1.2.2.1.8.3": "lan_status",
+        "1.3.6.1.2.1.2.2.1.10.3": "lan_in_octets",
+        "1.3.6.1.2.1.2.2.1.16.3": "lan_out_octets",
+        "1.3.6.1.4.1.2021.4.5.0": "memory_total",
+    }
 
     # Folders where generated/backed-up host configs are stored.
     HOST_CONFIG_DIR = Path(basedir) / "host-config-files"

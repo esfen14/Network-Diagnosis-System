@@ -1,7 +1,29 @@
 import { Eye, EyeOff } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PinPointLogo } from '../components/login/PinPointLogo'
+
+// Placeholder copy for the login screen's slider — swap with real
+// marketing content whenever it's ready.
+const slides = [
+  {
+    title: ['Next Generation', 'Infrastructure', 'Security'],
+    description:
+      'PinPoint transforms complex network data into simple, actionable insights. Detect faster, respond smarter, and stay online longer.',
+  },
+  {
+    title: ['Real-Time', 'Network', 'Visibility'],
+    description:
+      'Monitor every host and service across your network from a single dashboard, with live status updates as they happen.',
+  },
+  {
+    title: ['Automated', 'Discovery &', 'Deployment'],
+    description:
+      'Discover new devices automatically and roll out monitoring agents in minutes, not hours.',
+  },
+]
+
+const SLIDE_INTERVAL_MS = 6000
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -12,6 +34,16 @@ export function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+
+  const [activeSlide, setActiveSlide] = useState(0)
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setActiveSlide((current) => (current + 1) % slides.length)
+    }, SLIDE_INTERVAL_MS)
+
+    return () => window.clearInterval(id)
+  }, [])
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -67,29 +99,43 @@ export function LoginPage() {
 
         <div className="mt-12 max-w-85">
           <h2 className="text-[42px] font-bold leading-[0.95] text-white">
-            <span className="block">Next Generation</span>
-            <span className="block">Infrastructure</span>
-            <span className="block">Security</span>
+            {slides[activeSlide].title.map((line) => (
+              <span key={line} className="block">{line}</span>
+            ))}
           </h2>
 
           <p className="mt-6 text-[18px] leading-[1.4] text-white/90">
-            PinPoint transforms complex network data into simple,
-            actionable insights. Detect faster, respond smarter,
-            and stay online longer.
+            {slides[activeSlide].description}
           </p>
 
           <div className="mt-10 flex gap-3">
-            <div className="h-0.75 w-12 rounded-full bg-white" />
-            <div className="h-0.75 w-8 rounded-full bg-white/40" />
-            <div className="h-0.75 w-8 rounded-full bg-white/40" />
+            {slides.map((slide, index) => (
+              <button
+                key={slide.title.join(' ')}
+                type="button"
+                onClick={() => setActiveSlide(index)}
+                aria-label={`Go to slide ${index + 1}`}
+                className={`h-0.75 rounded-full transition-all ${
+                  index === activeSlide ? 'w-12 bg-white' : 'w-8 bg-white/40 hover:bg-white/60'
+                }`}
+              />
+            ))}
           </div>
         </div>
       </div>
 
       <div className="mt-12 flex gap-2">
-        <div className="h-0.5 w-12 rounded-full bg-white" />
-        <div className="h-0.5 w-8 rounded-full bg-white/40" />
-        <div className="h-0.5 w-8 rounded-full bg-white/40" />
+        {slides.map((slide, index) => (
+          <button
+            key={slide.title.join(' ')}
+            type="button"
+            onClick={() => setActiveSlide(index)}
+            aria-label={`Go to slide ${index + 1}`}
+            className={`h-0.5 rounded-full transition-all ${
+              index === activeSlide ? 'w-12 bg-white' : 'w-8 bg-white/40 hover:bg-white/60'
+            }`}
+          />
+        ))}
       </div>
 
       <div className="relative z-10 m-6 w-full max-w-115 rounded-3xl bg-white p-10 shadow-2xl lg:mr-51.25">
@@ -103,7 +149,7 @@ export function LoginPage() {
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
           <div className="flex flex-col gap-5">
             <div className="relative">
-              <label className="absolute -top-2.5 left-4 z-10 bg-white px-1.5 text-xs text-pinpoint-input-border">
+              <label className="absolute -top-2.5 left-4 z-10 bg-white px-1.5 text-xs text-[#100F0F]">
                 Email
               </label>
 
@@ -112,7 +158,7 @@ export function LoginPage() {
                 placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-[30px] border border-pinpoint-input-border px-4 py-4 text-base text-black placeholder:text-pinpoint-input-border/60 outline-none focus:border-black"
+                className="w-full rounded-[30px] border border-[#100F0F] px-4 py-4 text-base text-black placeholder:text-gray-500 outline-none focus:border-black"
                 required
               />
             </div>
@@ -159,7 +205,7 @@ export function LoginPage() {
 
             <button
               type="button"
-              className="text-sm text-pinpoint-input-border hover:underline"
+              className="text-sm text-gray-600 hover:underline"
             >
               Forgot Password?
             </button>
