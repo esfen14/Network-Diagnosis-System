@@ -1,8 +1,8 @@
 """initial schema
 
-Revision ID: 24a7641ffecc
+Revision ID: cd33c9245d9d
 Revises: 
-Create Date: 2026-08-25 21:46:49.892662
+Create Date: 2026-09-04 22:59:25.303542
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '24a7641ffecc'
+revision = 'cd33c9245d9d'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -154,6 +154,23 @@ def upgrade_():
         batch_op.create_index(batch_op.f('ix_USER_Email'), ['Email'], unique=True)
         batch_op.create_index(batch_op.f('ix_USER_RoleID'), ['RoleID'], unique=False)
 
+    op.create_table('ACK_HISTORY',
+    sa.Column('AckHistoryID', sa.Integer(), nullable=False),
+    sa.Column('Hostname', sa.String(length=100), nullable=False),
+    sa.Column('Service_Name', sa.String(length=150), nullable=True),
+    sa.Column('Action', sa.Enum('ACKNOWLEDGED', 'UNACKNOWLEDGED', 'AUTO_RESOLVED', name='ackaction'), nullable=False),
+    sa.Column('Actioned_At', sa.DateTime(), nullable=False),
+    sa.Column('ActorUserID', sa.Integer(), nullable=True),
+    sa.Column('Comment', sa.String(length=500), nullable=True),
+    sa.ForeignKeyConstraint(['ActorUserID'], ['USER.UserID'], ),
+    sa.PrimaryKeyConstraint('AckHistoryID')
+    )
+    with op.batch_alter_table('ACK_HISTORY', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_ACK_HISTORY_Actioned_At'), ['Actioned_At'], unique=False)
+        batch_op.create_index(batch_op.f('ix_ACK_HISTORY_ActorUserID'), ['ActorUserID'], unique=False)
+        batch_op.create_index(batch_op.f('ix_ACK_HISTORY_Hostname'), ['Hostname'], unique=False)
+        batch_op.create_index(batch_op.f('ix_ACK_HISTORY_Service_Name'), ['Service_Name'], unique=False)
+
     op.create_table('ACTIVITY_LOG',
     sa.Column('LogID', sa.Integer(), nullable=False),
     sa.Column('Action_Type', sa.String(length=255), nullable=False),
@@ -164,6 +181,22 @@ def upgrade_():
     )
     with op.batch_alter_table('ACTIVITY_LOG', schema=None) as batch_op:
         batch_op.create_index(batch_op.f('ix_ACTIVITY_LOG_UserID'), ['UserID'], unique=False)
+
+    op.create_table('ALERT_ACKNOWLEDGEMENT',
+    sa.Column('AckID', sa.Integer(), nullable=False),
+    sa.Column('Hostname', sa.String(length=100), nullable=False),
+    sa.Column('Service_Name', sa.String(length=150), nullable=True),
+    sa.Column('Comment', sa.String(length=500), nullable=False),
+    sa.Column('Acknowledged_At', sa.DateTime(), nullable=False),
+    sa.Column('AcknowledgedBy', sa.Integer(), nullable=False),
+    sa.ForeignKeyConstraint(['AcknowledgedBy'], ['USER.UserID'], ),
+    sa.PrimaryKeyConstraint('AckID'),
+    sa.UniqueConstraint('Hostname', 'Service_Name', name='uq_alert_acknowledgement_host_service')
+    )
+    with op.batch_alter_table('ALERT_ACKNOWLEDGEMENT', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_ALERT_ACKNOWLEDGEMENT_AcknowledgedBy'), ['AcknowledgedBy'], unique=False)
+        batch_op.create_index(batch_op.f('ix_ALERT_ACKNOWLEDGEMENT_Hostname'), ['Hostname'], unique=False)
+        batch_op.create_index(batch_op.f('ix_ALERT_ACKNOWLEDGEMENT_Service_Name'), ['Service_Name'], unique=False)
 
     op.create_table('NOTIFICATION_CURSOR',
     sa.Column('UserID', sa.Integer(), nullable=False),
@@ -293,6 +326,21 @@ def upgrade_():
         batch_op.create_index(batch_op.f('ix_PLUGIN_HISTORY_LogID'), ['LogID'], unique=False)
         batch_op.create_index(batch_op.f('ix_PLUGIN_HISTORY_PluginID'), ['PluginID'], unique=False)
 
+    op.create_table('PLUGIN_SCAN_STATUS',
+    sa.Column('PluginScanStatusID', sa.Integer(), nullable=False),
+    sa.Column('Status', sa.Enum('RUNNING', 'SUCCESS', 'FAILED', name='pluginscanstatusvalue'), nullable=False),
+    sa.Column('Progress', sa.Integer(), nullable=False),
+    sa.Column('Message', sa.String(length=100), nullable=False),
+    sa.Column('Start_At', sa.DateTime(), nullable=False),
+    sa.Column('Completed_At', sa.DateTime(), nullable=True),
+    sa.Column('Error', sa.String(), nullable=True),
+    sa.Column('LogID', sa.Integer(), nullable=False),
+    sa.ForeignKeyConstraint(['LogID'], ['ACTIVITY_LOG.LogID'], ),
+    sa.PrimaryKeyConstraint('PluginScanStatusID')
+    )
+    with op.batch_alter_table('PLUGIN_SCAN_STATUS', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_PLUGIN_SCAN_STATUS_LogID'), ['LogID'], unique=False)
+
     op.create_table('NETWORK_DISCOVERY',
     sa.Column('NetDiscoveryID', sa.Integer(), nullable=False),
     sa.Column('Hostname', sa.String(length=100), nullable=True),
@@ -364,11 +412,25 @@ def upgrade_():
     with op.batch_alter_table('SSH_CREDENTIALS', schema=None) as batch_op:
         batch_op.create_index(batch_op.f('ix_SSH_CREDENTIALS_NetworkDiscoveryID'), ['NetworkDiscoveryID'], unique=False)
 
+    op.create_table('NCPA_DEVICE_PARTITION',
+    sa.Column('PartitionID', sa.Integer(), nullable=False),
+    sa.Column('Name', sa.String(length=64), nullable=False),
+    sa.Column('NCPADeployID', sa.Integer(), nullable=False),
+    sa.ForeignKeyConstraint(['NCPADeployID'], ['NCPA_DEPLOYMENT.NCPADeployID'], ),
+    sa.PrimaryKeyConstraint('PartitionID')
+    )
+    with op.batch_alter_table('NCPA_DEVICE_PARTITION', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_NCPA_DEVICE_PARTITION_NCPADeployID'), ['NCPADeployID'], unique=False)
+
     # ### end Alembic commands ###
 
 
 def downgrade_():
     # ### commands auto generated by Alembic - please adjust! ###
+    with op.batch_alter_table('NCPA_DEVICE_PARTITION', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_NCPA_DEVICE_PARTITION_NCPADeployID'))
+
+    op.drop_table('NCPA_DEVICE_PARTITION')
     with op.batch_alter_table('SSH_CREDENTIALS', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_SSH_CREDENTIALS_NetworkDiscoveryID'))
 
@@ -392,6 +454,10 @@ def downgrade_():
         batch_op.drop_index(batch_op.f('ix_NETWORK_DISCOVERY_DiscoveryStatusID'))
 
     op.drop_table('NETWORK_DISCOVERY')
+    with op.batch_alter_table('PLUGIN_SCAN_STATUS', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_PLUGIN_SCAN_STATUS_LogID'))
+
+    op.drop_table('PLUGIN_SCAN_STATUS')
     with op.batch_alter_table('PLUGIN_HISTORY', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_PLUGIN_HISTORY_PluginID'))
         batch_op.drop_index(batch_op.f('ix_PLUGIN_HISTORY_LogID'))
@@ -420,10 +486,23 @@ def downgrade_():
 
     op.drop_table('SYSTEM_SETTINGS')
     op.drop_table('NOTIFICATION_CURSOR')
+    with op.batch_alter_table('ALERT_ACKNOWLEDGEMENT', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_ALERT_ACKNOWLEDGEMENT_Service_Name'))
+        batch_op.drop_index(batch_op.f('ix_ALERT_ACKNOWLEDGEMENT_Hostname'))
+        batch_op.drop_index(batch_op.f('ix_ALERT_ACKNOWLEDGEMENT_AcknowledgedBy'))
+
+    op.drop_table('ALERT_ACKNOWLEDGEMENT')
     with op.batch_alter_table('ACTIVITY_LOG', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_ACTIVITY_LOG_UserID'))
 
     op.drop_table('ACTIVITY_LOG')
+    with op.batch_alter_table('ACK_HISTORY', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_ACK_HISTORY_Service_Name'))
+        batch_op.drop_index(batch_op.f('ix_ACK_HISTORY_Hostname'))
+        batch_op.drop_index(batch_op.f('ix_ACK_HISTORY_ActorUserID'))
+        batch_op.drop_index(batch_op.f('ix_ACK_HISTORY_Actioned_At'))
+
+    op.drop_table('ACK_HISTORY')
     with op.batch_alter_table('USER', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_USER_RoleID'))
         batch_op.drop_index(batch_op.f('ix_USER_Email'))
