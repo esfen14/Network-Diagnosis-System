@@ -224,6 +224,10 @@ class DependencyType(Enum):
     LIBRARY = "Library"
     PACKAGE = "Package"
     RUNTIME = "Runtime"
+    # Linux capability requirement, e.g. CAP_NET_RAW for check_dhcp / check_icmp.
+    # See spec files/Plugins_List.md (documents "Requires root/CAP_NET_RAW"
+    # for specific plugins in the bundled 2.4.12 set).
+    CAPABILITY = "Capability"
 
 
 class DependencyStatus(Enum):

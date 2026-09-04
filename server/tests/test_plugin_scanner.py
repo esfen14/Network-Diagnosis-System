@@ -17,10 +17,10 @@ regardless of the .bat trick.
 
 Rather than continuing to chase undocumented, version-dependent
 Windows internals, this file instead patches
-app.api.plugin.scanner._is_executable directly wherever "is this file
+app.api.plugin.scanner.is_executable directly wherever "is this file
 executable" matters for a test. This makes the classification/sync
 logic tests fully OS-independent and deterministic. The one thing this
-approach does NOT exercise is _is_executable's own real POSIX-bit
+approach does NOT exercise is is_executable's own real POSIX-bit
 logic — that's covered separately by the small Linux-only class at the
 bottom of this file (skipped on non-Linux), which uses real chmod
 against real files, matching the actual deployment target exactly.
@@ -41,7 +41,7 @@ from app.api.plugin.scanner import scan_plugin_directory, sync_plugin_inventory
 def _write_fake_plugin(directory, name):
     """
     Writes a placeholder file. Content is irrelevant — subprocess.run
-    is mocked in every test below, and _is_executable is patched
+    is mocked in every test below, and is_executable is patched
     directly rather than relying on real file permissions.
     """
     path = os.path.join(directory, name)
@@ -62,7 +62,7 @@ def _mock_completed_process(output):
 # All tests in this section run with every file treated as executable
 # (the realistic case for a directory that's genuinely full of Nagios
 # plugins) unless a specific test overrides it.
-_ALWAYS_EXECUTABLE = patch("app.api.plugin.scanner._is_executable", return_value=True)
+_ALWAYS_EXECUTABLE = patch("app.api.plugin.scanner.is_executable", return_value=True)
 
 
 # ─── scan_plugin_directory ────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ class TestScanPluginDirectory:
         def fake_is_executable(entry, entry_stat):
             return entry.name == "check_ping"
 
-        with patch("app.api.plugin.scanner._is_executable", side_effect=fake_is_executable), \
+        with patch("app.api.plugin.scanner.is_executable", side_effect=fake_is_executable), \
              patch("app.api.plugin.scanner.subprocess.run",
                    return_value=_mock_completed_process("v2.4.12")):
             results = scan_plugin_directory(str(tmp_path))
@@ -245,14 +245,14 @@ class TestSyncPluginInventory:
         assert summary == {"created": 0, "updated": 0, "unchanged": 1}
 
 
-# ─── _is_executable: real permission bits, Linux only ─────────────────────────
+# ─── is_executable: real permission bits, Linux only ─────────────────────────
 
 @pytest.mark.skipif(
     platform.system() != "Linux",
     reason="Exercises real POSIX execute-permission bits; production target "
            "is the Linux Nagios appliance, so this is validated for real "
            "only there. Cross-platform logic tests above cover the rest of "
-           "scan_plugin_directory via a mocked _is_executable instead.",
+           "scan_plugin_directory via a mocked is_executable instead.",
 )
 class TestIsExecutableRealPermissions:
     def test_chmod_executable_file_is_detected(self, tmp_path):

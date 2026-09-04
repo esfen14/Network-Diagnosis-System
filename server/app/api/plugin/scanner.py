@@ -78,7 +78,7 @@ class ScannedPlugin:
     version_raw_output: Optional[str]
 
 
-def _extract_version(plugin_path):
+def extract_version(plugin_path):
     """
     Best-effort: run `<plugin_path> --version` locally and try to
     parse a version number out of the combined stdout+stderr. Never
@@ -106,7 +106,7 @@ def _extract_version(plugin_path):
     return version, raw_output
 
 
-def _is_executable(entry, entry_stat):
+def is_executable(entry, entry_stat):
     """
     Whether a scanned filesystem entry should be treated as a plugin
     executable. Separated out from scan_plugin_directory specifically
@@ -148,19 +148,19 @@ def scan_plugin_directory(directory=NAGIOS_PLUGIN_DIR):
                 continue
 
             entry_stat = entry.stat()
-            is_executable = _is_executable(entry, entry_stat)
+            executable = is_executable(entry, entry_stat)
 
-            if not is_executable:
+            if not executable:
                 continue
 
-            version, raw_output = _extract_version(entry.path)
+            version, raw_output = extract_version(entry.path)
 
             results.append(ScannedPlugin(
                 name=entry.name,
                 path=entry.path,
                 size=entry_stat.st_size,
                 modified_at=datetime.fromtimestamp(entry_stat.st_mtime, tz=timezone.utc),
-                is_executable=is_executable,
+                is_executable=executable,
                 version=version,
                 version_raw_output=raw_output,
             ))
