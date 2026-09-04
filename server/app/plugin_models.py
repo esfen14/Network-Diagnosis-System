@@ -336,3 +336,39 @@ class PluginHistory(db.Model):
     ConfigurationChanges/NCPADeploymentStatus/ExportLog)
     """
     Logs: so.Mapped[ActivityLog] = so.relationship(back_populates='Plugin_History_Logs')
+
+
+class PluginScanStatusValue(Enum):
+    RUNNING = "Running"
+    SUCCESS = "Success"
+    FAILED = "Failed"
+
+
+class PluginScanStatus(db.Model):
+    """
+    Tracks a single filesystem-scan run (Phase 2). Mirrors
+    NetworkDiscoveryStatus's shape exactly, since Plugin Manager's
+    scan-trigger route follows the same background-thread +
+    status-polling pattern already established by Network Discovery
+    and NCPA deployment elsewhere in this codebase.
+    """
+    # Table Name
+    __tablename__ = "PLUGIN_SCAN_STATUS"
+
+    # Table Fields
+    PluginScanStatusID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Status: so.Mapped[PluginScanStatusValue] = so.mapped_column(sa.Enum(PluginScanStatusValue))
+    Progress: so.Mapped[int] = so.mapped_column()
+    Message: so.Mapped[str] = so.mapped_column(sa.String(100))
+    Start_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+    Completed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
+    Error: so.Mapped[Optional[str]] = so.mapped_column()
+
+    # Foreign Key Field
+    LogID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(ActivityLog.LogID), index=True)
+
+    """
+    Gets one instance of ActivityLog
+    back_populate specifies that you can access this table from either side
+    """
+    Logs: so.Mapped[ActivityLog] = so.relationship(back_populates='Plugin_Scan_Logs')

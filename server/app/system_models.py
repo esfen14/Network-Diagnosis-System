@@ -162,6 +162,7 @@ class ActivityLog(db.Model):
     NetDiscover_Logs: so.WriteOnlyMapped['NetworkDiscoveryStatus'] = so.relationship(back_populates='Logs')
     Plugin_History_Logs: so.WriteOnlyMapped['PluginHistory'] = so.relationship(back_populates='Logs')
     Plugin_Override_Logs: so.WriteOnlyMapped['PluginCommandOverride'] = so.relationship(back_populates='Logs')
+    Plugin_Scan_Logs: so.WriteOnlyMapped['PluginScanStatus'] = so.relationship(back_populates='Logs')
     
 class ConfigurationChanges( db.Model):
     # Table Name
