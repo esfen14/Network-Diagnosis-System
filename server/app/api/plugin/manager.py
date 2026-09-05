@@ -1,25 +1,30 @@
 """
-manager.py — Plugin Manager API routes (Phase 2: scan trigger only;
-Phase 3 adds the GET inventory/details/history/commands/dependencies
-routes into this same file, per the Implementation Plan).
+manager.py — Plugin Manager API routes.
 
 Routes
 ------
-POST /plugin/scan          - Start a background filesystem scan
-GET  /plugin/scan/status   - Latest scan status
+POST /plugin/scan            - Start a background filesystem scan (Phase 2)
+GET  /plugin/scan/status     - Latest scan status (Phase 2)
+GET  /plugin                 - Paginated plugin inventory (Phase 3)
+GET  /plugin/summary         - Landing page summary counts (Phase 3)
+GET  /plugin/<id>            - Single plugin's full details (Phase 3)
+GET  /plugin/history         - Global plugin history, optional ?plugin_id= (Phase 3)
+GET  /plugin/<id>/commands   - A plugin's commands + active overrides (Phase 3)
+GET  /plugin/<id>/dependencies - A plugin's dependencies (Phase 3)
 
-Pattern matches app/api/system/network_discovery.py exactly: a
-module-level background thread + a status table polled via GET,
-rather than a synchronous response. Unlike Network Discovery/NCPA,
-there is deliberately no POST /plugin/scan/stop — a local directory
-scan is expected to finish in a few seconds, so a stop/cancel affordance
-was judged not worth the extra scope for this phase.
+The scan routes (Phase 2) match app/api/system/network_discovery.py's
+background-thread + status-polling pattern. The Phase 3 read routes
+match app/api/system/log.py's pagination/filter/sort convention
+(page, per_page, sort_by, order, search query params). All actual
+querying lives in service.py — these routes only parse/validate
+request args and format the response.
 """
 from flask_login import login_required, current_user
-from flask import current_app
+from flask import current_app, request
 import threading
 
 from app.api.plugin import plugin_bp
+from app.api.plugin import service
 from app.api.helper import success, error
 from app.api.helper.database_access.permissions import require_permission
 from app.api.plugin.scanner import scan_plugin_directory, sync_plugin_inventory, NAGIOS_PLUGIN_DIR
@@ -182,5 +187,346 @@ def plugin_scan_status_route():
     except Exception:
         current_app.logger.exception(
             "An unexpected error occurred while fetching plugin scan status."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
+# ==========================================================
+# PLUGIN INVENTORY
+# ==========================================================
+
+@plugin_bp.get('')
+@login_required
+@require_permission('plugin.view')
+def plugin_inventory():
+    """
+    Retrieve the paginated plugin inventory (UI Flow Section 7).
+
+    **Query Parameters**
+
+    page (int, default 1)
+    per_page (int, default 10, max 100)
+    sort_by (str, default "name"): one of "name", "type", "status",
+        "version", "updated_at"
+    order (str, default "asc"): "asc" or "desc"
+    search (str, optional): matched against plugin name/display name
+    type (str, optional): "Nagios" or "Custom"
+    status (str, optional): any PluginStatus value (e.g. "Ready",
+        "Active", "Disabled", "Update Available"), or the literal
+        "Failed" to match any of Validation/Dependency/Installation/
+        Configuration Failed at once.
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": {
+                "items": [
+                    {
+                        "id": 1,
+                        "name": "check_ping",
+                        "display_name": null,
+                        "category": null,
+                        "type": "Nagios",
+                        "source": "Baseline (ISO)",
+                        "status": "Ready",
+                        "current_version": "2.4.12",
+                        "updated_at": "2026-08-25T02:30:00+00:00"
+                    }
+                ],
+                "page": 1, "per_page": 10, "pages": 1, "total": 1,
+                "has_next": false, "has_prev": false
+            }
+        }
+
+    **Errors**
+
+    * ``400`` - invalid sort field, order, page, per_page, type, or status.
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        page = request.args.get("page", default=1, type=int)
+        per_page = request.args.get("per_page", default=10, type=int)
+        sort_by = request.args.get("sort_by", default="name", type=str)
+        order = request.args.get("order", default="asc", type=str)
+        search = request.args.get("search", default="", type=str)
+        plugin_type = request.args.get("type", default=None, type=str)
+        status = request.args.get("status", default=None, type=str)
+
+        data = service.get_plugin_inventory(
+            page=page, per_page=per_page, search=search,
+            plugin_type=plugin_type, status=status,
+            sort_by=sort_by, order=order,
+        )
+        return success(data)
+
+    except service.InvalidQueryError as e:
+        return error(str(e), 400)
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while retrieving the plugin inventory."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
+# ==========================================================
+# PLUGIN SUMMARY
+# ==========================================================
+
+@plugin_bp.get('/summary')
+@login_required
+@require_permission('plugin.view')
+def plugin_summary():
+    """
+    Retrieve landing page summary counts (UI Flow Section 6).
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": {
+                "installed_plugins": 12,
+                "active_capabilities": 0,
+                "custom_plugins": 1,
+                "updates_available": 2,
+                "validation_issues": 0
+            }
+        }
+
+    **Errors**
+
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        return success(service.get_plugin_summary())
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while retrieving the plugin summary."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
+# ==========================================================
+# PLUGIN HISTORY (global, optional plugin_id filter)
+# ==========================================================
+
+@plugin_bp.get('/history')
+@login_required
+@require_permission('plugin.view')
+def plugin_history():
+    """
+    Retrieve global plugin history (UI Flow Section 24), optionally
+    filtered to one plugin via ?plugin_id=.
+
+    **Query Parameters**
+
+    page (int, default 1)
+    per_page (int, default 10, max 100)
+    sort_by (str, default "performed_at"): "id" or "performed_at"
+    order (str, default "desc"): "asc" or "desc"
+    plugin_id (int, optional): restrict to one plugin's history
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": {
+                "items": [
+                    {
+                        "id": 1,
+                        "plugin_id": 3,
+                        "plugin_name": "check_snmp",
+                        "action": "Command Override",
+                        "administrator": "Jane Doe",
+                        "result": "Success",
+                        "performed_at": "2026-08-25T02:40:00+00:00",
+                        "message": "Override applied."
+                    }
+                ],
+                "page": 1, "per_page": 10, "pages": 1, "total": 1,
+                "has_next": false, "has_prev": false
+            }
+        }
+
+    **Errors**
+
+    * ``400`` - invalid sort field, order, page, or per_page.
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        page = request.args.get("page", default=1, type=int)
+        per_page = request.args.get("per_page", default=10, type=int)
+        sort_by = request.args.get("sort_by", default="performed_at", type=str)
+        order = request.args.get("order", default="desc", type=str)
+        plugin_id = request.args.get("plugin_id", default=None, type=int)
+
+        data = service.get_plugin_history(
+            page=page, per_page=per_page, plugin_id=plugin_id,
+            sort_by=sort_by, order=order,
+        )
+        return success(data)
+
+    except service.InvalidQueryError as e:
+        return error(str(e), 400)
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while retrieving plugin history."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
+# ==========================================================
+# PLUGIN DETAILS
+# ==========================================================
+
+@plugin_bp.get('/<int:plugin_id>')
+@login_required
+@require_permission('plugin.view')
+def plugin_details(plugin_id):
+    """
+    Retrieve a single plugin's full details (UI Flow Section 8).
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": {
+                "id": 1,
+                "name": "check_ping",
+                "display_name": null,
+                "description": null,
+                "author": null,
+                "category": null,
+                "type": "Nagios",
+                "source": "Baseline (ISO)",
+                "status": "Ready",
+                "current_version": "2.4.12",
+                "executable_path": "/usr/local/nagios/libexec/check_ping",
+                "created_at": "2026-08-25T02:00:00+00:00",
+                "updated_at": "2026-08-25T02:00:00+00:00",
+                "commands_count": 1,
+                "dependencies_count": 0,
+                "monitoring_usage": {
+                    "services": 4,
+                    "devices": 2,
+                    "placeholder": true,
+                    "note": "Target linkage not implemented until Phase 10 (Monitoring Configuration)."
+                }
+            }
+        }
+
+    **Errors**
+
+    * ``404`` - no plugin with that id.
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        data = service.get_plugin_details(plugin_id)
+        if data is None:
+            return error("Plugin not found.", 404)
+        return success(data)
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while retrieving plugin details."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
+# ==========================================================
+# PLUGIN COMMANDS
+# ==========================================================
+
+@plugin_bp.get('/<int:plugin_id>/commands')
+@login_required
+@require_permission('plugin.view')
+def plugin_commands(plugin_id):
+    """
+    Retrieve a plugin's commands, each with its currently active
+    override (if any) merged in (UI Flow Sections 15-16).
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": [
+                {
+                    "id": 1,
+                    "command_name": "check_snmp",
+                    "default_command": "check_snmp -H $HOSTADDRESS$ -o $ARG1$",
+                    "active_command": "check_snmp -H $HOSTADDRESS$ -o $ARG1$ -w 80 -c 90",
+                    "is_overridden": true,
+                    "is_default": true
+                }
+            ]
+        }
+
+    **Errors**
+
+    * ``404`` - no plugin with that id.
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        data = service.get_plugin_commands(plugin_id)
+        if data is None:
+            return error("Plugin not found.", 404)
+        return success(data)
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while retrieving plugin commands."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
+# ==========================================================
+# PLUGIN DEPENDENCIES
+# ==========================================================
+
+@plugin_bp.get('/<int:plugin_id>/dependencies')
+@login_required
+@require_permission('plugin.view')
+def plugin_dependencies(plugin_id):
+    """
+    Retrieve a plugin's dependencies (UI Flow Section 8).
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": [
+                {
+                    "id": 1,
+                    "name": "net-snmp",
+                    "type": "Package",
+                    "required_version": null,
+                    "status": "Ok"
+                }
+            ]
+        }
+
+    **Errors**
+
+    * ``404`` - no plugin with that id.
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        data = service.get_plugin_dependencies(plugin_id)
+        if data is None:
+            return error("Plugin not found.", 404)
+        return success(data)
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while retrieving plugin dependencies."
         )
         return error("An unexpected error occurred.", 500)

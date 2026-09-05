@@ -32,6 +32,7 @@ PERMISSIONS = [
     "system.notifications",
     "system.services",
     "plugin.scan",
+    "plugin.view",
 ]
 
 ROLES = [

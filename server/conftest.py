@@ -103,6 +103,7 @@ PERMISSION_NAMES = [
     "system.acknowledge_alerts",
     "system.history",
     "plugin.scan",
+    "plugin.view",
     ]
 
 
