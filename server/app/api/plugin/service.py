@@ -19,9 +19,10 @@ from app.plugin_models import (
     Plugin, PluginType, PluginStatus,
     PluginCommand, PluginCommandOverride,
     PluginDependency,
-    PluginHistory,
+    PluginHistory, PluginHistoryAction, PluginActionResult,
 )
 from app.system_models import ActivityLog, User
+from app.api.plugin.nagios_validator import validate_nagios_configuration
 
 
 # Statuses considered "some kind of failure" for the inventory page's
@@ -34,6 +35,15 @@ FAILED_STATUSES = (
     PluginStatus.INSTALLATION_FAILED,
     PluginStatus.CONFIGURATION_FAILED,
 )
+
+# Statuses that block Enable/Disable outright — the 4 *_FAILED
+# variants (must be resolved first) plus ROLLBACK (an in-progress
+# problem state, not a normal enable/disable target). Confirmed:
+# Enable is intentionally permissive otherwise (any other status,
+# including AVAILABLE/READY/INSTALLED/UPDATE_AVAILABLE) — to be
+# revisited once Phase 10 exists if it turns out to conflict with
+# real monitoring-configuration behavior.
+BLOCKED_TRANSITION_STATUSES = FAILED_STATUSES + (PluginStatus.ROLLBACK,)
 
 PLUGIN_SORT_FIELDS = {
     "name": Plugin.Name,
@@ -371,3 +381,131 @@ def get_plugin_summary():
         "updates_available": updates_available,
         "validation_issues": validation_issues,
     }
+
+
+# ==========================================================
+# ENABLE / DISABLE (Phase 5)
+# ==========================================================
+
+class PluginNotFoundError(Exception):
+    """No Plugin row with the given id."""
+    pass
+
+
+class InvalidTransitionError(Exception):
+    """Current Plugin.Status doesn't allow the requested operation."""
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
+class NagiosValidationError(Exception):
+    """Nagios's own config validation failed or Nagios isn't reachable."""
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
+def record_plugin_action(plugin, action, result, user_id, old_value=None, new_value=None, message=None):
+    """Shared history-recording helper for enable/disable (and future
+    mutating operations in later phases)."""
+    log = ActivityLog(Action_Type=f"plugin.{action.value.lower()}", UserID=user_id)
+    db.session.add(log)
+    db.session.flush()
+
+    db.session.add(PluginHistory(
+        PluginID=plugin.PluginID,
+        Action=action,
+        Old_Value=old_value,
+        New_Value=new_value,
+        Result=result,
+        Message=(message[:500] if message else None),
+        LogID=log.LogID,
+    ))
+
+
+def enable_plugin(plugin_id, user_id):
+    """
+    Enable a plugin (UI Flow Section 8's [Enable] action).
+
+    Runs Nagios's own config validation first (see nagios_validator.py
+    for exactly what that checks and why). Idempotent: enabling an
+    already-ENABLED or already-ACTIVE plugin is a no-op success (does
+    not downgrade ACTIVE back to ENABLED — ACTIVE is Phase 10's
+    territory).
+
+    Raises:
+        PluginNotFoundError, InvalidTransitionError, NagiosValidationError
+    """
+    plugin = db.session.get(Plugin, plugin_id)
+    if plugin is None:
+        raise PluginNotFoundError()
+
+    if plugin.Status in BLOCKED_TRANSITION_STATUSES:
+        raise InvalidTransitionError(f"Cannot enable a plugin in '{plugin.Status.value}' state.")
+
+    if plugin.Status in (PluginStatus.ENABLED, PluginStatus.ACTIVE):
+        return {"id": plugin.PluginID, "status": plugin.Status.value, "changed": False}
+
+    is_valid, output = validate_nagios_configuration()
+
+    if not is_valid:
+        record_plugin_action(
+            plugin, PluginHistoryAction.ENABLE, PluginActionResult.FAILED, user_id,
+            old_value=plugin.Status.value, message=output,
+        )
+        db.session.commit()
+        raise NagiosValidationError(output)
+
+    old_status = plugin.Status.value
+    plugin.Status = PluginStatus.ENABLED
+    record_plugin_action(
+        plugin, PluginHistoryAction.ENABLE, PluginActionResult.SUCCESS, user_id,
+        old_value=old_status, new_value=PluginStatus.ENABLED.value,
+    )
+    db.session.commit()
+
+    return {"id": plugin.PluginID, "status": plugin.Status.value, "changed": True}
+
+
+def disable_plugin(plugin_id, user_id):
+    """
+    Disable a plugin (UI Flow Section 8's [Disable] action).
+
+    Unlike enable_plugin, DISABLED is reachable from ACTIVE too (an
+    admin turning off a currently-active monitoring capability is a
+    normal disable, not something Phase 10-specific). Idempotent:
+    disabling an already-DISABLED plugin is a no-op success.
+
+    Raises:
+        PluginNotFoundError, InvalidTransitionError, NagiosValidationError
+    """
+    plugin = db.session.get(Plugin, plugin_id)
+    if plugin is None:
+        raise PluginNotFoundError()
+
+    if plugin.Status in BLOCKED_TRANSITION_STATUSES:
+        raise InvalidTransitionError(f"Cannot disable a plugin in '{plugin.Status.value}' state.")
+
+    if plugin.Status == PluginStatus.DISABLED:
+        return {"id": plugin.PluginID, "status": plugin.Status.value, "changed": False}
+
+    is_valid, output = validate_nagios_configuration()
+
+    if not is_valid:
+        record_plugin_action(
+            plugin, PluginHistoryAction.DISABLE, PluginActionResult.FAILED, user_id,
+            old_value=plugin.Status.value, message=output,
+        )
+        db.session.commit()
+        raise NagiosValidationError(output)
+
+    old_status = plugin.Status.value
+    plugin.Status = PluginStatus.DISABLED
+    record_plugin_action(
+        plugin, PluginHistoryAction.DISABLE, PluginActionResult.SUCCESS, user_id,
+        old_value=old_status, new_value=PluginStatus.DISABLED.value,
+    )
+    db.session.commit()
+
+    return {"id": plugin.PluginID, "status": plugin.Status.value, "changed": True}

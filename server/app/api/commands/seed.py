@@ -33,6 +33,8 @@ PERMISSIONS = [
     "system.services",
     "plugin.scan",
     "plugin.view",
+    "plugin.enable",
+    "plugin.disable",
 ]
 
 ROLES = [

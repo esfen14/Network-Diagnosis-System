@@ -104,6 +104,8 @@ PERMISSION_NAMES = [
     "system.history",
     "plugin.scan",
     "plugin.view",
+    "plugin.enable",
+    "plugin.disable",
     ]
 
 

@@ -530,3 +530,98 @@ def plugin_dependencies(plugin_id):
             "An unexpected error occurred while retrieving plugin dependencies."
         )
         return error("An unexpected error occurred.", 500)
+
+
+# ==========================================================
+# ENABLE / DISABLE (Phase 5)
+# ==========================================================
+
+@plugin_bp.post('/<int:plugin_id>/enable')
+@login_required
+@require_permission('plugin.enable')
+def enable_plugin_route(plugin_id):
+    """
+    Enable a plugin (UI Flow Section 8's [Enable] action).
+
+    Runs Nagios's own configuration validation first
+    (nagios_validator.py) — this validates Nagios's ENTIRE config, not
+    anything plugin-specific, since Plugin Manager doesn't write any
+    Nagios config yet (that's Phase 10). Idempotent: enabling an
+    already-ENABLED or already-ACTIVE plugin succeeds with no change.
+
+    **Inputs:** None (no request body).
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {"success": true, "data": {"id": 3, "status": "Enabled", "changed": true}}
+
+    **Errors**
+
+    * ``404`` - no plugin with that id.
+    * ``409`` - plugin is in a state that blocks enabling (e.g. a
+      *_FAILED status, or Rollback).
+    * ``502`` - Nagios configuration validation failed, or the nagios
+      binary isn't reachable (e.g. running on a machine without
+      Nagios installed).
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        data = service.enable_plugin(plugin_id, current_user.UserID)
+        return success(data)
+    except service.PluginNotFoundError:
+        return error("Plugin not found.", 404)
+    except service.InvalidTransitionError as e:
+        return error(e.message, 409)
+    except service.NagiosValidationError as e:
+        return error(f"Nagios configuration validation failed: {e.message}", 502)
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while enabling the plugin."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
+@plugin_bp.post('/<int:plugin_id>/disable')
+@login_required
+@require_permission('plugin.disable')
+def disable_plugin_route(plugin_id):
+    """
+    Disable a plugin (UI Flow Section 8's [Disable] action).
+
+    Same Nagios validation as enable_plugin_route. Unlike Enable,
+    Disable is reachable from ACTIVE (turning off a currently-active
+    monitoring capability). Idempotent: disabling an already-DISABLED
+    plugin succeeds with no change.
+
+    **Inputs:** None (no request body).
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {"success": true, "data": {"id": 3, "status": "Disabled", "changed": true}}
+
+    **Errors**
+
+    * ``404`` - no plugin with that id.
+    * ``409`` - plugin is in a state that blocks disabling.
+    * ``502`` - Nagios configuration validation failed, or the nagios
+      binary isn't reachable.
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        data = service.disable_plugin(plugin_id, current_user.UserID)
+        return success(data)
+    except service.PluginNotFoundError:
+        return error("Plugin not found.", 404)
+    except service.InvalidTransitionError as e:
+        return error(e.message, 409)
+    except service.NagiosValidationError as e:
+        return error(f"Nagios configuration validation failed: {e.message}", 502)
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while disabling the plugin."
+        )
+        return error("An unexpected error occurred.", 500)
