@@ -191,6 +191,7 @@ The models class need to be imported to use the Enums
 class ExportFormat(Enum):
     CSV="csv"
     PDF="pdf"
+    XLS="xls"
     
 class ExportLog(db.Model):
     # Table Name

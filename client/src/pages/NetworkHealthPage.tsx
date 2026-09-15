@@ -40,11 +40,11 @@ export function NetworkHealthPage() {
   }
 
   return (
-    <main className="ml-[220px] flex-1">
-      <div className="min-w-[1400px] py-6">
+    <main className="ml-[220px] flex-1 min-w-0">
+      <div className="min-w-0 py-6">
         {/* Sticky header row */}
         <div className="sticky top-0 z-10 bg-[var(--sticky-bg)] pb-3 pt-3">
-          <div className="flex items-start gap-8">
+          <div className="flex flex-wrap items-start gap-4 sm:gap-8">
             <div className="min-w-0 flex-1">
               <PageHeader
                 title="Network Health"
@@ -52,7 +52,7 @@ export function NetworkHealthPage() {
               />
             </div>
 
-            <div className="flex w-72 shrink-0 justify-center pt-2">
+            <div className="flex w-full shrink-0 justify-center pt-2 sm:w-72">
               <button
                 type="button"
                 onClick={startScan}
@@ -65,10 +65,10 @@ export function NetworkHealthPage() {
           </div>
         </div>
 
-        <div className="mt-6 flex items-start gap-8">
+        <div className="mt-6 flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
           <div className="min-w-0 flex-1 space-y-6">
-            <div className="grid grid-cols-12 items-stretch gap-4">
-              <div className="col-span-5 flex flex-col gap-4">
+            <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-12">
+              <div className="flex flex-col gap-4 lg:col-span-5">
                 <NetworkInfoCard
                   lastScanTime={lastScanTime}
                   lastScanDate={lastScanDate}
@@ -79,8 +79,8 @@ export function NetworkHealthPage() {
                 </div>
               </div>
 
-              <div className="col-span-7 flex flex-col gap-4">
-                <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-4 lg:col-span-7">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <DeviceCountCard
                     title="Online Devices"
                     count={321}
@@ -107,8 +107,8 @@ export function NetworkHealthPage() {
             </div>
           </div>
 
-          <div className="flex w-72 shrink-0 flex-col gap-4">
-            <div className="space-y-4 border-l border-gray-200 pl-6">
+          <div className="flex w-full shrink-0 flex-col gap-4 lg:w-72">
+            <div className="space-y-4 border-t border-[var(--border)] pt-6 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
               <SparklineMetricCard
                 title="Latency"
                 value="12.5"

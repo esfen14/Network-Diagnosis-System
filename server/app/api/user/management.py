@@ -10,6 +10,8 @@ import sqlalchemy as sa
 from app import db
 
 from app.api.user import user_bp
+from app.logging.user_activity import create_user_log
+from app.api.helper.settings_flags import is_audit_logging_enabled
     
 @user_bp.get('/permissions/options')
 @login_required
@@ -432,12 +434,15 @@ def create_account():
             user.set_password(password)
 
             db.session.add(user)
+            db.session.flush()
+            if is_audit_logging_enabled():
+                create_user_log(current_user.UserID, f"Created account for {normalized_email}")
             db.session.commit()
         except Exception:
             current_app.logger.exception(f"Failed to create account '{email}'")
             db.session.rollback()
             return error("An error occurred.", 500)
-        
+
         return success(message="Account successfully created.", status=201)
     except Exception:
         current_app.logger.exception("An unexpected error occured.")
@@ -628,11 +633,13 @@ def edit_account(id):
         try:
             user_info.First_Name = first_name
             user_info.Last_Name = last_name
-            user_info.Email = normalized_email 
+            user_info.Email = normalized_email
             user_info.set_password(password)
             user_info.RoleID = role_info.RoleID
             user_info.Status = normalized_status
 
+            if is_audit_logging_enabled():
+                create_user_log(current_user.UserID, f"Updated account for {normalized_email}")
             db.session.commit()
         except Exception:
             db.session.rollback()

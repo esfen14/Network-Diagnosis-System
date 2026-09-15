@@ -21,8 +21,6 @@ def create_configuration_log(user_id, config_type, parameter_name, old_value, ne
         )
         db.session.add(config_log)
 
-        db.session.commit
-
         return user_log, config_log
     except Exception as e:
         current_app.logger.exception(f"Cannot create export log for user {user_id} error: {e}")

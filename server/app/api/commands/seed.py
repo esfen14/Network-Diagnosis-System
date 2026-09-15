@@ -31,7 +31,9 @@ PERMISSIONS = [
     "system.report",
     "system.notifications",
     "system.services",
-    "system.services",
+    "system.network_health",
+    "system.acknowledge_alerts",
+    "system.dashboard",
 ]
 
 ROLES = [
@@ -246,7 +248,7 @@ def seed_command(remove, permissions_only, reset):
 
     except Exception as e:
         db.session.rollback()
-        click.echo(f"❌ Seed failed: {e}")
+        click.echo(f"Seed failed: {e}")
 
     from app.system_models import SystemSettings
 

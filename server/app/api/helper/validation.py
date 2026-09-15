@@ -2,18 +2,32 @@ from app.system_models import UserStatus
 from email_validator import validate_email, EmailNotValidError
 from .database_access import *
 from .responses import error
+from .settings_flags import is_strong_password_policy_enabled
 
 """
 This is a separation of concern that requires checking of input
 """
 # ================= PASSWORD  =====================
+
+STRONG_MIN_PASSWORD_LENGTH = 12
+RELAXED_MIN_PASSWORD_LENGTH = 8
+
+
 def validate_password(password):
-    MIN_PASSWORD_LENGTH = 12
     password = password.strip()
     if not password:
         return error("Password must not be empty.", 400)
-    if len(password) < MIN_PASSWORD_LENGTH:
-        return error(f"Password must be at least {MIN_PASSWORD_LENGTH} characters long", 400)
+
+    # Strong Password Policy (Settings > Security) governs whether the full
+    # complexity rule applies or just a minimum length. Checked live per
+    # request rather than cached, since Settings can change between calls.
+    if not is_strong_password_policy_enabled():
+        if len(password) < RELAXED_MIN_PASSWORD_LENGTH:
+            return error(f"Password must be at least {RELAXED_MIN_PASSWORD_LENGTH} characters long", 400)
+        return None
+
+    if len(password) < STRONG_MIN_PASSWORD_LENGTH:
+        return error(f"Password must be at least {STRONG_MIN_PASSWORD_LENGTH} characters long", 400)
     if not any(char.isupper() for char in password):
         return error("Password must contain an uppercase letter.", 400)
     if not any(char.islower() for char in password):

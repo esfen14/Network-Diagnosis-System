@@ -2,7 +2,7 @@ import requests
 from flask import current_app
 import sqlalchemy as sa
 from app import db
-from history_models import *
+from app.history_models import *
 from datetime import datetime, timezone
 from app.nagios.version import latest, last_checked
 from app.api.helper import convert_host_state_type_enum, convert_plugin_status_type_enum, convert_acknowledgement_type_enum, convert_connection_state_type_enum, convert_service_state_type_enum, convert_to_UTC, parse_perf_token
