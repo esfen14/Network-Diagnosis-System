@@ -16,13 +16,22 @@ import sqlalchemy as sa
 
 from app import db
 from app.plugin_models import (
-    Plugin, PluginType, PluginStatus,
+    Plugin, PluginType, PluginStatus, PluginSource,
+    PluginVersion,
     PluginCommand, PluginCommandOverride,
-    PluginDependency,
+    PluginDependency, DependencyType, DependencyStatus,
     PluginHistory, PluginHistoryAction, PluginActionResult,
 )
 from app.system_models import ActivityLog, User
 from app.api.plugin.nagios_validator import validate_nagios_configuration
+from app.api.plugin.command_validator import validate_command_definition
+from app.api.plugin.plugin_validator import (
+    validate_plugin_executable, check_executable, check_permissions, check_execution,
+)
+from app.api.plugin.custom_plugin import (
+    stage_upload, check_name_collision, install_staged_file, cleanup_staging,
+    InvalidFilenameError, UploadTooLargeError, NameCollisionError,
+)
 
 
 # Statuses considered "some kind of failure" for the inventory page's
@@ -64,7 +73,7 @@ class InvalidQueryError(ValueError):
     pass
 
 
-def _serialize_plugin_summary_row(plugin):
+def serialize_plugin_summary_row(plugin):
     """Shape used by the inventory list (one row per plugin)."""
     return {
         "id": plugin.PluginID,
@@ -143,7 +152,7 @@ def get_plugin_inventory(page, per_page, search, plugin_type, status, sort_by, o
 
     result = db.paginate(query, page=page, per_page=per_page, error_out=False)
 
-    items = [_serialize_plugin_summary_row(p) for p in result.items]
+    items = [serialize_plugin_summary_row(p) for p in result.items]
 
     return {
         "items": items,
@@ -301,29 +310,10 @@ def get_plugin_commands(plugin_id):
         sa.select(PluginCommand).where(PluginCommand.PluginID == plugin_id)
     ).all()
 
-    items = []
-    for command in commands:
-        active_override = db.session.scalar(
-            sa.select(PluginCommandOverride)
-            .where(
-                PluginCommandOverride.PluginCommandID == command.PluginCommandID,
-                PluginCommandOverride.Is_Active.is_(True),
-            )
-            .order_by(PluginCommandOverride.Created_At.desc())
-        )
-
-        items.append({
-            "id": command.PluginCommandID,
-            "command_name": command.Command_Name,
-            "default_command": command.Command_Definition,
-            "active_command": (
-                active_override.Override_Command if active_override else command.Command_Definition
-            ),
-            "is_overridden": active_override is not None,
-            "is_default": command.Is_Default,
-        })
-
-    return items
+    return [
+        serialize_command(command, get_active_override(command.PluginCommandID))
+        for command in commands
+    ]
 
 
 def get_plugin_dependencies(plugin_id):
@@ -509,3 +499,437 @@ def disable_plugin(plugin_id, user_id):
     db.session.commit()
 
     return {"id": plugin.PluginID, "status": plugin.Status.value, "changed": True}
+
+
+# ==========================================================
+# COMMAND MANAGEMENT (Phase 6)
+# ==========================================================
+
+class CommandNotFoundError(Exception):
+    """No PluginCommand with the given id belonging to the given plugin."""
+    pass
+
+
+class InvalidCommandError(Exception):
+    """Proposed override command failed validate_command_definition()."""
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
+def serialize_command(command, active_override):
+    return {
+        "id": command.PluginCommandID,
+        "command_name": command.Command_Name,
+        "default_command": command.Command_Definition,
+        "active_command": (
+            active_override.Override_Command if active_override else command.Command_Definition
+        ),
+        "is_overridden": active_override is not None,
+        "is_default": command.Is_Default,
+    }
+
+
+def get_command_for_plugin(plugin_id, command_id):
+    """Shared lookup used by both override_command and
+    restore_default_command. Returns (plugin, command) or raises
+    PluginNotFoundError / CommandNotFoundError."""
+    plugin = db.session.get(Plugin, plugin_id)
+    if plugin is None:
+        raise PluginNotFoundError()
+
+    command = db.session.scalar(
+        sa.select(PluginCommand).where(
+            PluginCommand.PluginCommandID == command_id,
+            PluginCommand.PluginID == plugin_id,
+        )
+    )
+    if command is None:
+        raise CommandNotFoundError()
+
+    return plugin, command
+
+
+def get_active_override(command_id):
+    return db.session.scalar(
+        sa.select(PluginCommandOverride)
+        .where(
+            PluginCommandOverride.PluginCommandID == command_id,
+            PluginCommandOverride.Is_Active.is_(True),
+        )
+        .order_by(PluginCommandOverride.Created_At.desc())
+    )
+
+
+def override_command(plugin_id, command_id, override_command_text, user_id):
+    """
+    Save a command override (UI Flow Section 16's [Save Override]).
+
+    DB-only — does not touch live nagios.cfg (see command_validator.py
+    docstring for why). Deactivates any previously active override for
+    this command (only one override is "active" at a time; full
+    history is preserved via the deactivated rows, per Phase 1's
+    PluginCommandOverride design).
+
+    Raises:
+        PluginNotFoundError, CommandNotFoundError, InvalidCommandError
+    """
+    plugin, command = get_command_for_plugin(plugin_id, command_id)
+
+    is_valid, reason = validate_command_definition(override_command_text)
+    if not is_valid:
+        raise InvalidCommandError(reason)
+
+    previous_override = get_active_override(command_id)
+    old_active_command = previous_override.Override_Command if previous_override else command.Command_Definition
+
+    if previous_override is not None:
+        previous_override.Is_Active = False
+
+    log = ActivityLog(Action_Type="plugin.command_override", UserID=user_id)
+    db.session.add(log)
+    db.session.flush()
+
+    new_override = PluginCommandOverride(
+        PluginCommandID=command.PluginCommandID,
+        Original_Command=command.Command_Definition,
+        Override_Command=override_command_text,
+        LogID=log.LogID,
+    )
+    db.session.add(new_override)
+    db.session.flush()
+
+    db.session.add(PluginHistory(
+        PluginID=plugin.PluginID,
+        Action=PluginHistoryAction.COMMAND_OVERRIDE,
+        Old_Value=old_active_command,
+        New_Value=override_command_text,
+        Result=PluginActionResult.SUCCESS,
+        LogID=log.LogID,
+    ))
+
+    db.session.commit()
+
+    return serialize_command(command, new_override)
+
+
+def restore_default_command(plugin_id, command_id, user_id):
+    """
+    Restore a command's default (UI Flow Sections 15/16's
+    [Restore Default]).
+
+    Deactivates the currently active override (if any) and does NOT
+    create a new override row — the effective active_command reverts
+    to command.Command_Definition. Idempotent: if there's no active
+    override already, this is a no-op success (matches Phase 5's
+    enable/disable idempotency pattern).
+
+    Raises:
+        PluginNotFoundError, CommandNotFoundError
+    """
+    plugin, command = get_command_for_plugin(plugin_id, command_id)
+
+    active_override = get_active_override(command_id)
+    if active_override is None:
+        return {**serialize_command(command, None), "changed": False}
+
+    removed_command = active_override.Override_Command
+    active_override.Is_Active = False
+
+    log = ActivityLog(Action_Type="plugin.command_restore", UserID=user_id)
+    db.session.add(log)
+    db.session.flush()
+
+    db.session.add(PluginHistory(
+        PluginID=plugin.PluginID,
+        Action=PluginHistoryAction.ROLLBACK,
+        Old_Value=removed_command,
+        New_Value=command.Command_Definition,
+        Result=PluginActionResult.SUCCESS,
+        LogID=log.LogID,
+    ))
+
+    db.session.commit()
+
+    return {**serialize_command(command, None), "changed": True}
+
+
+# ==========================================================
+# VALIDATION (Phase 7)
+# ==========================================================
+
+def validate_plugin(plugin_id, user_id):
+    """
+    Validate a single plugin's executable/permissions/execution (UI
+    Flow Section 8's [Validate] action). Deliberately does NOT run
+    nagios_validator.py's config check or re-check PluginDependency
+    rows — see plugin_validator.py's module docstring for why those
+    stay separate.
+
+    Confirmed: updates Plugin.Status based on the result. Failing
+    checks set VALIDATION_FAILED. Passing checks on a plugin that was
+    previously VALIDATION_FAILED reset it to READY. Passing checks on
+    any OTHER status (e.g. ENABLED, ACTIVE) leave Status unchanged —
+    validating an already-enabled plugin shouldn't silently downgrade
+    it back to READY.
+
+    Raises:
+        PluginNotFoundError
+    """
+    plugin = db.session.get(Plugin, plugin_id)
+    if plugin is None:
+        raise PluginNotFoundError()
+
+    result = validate_plugin_executable(plugin.Executable_Path)
+
+    old_status = plugin.Status.value
+
+    if not result["is_valid"]:
+        plugin.Status = PluginStatus.VALIDATION_FAILED
+    elif plugin.Status == PluginStatus.VALIDATION_FAILED:
+        plugin.Status = PluginStatus.READY
+
+    failed_checks = [name for name, check in result["checks"].items() if not check["passed"]]
+    message = (
+        "All checks passed."
+        if result["is_valid"]
+        else f"Failed checks: {', '.join(failed_checks)}."
+    )
+
+    record_plugin_action(
+        plugin,
+        PluginHistoryAction.VALIDATE,
+        PluginActionResult.SUCCESS if result["is_valid"] else PluginActionResult.FAILED,
+        user_id,
+        old_value=old_status,
+        new_value=plugin.Status.value,
+        message=message,
+    )
+    db.session.commit()
+
+    return {
+        "plugin_id": plugin.PluginID,
+        "is_valid": result["is_valid"],
+        "status": plugin.Status.value,
+        "checks": result["checks"],
+    }
+
+
+# ==========================================================
+# CUSTOM PLUGINS (Phase 8)
+# ==========================================================
+
+class PluginNameTakenError(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
+# Exit codes 0-3 are the standard Nagios plugin API range
+# (OK/WARNING/CRITICAL/UNKNOWN). Confirmed as the concrete stand-in
+# for UI Flow's "Nagios compatibility" check: distinct from Phase 7's
+# check_execution() (which accepts ANY exit code, by design, to avoid
+# false negatives on real checks legitimately returning WARNING/
+# CRITICAL) — here, on a --version invocation specifically, landing
+# outside 0-3 is a real signal of non-standard behavior (e.g. a shell
+# "command not found" 127, or an unhandled crash).
+NAGIOS_STANDARD_EXIT_CODES = (0, 1, 2, 3)
+
+
+def check_metadata(name, command_name, command_definition):
+    """UI Flow Section 10's 'Metadata valid' check."""
+    if not name or not name.strip():
+        return {"passed": False, "message": "Plugin name is required."}
+    if not command_name or not command_name.strip():
+        return {"passed": False, "message": "Command name is required."}
+    if not command_definition or not command_definition.strip():
+        return {"passed": False, "message": "Command definition is required."}
+    return {"passed": True, "message": "Metadata is valid."}
+
+
+def check_command(command_definition):
+    """UI Flow Section 10's 'Command definition detected' check —
+    reuses Phase 6's validator on the admin-provided command string."""
+    is_valid, message = validate_command_definition(command_definition)
+    return {"passed": is_valid, "message": message or "Command definition is valid."}
+
+
+def check_dependencies_well_formed(dependencies):
+    """
+    UI Flow Section 10's 'Dependency check'. Confirmed scope: no
+    mechanism exists to verify real system state (is a package
+    actually installed, etc.) — this checks that each DECLARED
+    dependency entry is well-formed (non-empty name, a real
+    DependencyType value), not that dependencies are satisfied.
+    """
+    if not dependencies:
+        return {"passed": True, "message": "No dependencies declared."}
+
+    for dep in dependencies:
+        name = dep.get("name") if isinstance(dep, dict) else None
+        dep_type = dep.get("type") if isinstance(dep, dict) else None
+
+        if not name or not str(name).strip():
+            return {"passed": False, "message": "A declared dependency is missing a name."}
+
+        try:
+            DependencyType(dep_type)
+        except (ValueError, TypeError):
+            valid_values = ", ".join(t.value for t in DependencyType)
+            return {"passed": False, "message": f"Invalid dependency type '{dep_type}'. Must be one of: {valid_values}."}
+
+    return {"passed": True, "message": f"{len(dependencies)} dependency entr{'y' if len(dependencies) == 1 else 'ies'} well-formed."}
+
+
+def check_nagios_compatibility(execution_result):
+    """UI Flow Section 10's 'Nagios compatibility' check — see
+    NAGIOS_STANDARD_EXIT_CODES for what this actually verifies and why."""
+    exit_code = execution_result.get("exit_code")
+    if exit_code is None:
+        return {"passed": False, "message": "Could not determine exit code (execution failed)."}
+    if exit_code not in NAGIOS_STANDARD_EXIT_CODES:
+        return {
+            "passed": False,
+            "message": f"Exit code {exit_code} is outside the standard Nagios plugin range (0-3).",
+        }
+    return {"passed": True, "message": f"Exit code {exit_code} is within the standard Nagios plugin range."}
+
+
+def validate_custom_plugin_submission(staged_path, name, command_name, command_definition, dependencies):
+    """
+    Runs all 7 checks from UI Flow Section 10 against a staged
+    (not-yet-installed) file and the admin-provided form fields.
+
+    Returns:
+        {"is_valid": bool, "checks": {...7 keys...}}
+    """
+    file_detected = check_executable(staged_path)
+    executable_check = check_permissions(staged_path)
+    execution_check = check_execution(staged_path)
+    command_check = check_command(command_definition)
+    metadata_check = check_metadata(name, command_name, command_definition)
+    dependency_check = check_dependencies_well_formed(dependencies)
+    compatibility_check = check_nagios_compatibility(execution_check)
+
+    checks = {
+        "file_detected": file_detected,
+        "executable_permission": executable_check,
+        "execution_test": execution_check,
+        "command_definition": command_check,
+        "metadata": metadata_check,
+        "dependency_check": dependency_check,
+        "nagios_compatibility": compatibility_check,
+    }
+
+    is_valid = all(c["passed"] for c in checks.values())
+
+    return {"is_valid": is_valid, "checks": checks}
+
+
+def register_custom_plugin(file_storage, name, version, description, author, plugin_type,
+                            command_name, command_definition, dependencies, user_id):
+    """
+    Full Phase 8 workflow, atomically, per the confirmed single-endpoint
+    design: Upload -> Stage -> Validate -> Install -> Register ->
+    Define Command -> Available for monitoring.
+
+    On ANY validation failure, nothing is persisted (no DB rows, no
+    installed file) and the staging directory is cleaned up — the
+    structured check results are still returned so a future frontend
+    can show UI Flow Section 10's "Plugin Validation Failed" screen.
+
+    Args:
+        file_storage: werkzeug FileStorage from request.files.
+        name, version, description, author: plugin metadata.
+        plugin_type: "Nagios" or "Custom" (PluginType value string).
+        command_name, command_definition: the plugin's Nagios command.
+        dependencies: list of {"name": str, "type": str} dicts, or None.
+        user_id: the acting administrator.
+
+    Returns:
+        {"is_valid": bool, "checks": {...}, "plugin": {...} | None}
+
+    Raises:
+        InvalidFilenameError, UploadTooLargeError, NameCollisionError,
+        PluginNameTakenError, ValueError (bad plugin_type)
+    """
+    dependencies = dependencies or []
+
+    try:
+        plugin_type_enum = PluginType(plugin_type)
+    except ValueError:
+        valid_values = ", ".join(t.value for t in PluginType)
+        raise ValueError(f"Invalid plugin type '{plugin_type}'. Must be one of: {valid_values}.")
+
+    if db.session.scalar(sa.select(Plugin).where(Plugin.Name == name)):
+        raise PluginNameTakenError(f"A plugin named '{name}' already exists.")
+
+    staged_path, safe_filename, staging_dir, checksum, size_bytes = stage_upload(file_storage)
+
+    try:
+        check_name_collision(safe_filename)
+
+        result = validate_custom_plugin_submission(
+            staged_path, name, command_name, command_definition, dependencies,
+        )
+
+        if not result["is_valid"]:
+            return {"is_valid": False, "checks": result["checks"], "plugin": None}
+
+        installed_path = install_staged_file(staged_path, safe_filename)
+
+        plugin = Plugin(
+            Name=name,
+            Display_Name=name,
+            Description=description,
+            Author=author,
+            Plugin_Type=plugin_type_enum,
+            Source=PluginSource.ADMINISTRATOR_ADDED,
+            Status=PluginStatus.READY,
+            Current_Version=version,
+            Executable_Path=installed_path,
+        )
+        db.session.add(plugin)
+        db.session.flush()
+
+        db.session.add(PluginVersion(
+            PluginID=plugin.PluginID,
+            Version=version or "1.0.0",
+            Executable_Path=installed_path,
+            Checksum=checksum,
+            Is_Current=True,
+        ))
+
+        db.session.add(PluginCommand(
+            PluginID=plugin.PluginID,
+            Command_Name=command_name,
+            Command_Definition=command_definition,
+            Is_Default=True,
+        ))
+
+        for dep in dependencies:
+            db.session.add(PluginDependency(
+                PluginID=plugin.PluginID,
+                Dependency_Name=dep["name"],
+                Dependency_Type=DependencyType(dep["type"]),
+                Required_Version=dep.get("required_version"),
+                Status=DependencyStatus.OK,
+            ))
+
+        record_plugin_action(
+            plugin, PluginHistoryAction.INSTALL, PluginActionResult.SUCCESS, user_id,
+            new_value=version, message=f"Custom plugin '{name}' registered.",
+        )
+        db.session.commit()
+
+        return {
+            "is_valid": True,
+            "checks": result["checks"],
+            "plugin": serialize_plugin_summary_row(plugin),
+        }
+
+    except Exception:
+        db.session.rollback()
+        raise
+    finally:
+        cleanup_staging(staging_dir)

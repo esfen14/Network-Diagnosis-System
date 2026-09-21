@@ -22,6 +22,7 @@ request args and format the response.
 from flask_login import login_required, current_user
 from flask import current_app, request
 import threading
+import json
 
 from app.api.plugin import plugin_bp
 from app.api.plugin import service
@@ -623,5 +624,306 @@ def disable_plugin_route(plugin_id):
     except Exception:
         current_app.logger.exception(
             "An unexpected error occurred while disabling the plugin."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
+# ==========================================================
+# COMMAND MANAGEMENT (Phase 6)
+# ==========================================================
+
+@plugin_bp.post('/<int:plugin_id>/commands/<int:command_id>/override')
+@login_required
+@require_permission('plugin.command_override')
+def override_command_route(plugin_id, command_id):
+    """
+    Save a command override (UI Flow Section 16's [Save Override]).
+
+    DB-only — does not touch live nagios.cfg (that happens later, in
+    Phase 10's Apply step). The override string is validated for
+    shell-injection risk (see command_validator.py) since it will
+    eventually be executed by Nagios once applied.
+
+    **Inputs (JSON body)**
+
+    .. code-block:: json
+
+        {"override_command": "check_snmp -H $HOSTADDRESS$ -o $ARG1$ -w 80 -c 90"}
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": {
+                "id": 1,
+                "command_name": "check_snmp",
+                "default_command": "check_snmp -H $HOSTADDRESS$ -o $ARG1$",
+                "active_command": "check_snmp -H $HOSTADDRESS$ -o $ARG1$ -w 80 -c 90",
+                "is_overridden": true,
+                "is_default": true
+            }
+        }
+
+    **Errors**
+
+    * ``400`` - missing/invalid request body, or the command string
+      failed validation (empty, too long, or contains a disallowed
+      shell metacharacter).
+    * ``404`` - no plugin or command with that id (or the command
+      doesn't belong to that plugin).
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        body = request.get_json(silent=True) or {}
+        override_command_text = body.get("override_command")
+
+        if not override_command_text or not isinstance(override_command_text, str):
+            return error("override_command is required.", 400)
+
+        data = service.override_command(plugin_id, command_id, override_command_text, current_user.UserID)
+        return success(data)
+
+    except service.PluginNotFoundError:
+        return error("Plugin not found.", 404)
+    except service.CommandNotFoundError:
+        return error("Command not found for this plugin.", 404)
+    except service.InvalidCommandError as e:
+        return error(e.message, 400)
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while saving the command override."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
+@plugin_bp.post('/<int:plugin_id>/commands/<int:command_id>/restore-default')
+@login_required
+@require_permission('plugin.command_restore')
+def restore_default_command_route(plugin_id, command_id):
+    """
+    Restore a command's default (UI Flow Sections 15/16's
+    [Restore Default]).
+
+    Idempotent: if there's no active override already, succeeds with
+    no change.
+
+    **Inputs:** None (no request body).
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": {
+                "id": 1,
+                "command_name": "check_snmp",
+                "default_command": "check_snmp -H $HOSTADDRESS$ -o $ARG1$",
+                "active_command": "check_snmp -H $HOSTADDRESS$ -o $ARG1$",
+                "is_overridden": false,
+                "is_default": true,
+                "changed": true
+            }
+        }
+
+    **Errors**
+
+    * ``404`` - no plugin or command with that id.
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        data = service.restore_default_command(plugin_id, command_id, current_user.UserID)
+        return success(data)
+    except service.PluginNotFoundError:
+        return error("Plugin not found.", 404)
+    except service.CommandNotFoundError:
+        return error("Command not found for this plugin.", 404)
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while restoring the default command."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
+# ==========================================================
+# VALIDATION (Phase 7)
+# ==========================================================
+
+@plugin_bp.post('/<int:plugin_id>/validate')
+@login_required
+@require_permission('plugin.validate')
+def validate_plugin_route(plugin_id):
+    """
+    Validate a plugin's executable, permissions, and that it can
+    actually run (UI Flow Section 8's [Validate] action).
+
+    Does NOT validate Nagios configuration or dependencies — those are
+    separate, distinct steps (see plugin_validator.py's docstring).
+    Updates Plugin.Status: failing checks set VALIDATION_FAILED;
+    passing checks reset a previously VALIDATION_FAILED plugin to
+    READY; any other status is left unchanged.
+
+    **Inputs:** None (no request body).
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": {
+                "plugin_id": 3,
+                "is_valid": false,
+                "status": "Validation Failed",
+                "checks": {
+                    "executable": {"passed": true, "message": "..."},
+                    "permissions": {
+                        "passed": false,
+                        "message": "File is world-writable (0777) — any user could modify this plugin.",
+                        "mode": "0777",
+                        "world_writable": true
+                    },
+                    "execution": {
+                        "passed": true,
+                        "message": "Executed successfully (exit code 0).",
+                        "exit_code": 0,
+                        "output": "check_snmp v2.4.12 (nagios-plugins 2.4.12)"
+                    }
+                }
+            }
+        }
+
+    **Errors**
+
+    * ``404`` - no plugin with that id.
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        data = service.validate_plugin(plugin_id, current_user.UserID)
+        return success(data)
+    except service.PluginNotFoundError:
+        return error("Plugin not found.", 404)
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while validating the plugin."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
+# ==========================================================
+# CUSTOM PLUGINS (Phase 8)
+# ==========================================================
+
+@plugin_bp.post('/custom')
+@login_required
+@require_permission('plugin.custom_add')
+def register_custom_plugin_route():
+    """
+    Upload and register a custom plugin (UI Flow Sections 9-11: Add
+    Custom Plugin -> Custom Plugin Validation -> Custom Plugin
+    Registered), in one atomic request.
+
+    Confirmed design: unlike the UI mockup's two separate buttons
+    ([Validate Plugin] then [Register Plugin]), this is a single
+    endpoint — no server-side staging state is kept across requests.
+    On validation failure, nothing is persisted; the response still
+    returns the full 7-check structured results either way.
+
+    **Inputs:** multipart/form-data (NOT JSON — this is a file upload)
+
+    - ``file`` (required): the plugin executable.
+    - ``name`` (required): becomes Plugin.Name (must be unique) and
+      the installed filename.
+    - ``version`` (optional): defaults to "1.0.0" if omitted.
+    - ``description``, ``author`` (optional).
+    - ``plugin_type`` (optional, default "Nagios"): "Nagios" or "Custom".
+    - ``command_name`` (required).
+    - ``command_definition`` (required): validated by command_validator.py.
+    - ``dependencies`` (optional): a JSON-encoded string, e.g.
+      ``[{"name": "net-snmp", "type": "Package"}]``. Each ``type``
+      must be a real DependencyType value.
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": {
+                "is_valid": true,
+                "checks": {
+                    "file_detected": {"passed": true, "message": "..."},
+                    "executable_permission": {"passed": true, "message": "...", "mode": "0755", "world_writable": false},
+                    "execution_test": {"passed": true, "message": "...", "exit_code": 0, "output": "..."},
+                    "command_definition": {"passed": true, "message": "..."},
+                    "metadata": {"passed": true, "message": "..."},
+                    "dependency_check": {"passed": true, "message": "..."},
+                    "nagios_compatibility": {"passed": true, "message": "..."}
+                },
+                "plugin": {"id": 9, "name": "check_company", "status": "Ready", "...": "..."}
+            }
+        }
+
+        On validation failure, "plugin" is null and "is_valid" is false
+        — this is still a 200 response, not an error, since the
+        request itself was valid; the SUBMITTED PLUGIN failed
+        validation. Matches UI Flow's "Plugin Validation Failed" screen
+        being a normal outcome, not a server error.
+
+    **Errors**
+
+    * ``400`` - no file provided, invalid filename, file too large,
+      invalid plugin_type, malformed dependencies JSON, or an invalid
+      dependency type within it.
+    * ``409`` - a plugin with that name already exists, or a file with
+      that name already exists in the Nagios plugin directory.
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        if "file" not in request.files or request.files["file"].filename == "":
+            return error("No file provided.", 400)
+
+        name = request.form.get("name", "").strip()
+        version = request.form.get("version", "").strip() or None
+        description = request.form.get("description", "").strip() or None
+        author = request.form.get("author", "").strip() or None
+        plugin_type = request.form.get("plugin_type", "Nagios").strip()
+        command_name = request.form.get("command_name", "").strip()
+        command_definition = request.form.get("command_definition", "").strip()
+
+        dependencies_raw = request.form.get("dependencies", "")
+        dependencies = []
+        if dependencies_raw:
+            try:
+                dependencies = json.loads(dependencies_raw)
+                if not isinstance(dependencies, list):
+                    raise ValueError
+            except (json.JSONDecodeError, ValueError):
+                return error("'dependencies' must be a JSON array.", 400)
+
+        data = service.register_custom_plugin(
+            file_storage=request.files["file"],
+            name=name, version=version, description=description, author=author,
+            plugin_type=plugin_type, command_name=command_name,
+            command_definition=command_definition, dependencies=dependencies,
+            user_id=current_user.UserID,
+        )
+        return success(data)
+
+    except service.InvalidFilenameError as e:
+        return error(e.message, 400)
+    except service.UploadTooLargeError as e:
+        return error(e.message, 400)
+    except ValueError as e:
+        return error(str(e), 400)
+    except service.NameCollisionError as e:
+        return error(e.message, 409)
+    except service.PluginNameTakenError as e:
+        return error(e.message, 409)
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while registering the custom plugin."
         )
         return error("An unexpected error occurred.", 500)
