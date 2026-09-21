@@ -102,7 +102,11 @@ PERMISSION_NAMES = [
     "system.network_health",
     "system.acknowledge_alerts",
     "system.history",
-]
+    "plugin.scan",
+    "plugin.view",
+    "plugin.enable",
+    "plugin.disable",
+    ]
 
 
 @pytest.fixture()

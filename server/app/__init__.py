@@ -28,7 +28,7 @@ from app.api.commands.seed import seed_command
 
 app.cli.add_command(seed_command)
 
-from app import system_models, history_models
+from app import system_models, history_models, plugin_models
 
 #where the bluprints are called and registered
 from app.api import api_bp 
