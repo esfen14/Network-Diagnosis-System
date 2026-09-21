@@ -1,5 +1,5 @@
-from flask_login import login_user, logout_user, current_user, login_required
-from flask import request, current_app
+from flask_login import login_user, logout_user, login_required
+from flask import request
 from app.api.helper import (
     validate_json_data,
     validate_json_fields,
@@ -25,9 +25,6 @@ def login():
     Returns:
         Standardized JSON response
     """
-
-    if current_user.is_authenticated:
-        return success(message="User is already logged in.")
 
     data = request.get_json()
 

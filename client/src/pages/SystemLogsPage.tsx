@@ -1,277 +1,189 @@
 import { useMemo, useState } from 'react'
 import { PageHeader } from '../components/shared/PageHeader'
 import { logs } from '../data/logs'
+import { useSystemSettings } from '../contexts/SystemSettingsContext'
+import { formatDateTime, parseMockDate } from '../utils/formatDateTime'
+import { exportRows } from '../utils/exportData'
+import { ExportMenu } from '../components/shared/ExportMenu'
 
 type LogTab =
-  | 'all'
   | 'activity'
   | 'configurationChange'
   | 'networkDiscovery'
   | 'ncpaDeployment'
+  | 'exportLog'
 
 type Log = (typeof logs)[number]
 
 export function SystemLogsPage() {
-  const [activeTab, setActiveTab] = useState<LogTab>('all')
+  const { settings } = useSystemSettings()
+  const [activeTab, setActiveTab] = useState<LogTab>('activity')
   const [selectedLog, setSelectedLog] = useState<Log | null>(null)
 
-  const filteredLogs = useMemo(() => {
-    if (activeTab === 'all') {
-      return logs
-    }
+  // Date range filters
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
 
-    return logs.filter((log) => log.category === activeTab)
-  }, [activeTab])
+  const filteredLogs = useMemo(() => {
+    return logs.filter((log) => {
+      // Filter according to the selected tab
+      const matchesTab = log.category === activeTab
+
+      // Extract YYYY-MM-DD from the log timestamp
+      const logDate = log.timestamp.split(' ')[0]
+
+      // Start date filter
+      const matchesStartDate =
+        startDate === '' || logDate >= startDate
+
+      // End date filter
+      const matchesEndDate =
+        endDate === '' || logDate <= endDate
+
+      return matchesTab && matchesStartDate && matchesEndDate
+    })
+  }, [activeTab, startDate, endDate])
 
   const getTabLabel = (tab: LogTab) => {
     switch (tab) {
       case 'activity':
         return 'Activity Log'
+
       case 'configurationChange':
         return 'Configuration Change'
+
       case 'networkDiscovery':
         return 'Network Discovery'
+
       case 'ncpaDeployment':
         return 'NCPA Deployment'
-      default:
-        return 'All Types'
+
+      case 'exportLog':
+        return 'Export Log'
     }
   }
 
   return (
-    <main className="ml-[220px] flex-1 text-white">
+    <main className="ml-[220px] flex-1">
       <div className="space-y-6">
 
-        {/* HEADER */}
-        <PageHeader
-          title="System Logs"
-          description="Monitor events and system activities."
+        <PageHeader title="System Logs" description="Monitor events and system activities." />
+
+      {/* Tabs */}
+      <div className="flex gap-6 border-b border-[var(--border)]">
+        {(['activity', 'configurationChange', 'networkDiscovery', 'ncpaDeployment', 'exportLog'] as LogTab[]).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`pb-3 text-sm transition ${
+              activeTab === tab
+                ? 'border-b-2 border-[var(--text)] font-medium text-[var(--text)]'
+                : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+            }`}
+          >
+            {getTabLabel(tab)}
+          </button>
+        ))}
+      </div>
+
+      {/* Date range filter */}
+      <div className="flex items-center gap-2">
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          className="rounded-lg border border-[var(--border)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text)] outline-none"
         />
+        <span className="text-sm text-[var(--text-muted)]">to</span>
+        <input
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          className="rounded-lg border border-[var(--border)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text)] outline-none"
+        />
+        {(startDate || endDate) && (
+          <button
+            type="button"
+            onClick={() => {
+              setStartDate('')
+              setEndDate('')
+            }}
+            className="text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
+          >
+            Clear
+          </button>
+        )}
+      </div>
 
-        {/* TABS */}
-        <div className="flex gap-6 border-b border-white/10">
-          {(
-            [
-              'all',
-              'activity',
-              'configurationChange',
-              'networkDiscovery',
-              'ncpaDeployment',
-            ] as LogTab[]
-          ).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => {
-                setActiveTab(tab)
-                setSelectedLog(null)
-              }}
-              className={`pb-3 text-sm transition ${
-                activeTab === tab
-                  ? 'border-b-2 border-white font-medium text-white'
-                  : 'text-gray-500 hover:text-gray-300'
-              }`}
-            >
-              {getTabLabel(tab)}
-            </button>
-          ))}
-        </div>
-
-        {/* CONTENT */}
         <div className="flex gap-6">
-
-          {/* LOG TABLE */}
+          {/* Log list */}
           <div className="flex-1 space-y-4">
+            <div className="grid grid-cols-[1fr_180px_120px] px-4 text-sm text-[var(--text-muted)]">
+              <span>Activity</span><span>Timestamp</span><span>Tag ID</span>
+            </div>
+            <div className="space-y-2">
 
-            {/* ALL TYPES */}
-            {activeTab === 'all' && (
-              <>
-                {/* TABLE HEADER */}
-                <div className="grid grid-cols-[180px_1fr_120px] gap-4 px-4 text-sm text-gray-400">
-                  <span>Timestamp</span>
-                  <span>Type</span>
-                  <span>Tag ID</span>
-                </div>
-
-                {/* TABLE ROWS */}
-                <div className="space-y-2">
-                  {filteredLogs.map((log) => (
-                    <div
-                      key={log.id}
-                      onClick={() => setSelectedLog(log)}
-                      className="grid grid-cols-[180px_1fr_120px] gap-4 items-center px-4 py-3 rounded-lg cursor-pointer bg-white/5 hover:bg-white/10 transition"
-                    >
-                      {/* TIMESTAMP */}
-                      <span className="text-gray-400 text-sm">
-                        {log.timestamp}
-                      </span>
-
-                      {/* TYPE */}
-                      <div className="flex items-center gap-3">
-                        <LogIcon type={log.type} />
-
-                        <div className="flex flex-col">
-                          <span className="text-sm text-white font-medium">
-                            {log.title}
-                          </span>
-
-                          <span className="text-xs text-gray-400">
-                            {log.description}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* TAG ID */}
-                      <span className="text-gray-400 text-sm">
-                        {log.tagId}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {/* INDIVIDUAL TABS */}
-            {activeTab !== 'all' && (
-              <>
-                {/* TABLE HEADER */}
-                <div className="grid grid-cols-[180px_1fr_120px] gap-4 px-4 text-sm text-gray-400">
-                  <span>Timestamp</span>
-                  <span>{getTabLabel(activeTab)}</span>
-                  <span>Tag ID</span>
-                </div>
-
-                {/* TABLE ROWS */}
-                <div className="space-y-2">
-                  {filteredLogs.map((log) => (
-                    <div
-                      key={log.id}
-                      onClick={() => setSelectedLog(log)}
-                      className="grid grid-cols-[180px_1fr_120px] gap-4 items-center px-4 py-3 rounded-lg cursor-pointer bg-white/5 hover:bg-white/10 transition"
-                    >
-                      {/* TIMESTAMP */}
-                      <span className="text-gray-400 text-sm">
-                        {log.timestamp}
-                      </span>
-
-                      {/* LOG */}
-                      <div className="flex items-center gap-3">
-                        <LogIcon type={log.type} />
-
-                        <div className="flex flex-col">
-                          <span className="text-sm text-white font-medium">
-                            {log.title}
-                          </span>
-
-                          <span className="text-xs text-gray-400">
-                            {log.description}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* TAG ID */}
-                      <span className="text-gray-400 text-sm">
-                        {log.tagId}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* EMPTY STATE */}
-                {filteredLogs.length === 0 && (
-                  <div className="py-10 text-center text-sm text-gray-500">
-                    No logs available for this category.
+              {filteredLogs.map((log) => (
+                <div
+                  key={log.id}
+                  onClick={() => setSelectedLog(log)}
+                  className={`grid grid-cols-[1fr_180px_120px] items-center px-4 py-3 rounded-xl cursor-pointer border transition ${
+                    selectedLog?.id === log.id
+                      ? 'border-[var(--border)] bg-[var(--hover)]'
+                      : 'border-[var(--border)] bg-[var(--card)] hover:bg-[var(--hover)]'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-6 h-6 flex items-center justify-center rounded font-bold text-xs ${
+                      log.type === 'account' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300'
+                      : log.type === 'network' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'
+                      : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                    }`}>!</div>
+                    <span className="text-sm text-[var(--text)]">
+                      <strong>{log.title}</strong>{' '}
+                      <span className="text-[var(--text-muted)]">{log.description}</span>
+                    </span>
                   </div>
-                )}
-              </>
-            )}
+                  <span className="text-[var(--text-muted)] text-sm">
+                    {formatDateTime(parseMockDate(log.timestamp), settings.dateTimeFormat, settings.timeZone)}
+                  </span>
+                  <span className="text-[var(--text-muted)] text-sm">{log.tagId}</span>
+                </div>
+              ))}
 
+            </div>
           </div>
 
-          {/* RIGHT PANEL */}
-          <div className="w-[300px] bg-white/5 rounded-xl p-4 space-y-4">
-
+          {/* Detail panel */}
+          <div className="w-[300px] bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 space-y-4">
             {selectedLog ? (
               <>
-                {/* TITLE */}
-                <h3 className="text-sm font-semibold border-b border-white/10 pb-2 text-white">
-                  {selectedLog.title}
-                </h3>
-
-                {/* DESCRIPTION */}
-                <p className="text-sm text-gray-300">
-                  {selectedLog.description}
-                </p>
-
-                {/* DETAILS */}
-                <div className="text-xs text-gray-400 space-y-1">
-                  <p>
-                    Type: {selectedLog.type}
-                  </p>
-
-                  <p>
-                    Tag ID: {selectedLog.tagId}
-                  </p>
-
-                  <p>
-                    Date & Time: {selectedLog.timestamp}
-                  </p>
-
-                  <p>
-                    User: {selectedLog.user}
-                  </p>
+                <h3 className="text-sm font-semibold border-b border-[var(--border)] pb-2 text-[var(--text)]">{selectedLog.title}</h3>
+                <p className="text-sm text-[var(--text-muted)]">{selectedLog.description}</p>
+                <div className="text-xs text-[var(--text-muted)] space-y-1">
+                  <p>Tag ID: {selectedLog.tagId}</p>
+                  <p>Date &amp; Time: {formatDateTime(parseMockDate(selectedLog.timestamp), settings.dateTimeFormat, settings.timeZone)}</p>
                 </div>
-
-                {/* ACTIONS */}
                 <div className="flex gap-2 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLog(null)}
-                    className="flex-1 rounded-md bg-white py-2 text-black transition hover:bg-gray-200"
-                  >
-                    Exit
-                  </button>
-
-                  <button
-                    type="button"
-                    className="flex-1 rounded-md bg-white/10 py-2 text-white transition hover:bg-white/20"
-                  >
-                    Log out
-                  </button>
+                  <button onClick={() => setSelectedLog(null)} className="flex-1 bg-[var(--text)] text-[var(--card)] py-2 rounded-lg text-sm">Close</button>
+                  <ExportMenu
+                    allowedFormats={settings.exportFormats}
+                    className="flex-1"
+                    buttonClassName="w-full bg-[var(--hover)] border border-[var(--border)] py-2 rounded-lg text-sm text-[var(--text)] hover:bg-[var(--card-alt)]"
+                    onExport={(format) =>
+                      exportRows([selectedLog], format, `log-${selectedLog.tagId}`)
+                    }
+                  />
                 </div>
+
               </>
             ) : (
-              <div className="text-sm text-gray-400">
-                Select a log to view details
-              </div>
+              <div className="text-[var(--text-muted)] text-sm">Select a log to view details</div>
             )}
-
           </div>
-
         </div>
+
       </div>
     </main>
-  )
-}
-
-/* LOG ICON */
-function LogIcon({ type }: { type: string }) {
-  const iconStyle =
-    type === 'account'
-      ? 'bg-yellow-500/20 text-yellow-400'
-      : type === 'network'
-      ? 'bg-orange-500/20 text-orange-400'
-      : type === 'deployment'
-      ? 'bg-blue-500/20 text-blue-400'
-      : type === 'configuration'
-      ? 'bg-purple-500/20 text-purple-400'
-      : 'bg-red-500/20 text-red-400'
-
-  return (
-    <div
-      className={`flex h-6 w-6 items-center justify-center rounded ${iconStyle}`}
-    >
-      !
-    </div>
   )
 }

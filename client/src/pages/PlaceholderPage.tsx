@@ -5,7 +5,7 @@ type PlaceholderPageProps = {
 
 export function PlaceholderPage({ title, description }: PlaceholderPageProps) {
   return (
-    <main className="ml-[220px] flex-1">
+    <main className="ml-55 flex-1">
     <div className="rounded-3xl bg-[#1a1f26] p-8 shadow-lg">
       <h1 className="text-2xl font-semibold text-white">{title}</h1>
       <p className="mt-2 text-gray-400">{description}</p>

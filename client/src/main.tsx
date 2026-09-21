@@ -6,18 +6,12 @@ import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App'
 
-import {
-  SystemSettingsProvider,
-} from './contexts/SystemSettingsContext'
-
 createRoot(
   document.getElementById('root')!
 ).render(
   <StrictMode>
     <BrowserRouter>
-      <SystemSettingsProvider>
-        <App />
-      </SystemSettingsProvider>
+      <App />
     </BrowserRouter>
   </StrictMode>,
 )

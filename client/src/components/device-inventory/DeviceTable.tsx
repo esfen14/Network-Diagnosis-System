@@ -145,7 +145,7 @@ export function DeviceTable({
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-left text-sm">
+        <table className="w-full min-w-225 text-left text-sm">
           <thead>
             <tr className="border-b border-gray-200 text-xs text-gray-500 dark:border-white/10 dark:text-gray-500">
               <th className="px-4 py-3 font-normal">
@@ -244,7 +244,7 @@ export function DeviceTable({
 
           <button
             type="button"
-            className="rounded-lg bg-gray-100 px-3 py-1 text-gray-900 dark:bg-white/10 dark:text-white"
+            className="rounded-lg bg-white border border-gray-200 px-3 py-1 text-gray-900 shadow-sm hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:border-transparent dark:hover:bg-white/20"
           >
             1
           </button>

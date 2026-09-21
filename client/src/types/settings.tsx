@@ -20,13 +20,19 @@ export type SecurityFrequency =
   | 'weekly'
   | 'monthly'
 
+export type DateTimeFormat =
+  | 'DD/MM/YYYY'
+  | 'MM/DD/YYYY'
+  | 'YYYY-MM-DD'
+
+export type ExportFormat = 'CSV' | 'PDF' | 'XLS'
+
 export interface SystemSettings {
   // General
-  systemLanguage: string
   theme: Theme
 
   timeZone: string
-  dateTimeFormat: string
+  dateTimeFormat: DateTimeFormat
 
   systemFont: string
   systemFontSize: FontSize
@@ -40,7 +46,7 @@ export interface SystemSettings {
   notifications: boolean
 
   // Export
-  exportFormats: string[]
+  exportFormats: ExportFormat[]
 
   // Security
   sessionTimeout: number

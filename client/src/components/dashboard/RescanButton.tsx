@@ -3,7 +3,11 @@ import { CheckCircle2, HelpCircle, RefreshCw, X } from 'lucide-react'
 
 type ScanState = 'idle' | 'confirm' | 'scanning' | 'success'
 
-export function RescanButton() {
+export function RescanButton({
+  onScanComplete,
+}: {
+  onScanComplete?: () => void
+} = {}) {
   const [scanState, setScanState] = useState<ScanState>('idle')
 
   const startScan = () => setScanState('confirm')
@@ -15,6 +19,7 @@ export function RescanButton() {
     // backend's rescan endpoint once it exists, then setScanState('success') on response.
     setTimeout(() => {
       setScanState('success')
+      onScanComplete?.()
     }, 2500)
   }
 

@@ -46,15 +46,7 @@ def update_settings():
                 409,
             )
 
-        row.System_Language = payload["systemLanguage"]
-        row.Theme = payload["theme"]
-        row.Time_Zone = payload["timeZone"]
-        row.Date_Time_Format = payload["dateTimeFormat"]
-        row.System_Font = payload["systemFont"]
-        row.System_Font_Size = payload["systemFontSize"]
-        row.Dashboard_Refresh_Rate = payload["dashboardRefreshRate"]
         row.Scan_Frequency = payload["scanFrequency"]
-        row.Dashboard_Layout = payload["dashboardLayout"]
         row.Notifications = payload["notifications"]
         row.Export_Formats = ",".join(payload["exportFormats"])
 

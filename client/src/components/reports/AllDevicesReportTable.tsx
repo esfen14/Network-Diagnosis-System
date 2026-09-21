@@ -1,10 +1,13 @@
 import { useState, useMemo } from 'react'
 import {
   ArrowUpDown,
-  Download,
   Filter,
   Search,
 } from 'lucide-react'
+import { useSystemSettings } from '../../contexts/SystemSettingsContext'
+import { formatDateTime, parseMockDate } from '../../utils/formatDateTime'
+import { exportRows } from '../../utils/exportData'
+import { ExportMenu } from '../shared/ExportMenu'
 
 function StatusBadge({
   status,
@@ -43,8 +46,9 @@ export function AllDevicesReportTable() {
     timestamp: string
   }
 
-  const devices: Device[] = []
+  const devices = useMemo<Device[]>(() => [], [])
 
+  const { settings } = useSystemSettings()
   const [query, setQuery] = useState('')
   const [sortAsc, setSortAsc] = useState(true)
   const [showFilter, setShowFilter] = useState(false)
@@ -74,7 +78,6 @@ export function AllDevicesReportTable() {
     )
 
     return result
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [devices, query, statusFilter, sortAsc])
 
   return (
@@ -147,18 +150,16 @@ export function AllDevicesReportTable() {
             <ArrowUpDown className="h-4 w-4" />
           </button>
 
-          <button
-            type="button"
-            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/10"
-          >
-            <Download className="h-4 w-4" />
-          </button>
+          <ExportMenu
+            allowedFormats={settings.exportFormats}
+            onExport={(format) => exportRows(filtered, format, 'all-devices-report')}
+          />
 
         </div>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1100px] text-left text-sm">
+        <table className="w-full min-w-275 text-left text-sm">
 
           <thead className="border-b border-gray-200 text-gray-500 dark:border-white/10 dark:text-gray-500">
             <tr>
@@ -233,7 +234,7 @@ export function AllDevicesReportTable() {
                   </td>
 
                   <td className="px-4 py-3 text-gray-900 dark:text-white">
-                    {device.timestamp}
+                    {formatDateTime(parseMockDate(device.timestamp), settings.dateTimeFormat, settings.timeZone)}
                   </td>
                 </tr>
               ))
@@ -260,7 +261,7 @@ export function AllDevicesReportTable() {
 
           <button
             type="button"
-            className="rounded-lg bg-gray-900 px-3 py-1 text-white dark:bg-white/10"
+            className="rounded-lg bg-white border border-gray-200 px-3 py-1 text-gray-900 shadow-sm hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:border-transparent dark:hover:bg-white/20"
           >
             1
           </button>
