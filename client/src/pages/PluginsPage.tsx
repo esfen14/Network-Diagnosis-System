@@ -1,265 +1,234 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { AlertTriangle, Boxes, CheckCircle2, PackagePlus, Puzzle, RefreshCcw } from 'lucide-react'
 import { PageHeader } from '../components/shared/PageHeader'
 import { SummaryStatCard } from '../components/shared/SummaryStatCard'
-import { availablePlugins, installedPlugins } from '../data/plugins'
-import { AvailablePluginsTable } from '../components/plugins/AvailablePluginsTable'
-import { InstalledPluginsTable } from '../components/plugins/InstalledPluginsTable'
-import {
-  Activity,
-  HelpCircle,
-  CheckCircle2,
-  X,
-} from 'lucide-react'
+import { PluginInventoryTable } from '../components/plugin-manager/PluginInventoryTable'
+import { PluginDetailsDrawer } from '../components/plugin-manager/PluginDetailsDrawer'
+import { AddCustomPluginModal } from '../components/plugin-manager/AddCustomPluginModal'
+import { errorMessage } from '../lib/api'
+import { getPluginInventory, getPluginScanStatus, getPluginSummary, startPluginScan } from '../lib/pluginApi'
+import type { PluginListItem, PluginStatus, PluginSummary, PluginType } from '../types/plugin'
 
-type View = 'available' | 'installed'
-
-type PluginState =
-  | 'idle'
-  | 'confirmAdd'
-  | 'adding'
-  | 'confirmDelete'
-  | 'deleting'
-  | 'deleteSuccess'
+const PER_PAGE = 10
 
 export function PluginsPage() {
-  const [view, setView] = useState<View>('available')
-  const [selected, setSelected] = useState<number[]>([])
-  const [pluginState, setPluginState] = useState<PluginState>('idle')
+  const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const [typeFilter, setTypeFilter] = useState<'All' | PluginType>('All')
+  const [statusFilter, setStatusFilter] = useState<'All' | PluginStatus | 'Failed'>('All')
+  const [showFilter, setShowFilter] = useState(false)
+  const [sortAsc, setSortAsc] = useState(true)
+  const [page, setPage] = useState(1)
 
-  const toggleSelect = (id: number) => {
-    setSelected((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
-    )
+  const [plugins, setPlugins] = useState<PluginListItem[]>([])
+  const [listMeta, setListMeta] = useState({ pages: 1, total: 0, hasNext: false, hasPrev: false })
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  const [summary, setSummary] = useState<PluginSummary | null>(null)
+
+  const [isScanning, setIsScanning] = useState(false)
+  const [scanError, setScanError] = useState<string | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const [selectedPluginId, setSelectedPluginId] = useState<number | null>(null)
+  const [showAddCustom, setShowAddCustom] = useState(false)
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setDebouncedQuery(query)
+      setPage(1)
+    }, 350)
+    return () => clearTimeout(timeout)
+  }, [query])
+
+  useEffect(() => {
+    setPage(1)
+  }, [typeFilter, statusFilter, sortAsc])
+
+  const loadInventory = useCallback(async () => {
+    setIsLoading(true)
+    setLoadError(null)
+    try {
+      const data = await getPluginInventory({
+        page,
+        per_page: PER_PAGE,
+        sort_by: 'name',
+        order: sortAsc ? 'asc' : 'desc',
+        search: debouncedQuery,
+        type: typeFilter === 'All' ? undefined : typeFilter,
+        status: statusFilter === 'All' ? undefined : statusFilter,
+      })
+      setPlugins(data.items)
+      setListMeta({ pages: data.pages, total: data.total, hasNext: data.has_next, hasPrev: data.has_prev })
+    } catch (err) {
+      setLoadError(errorMessage(err, 'Unable to load plugin inventory.'))
+    } finally {
+      setIsLoading(false)
+    }
+  }, [page, sortAsc, debouncedQuery, typeFilter, statusFilter])
+
+  const loadSummary = useCallback(async () => {
+    try {
+      setSummary(await getPluginSummary())
+    } catch {
+      // Non-fatal — summary cards just won't update.
+    }
+  }, [])
+
+  useEffect(() => {
+    loadInventory()
+  }, [loadInventory])
+
+  useEffect(() => {
+    loadSummary()
+  }, [loadSummary])
+
+  const refreshAll = useCallback(() => {
+    loadInventory()
+    loadSummary()
+  }, [loadInventory, loadSummary])
+
+  const stopPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
   }
 
-  const handleAdd = () => {
-    if (selected.length === 0) return
-    setPluginState('confirmAdd')
+  const handleScan = async () => {
+    setScanError(null)
+    setIsScanning(true)
+    try {
+      await startPluginScan()
+      pollRef.current = setInterval(async () => {
+        try {
+          const status = await getPluginScanStatus()
+          if (!status || status.status !== 'Running') {
+            stopPolling()
+            setIsScanning(false)
+            if (status?.status === 'Failed') {
+              setScanError(status.error ?? 'Plugin scan failed.')
+            }
+            refreshAll()
+          }
+        } catch (err) {
+          stopPolling()
+          setIsScanning(false)
+          setScanError(errorMessage(err, 'Unable to check scan status.'))
+        }
+      }, 1500)
+    } catch (err) {
+      setIsScanning(false)
+      setScanError(errorMessage(err, 'Unable to start plugin scan.'))
+    }
   }
 
-  const confirmAdd = () => {
-    setPluginState('adding')
-    setTimeout(() => {
-      setSelected([])
-      setPluginState('idle')
-    }, 2500)
-  }
-
-  const handleDelete = () => {
-    if (selected.length === 0) return
-    setPluginState('confirmDelete')
-  }
-
-  const confirmDelete = () => {
-    setPluginState('deleting')
-    setTimeout(() => {
-      setSelected([])
-      setPluginState('deleteSuccess')
-    }, 2000)
-  }
-
-  const closeModal = () => setPluginState('idle')
+  useEffect(() => stopPolling, [])
 
   return (
     <main className="ml-55 flex-1 space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <PageHeader
+          title="Plugin Manager"
+          description="Manage Nagios plugin executables and command definitions on this server."
+        />
+        <button
+          type="button"
+          onClick={() => setShowAddCustom(true)}
+          className="flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-white/20 dark:text-gray-200 dark:hover:bg-white/10"
+        >
+          <PackagePlus className="h-4 w-4" /> Add Custom Plugin
+        </button>
+      </div>
 
-      <PageHeader
-        title="Monitoring Configuration"
-        description="Manage all available plugins. View active monitoring checks"
-      />
+      {loadError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
+          {loadError}
+        </div>
+      )}
+      {scanError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
+          {scanError}
+        </div>
+      )}
 
-      <div className="grid md:grid-cols-4 gap-5">
+      <div className="grid md:grid-cols-5 gap-5">
         <SummaryStatCard
-          title="Available Plugins"
-          value="50"
-          subtitle="Nagios plugins"
-          icon={Activity}
+          title="Installed Plugins"
+          value={summary ? String(summary.installed_plugins) : '—'}
+          subtitle="in inventory"
+          icon={Boxes}
+          gradient="linear-gradient(135deg,#FFB100,#F59E0B)"
+        />
+        <SummaryStatCard
+          title="Active Capabilities"
+          value={summary ? String(summary.active_capabilities) : '—'}
+          subtitle="live monitoring checks"
+          icon={CheckCircle2}
+          gradient="linear-gradient(135deg,#22C55E,#16A34A)"
+        />
+        <SummaryStatCard
+          title="Custom Plugins"
+          value={summary ? String(summary.custom_plugins) : '—'}
+          subtitle="administrator added"
+          icon={Puzzle}
           gradient="linear-gradient(135deg,#FF8A00,#FF5C00)"
         />
         <SummaryStatCard
-          title="Installed Plugins"
-          value="15"
-          subtitle="running plugins"
-          icon={Activity}
-          gradient="linear-gradient(135deg,#FFB100,#F59E0B)"
+          title="Updates Available"
+          value={summary ? String(summary.updates_available) : '—'}
+          subtitle="newer version found"
+          icon={RefreshCcw}
+          gradient="linear-gradient(135deg,#3B82F6,#2563EB)"
         />
         <SummaryStatCard
-          title="Active Monitoring Checks"
-          value="6"
-          subtitle="enabled"
-          icon={Activity}
+          title="Validation Issues"
+          value={summary ? String(summary.validation_issues) : '—'}
+          subtitle="need attention"
+          icon={AlertTriangle}
           gradient="linear-gradient(135deg,#FF4D4D,#DC2626)"
         />
-        <SummaryStatCard
-          title="Plugin Engine Status"
-          value="running"
-          subtitle=""
-          icon={Activity}
-          gradient="linear-gradient(135deg,#FFB100,#F59E0B)"
+      </div>
+
+      <PluginInventoryTable
+        plugins={plugins}
+        isLoading={isLoading}
+        query={query}
+        onQueryChange={setQuery}
+        typeFilter={typeFilter}
+        onTypeFilterChange={(t) => { setTypeFilter(t); setShowFilter(false) }}
+        statusFilter={statusFilter}
+        onStatusFilterChange={(s) => { setStatusFilter(s); setShowFilter(false) }}
+        showFilter={showFilter}
+        onToggleFilter={() => setShowFilter((v) => !v)}
+        sortAsc={sortAsc}
+        onToggleSort={() => setSortAsc((v) => !v)}
+        page={page}
+        pageCount={listMeta.pages}
+        total={listMeta.total}
+        hasNext={listMeta.hasNext}
+        hasPrev={listMeta.hasPrev}
+        onPageChange={setPage}
+        onSelectPlugin={(plugin) => setSelectedPluginId(plugin.id)}
+        onScan={handleScan}
+        isScanning={isScanning}
+      />
+
+      {selectedPluginId !== null && (
+        <PluginDetailsDrawer
+          pluginId={selectedPluginId}
+          onClose={() => setSelectedPluginId(null)}
+          onChanged={refreshAll}
         />
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-6 border-b border-gray-200 dark:border-white/10">
-        <button
-          type="button"
-          onClick={() => setView('available')}
-          className={`pb-3 text-sm transition ${
-            view === 'available'
-              ? 'border-b-2 border-gray-900 font-medium text-gray-900 dark:border-white dark:text-white'
-              : 'text-gray-500 hover:text-gray-900 dark:text-white/60 dark:hover:text-white'
-          }`}
-        >
-          Available Plugins
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setView('installed')}
-          className={`pb-3 text-sm transition ${
-            view === 'installed'
-              ? 'border-b-2 border-gray-900 font-medium text-gray-900 dark:border-white dark:text-white'
-              : 'text-gray-500 hover:text-gray-900 dark:text-white/60 dark:hover:text-white'
-          }`}
-        >
-          Installed Plugins
-        </button>
-      </div>
-
-      {view === 'available' ? (
-        <div className="mt-4">
-          <AvailablePluginsTable
-            data={availablePlugins}
-            selected={selected}
-            onSelect={toggleSelect}
-          />
-        </div>
-      ) : (
-        <div className="mt-4">
-          <InstalledPluginsTable
-            data={installedPlugins}
-            selected={selected}
-            onSelect={toggleSelect}
-          />
-        </div>
       )}
 
-      {view === 'available' && (
-        <div className="flex gap-3">
-          <button
-            onClick={handleAdd}
-            className="bg-[#ffb100] px-5 py-2 rounded-lg text-black dark:text-black font-semibold hover:brightness-105 transition active:scale-[0.99] cursor-pointer shadow-sm"
-          >
-            Add Selected Plugins
-          </button>
-
-          <button
-            onClick={handleDelete}
-            className="bg-red-500 px-5 py-2 rounded-lg text-white font-medium hover:bg-red-600 transition active:scale-[0.99] cursor-pointer shadow-sm"
-          >
-            Delete Plugins
-          </button>
-        </div>
+      {showAddCustom && (
+        <AddCustomPluginModal
+          onClose={() => setShowAddCustom(false)}
+          onAdded={refreshAll}
+        />
       )}
-
-      {pluginState !== 'idle' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="relative w-full max-w-sm rounded-3xl bg-white p-8 text-center shadow-xl">
-
-            {pluginState !== 'adding' && pluginState !== 'deleting' && (
-              <button
-                onClick={closeModal}
-                className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            )}
-
-            {pluginState === 'confirmAdd' && (
-              <>
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#F4A90B]">
-                  <HelpCircle className="h-7 w-7 text-white" />
-                </div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  This action requires system reboot.
-                </h2>
-                <p className="mt-2 text-sm text-gray-500">
-                  Are you sure you want to add the selected plugins? This action will re-analyze all connected devices.
-                </p>
-                <div className="mt-6 flex justify-center gap-3">
-                  <button
-                    onClick={closeModal}
-                    className="rounded-2xl border border-gray-300 px-5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={confirmAdd}
-                    className="rounded-2xl bg-emerald-500 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-600"
-                  >
-                    Confirm
-                  </button>
-                </div>
-              </>
-            )}
-
-            {pluginState === 'confirmDelete' && (
-              <>
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-500">
-                  <HelpCircle className="h-7 w-7 text-white" />
-                </div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Confirm Plugin Deletion
-                </h2>
-                <p className="mt-2 text-sm text-gray-500">
-                  Deleting this plugin will remove it from your available plugins list. Do you want to continue?
-                </p>
-                <div className="mt-6 flex justify-center gap-3">
-                  <button
-                    onClick={closeModal}
-                    className="rounded-2xl border border-gray-300 px-5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={confirmDelete}
-                    className="rounded-2xl bg-red-500 px-5 py-2 text-sm font-medium text-white hover:bg-red-600"
-                  >
-                    Confirm
-                  </button>
-                </div>
-              </>
-            )}
-
-            {(pluginState === 'adding' || pluginState === 'deleting') && (
-              <>
-                <div className="mx-auto mb-4 h-14 w-14 animate-spin rounded-full border-4 border-blue-200 border-t-blue-500" />
-                <h2 className="text-lg font-semibold text-gray-900">System rebooting</h2>
-                <p className="mt-2 text-sm text-gray-500">Please wait. Do not close the system.</p>
-              </>
-            )}
-
-            {pluginState === 'deleteSuccess' && (
-              <>
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-blue-500">
-                  <CheckCircle2 className="h-8 w-8 text-white" />
-                </div>
-                <h2 className="text-lg font-semibold text-gray-900">Deletion completed.</h2>
-                <div className="mt-6 flex justify-center">
-                  <button
-                    onClick={closeModal}
-                    className="rounded-2xl bg-emerald-500 px-8 py-2 text-sm font-medium text-white hover:bg-emerald-600"
-                  >
-                    OK
-                  </button>
-                </div>
-              </>
-            )}
-
-          </div>
-        </div>
-      )}
-
     </main>
   )
 }

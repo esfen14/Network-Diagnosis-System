@@ -40,7 +40,7 @@ export type DashboardSummary = {
 
 type CountBlockRecord = Record<string, number>
 
-function fromCountBlock(r: CountBlockRecord): CountBlock {
+export function fromCountBlock(r: CountBlockRecord): CountBlock {
   return {
     total: r.total,
     up: r.up,
