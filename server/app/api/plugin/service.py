@@ -32,6 +32,16 @@ from app.api.plugin.custom_plugin import (
     stage_upload, check_name_collision, install_staged_file, cleanup_staging,
     InvalidFilenameError, UploadTooLargeError, NameCollisionError,
 )
+from app.api.plugin.plugin_update import (
+    receive_archive, extract_archive, find_plugin_in_extracted,
+    backup_plugin, replace_plugin, restore_from_backup, has_backup,
+    cleanup_staging as cleanup_update_staging,
+    InvalidUrlError, DownloadError, ArchiveTooLargeError,
+    UnsupportedArchiveError, UnsafeArchiveError, PluginNotInArchiveError,
+    NoBackupAvailableError,
+)
+from app.api.plugin.scanner import extract_version
+import os
 
 
 # Statuses considered "some kind of failure" for the inventory page's
@@ -826,6 +836,36 @@ def validate_custom_plugin_submission(staged_path, name, command_name, command_d
     return {"is_valid": is_valid, "checks": checks}
 
 
+# Confirmed against client/src/types/plugin.ts (integration branch):
+# the frontend's CustomPluginCheckResult expects {name, passed, message}
+# array items, not our internal {key: {passed, message}} dict shape.
+# These display names match UI Flow Section 10's own labels exactly.
+CUSTOM_PLUGIN_CHECK_DISPLAY_NAMES = {
+    "file_detected": "Plugin file detected",
+    "executable_permission": "Executable permission",
+    "execution_test": "Plugin execution test",
+    "command_definition": "Command definition detected",
+    "metadata": "Metadata valid",
+    "dependency_check": "Dependency check",
+    "nagios_compatibility": "Nagios compatibility",
+}
+
+
+def serialize_custom_plugin_checks(checks_dict):
+    """Converts validate_custom_plugin_submission()'s internal
+    {key: {passed, message}} dict into the [{name, passed, message}]
+    list shape client/src/types/plugin.ts's CustomPluginCheckResult[]
+    expects."""
+    return [
+        {
+            "name": CUSTOM_PLUGIN_CHECK_DISPLAY_NAMES.get(key, key),
+            "passed": check["passed"],
+            "message": check["message"],
+        }
+        for key, check in checks_dict.items()
+    ]
+
+
 def register_custom_plugin(file_storage, name, version, description, author, plugin_type,
                             command_name, command_definition, dependencies, user_id):
     """
@@ -847,7 +887,12 @@ def register_custom_plugin(file_storage, name, version, description, author, plu
         user_id: the acting administrator.
 
     Returns:
-        {"is_valid": bool, "checks": {...}, "plugin": {...} | None}
+        {"success": bool, "checks": [...], "plugin": {...} | None, "message": str}
+        Matches client/src/types/plugin.ts's CustomPluginUploadResult
+        exactly (confirmed against the integration branch) — field
+        names here (success/checks-as-list/message) differ from
+        validate_custom_plugin_submission()'s internal shape
+        (is_valid/checks-as-dict) on purpose.
 
     Raises:
         InvalidFilenameError, UploadTooLargeError, NameCollisionError,
@@ -874,7 +919,16 @@ def register_custom_plugin(file_storage, name, version, description, author, plu
         )
 
         if not result["is_valid"]:
-            return {"is_valid": False, "checks": result["checks"], "plugin": None}
+            failed_names = [
+                CUSTOM_PLUGIN_CHECK_DISPLAY_NAMES.get(k, k)
+                for k, c in result["checks"].items() if not c["passed"]
+            ]
+            return {
+                "success": False,
+                "checks": serialize_custom_plugin_checks(result["checks"]),
+                "plugin": None,
+                "message": f"Validation failed: {', '.join(failed_names)}.",
+            }
 
         installed_path = install_staged_file(staged_path, safe_filename)
 
@@ -923,9 +977,10 @@ def register_custom_plugin(file_storage, name, version, description, author, plu
         db.session.commit()
 
         return {
-            "is_valid": True,
-            "checks": result["checks"],
+            "success": True,
+            "checks": serialize_custom_plugin_checks(result["checks"]),
             "plugin": serialize_plugin_summary_row(plugin),
+            "message": f"Custom plugin '{name}' registered successfully.",
         }
 
     except Exception:
@@ -933,3 +988,212 @@ def register_custom_plugin(file_storage, name, version, description, author, plu
         raise
     finally:
         cleanup_staging(staging_dir)
+
+
+# ==========================================================
+# UPDATES (Phase 9)
+# ==========================================================
+
+class NoExecutableError(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
+def set_current_plugin_version(plugin, version, executable_path):
+    """
+    Marks `version` as the current PluginVersion for this plugin,
+    updating Plugin.Current_Version to match. Reused by both a
+    successful update and a rollback — rollback in particular
+    routinely restores a version that already has a historical
+    PluginVersion row from before it was originally superseded, so
+    blindly inserting a new row would collide with PluginVersion's
+    (PluginID, Version) uniqueness constraint. This checks for an
+    existing row first and reactivates it instead of inserting a
+    duplicate.
+
+    version=None (extract_version couldn't determine it) is stored as
+    the literal string "unknown" for the PluginVersion row (the
+    column is NOT NULL), but Plugin.Current_Version is deliberately
+    left at its PREVIOUS value in that case rather than overwritten
+    with "unknown" — we know the file on disk changed, but not to
+    what, so leaving the last known-good version displayed is more
+    useful than replacing it with a placeholder.
+    """
+    version_label = version or "unknown"
+
+    existing_current = db.session.scalar(
+        sa.select(PluginVersion).where(
+            PluginVersion.PluginID == plugin.PluginID, PluginVersion.Is_Current.is_(True)
+        )
+    )
+    if existing_current and existing_current.Version == version_label:
+        return  # already current with this exact version
+
+    if existing_current:
+        existing_current.Is_Current = False
+        existing_current.Removed_At = datetime.now(timezone.utc)
+
+    existing_for_version = db.session.scalar(
+        sa.select(PluginVersion).where(
+            PluginVersion.PluginID == plugin.PluginID, PluginVersion.Version == version_label
+        )
+    )
+    if existing_for_version:
+        existing_for_version.Is_Current = True
+        existing_for_version.Executable_Path = executable_path
+        existing_for_version.Removed_At = None
+    else:
+        db.session.add(PluginVersion(
+            PluginID=plugin.PluginID,
+            Version=version_label,
+            Executable_Path=executable_path,
+            Is_Current=True,
+        ))
+
+    if version:
+        plugin.Current_Version = version
+
+
+def start_plugin_update(plugin_id, user_id, file_storage=None, url=None):
+    """
+    Full Phase 9 workflow (Implementation Plan Section 18): receive
+    archive -> extract -> identify selected plugin -> backup current
+    -> replace -> validate -> Nagios config check -> apply, OR leave
+    in a failed-but-recoverable state for manual rollback.
+
+    Confirmed design: rollback is NOT automatic on failure (see
+    rollback_plugin_update()) — a failed update sets
+    Status=ROLLBACK and stops there. "Individual extracted plugins
+    are the managed units" (Phase 9's IMPORTANT note): only the ONE
+    file matching plugin.Name is ever installed, regardless of what
+    else the archive contains.
+
+    Raises:
+        PluginNotFoundError, InvalidTransitionError, NoExecutableError,
+        InvalidUrlError, DownloadError, ArchiveTooLargeError,
+        UnsupportedArchiveError, UnsafeArchiveError, PluginNotInArchiveError
+    """
+    plugin = db.session.get(Plugin, plugin_id)
+    if plugin is None:
+        raise PluginNotFoundError()
+
+    if plugin.Status in BLOCKED_TRANSITION_STATUSES:
+        raise InvalidTransitionError(f"Cannot update a plugin in '{plugin.Status.value}' state.")
+
+    if not plugin.Executable_Path or not os.path.exists(plugin.Executable_Path):
+        raise NoExecutableError("Plugin has no installed executable to update.")
+
+    archive_path, staging_dir = receive_archive(file_storage=file_storage, url=url)
+
+    try:
+        extract_dir = os.path.join(staging_dir, "extracted")
+        os.makedirs(extract_dir, exist_ok=True)
+        extract_archive(archive_path, extract_dir)
+
+        new_file_path = find_plugin_in_extracted(extract_dir, plugin.Name)
+
+        old_version = plugin.Current_Version
+        old_status = plugin.Status.value
+
+        backup_plugin(plugin.Name, plugin.Executable_Path)
+        replace_plugin(new_file_path, plugin.Executable_Path)
+
+        validation_result = validate_plugin_executable(plugin.Executable_Path)
+        nagios_valid, nagios_output = validate_nagios_configuration()
+
+        if not validation_result["is_valid"] or not nagios_valid:
+            failed_step = "plugin validation" if not validation_result["is_valid"] else "Nagios configuration check"
+            plugin.Status = PluginStatus.ROLLBACK
+
+            record_plugin_action(
+                plugin, PluginHistoryAction.UPDATE, PluginActionResult.FAILED, user_id,
+                old_value=old_version, new_value=None,
+                message=f"Update failed at {failed_step}. Backup available for rollback.",
+            )
+            db.session.commit()
+
+            return {
+                "success": False,
+                "plugin_id": plugin.PluginID,
+                "status": plugin.Status.value,
+                "rollback_available": True,
+                "failed_step": failed_step,
+                "validation": validation_result,
+                "nagios_check": {"passed": nagios_valid, "output": nagios_output},
+            }
+
+        new_version, _ = extract_version(plugin.Executable_Path)
+
+        set_current_plugin_version(plugin, new_version, plugin.Executable_Path)
+
+        # Preserve the prior status unless it was specifically
+        # UPDATE_AVAILABLE (matches Phase 7's "don't downgrade
+        # ENABLED/ACTIVE" precedent — a successful update on an
+        # already-enabled plugin should stay enabled, not reset).
+        if plugin.Status == PluginStatus.UPDATE_AVAILABLE:
+            plugin.Status = PluginStatus.READY
+
+        record_plugin_action(
+            plugin, PluginHistoryAction.UPDATE, PluginActionResult.SUCCESS, user_id,
+            old_value=old_version, new_value=new_version,
+        )
+        db.session.commit()
+
+        return {
+            "success": True,
+            "plugin_id": plugin.PluginID,
+            "status": plugin.Status.value,
+            "previous_version": old_version,
+            "current_version": new_version,
+            "rollback_available": True,
+        }
+
+    except Exception:
+        db.session.rollback()
+        raise
+    finally:
+        cleanup_update_staging(staging_dir)
+
+
+def rollback_plugin_update(plugin_id, user_id):
+    """
+    Manual rollback (UI Flow Section 23's [Rollback] button — confirmed
+    NOT automatic). Restores the single backed-up file over whatever
+    is currently installed, and records a new "current" PluginVersion
+    for the restored version.
+
+    Raises:
+        PluginNotFoundError, NoExecutableError, NoBackupAvailableError
+    """
+    plugin = db.session.get(Plugin, plugin_id)
+    if plugin is None:
+        raise PluginNotFoundError()
+
+    if not plugin.Executable_Path:
+        raise NoExecutableError("Plugin has no installed executable path recorded.")
+
+    if not has_backup(plugin.Name):
+        raise NoBackupAvailableError(f"No backup is available for '{plugin.Name}'.")
+
+    old_version = plugin.Current_Version
+
+    restore_from_backup(plugin.Name, plugin.Executable_Path)
+
+    restored_version, _ = extract_version(plugin.Executable_Path)
+
+    set_current_plugin_version(plugin, restored_version, plugin.Executable_Path)
+    plugin.Status = PluginStatus.READY
+
+    record_plugin_action(
+        plugin, PluginHistoryAction.ROLLBACK, PluginActionResult.SUCCESS, user_id,
+        old_value=old_version, new_value=restored_version,
+    )
+    db.session.commit()
+
+    return {
+        "success": True,
+        "plugin_id": plugin.PluginID,
+        "status": plugin.Status.value,
+        "restored_version": restored_version,
+    }

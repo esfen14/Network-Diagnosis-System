@@ -83,6 +83,25 @@ SCRIPT_CONTENT = b'#!/bin/sh\necho "check_x v1.0.0"\nexit 0\n'
 BAD_EXIT_SCRIPT = b'#!/bin/sh\necho "weird"\nexit 127\n'
 
 
+CHECK_DISPLAY_NAMES = {
+    "file_detected": "Plugin file detected",
+    "executable_permission": "Executable permission",
+    "execution_test": "Plugin execution test",
+    "command_definition": "Command definition detected",
+    "metadata": "Metadata valid",
+    "dependency_check": "Dependency check",
+    "nagios_compatibility": "Nagios compatibility",
+}
+
+
+def _check(data, key):
+    """Finds a check result in the response's checks array by its
+    internal key (matches CHECK_DISPLAY_NAMES, mirroring
+    service.py's CUSTOM_PLUGIN_CHECK_DISPLAY_NAMES)."""
+    display_name = CHECK_DISPLAY_NAMES[key]
+    return next(c for c in data["checks"] if c["name"] == display_name)
+
+
 def _upload_data(filename="check_company.sh", content=SCRIPT_CONTENT, **fields):
     data = {
         "file": (io.BytesIO(content), filename),
@@ -189,10 +208,10 @@ class TestRegisterCustomPluginRoute:
 
         assert resp.status_code == 200
         data = resp.get_json()["data"]
-        assert data["is_valid"] is True
+        assert data["success"] is True
         assert data["plugin"]["name"] == "check_success"
         assert data["plugin"]["type"] == "Custom"
-        assert all(c["passed"] for c in data["checks"].values())
+        assert all(c["passed"] for c in data["checks"])
 
         plugin = db_session.session.execute(
             db_session.select(Plugin).where(Plugin.Name == "check_success")
@@ -260,9 +279,9 @@ class TestRegisterCustomPluginRoute:
 
         assert resp.status_code == 200
         data = resp.get_json()["data"]
-        assert data["is_valid"] is False
+        assert data["success"] is False
         assert data["plugin"] is None
-        assert data["checks"]["command_definition"]["passed"] is False
+        assert _check(data, "command_definition")["passed"] is False
 
         # Nothing persisted, nothing installed.
         assert db_session.session.execute(
@@ -280,9 +299,9 @@ class TestRegisterCustomPluginRoute:
             )
 
         data = resp.get_json()["data"]
-        assert data["checks"]["nagios_compatibility"]["passed"] is False
-        assert data["checks"]["execution_test"]["passed"] is True  # launched fine, just bad exit code
-        assert data["is_valid"] is False
+        assert _check(data, "nagios_compatibility")["passed"] is False
+        assert _check(data, "execution_test")["passed"] is True  # launched fine, just bad exit code
+        assert data["success"] is False
 
     def test_missing_metadata_fails(self, logged_in_client, db_session, tmp_path):
         with patch("app.api.plugin.custom_plugin.NAGIOS_PLUGIN_DIR", str(tmp_path)):
@@ -293,8 +312,8 @@ class TestRegisterCustomPluginRoute:
             )
 
         data = resp.get_json()["data"]
-        assert data["checks"]["metadata"]["passed"] is False
-        assert data["is_valid"] is False
+        assert _check(data, "metadata")["passed"] is False
+        assert data["success"] is False
 
     def test_invalid_dependency_type_fails(self, logged_in_client, db_session, tmp_path):
         with patch("app.api.plugin.custom_plugin.NAGIOS_PLUGIN_DIR", str(tmp_path)):
@@ -308,8 +327,8 @@ class TestRegisterCustomPluginRoute:
             )
 
         data = resp.get_json()["data"]
-        assert data["checks"]["dependency_check"]["passed"] is False
-        assert data["is_valid"] is False
+        assert _check(data, "dependency_check")["passed"] is False
+        assert data["success"] is False
 
     def test_malformed_dependencies_json_rejected(self, logged_in_client, db_session, tmp_path):
         with patch("app.api.plugin.custom_plugin.NAGIOS_PLUGIN_DIR", str(tmp_path)):

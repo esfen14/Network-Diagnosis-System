@@ -852,25 +852,31 @@ def register_custom_plugin_route():
         {
             "success": true,
             "data": {
-                "is_valid": true,
-                "checks": {
-                    "file_detected": {"passed": true, "message": "..."},
-                    "executable_permission": {"passed": true, "message": "...", "mode": "0755", "world_writable": false},
-                    "execution_test": {"passed": true, "message": "...", "exit_code": 0, "output": "..."},
-                    "command_definition": {"passed": true, "message": "..."},
-                    "metadata": {"passed": true, "message": "..."},
-                    "dependency_check": {"passed": true, "message": "..."},
-                    "nagios_compatibility": {"passed": true, "message": "..."}
-                },
-                "plugin": {"id": 9, "name": "check_company", "status": "Ready", "...": "..."}
+                "success": true,
+                "checks": [
+                    {"name": "Plugin file detected", "passed": true, "message": "..."},
+                    {"name": "Executable permission", "passed": true, "message": "..."},
+                    {"name": "Plugin execution test", "passed": true, "message": "..."},
+                    {"name": "Command definition detected", "passed": true, "message": "..."},
+                    {"name": "Metadata valid", "passed": true, "message": "..."},
+                    {"name": "Dependency check", "passed": true, "message": "..."},
+                    {"name": "Nagios compatibility", "passed": true, "message": "..."}
+                ],
+                "plugin": {"id": 9, "name": "check_company", "status": "Ready", "...": "..."},
+                "message": "Custom plugin 'check_company' registered successfully."
             }
         }
 
-        On validation failure, "plugin" is null and "is_valid" is false
+        On validation failure, "plugin" is null and "success" is false
         — this is still a 200 response, not an error, since the
         request itself was valid; the SUBMITTED PLUGIN failed
         validation. Matches UI Flow's "Plugin Validation Failed" screen
-        being a normal outcome, not a server error.
+        being a normal outcome, not a server error. Confirmed against
+        client/src/types/plugin.ts (integration branch)'s
+        CustomPluginUploadResult / CustomPluginCheckResult — this
+        shape (success/checks-as-array/message) is deliberately
+        different from validate_custom_plugin_submission()'s internal
+        shape (is_valid/checks-as-dict) to match that contract exactly.
 
     **Errors**
 
@@ -925,5 +931,151 @@ def register_custom_plugin_route():
     except Exception:
         current_app.logger.exception(
             "An unexpected error occurred while registering the custom plugin."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
+# ==========================================================
+# UPDATES (Phase 9)
+# ==========================================================
+
+@plugin_bp.post('/<int:plugin_id>/update')
+@login_required
+@require_permission('plugin.update')
+def update_plugin_route(plugin_id):
+    """
+    Update a plugin from an archive (UI Flow Sections 19-21).
+
+    Confirmed design: failure does NOT auto-rollback — it leaves the
+    plugin in Status=Rollback, awaiting POST .../update/rollback
+    (Section 23's explicit [Rollback] button).
+
+    **Inputs:** multipart/form-data
+
+    - ``file`` (optional): the update archive (.tar.gz/.tgz/.zip).
+    - ``url`` (optional): a URL to download the archive from instead.
+      Exactly one of ``file``/``url`` must be given.
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": {
+                "success": true,
+                "plugin_id": 3,
+                "status": "Ready",
+                "previous_version": "2.4.12",
+                "current_version": "2.4.13",
+                "rollback_available": true
+            }
+        }
+
+        On a failed update (still HTTP 200 — the REQUEST succeeded,
+        the update itself did not):
+
+        .. code-block:: json
+
+            {
+                "success": true,
+                "data": {
+                    "success": false,
+                    "status": "Rollback",
+                    "rollback_available": true,
+                    "failed_step": "plugin validation",
+                    "validation": {"...": "..."},
+                    "nagios_check": {"passed": false, "output": "..."}
+                }
+            }
+
+    **Errors**
+
+    * ``400`` - neither/both of file+url given, invalid URL (including
+      SSRF-blocked private addresses), unsupported archive type,
+      archive too large, unsafe archive contents (path traversal or
+      symlink members), or no executable currently installed.
+    * ``404`` - no plugin with that id, or the archive doesn't contain
+      a file matching this plugin's name.
+    * ``409`` - plugin is in a state that blocks updating.
+    * ``502`` - the download failed.
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        file_storage = request.files.get("file")
+        url = request.form.get("url", "").strip() or None
+
+        if bool(file_storage) == bool(url):
+            return error("Provide exactly one of 'file' or 'url'.", 400)
+
+        data = service.start_plugin_update(
+            plugin_id, current_user.UserID, file_storage=file_storage, url=url,
+        )
+        return success(data)
+
+    except service.PluginNotFoundError:
+        return error("Plugin not found.", 404)
+    except service.InvalidTransitionError as e:
+        return error(e.message, 409)
+    except service.NoExecutableError as e:
+        return error(e.message, 400)
+    except service.PluginNotInArchiveError as e:
+        return error(e.message, 404)
+    except service.InvalidUrlError as e:
+        return error(e.message, 400)
+    except service.DownloadError as e:
+        return error(e.message, 502)
+    except (service.ArchiveTooLargeError, service.UnsupportedArchiveError, service.UnsafeArchiveError) as e:
+        return error(e.message, 400)
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while updating the plugin."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
+@plugin_bp.post('/<int:plugin_id>/update/rollback')
+@login_required
+@require_permission('plugin.update_rollback')
+def rollback_plugin_update_route(plugin_id):
+    """
+    Manually roll back to the backed-up version (UI Flow Section 23's
+    [Rollback] button). Available whenever a backup exists — not only
+    after a failed update; a successful update's backup also stays
+    available (Section 22 shows "Rollback: Available" on success too).
+
+    **Inputs:** None (no request body).
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": {
+                "success": true,
+                "plugin_id": 3,
+                "status": "Ready",
+                "restored_version": "2.4.12"
+            }
+        }
+
+    **Errors**
+
+    * ``404`` - no plugin with that id, or no backup is available.
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        data = service.rollback_plugin_update(plugin_id, current_user.UserID)
+        return success(data)
+    except service.PluginNotFoundError:
+        return error("Plugin not found.", 404)
+    except service.NoExecutableError as e:
+        return error(e.message, 400)
+    except service.NoBackupAvailableError as e:
+        return error(e.message, 404)
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while rolling back the plugin update."
         )
         return error("An unexpected error occurred.", 500)
