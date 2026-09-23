@@ -20,9 +20,10 @@ from app.plugin_models import (
     PluginVersion,
     PluginCommand, PluginCommandOverride,
     PluginDependency, DependencyType, DependencyStatus,
+    PluginConfiguration, PluginConfigurationStatus,
     PluginHistory, PluginHistoryAction, PluginActionResult,
 )
-from app.system_models import ActivityLog, User
+from app.system_models import ActivityLog, User, NetworkDiscovery
 from app.api.plugin.nagios_validator import validate_nagios_configuration
 from app.api.plugin.command_validator import validate_command_definition
 from app.api.plugin.plugin_validator import (
@@ -32,6 +33,20 @@ from app.api.plugin.custom_plugin import (
     stage_upload, check_name_collision, install_staged_file, cleanup_staging,
     InvalidFilenameError, UploadTooLargeError, NameCollisionError,
 )
+from app.api.plugin.plugin_update import (
+    receive_archive, extract_archive, find_plugin_in_extracted,
+    backup_plugin, replace_plugin, restore_from_backup, has_backup,
+    cleanup_staging as cleanup_update_staging,
+    InvalidUrlError, DownloadError, ArchiveTooLargeError,
+    UnsupportedArchiveError, UnsafeArchiveError, PluginNotInArchiveError,
+    NoBackupAvailableError,
+)
+from app.api.plugin.scanner import extract_version
+from app.api.plugin.monitoring_config import (
+    generate_command_name, generate_plugin_services_cfg, write_staged_cfg,
+    ensure_cfg_file_directive, validate_plugin_services_config, apply_plugin_services_config,
+)
+import os
 
 
 # Statuses considered "some kind of failure" for the inventory page's
@@ -826,6 +841,36 @@ def validate_custom_plugin_submission(staged_path, name, command_name, command_d
     return {"is_valid": is_valid, "checks": checks}
 
 
+# Confirmed against client/src/types/plugin.ts (integration branch):
+# the frontend's CustomPluginCheckResult expects {name, passed, message}
+# array items, not our internal {key: {passed, message}} dict shape.
+# These display names match UI Flow Section 10's own labels exactly.
+CUSTOM_PLUGIN_CHECK_DISPLAY_NAMES = {
+    "file_detected": "Plugin file detected",
+    "executable_permission": "Executable permission",
+    "execution_test": "Plugin execution test",
+    "command_definition": "Command definition detected",
+    "metadata": "Metadata valid",
+    "dependency_check": "Dependency check",
+    "nagios_compatibility": "Nagios compatibility",
+}
+
+
+def serialize_custom_plugin_checks(checks_dict):
+    """Converts validate_custom_plugin_submission()'s internal
+    {key: {passed, message}} dict into the [{name, passed, message}]
+    list shape client/src/types/plugin.ts's CustomPluginCheckResult[]
+    expects."""
+    return [
+        {
+            "name": CUSTOM_PLUGIN_CHECK_DISPLAY_NAMES.get(key, key),
+            "passed": check["passed"],
+            "message": check["message"],
+        }
+        for key, check in checks_dict.items()
+    ]
+
+
 def register_custom_plugin(file_storage, name, version, description, author, plugin_type,
                             command_name, command_definition, dependencies, user_id):
     """
@@ -847,7 +892,12 @@ def register_custom_plugin(file_storage, name, version, description, author, plu
         user_id: the acting administrator.
 
     Returns:
-        {"is_valid": bool, "checks": {...}, "plugin": {...} | None}
+        {"success": bool, "checks": [...], "plugin": {...} | None, "message": str}
+        Matches client/src/types/plugin.ts's CustomPluginUploadResult
+        exactly (confirmed against the integration branch) — field
+        names here (success/checks-as-list/message) differ from
+        validate_custom_plugin_submission()'s internal shape
+        (is_valid/checks-as-dict) on purpose.
 
     Raises:
         InvalidFilenameError, UploadTooLargeError, NameCollisionError,
@@ -874,7 +924,16 @@ def register_custom_plugin(file_storage, name, version, description, author, plu
         )
 
         if not result["is_valid"]:
-            return {"is_valid": False, "checks": result["checks"], "plugin": None}
+            failed_names = [
+                CUSTOM_PLUGIN_CHECK_DISPLAY_NAMES.get(k, k)
+                for k, c in result["checks"].items() if not c["passed"]
+            ]
+            return {
+                "success": False,
+                "checks": serialize_custom_plugin_checks(result["checks"]),
+                "plugin": None,
+                "message": f"Validation failed: {', '.join(failed_names)}.",
+            }
 
         installed_path = install_staged_file(staged_path, safe_filename)
 
@@ -923,9 +982,10 @@ def register_custom_plugin(file_storage, name, version, description, author, plu
         db.session.commit()
 
         return {
-            "is_valid": True,
-            "checks": result["checks"],
+            "success": True,
+            "checks": serialize_custom_plugin_checks(result["checks"]),
             "plugin": serialize_plugin_summary_row(plugin),
+            "message": f"Custom plugin '{name}' registered successfully.",
         }
 
     except Exception:
@@ -933,3 +993,460 @@ def register_custom_plugin(file_storage, name, version, description, author, plu
         raise
     finally:
         cleanup_staging(staging_dir)
+
+
+# ==========================================================
+# UPDATES (Phase 9)
+# ==========================================================
+
+class NoExecutableError(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
+def set_current_plugin_version(plugin, version, executable_path):
+    """
+    Marks `version` as the current PluginVersion for this plugin,
+    updating Plugin.Current_Version to match. Reused by both a
+    successful update and a rollback — rollback in particular
+    routinely restores a version that already has a historical
+    PluginVersion row from before it was originally superseded, so
+    blindly inserting a new row would collide with PluginVersion's
+    (PluginID, Version) uniqueness constraint. This checks for an
+    existing row first and reactivates it instead of inserting a
+    duplicate.
+
+    version=None (extract_version couldn't determine it) is stored as
+    the literal string "unknown" for the PluginVersion row (the
+    column is NOT NULL), but Plugin.Current_Version is deliberately
+    left at its PREVIOUS value in that case rather than overwritten
+    with "unknown" — we know the file on disk changed, but not to
+    what, so leaving the last known-good version displayed is more
+    useful than replacing it with a placeholder.
+    """
+    version_label = version or "unknown"
+
+    existing_current = db.session.scalar(
+        sa.select(PluginVersion).where(
+            PluginVersion.PluginID == plugin.PluginID, PluginVersion.Is_Current.is_(True)
+        )
+    )
+    if existing_current and existing_current.Version == version_label:
+        return  # already current with this exact version
+
+    if existing_current:
+        existing_current.Is_Current = False
+        existing_current.Removed_At = datetime.now(timezone.utc)
+
+    existing_for_version = db.session.scalar(
+        sa.select(PluginVersion).where(
+            PluginVersion.PluginID == plugin.PluginID, PluginVersion.Version == version_label
+        )
+    )
+    if existing_for_version:
+        existing_for_version.Is_Current = True
+        existing_for_version.Executable_Path = executable_path
+        existing_for_version.Removed_At = None
+    else:
+        db.session.add(PluginVersion(
+            PluginID=plugin.PluginID,
+            Version=version_label,
+            Executable_Path=executable_path,
+            Is_Current=True,
+        ))
+
+    if version:
+        plugin.Current_Version = version
+
+
+def start_plugin_update(plugin_id, user_id, file_storage=None, url=None):
+    """
+    Full Phase 9 workflow (Implementation Plan Section 18): receive
+    archive -> extract -> identify selected plugin -> backup current
+    -> replace -> validate -> Nagios config check -> apply, OR leave
+    in a failed-but-recoverable state for manual rollback.
+
+    Confirmed design: rollback is NOT automatic on failure (see
+    rollback_plugin_update()) — a failed update sets
+    Status=ROLLBACK and stops there. "Individual extracted plugins
+    are the managed units" (Phase 9's IMPORTANT note): only the ONE
+    file matching plugin.Name is ever installed, regardless of what
+    else the archive contains.
+
+    Raises:
+        PluginNotFoundError, InvalidTransitionError, NoExecutableError,
+        InvalidUrlError, DownloadError, ArchiveTooLargeError,
+        UnsupportedArchiveError, UnsafeArchiveError, PluginNotInArchiveError
+    """
+    plugin = db.session.get(Plugin, plugin_id)
+    if plugin is None:
+        raise PluginNotFoundError()
+
+    if plugin.Status in BLOCKED_TRANSITION_STATUSES:
+        raise InvalidTransitionError(f"Cannot update a plugin in '{plugin.Status.value}' state.")
+
+    if not plugin.Executable_Path or not os.path.exists(plugin.Executable_Path):
+        raise NoExecutableError("Plugin has no installed executable to update.")
+
+    archive_path, staging_dir = receive_archive(file_storage=file_storage, url=url)
+
+    try:
+        extract_dir = os.path.join(staging_dir, "extracted")
+        os.makedirs(extract_dir, exist_ok=True)
+        extract_archive(archive_path, extract_dir)
+
+        new_file_path = find_plugin_in_extracted(extract_dir, plugin.Name)
+
+        old_version = plugin.Current_Version
+        old_status = plugin.Status.value
+
+        backup_plugin(plugin.Name, plugin.Executable_Path)
+        replace_plugin(new_file_path, plugin.Executable_Path)
+
+        validation_result = validate_plugin_executable(plugin.Executable_Path)
+        nagios_valid, nagios_output = validate_nagios_configuration()
+
+        if not validation_result["is_valid"] or not nagios_valid:
+            failed_step = "plugin validation" if not validation_result["is_valid"] else "Nagios configuration check"
+            plugin.Status = PluginStatus.ROLLBACK
+
+            record_plugin_action(
+                plugin, PluginHistoryAction.UPDATE, PluginActionResult.FAILED, user_id,
+                old_value=old_version, new_value=None,
+                message=f"Update failed at {failed_step}. Backup available for rollback.",
+            )
+            db.session.commit()
+
+            return {
+                "success": False,
+                "plugin_id": plugin.PluginID,
+                "status": plugin.Status.value,
+                "rollback_available": True,
+                "failed_step": failed_step,
+                "validation": validation_result,
+                "nagios_check": {"passed": nagios_valid, "output": nagios_output},
+            }
+
+        new_version, _ = extract_version(plugin.Executable_Path)
+
+        set_current_plugin_version(plugin, new_version, plugin.Executable_Path)
+
+        # Preserve the prior status unless it was specifically
+        # UPDATE_AVAILABLE (matches Phase 7's "don't downgrade
+        # ENABLED/ACTIVE" precedent — a successful update on an
+        # already-enabled plugin should stay enabled, not reset).
+        if plugin.Status == PluginStatus.UPDATE_AVAILABLE:
+            plugin.Status = PluginStatus.READY
+
+        record_plugin_action(
+            plugin, PluginHistoryAction.UPDATE, PluginActionResult.SUCCESS, user_id,
+            old_value=old_version, new_value=new_version,
+        )
+        db.session.commit()
+
+        return {
+            "success": True,
+            "plugin_id": plugin.PluginID,
+            "status": plugin.Status.value,
+            "previous_version": old_version,
+            "current_version": new_version,
+            "rollback_available": True,
+        }
+
+    except Exception:
+        db.session.rollback()
+        raise
+    finally:
+        cleanup_update_staging(staging_dir)
+
+
+def rollback_plugin_update(plugin_id, user_id):
+    """
+    Manual rollback (UI Flow Section 23's [Rollback] button — confirmed
+    NOT automatic). Restores the single backed-up file over whatever
+    is currently installed, and records a new "current" PluginVersion
+    for the restored version.
+
+    Raises:
+        PluginNotFoundError, NoExecutableError, NoBackupAvailableError
+    """
+    plugin = db.session.get(Plugin, plugin_id)
+    if plugin is None:
+        raise PluginNotFoundError()
+
+    if not plugin.Executable_Path:
+        raise NoExecutableError("Plugin has no installed executable path recorded.")
+
+    if not has_backup(plugin.Name):
+        raise NoBackupAvailableError(f"No backup is available for '{plugin.Name}'.")
+
+    old_version = plugin.Current_Version
+
+    restore_from_backup(plugin.Name, plugin.Executable_Path)
+
+    restored_version, _ = extract_version(plugin.Executable_Path)
+
+    set_current_plugin_version(plugin, restored_version, plugin.Executable_Path)
+    plugin.Status = PluginStatus.READY
+
+    record_plugin_action(
+        plugin, PluginHistoryAction.ROLLBACK, PluginActionResult.SUCCESS, user_id,
+        old_value=old_version, new_value=restored_version,
+    )
+    db.session.commit()
+
+    return {
+        "success": True,
+        "plugin_id": plugin.PluginID,
+        "status": plugin.Status.value,
+        "restored_version": restored_version,
+    }
+
+
+# ==========================================================
+# MONITORING CONFIGURATION (Phase 10)
+# ==========================================================
+
+class TargetNotFoundError(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
+class NoCommandDefinedError(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
+class ConfigurationNotFoundError(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
+def get_active_command_line(plugin_id):
+    """
+    Resolves the effective command line for a plugin: an active
+    override if one exists (Phase 6), otherwise the default command
+    (Phase 1). Reused by Phase 10 to know what a target's generated
+    Nagios `command` object should actually run.
+
+    Returns:
+        (command_line: str | None, command: PluginCommand | None)
+    """
+    default_command = db.session.scalar(
+        sa.select(PluginCommand).where(
+            PluginCommand.PluginID == plugin_id, PluginCommand.Is_Default.is_(True),
+        )
+    )
+    if default_command is None:
+        return None, None
+
+    active_override = db.session.scalar(
+        sa.select(PluginCommandOverride).where(
+            PluginCommandOverride.PluginCommandID == default_command.PluginCommandID,
+            PluginCommandOverride.Is_Active.is_(True),
+        )
+    )
+    command_line = active_override.Override_Command if active_override else default_command.Command_Definition
+    return command_line, default_command
+
+
+def build_configuration_tuples(configurations):
+    """
+    Resolves each PluginConfiguration row into the
+    (host_name, service_description, command_name, command_line)
+    tuple generate_plugin_services_cfg() needs, skipping any row
+    whose plugin/target/command can no longer be resolved (e.g. the
+    plugin or target was deleted after this configuration was
+    applied) rather than letting one bad row break the whole rebuild.
+    """
+    tuples = []
+    for config in configurations:
+        plugin = db.session.get(Plugin, config.PluginID)
+        target = db.session.get(NetworkDiscovery, config.NetDiscoveryID)
+        if plugin is None or target is None:
+            continue
+
+        command_line, _ = get_active_command_line(config.PluginID)
+        if not command_line:
+            continue
+
+        tuples.append((
+            target.Hostname or target.IP_Address,
+            config.Service_Description,
+            generate_command_name(plugin.Name),
+            command_line,
+        ))
+    return tuples
+
+
+def get_plugin_configurations(plugin_id):
+    """GET /plugin/<id>/configurations — list this plugin's applied/pending/failed targets."""
+    configs = db.session.scalars(
+        sa.select(PluginConfiguration).where(PluginConfiguration.PluginID == plugin_id)
+    ).all()
+
+    result = []
+    for config in configs:
+        target = db.session.get(NetworkDiscovery, config.NetDiscoveryID)
+        result.append({
+            "id": config.PluginConfigurationID,
+            "target": {
+                "id": target.NetDiscoveryID,
+                "hostname": target.Hostname,
+                "ip_address": target.IP_Address,
+            } if target else None,
+            "service_description": config.Service_Description,
+            "status": config.Status.value,
+            "configuration_data": config.Configuration_Data,
+            "updated_at": config.Updated_At.isoformat(),
+        })
+    return result
+
+
+def apply_plugin_configuration(plugin_id, net_discovery_id, service_description, user_id, configuration_data=None):
+    """
+    Full Phase 10 workflow (Implementation Plan Section 18):
+    Administrator selects plugin capability -> selects target ->
+    Plugin Manager generates/updates Nagios configuration -> validates
+    it -> applies/reloads Nagios -> Nagios monitors target.
+
+    Regenerates plugin-services.cfg from scratch each pass (all
+    currently-Applied configurations, PLUS this one as a candidate) —
+    matches Network Discovery's own established full-rebuild
+    convention for its file, rather than incrementally patching.
+
+    On success: this configuration's Status becomes APPLIED, and
+    Plugin.Status becomes ACTIVE — the one thing in the entire Plugin
+    Manager module that can set that status; every earlier phase
+    stopped short of it deliberately.
+
+    On failure: nothing live is touched (validation runs against a
+    throwaway temp copy, never the real files) — this configuration's
+    Status becomes FAILED and Plugin.Status is left alone.
+
+    Raises:
+        PluginNotFoundError, InvalidTransitionError, TargetNotFoundError,
+        NoCommandDefinedError
+    """
+    plugin = db.session.get(Plugin, plugin_id)
+    if plugin is None:
+        raise PluginNotFoundError()
+
+    if plugin.Status in BLOCKED_TRANSITION_STATUSES:
+        raise InvalidTransitionError(
+            f"Cannot apply monitoring configuration for a plugin in '{plugin.Status.value}' state."
+        )
+
+    target = db.session.get(NetworkDiscovery, net_discovery_id)
+    if target is None:
+        raise TargetNotFoundError(f"No target device with id {net_discovery_id}.")
+
+    command_line, _ = get_active_command_line(plugin_id)
+    if not command_line:
+        raise NoCommandDefinedError(f"Plugin '{plugin.Name}' has no command definition.")
+
+    existing_config = db.session.scalar(
+        sa.select(PluginConfiguration).where(
+            PluginConfiguration.PluginID == plugin_id,
+            PluginConfiguration.NetDiscoveryID == net_discovery_id,
+            PluginConfiguration.Service_Description == service_description,
+        )
+    )
+    if existing_config:
+        config = existing_config
+        config.Configuration_Data = configuration_data
+    else:
+        config = PluginConfiguration(
+            PluginID=plugin_id,
+            NetDiscoveryID=net_discovery_id,
+            Service_Description=service_description,
+            Configuration_Data=configuration_data,
+            Status=PluginConfigurationStatus.PENDING,
+        )
+        db.session.add(config)
+    db.session.flush()
+
+    already_applied = db.session.scalars(
+        sa.select(PluginConfiguration).where(
+            PluginConfiguration.Status == PluginConfigurationStatus.APPLIED,
+            PluginConfiguration.PluginConfigurationID != config.PluginConfigurationID,
+        )
+    ).all()
+
+    candidate_configs = list(already_applied) + [config]
+    tuples = build_configuration_tuples(candidate_configs)
+
+    cfg_contents = generate_plugin_services_cfg(tuples)
+    staged_path = write_staged_cfg(cfg_contents)
+
+    try:
+        is_valid, output = validate_plugin_services_config(staged_path)
+
+        if not is_valid:
+            config.Status = PluginConfigurationStatus.FAILED
+            record_plugin_action(
+                plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.FAILED, user_id,
+                message=f"Monitoring configuration validation failed: {output[:500]}",
+            )
+            db.session.commit()
+            return {
+                "success": False,
+                "configuration_id": config.PluginConfigurationID,
+                "status": config.Status.value,
+                "validation_output": output,
+            }
+
+        directive_ok = ensure_cfg_file_directive()
+        if not directive_ok:
+            config.Status = PluginConfigurationStatus.FAILED
+            record_plugin_action(
+                plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.FAILED, user_id,
+                message="Could not ensure plugin-services.cfg is referenced by nagios.cfg.",
+            )
+            db.session.commit()
+            return {
+                "success": False,
+                "configuration_id": config.PluginConfigurationID,
+                "status": config.Status.value,
+                "validation_output": "Failed to update nagios.cfg's cfg_file directives.",
+            }
+
+        applied, apply_message = apply_plugin_services_config(staged_path)
+
+        if not applied:
+            config.Status = PluginConfigurationStatus.FAILED
+            record_plugin_action(
+                plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.FAILED, user_id,
+                message=apply_message,
+            )
+            db.session.commit()
+            return {
+                "success": False,
+                "configuration_id": config.PluginConfigurationID,
+                "status": config.Status.value,
+                "validation_output": apply_message,
+            }
+
+        config.Status = PluginConfigurationStatus.APPLIED
+        plugin.Status = PluginStatus.ACTIVE
+
+        record_plugin_action(
+            plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.SUCCESS, user_id,
+            new_value=service_description,
+            message=f"Applied to {target.Hostname or target.IP_Address}: {service_description}.",
+        )
+        db.session.commit()
+
+        return {
+            "success": True,
+            "configuration_id": config.PluginConfigurationID,
+            "status": config.Status.value,
+            "plugin_status": plugin.Status.value,
+        }
+
+    finally:
+        staged_path.unlink(missing_ok=True)

@@ -52,7 +52,7 @@ from typing import Optional
 import sqlalchemy as sa
 
 from app import db
-from app.plugin_models import Plugin, PluginVersion, PluginType, PluginSource, PluginStatus
+from app.plugin_models import Plugin, PluginVersion, PluginCommand, PluginType, PluginSource, PluginStatus
 
 
 # Confirmed from the ISO's install-nagios-plugins.sh / install-nagios-core.sh:
@@ -225,6 +225,21 @@ def sync_plugin_inventory(scan_results):
                     Executable_Path=scanned.path,
                     Is_Current=True,
                 ))
+
+            # A generic, genuinely runnable default — "-H $HOSTADDRESS$"
+            # is a reasonable starting point for many host-check-style
+            # plugins, but real arguments (warning/critical thresholds,
+            # OIDs, etc.) vary per plugin and can't be auto-derived from
+            # just a filename. This exists so every plugin has SOMETHING
+            # to override via Phase 6, and so Phase 10 (apply) has a
+            # command to work with at all — without this, no
+            # baseline-scanned plugin could ever be applied to a target.
+            db.session.add(PluginCommand(
+                PluginID=plugin.PluginID,
+                Command_Name=scanned.name,
+                Command_Definition=f"{scanned.name} -H $HOSTADDRESS$",
+                Is_Default=True,
+            ))
 
             created += 1
             continue

@@ -34,7 +34,7 @@ import sqlalchemy as sa
 import sqlalchemy.orm as so
 
 from app import db
-from app.system_models import ActivityLog
+from app.system_models import ActivityLog, NetworkDiscovery
 
 
 """
@@ -257,27 +257,42 @@ class PluginDependency(db.Model):
     Plugin_Dependency: so.Mapped[Plugin] = so.relationship(back_populates='Dependencies')
 
 
+class PluginConfigurationStatus(Enum):
+    """
+    Phase 10's addition to PluginConfiguration — tracks whether THIS
+    specific plugin+target+service pairing has actually been wired
+    into live Nagios config, independent of Plugin.Status (which
+    tracks the plugin's own lifecycle, not any one configuration's).
+    """
+    PENDING = "Pending"
+    APPLIED = "Applied"
+    FAILED = "Failed"
+
+
 class PluginConfiguration(db.Model):
     """
     Stores Plugin Manager configuration state (e.g. argument defaults
-    such as warning/critical thresholds) for a plugin.
+    such as warning/critical thresholds) for a plugin, AND — as of
+    Phase 10 — which target device/service it's wired to in live
+    Nagios config.
 
-    NOTE — scoped deliberately narrow for Phase 1:
-    This does NOT yet link a plugin to a specific target host/service.
-    UI Flow Section 13-17 shows configuration being applied to specific
-    device/service targets ("Router-01 / Interface Traffic"), but the
-    repository does not yet have a Service/monitoring-target model to
-    foreign-key against (NetworkDiscovery models hosts, not services).
-    Wiring PluginConfiguration to concrete targets is Phase 10
-    (Monitoring Configuration) and will likely require an additional
-    table/column once the target model is decided — do not treat this
-    table as final/complete until that phase.
+    Phase 10 note: NetDiscoveryID is confirmed scope — a target is
+    always an existing NetworkDiscovery device (the only source of
+    real Nagios host objects in this codebase; see
+    network_discovery/create_host_cfg.py). Free-form/unscanned targets
+    are explicitly out of scope, since Plugin Manager would otherwise
+    need to also create host objects, risking collision with Network
+    Discovery's own host management.
     """
     # Table Name
     __tablename__ = "PLUGIN_CONFIGURATION"
 
     # Table Fields
     PluginConfigurationID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Service_Description: so.Mapped[Optional[str]] = so.mapped_column(sa.String(200))
+    Status: so.Mapped[PluginConfigurationStatus] = so.mapped_column(
+        sa.Enum(PluginConfigurationStatus), default=PluginConfigurationStatus.PENDING,
+    )
     Configuration_Data: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
     Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Updated_At: so.Mapped[datetime] = so.mapped_column(
@@ -285,14 +300,18 @@ class PluginConfiguration(db.Model):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    # Foreign Key Field
+    # Foreign Key Fields
     PluginID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(Plugin.PluginID), index=True)
+    NetDiscoveryID: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True,
+    )
 
     """
     Gets one instance of Plugin
     back_populate specifies that you can access this table from either side
     """
     Plugin_Configuration: so.Mapped[Plugin] = so.relationship(back_populates='Configurations')
+    Target_Device: so.Mapped[Optional[NetworkDiscovery]] = so.relationship(back_populates='Plugin_Configurations')
 
 
 class PluginHistoryAction(Enum):
