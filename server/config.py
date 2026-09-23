@@ -86,3 +86,19 @@ class Config:
     NAGIOS_ARCHIVE_URL = f"http://{NAGIOS_HOST}/nagios/cgi-bin/archivejson.cgi"
     NAGIOS_USERNAME = os.environ.get('NAGIOS_USERNAME') or "nagiosadmin"
     NAGIOS_PASSWORD = os.environ.get('NAGIOS_PASSWORD') or "password"
+
+    """
+    |------------------------------------------------------------------
+    | Plugin Manager — Monitoring Configuration (Phase 10)
+    |
+    | A SEPARATE config file from NAGIOS_HOST_CFG, deliberately: that
+    | file is fully regenerated from scratch by Network Discovery on
+    | every scan (see network_discovery/create_host_cfg.py), which
+    | would silently wipe out any service definitions Plugin Manager
+    | added there. This file is exclusively Plugin Manager's — Network
+    | Discovery never reads or writes it.
+    |------------------------------------------------------------------
+    """
+    PLUGIN_SERVICE_CFG = Path(os.environ.get('PLUGIN_SERVICE_CFG') or "/usr/local/nagios/etc/objects/plugin-services.cfg")
+    PLUGIN_SERVICE_STAGING_DIR = Path(basedir) / "plugin-service-config-files"
+    PLUGIN_SERVICE_BACKUP_DIR = Path(basedir) / "running-plugin-service-config-backup"

@@ -20,9 +20,10 @@ from app.plugin_models import (
     PluginVersion,
     PluginCommand, PluginCommandOverride,
     PluginDependency, DependencyType, DependencyStatus,
+    PluginConfiguration, PluginConfigurationStatus,
     PluginHistory, PluginHistoryAction, PluginActionResult,
 )
-from app.system_models import ActivityLog, User
+from app.system_models import ActivityLog, User, NetworkDiscovery
 from app.api.plugin.nagios_validator import validate_nagios_configuration
 from app.api.plugin.command_validator import validate_command_definition
 from app.api.plugin.plugin_validator import (
@@ -41,6 +42,10 @@ from app.api.plugin.plugin_update import (
     NoBackupAvailableError,
 )
 from app.api.plugin.scanner import extract_version
+from app.api.plugin.monitoring_config import (
+    generate_command_name, generate_plugin_services_cfg, write_staged_cfg,
+    ensure_cfg_file_directive, validate_plugin_services_config, apply_plugin_services_config,
+)
 import os
 
 
@@ -1197,3 +1202,251 @@ def rollback_plugin_update(plugin_id, user_id):
         "status": plugin.Status.value,
         "restored_version": restored_version,
     }
+
+
+# ==========================================================
+# MONITORING CONFIGURATION (Phase 10)
+# ==========================================================
+
+class TargetNotFoundError(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
+class NoCommandDefinedError(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
+class ConfigurationNotFoundError(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
+def get_active_command_line(plugin_id):
+    """
+    Resolves the effective command line for a plugin: an active
+    override if one exists (Phase 6), otherwise the default command
+    (Phase 1). Reused by Phase 10 to know what a target's generated
+    Nagios `command` object should actually run.
+
+    Returns:
+        (command_line: str | None, command: PluginCommand | None)
+    """
+    default_command = db.session.scalar(
+        sa.select(PluginCommand).where(
+            PluginCommand.PluginID == plugin_id, PluginCommand.Is_Default.is_(True),
+        )
+    )
+    if default_command is None:
+        return None, None
+
+    active_override = db.session.scalar(
+        sa.select(PluginCommandOverride).where(
+            PluginCommandOverride.PluginCommandID == default_command.PluginCommandID,
+            PluginCommandOverride.Is_Active.is_(True),
+        )
+    )
+    command_line = active_override.Override_Command if active_override else default_command.Command_Definition
+    return command_line, default_command
+
+
+def build_configuration_tuples(configurations):
+    """
+    Resolves each PluginConfiguration row into the
+    (host_name, service_description, command_name, command_line)
+    tuple generate_plugin_services_cfg() needs, skipping any row
+    whose plugin/target/command can no longer be resolved (e.g. the
+    plugin or target was deleted after this configuration was
+    applied) rather than letting one bad row break the whole rebuild.
+    """
+    tuples = []
+    for config in configurations:
+        plugin = db.session.get(Plugin, config.PluginID)
+        target = db.session.get(NetworkDiscovery, config.NetDiscoveryID)
+        if plugin is None or target is None:
+            continue
+
+        command_line, _ = get_active_command_line(config.PluginID)
+        if not command_line:
+            continue
+
+        tuples.append((
+            target.Hostname or target.IP_Address,
+            config.Service_Description,
+            generate_command_name(plugin.Name),
+            command_line,
+        ))
+    return tuples
+
+
+def get_plugin_configurations(plugin_id):
+    """GET /plugin/<id>/configurations — list this plugin's applied/pending/failed targets."""
+    configs = db.session.scalars(
+        sa.select(PluginConfiguration).where(PluginConfiguration.PluginID == plugin_id)
+    ).all()
+
+    result = []
+    for config in configs:
+        target = db.session.get(NetworkDiscovery, config.NetDiscoveryID)
+        result.append({
+            "id": config.PluginConfigurationID,
+            "target": {
+                "id": target.NetDiscoveryID,
+                "hostname": target.Hostname,
+                "ip_address": target.IP_Address,
+            } if target else None,
+            "service_description": config.Service_Description,
+            "status": config.Status.value,
+            "configuration_data": config.Configuration_Data,
+            "updated_at": config.Updated_At.isoformat(),
+        })
+    return result
+
+
+def apply_plugin_configuration(plugin_id, net_discovery_id, service_description, user_id, configuration_data=None):
+    """
+    Full Phase 10 workflow (Implementation Plan Section 18):
+    Administrator selects plugin capability -> selects target ->
+    Plugin Manager generates/updates Nagios configuration -> validates
+    it -> applies/reloads Nagios -> Nagios monitors target.
+
+    Regenerates plugin-services.cfg from scratch each pass (all
+    currently-Applied configurations, PLUS this one as a candidate) —
+    matches Network Discovery's own established full-rebuild
+    convention for its file, rather than incrementally patching.
+
+    On success: this configuration's Status becomes APPLIED, and
+    Plugin.Status becomes ACTIVE — the one thing in the entire Plugin
+    Manager module that can set that status; every earlier phase
+    stopped short of it deliberately.
+
+    On failure: nothing live is touched (validation runs against a
+    throwaway temp copy, never the real files) — this configuration's
+    Status becomes FAILED and Plugin.Status is left alone.
+
+    Raises:
+        PluginNotFoundError, InvalidTransitionError, TargetNotFoundError,
+        NoCommandDefinedError
+    """
+    plugin = db.session.get(Plugin, plugin_id)
+    if plugin is None:
+        raise PluginNotFoundError()
+
+    if plugin.Status in BLOCKED_TRANSITION_STATUSES:
+        raise InvalidTransitionError(
+            f"Cannot apply monitoring configuration for a plugin in '{plugin.Status.value}' state."
+        )
+
+    target = db.session.get(NetworkDiscovery, net_discovery_id)
+    if target is None:
+        raise TargetNotFoundError(f"No target device with id {net_discovery_id}.")
+
+    command_line, _ = get_active_command_line(plugin_id)
+    if not command_line:
+        raise NoCommandDefinedError(f"Plugin '{plugin.Name}' has no command definition.")
+
+    existing_config = db.session.scalar(
+        sa.select(PluginConfiguration).where(
+            PluginConfiguration.PluginID == plugin_id,
+            PluginConfiguration.NetDiscoveryID == net_discovery_id,
+            PluginConfiguration.Service_Description == service_description,
+        )
+    )
+    if existing_config:
+        config = existing_config
+        config.Configuration_Data = configuration_data
+    else:
+        config = PluginConfiguration(
+            PluginID=plugin_id,
+            NetDiscoveryID=net_discovery_id,
+            Service_Description=service_description,
+            Configuration_Data=configuration_data,
+            Status=PluginConfigurationStatus.PENDING,
+        )
+        db.session.add(config)
+    db.session.flush()
+
+    already_applied = db.session.scalars(
+        sa.select(PluginConfiguration).where(
+            PluginConfiguration.Status == PluginConfigurationStatus.APPLIED,
+            PluginConfiguration.PluginConfigurationID != config.PluginConfigurationID,
+        )
+    ).all()
+
+    candidate_configs = list(already_applied) + [config]
+    tuples = build_configuration_tuples(candidate_configs)
+
+    cfg_contents = generate_plugin_services_cfg(tuples)
+    staged_path = write_staged_cfg(cfg_contents)
+
+    try:
+        is_valid, output = validate_plugin_services_config(staged_path)
+
+        if not is_valid:
+            config.Status = PluginConfigurationStatus.FAILED
+            record_plugin_action(
+                plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.FAILED, user_id,
+                message=f"Monitoring configuration validation failed: {output[:500]}",
+            )
+            db.session.commit()
+            return {
+                "success": False,
+                "configuration_id": config.PluginConfigurationID,
+                "status": config.Status.value,
+                "validation_output": output,
+            }
+
+        directive_ok = ensure_cfg_file_directive()
+        if not directive_ok:
+            config.Status = PluginConfigurationStatus.FAILED
+            record_plugin_action(
+                plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.FAILED, user_id,
+                message="Could not ensure plugin-services.cfg is referenced by nagios.cfg.",
+            )
+            db.session.commit()
+            return {
+                "success": False,
+                "configuration_id": config.PluginConfigurationID,
+                "status": config.Status.value,
+                "validation_output": "Failed to update nagios.cfg's cfg_file directives.",
+            }
+
+        applied, apply_message = apply_plugin_services_config(staged_path)
+
+        if not applied:
+            config.Status = PluginConfigurationStatus.FAILED
+            record_plugin_action(
+                plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.FAILED, user_id,
+                message=apply_message,
+            )
+            db.session.commit()
+            return {
+                "success": False,
+                "configuration_id": config.PluginConfigurationID,
+                "status": config.Status.value,
+                "validation_output": apply_message,
+            }
+
+        config.Status = PluginConfigurationStatus.APPLIED
+        plugin.Status = PluginStatus.ACTIVE
+
+        record_plugin_action(
+            plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.SUCCESS, user_id,
+            new_value=service_description,
+            message=f"Applied to {target.Hostname or target.IP_Address}: {service_description}.",
+        )
+        db.session.commit()
+
+        return {
+            "success": True,
+            "configuration_id": config.PluginConfigurationID,
+            "status": config.Status.value,
+            "plugin_status": plugin.Status.value,
+        }
+
+    finally:
+        staged_path.unlink(missing_ok=True)

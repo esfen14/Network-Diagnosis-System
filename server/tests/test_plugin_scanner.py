@@ -32,7 +32,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from app.plugin_models import Plugin, PluginVersion, PluginType, PluginSource, PluginStatus
+from app.plugin_models import Plugin, PluginVersion, PluginCommand, PluginType, PluginSource, PluginStatus
 from app.api.plugin.scanner import scan_plugin_directory, sync_plugin_inventory
 
 
@@ -140,6 +140,29 @@ class TestScanPluginDirectory:
 # ─── sync_plugin_inventory ────────────────────────────────────────────────────
 
 class TestSyncPluginInventory:
+    def test_new_plugin_gets_a_default_command(self, db_session, tmp_path):
+        """Regression test: every newly-registered plugin (baseline or
+        administrator-added via scan) must get a default PluginCommand
+        row — without this, Phase 6's override feature has nothing to
+        override, and Phase 10's apply can never work for it at all."""
+        _write_fake_plugin(tmp_path, "check_ping")
+        with _ALWAYS_EXECUTABLE, \
+             patch("app.api.plugin.scanner.subprocess.run",
+                   return_value=_mock_completed_process("check_ping v2.4.12")):
+            sync_plugin_inventory(scan_plugin_directory(str(tmp_path)))
+
+        plugin = db_session.session.execute(
+            db_session.select(Plugin).where(Plugin.Name == "check_ping")
+        ).scalar_one()
+
+        command = db_session.session.execute(
+            db_session.select(PluginCommand).where(PluginCommand.PluginID == plugin.PluginID)
+        ).scalar_one()
+        assert command.Is_Default is True
+        assert command.Command_Name == "check_ping"
+        assert "check_ping" in command.Command_Definition
+        assert "$HOSTADDRESS$" in command.Command_Definition
+
     def test_initial_seed_marks_baseline(self, db_session, tmp_path):
         """When the Plugin table is empty, everything found is BASELINE_ISO."""
         _write_fake_plugin(tmp_path, "check_ping")

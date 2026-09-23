@@ -26,7 +26,7 @@ import json
 
 from app.api.plugin import plugin_bp
 from app.api.plugin import service
-from app.api.helper import success, error
+from app.api.helper import success, error, validate_json_data, validate_json_fields
 from app.api.helper.database_access.permissions import require_permission
 from app.api.plugin.scanner import scan_plugin_directory, sync_plugin_inventory, NAGIOS_PLUGIN_DIR
 from app.logging.plugin_scan_status import (
@@ -34,7 +34,7 @@ from app.logging.plugin_scan_status import (
     update_plugin_scan_status,
     get_plugin_scan_status,
 )
-from app.plugin_models import PluginScanStatusValue
+from app.plugin_models import PluginScanStatusValue, Plugin
 from datetime import datetime, timezone
 from app import app, db
 
@@ -1077,5 +1077,150 @@ def rollback_plugin_update_route(plugin_id):
     except Exception:
         current_app.logger.exception(
             "An unexpected error occurred while rolling back the plugin update."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
+# ==========================================================
+# MONITORING CONFIGURATION (Phase 10)
+# ==========================================================
+
+@plugin_bp.get('/<int:plugin_id>/configurations')
+@login_required
+@require_permission('plugin.view')
+def get_plugin_configurations_route(plugin_id):
+    """
+    List a plugin's applied/pending/failed monitoring targets (UI Flow
+    Section 8's monitoring-usage context, now backed by real data
+    instead of Phase 3's placeholder).
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": [
+                {
+                    "id": 4,
+                    "target": {"id": 12, "hostname": "router-01", "ip_address": "192.168.130.10"},
+                    "service_description": "Interface Traffic",
+                    "status": "Applied",
+                    "configuration_data": null,
+                    "updated_at": "2026-09-22T12:00:00"
+                }
+            ]
+        }
+
+    **Errors**
+
+    * ``404`` - no plugin with that id.
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        if db.session.get(Plugin, plugin_id) is None:
+            return error("Plugin not found.", 404)
+        data = service.get_plugin_configurations(plugin_id)
+        return success(data)
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while retrieving plugin configurations."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
+@plugin_bp.post('/<int:plugin_id>/configurations')
+@login_required
+@require_permission('plugin.configure')
+def apply_plugin_configuration_route(plugin_id):
+    """
+    Apply a plugin to a target device/service — the full Phase 10
+    workflow (UI Flow Sections 13-17: Administrator selects plugin
+    capability -> selects target -> Plugin Manager generates/updates
+    Nagios configuration -> validates -> applies/reloads Nagios ->
+    Nagios monitors target).
+
+    Confirmed design: targets are always an existing NetworkDiscovery
+    device (the only source of real Nagios host objects in this
+    codebase) — free-form/unscanned targets are out of scope.
+
+    On success, this is the ONLY thing in Plugin Manager that can set
+    Plugin.Status to Active — every earlier phase stopped short of it
+    deliberately.
+
+    **Inputs (JSON body)**
+
+    - ``net_discovery_id`` (required): the target device's id.
+    - ``service_description`` (required): e.g. "Interface Traffic".
+    - ``configuration_data`` (optional): arbitrary JSON (e.g. warning/
+      critical thresholds), stored as-is.
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": {
+                "success": true,
+                "configuration_id": 4,
+                "status": "Applied",
+                "plugin_status": "Active"
+            }
+        }
+
+        On failure (still HTTP 200 — the request itself was valid; the
+        CONFIGURATION failed to apply):
+
+        .. code-block:: json
+
+            {
+                "success": true,
+                "data": {
+                    "success": false,
+                    "configuration_id": 4,
+                    "status": "Failed",
+                    "validation_output": "..."
+                }
+            }
+
+    **Errors**
+
+    * ``400`` - missing required fields.
+    * ``404`` - no plugin with that id, or no target device with that id.
+    * ``409`` - plugin is in a state that blocks configuration, or has
+      no command definition.
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        data = request.get_json()
+        err = validate_json_data(data)
+        if err is not None:
+            return err
+
+        err = validate_json_fields(data, {"net_discovery_id": int, "service_description": str})
+        if err is not None:
+            return err
+
+        result = service.apply_plugin_configuration(
+            plugin_id,
+            data["net_discovery_id"],
+            data["service_description"],
+            current_user.UserID,
+            configuration_data=data.get("configuration_data"),
+        )
+        return success(result)
+
+    except service.PluginNotFoundError:
+        return error("Plugin not found.", 404)
+    except service.InvalidTransitionError as e:
+        return error(e.message, 409)
+    except service.TargetNotFoundError as e:
+        return error(e.message, 404)
+    except service.NoCommandDefinedError as e:
+        return error(e.message, 409)
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while applying the monitoring configuration."
         )
         return error("An unexpected error occurred.", 500)
