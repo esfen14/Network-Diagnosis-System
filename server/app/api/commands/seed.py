@@ -34,6 +34,17 @@ PERMISSIONS = [
     "system.network_health",
     "system.acknowledge_alerts",
     "system.dashboard",
+    "plugin.scan",
+    "plugin.view",
+    "plugin.enable",
+    "plugin.disable",
+    "plugin.command_override",
+    "plugin.command_restore",
+    "plugin.validate",
+    "plugin.custom_add",
+    "plugin.update",
+    "plugin.update_rollback",
+    "plugin.configure",
 ]
 
 ROLES = [

@@ -148,7 +148,26 @@ export type CustomPluginCheckResult = {
 
 export type CustomPluginUploadResult = {
   success: boolean
-  plugin?: PluginListItem
+  plugin: PluginListItem | null
   checks: CustomPluginCheckResult[]
   message: string
+}
+
+// POST /<id>/validate — distinct shape from PluginDetails; checks is a dict
+// keyed by check name, not a list (see server/app/api/plugin/manager.py).
+export type PluginValidationCheck = {
+  passed: boolean
+  message: string
+  [extra: string]: unknown
+}
+
+export type PluginValidationResult = {
+  plugin_id: number
+  is_valid: boolean
+  status: PluginStatus
+  checks: {
+    executable: PluginValidationCheck
+    permissions: PluginValidationCheck
+    execution: PluginValidationCheck
+  }
 }

@@ -21,7 +21,7 @@ import {
   validatePlugin,
 } from '../../lib/pluginApi'
 import { errorMessage } from '../../lib/api'
-import type { PluginCommand, PluginDependency, PluginDetails } from '../../types/plugin'
+import type { PluginCommand, PluginDependency, PluginDetails, PluginValidationResult } from '../../types/plugin'
 
 type Props = {
   pluginId: number
@@ -50,7 +50,7 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
-  const [validation, setValidation] = useState<'idle' | 'ok' | 'failed'>('idle')
+  const [validation, setValidation] = useState<PluginValidationResult | null>(null)
   const [editingCommandId, setEditingCommandId] = useState<number | null>(null)
   const [overrideValue, setOverrideValue] = useState('')
 
@@ -97,8 +97,7 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
 
   const handleValidate = () =>
     runAction(async () => {
-      const updated = await validatePlugin(pluginId)
-      setValidation(updated.status === 'Validation Failed' ? 'failed' : 'ok')
+      setValidation(await validatePlugin(pluginId))
     })
 
   const startOverride = (command: PluginCommand) => {
@@ -222,20 +221,29 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
                   </button>
                 </div>
 
-                {validation !== 'idle' && (
+                {validation && (
                   <div
-                    className={`mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-                      validation === 'ok'
+                    className={`mt-3 space-y-1.5 rounded-lg px-3 py-2 text-sm ${
+                      validation.is_valid
                         ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
                         : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'
                     }`}
                   >
-                    {validation === 'ok' ? (
-                      <CheckCircle2 className="h-4 w-4" />
-                    ) : (
-                      <XCircle className="h-4 w-4" />
-                    )}
-                    {validation === 'ok' ? 'Validation passed.' : 'Validation failed.'}
+                    <div className="flex items-center gap-2 font-medium">
+                      {validation.is_valid ? (
+                        <CheckCircle2 className="h-4 w-4" />
+                      ) : (
+                        <XCircle className="h-4 w-4" />
+                      )}
+                      {validation.is_valid ? 'Validation passed.' : 'Validation failed.'}
+                    </div>
+                    <ul className="space-y-0.5 pl-6 text-xs opacity-90">
+                      {Object.entries(validation.checks).map(([name, check]) => (
+                        <li key={name}>
+                          {check.passed ? '✓' : '✗'} {name}: {check.message}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </section>

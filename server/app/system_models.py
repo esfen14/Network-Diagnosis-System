@@ -160,6 +160,9 @@ class ActivityLog(db.Model):
     Config_Logs: so.WriteOnlyMapped['ConfigurationChanges'] = so.relationship(back_populates='Logs')
     Export_Logs: so.WriteOnlyMapped['ExportLog'] = so.relationship(back_populates='Logs')
     NetDiscover_Logs: so.WriteOnlyMapped['NetworkDiscoveryStatus'] = so.relationship(back_populates='Logs')
+    Plugin_History_Logs: so.WriteOnlyMapped['PluginHistory'] = so.relationship(back_populates='Logs')
+    Plugin_Override_Logs: so.WriteOnlyMapped['PluginCommandOverride'] = so.relationship(back_populates='Logs')
+    Plugin_Scan_Logs: so.WriteOnlyMapped['PluginScanStatus'] = so.relationship(back_populates='Logs')
     
 class ConfigurationChanges( db.Model):
     # Table Name
@@ -277,6 +280,8 @@ class NetworkDiscovery(db.Model):
     """
     SSH_Creds: so.WriteOnlyMapped['SSHCredentials'] = so.relationship(back_populates='Device')
     NCPA_Deployment: so.WriteOnlyMapped['NCPADeployment'] = so.relationship(back_populates='Device')
+    # Phase 10 (Plugin Manager): plugin configurations targeting this device.
+    Plugin_Configurations: so.WriteOnlyMapped['PluginConfiguration'] = so.relationship(back_populates='Target_Device')
     
 class Open_TCP_Services(db.Model):
     __tablename__ = "OPEN_TCP_Services"

@@ -15,16 +15,25 @@ export function AddCustomPluginModal({ onClose, onAdded }: Props) {
   const [stage, setStage] = useState<Stage>('form')
   const [file, setFile] = useState<File | null>(null)
   const [name, setName] = useState('')
+  const [commandName, setCommandName] = useState('')
+  const [commandDefinition, setCommandDefinition] = useState('')
   const [result, setResult] = useState<CustomPluginUploadResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
+  const canSubmit = Boolean(file && name.trim() && commandName.trim() && commandDefinition.trim())
+
   const handleSubmit = async () => {
-    if (!file) return
+    if (!canSubmit || !file) return
     setStage('submitting')
     setError(null)
     try {
-      const res = await addCustomPlugin(file, name.trim() || undefined)
+      const res = await addCustomPlugin({
+        file,
+        name: name.trim(),
+        commandName: commandName.trim(),
+        commandDefinition: commandDefinition.trim(),
+      })
       setResult(res)
       setStage('result')
       if (res.success) onAdded()
@@ -85,7 +94,7 @@ export function AddCustomPluginModal({ onClose, onAdded }: Props) {
 
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Display name (optional)
+                Plugin name
               </label>
               <input
                 type="text"
@@ -93,6 +102,32 @@ export function AddCustomPluginModal({ onClose, onAdded }: Props) {
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. check_custom_service"
                 className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-500 dark:border-white/20 dark:bg-[#0D1117] dark:text-white"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Command name
+              </label>
+              <input
+                type="text"
+                value={commandName}
+                onChange={(e) => setCommandName(e.target.value)}
+                placeholder="e.g. check_custom_service"
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-500 dark:border-white/20 dark:bg-[#0D1117] dark:text-white"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Command definition
+              </label>
+              <textarea
+                value={commandDefinition}
+                onChange={(e) => setCommandDefinition(e.target.value)}
+                rows={2}
+                placeholder="e.g. check_custom_service -H $HOSTADDRESS$ -w $ARG1$ -c $ARG2$"
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 font-mono text-xs text-gray-900 outline-none focus:border-gray-500 dark:border-white/20 dark:bg-[#0D1117] dark:text-white"
               />
             </div>
 
@@ -107,7 +142,7 @@ export function AddCustomPluginModal({ onClose, onAdded }: Props) {
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={!file}
+                disabled={!canSubmit}
                 className="rounded-lg bg-[#ffb100] px-4 py-2 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Validate &amp; Register
