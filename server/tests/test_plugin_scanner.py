@@ -163,6 +163,43 @@ class TestSyncPluginInventory:
         assert "check_ping" in command.Command_Definition
         assert "$HOSTADDRESS$" in command.Command_Definition
 
+    def test_known_plugin_uses_hand_curated_default_not_generic_fallback(self, db_session, tmp_path):
+        """check_snmp's curated default ("-o $ARG1$") is something the
+        generic "-H $HOSTADDRESS$" fallback would never produce —
+        proves plugin_command_defaults.py is actually consulted, not
+        just coincidentally similar-looking."""
+        _write_fake_plugin(tmp_path, "check_snmp")
+        with _ALWAYS_EXECUTABLE, \
+             patch("app.api.plugin.scanner.subprocess.run",
+                   return_value=_mock_completed_process("check_snmp v2.4.12")):
+            sync_plugin_inventory(scan_plugin_directory(str(tmp_path)))
+
+        plugin = db_session.session.execute(
+            db_session.select(Plugin).where(Plugin.Name == "check_snmp")
+        ).scalar_one()
+        command = db_session.session.execute(
+            db_session.select(PluginCommand).where(PluginCommand.PluginID == plugin.PluginID)
+        ).scalar_one()
+        assert command.Command_Definition == "check_snmp -H $HOSTADDRESS$ -o $ARG1$"
+
+    def test_unknown_plugin_still_falls_back_to_generic_default(self, db_session, tmp_path):
+        """A plugin name outside the 58-entry catalog (e.g. a custom or
+        non-standard executable found by a scan) must still get
+        SOMETHING runnable, not be left with no command at all."""
+        _write_fake_plugin(tmp_path, "check_some_custom_thing")
+        with _ALWAYS_EXECUTABLE, \
+             patch("app.api.plugin.scanner.subprocess.run",
+                   return_value=_mock_completed_process("v1.0")):
+            sync_plugin_inventory(scan_plugin_directory(str(tmp_path)))
+
+        plugin = db_session.session.execute(
+            db_session.select(Plugin).where(Plugin.Name == "check_some_custom_thing")
+        ).scalar_one()
+        command = db_session.session.execute(
+            db_session.select(PluginCommand).where(PluginCommand.PluginID == plugin.PluginID)
+        ).scalar_one()
+        assert command.Command_Definition == "check_some_custom_thing -H $HOSTADDRESS$"
+
     def test_initial_seed_marks_baseline(self, db_session, tmp_path):
         """When the Plugin table is empty, everything found is BASELINE_ISO."""
         _write_fake_plugin(tmp_path, "check_ping")
