@@ -97,6 +97,10 @@ class ServiceStatus(db.Model):
     Timestamp:  so.Mapped[datetime] = so.mapped_column(index=True)
     Hostname: so.Mapped[str] = so.mapped_column(sa.String(100), index=True) 
     Service: so.Mapped[str] = so.mapped_column(sa.String(150))
+    # Nagios command name only (e.g. "pinpoint_nd_snmp") — the "!"-separated
+    # arguments are stripped before storing because they can carry secrets
+    # such as the NCPA token.
+    Check_Command: so.Mapped[Optional[str]] = so.mapped_column(sa.String(100))
     Current_State: so.Mapped[ServiceStateType] = so.mapped_column(sa.Enum(ServiceStateType))
     Plugin_Output: so.Mapped[str] = so.mapped_column(sa.String(255))
     State_Type: so.Mapped[ConnectionStateType] = so.mapped_column(sa.Enum(ConnectionStateType))

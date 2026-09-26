@@ -150,7 +150,7 @@ def network_health_trends():
         latest_services = get_latest_services()
 
         # ── Ping trends ──────────────────────────────────────────────────────
-        has_ping = any(_plugin_key(s.Service) in PING_PLUGINS for s in latest_services)
+        has_ping = any(_plugin_key(s.Service, s.Check_Command) in PING_PLUGINS for s in latest_services)
 
         if has_ping:
             rta_trend = perf_trends(
@@ -170,7 +170,7 @@ def network_health_trends():
             ping_section = {"configured": False, "rta": [], "packet_loss": []}
 
         # ── NCPA trends ──────────────────────────────────────────────────────
-        ncpa_svcs = [s for s in latest_services if _plugin_key(s.Service) == "check_ncpa"]
+        ncpa_svcs = [s for s in latest_services if _plugin_key(s.Service, s.Check_Command) == "check_ncpa"]
 
         if ncpa_svcs:
             cpu_trend  = _ncpa_trend("cpu",    hours, buckets)
@@ -353,7 +353,7 @@ def _nagios_server_trends(
     from app.api.system.statistics import LOAD_PLUGIN, DISK_PLUGIN, SWAP_PLUGIN
 
     nagios_svcs = {
-        _plugin_key(s.Service): s.Service
+        _plugin_key(s.Service, s.Check_Command): s.Service
         for s in latest_services
         if s.Hostname == NAGIOS_HOST
     }
@@ -402,7 +402,7 @@ def _nagios_server_trends(
         from app.history_models import ServiceStatus, ServicePerfData
         disk_svc = next(
             (s for s in latest_services
-             if s.Hostname == NAGIOS_HOST and _plugin_key(s.Service) == DISK_PLUGIN),
+             if s.Hostname == NAGIOS_HOST and _plugin_key(s.Service, s.Check_Command) == DISK_PLUGIN),
             None,
         )
         if disk_svc:

@@ -50,18 +50,41 @@ class Config:
     DOMAIN = "test.local"
     NCPA_PORT = "5693"
 
-    # SNMP polling settings, used when a discovered host exposes SNMP
-    # instead of (or alongside) NCPA/NRPE.
+    # SNMP polling defaults, used when a discovered host exposes SNMP
+    # instead of (or alongside) NCPA. Each SNMP_OIDS entry becomes its own
+    # Nagios service ("snmp-<metric>-<port>"); optional keys warning,
+    # critical, label and units are passed to check_snmp for that service.
+    # A host can override any of these (including the whole OID list) via
+    # NetworkDiscovery.Plugin_Variables["snmp"] — see
+    # network_discovery/plugin_registry.py.
     SNMP_COMMUNITY_STRING = os.environ.get('SNMP_COMMUNITY_STRING') or "public"
     SNMP_PORT = "161"
-    SNMP_OID = {
-        "1.3.6.1.2.1.1.3.0": "uptime",
-        "1.3.6.1.2.1.1.1.0": "system_description",
-        "1.3.6.1.2.1.2.2.1.8.3": "lan_status",
-        "1.3.6.1.2.1.2.2.1.10.3": "lan_in_octets",
-        "1.3.6.1.2.1.2.2.1.16.3": "lan_out_octets",
-        "1.3.6.1.4.1.2021.4.5.0": "memory_total",
-    }
+    SNMP_OIDS = [
+        {"metric": "uptime", "oid": "1.3.6.1.2.1.1.3.0"},
+        {"metric": "system_description", "oid": "1.3.6.1.2.1.1.1.0"},
+        {"metric": "lan_status", "oid": "1.3.6.1.2.1.2.2.1.8.3"},
+        {"metric": "lan_in_octets", "oid": "1.3.6.1.2.1.2.2.1.10.3"},
+        {"metric": "lan_out_octets", "oid": "1.3.6.1.2.1.2.2.1.16.3"},
+        {"metric": "memory_total", "oid": "1.3.6.1.4.1.2021.4.5.0"},
+    ]
+
+    # NCPA metrics checked on every host with a deployed NCPA agent. Each
+    # entry becomes its own Nagios service ("ncpa-<metric>-<port>"). A path
+    # containing {partition} expands to one service per partition recorded
+    # at install time (NCPADevicePartition), falling back to fallback_path
+    # when none were recorded. Overridable per host via
+    # NetworkDiscovery.Plugin_Variables["ncpa"].
+    NCPA_METRICS = [
+        {"metric": "cpu", "path": "cpu/percent", "warning": "50", "critical": "80", "queryargs": "aggregate=avg"},
+        {"metric": "memory", "path": "memory/virtual/percent", "warning": "50", "critical": "80", "units": "Gi"},
+        {
+            "metric": "disk",
+            "path": "disk/logical/{partition}/percent",
+            "fallback_path": "disk/logical/percent",
+            "warning": "70",
+            "critical": "95",
+        },
+    ]
 
     # Folders where generated/backed-up host configs are stored.
     HOST_CONFIG_DIR = Path(basedir) / "host-config-files"

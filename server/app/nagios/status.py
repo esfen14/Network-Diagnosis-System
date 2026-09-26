@@ -120,6 +120,9 @@ def insert_service_status_data(service, data):
             Timestamp=convert_to_UTC(data.get('last_update')),
             Hostname=data.get('name'),
             Service=service,
+            # Keep only the command name; its "!" arguments can hold secrets
+            # (e.g. the NCPA token) that must not be copied into history.db.
+            Check_Command=(data.get('check_command') or '').split('!')[0].strip() or None,
             Current_State=convert_service_state_type_enum(data.get('status')),
             Plugin_Output=data.get('plugin_output', ''),
             State_Type=convert_connection_state_type_enum(data.get('state_type')),

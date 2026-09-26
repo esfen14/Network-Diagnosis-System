@@ -263,6 +263,11 @@ class NetworkDiscovery(db.Model):
     NCPA_Eligible: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)
     Scanned_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Include_Device_In_Scanning: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=True)
+    # Per-host plugin variable overrides keyed by plugin name, e.g.
+    # {"snmp": {"community": "private", "port": 1161}}. Layered on top of
+    # the defaults in network_discovery/plugin_registry.py when this host's
+    # Nagios services are generated.
+    Plugin_Variables: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
 
     # Foreign Key Fields
     DiscoveryStatusID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscoveryStatus.DiscoveryStatusID), index=True)
