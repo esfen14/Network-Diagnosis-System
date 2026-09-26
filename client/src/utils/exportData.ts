@@ -1,4 +1,5 @@
 import type { ExportFormat } from '../types/settings'
+import { apiPost } from '../lib/api'
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
@@ -118,4 +119,10 @@ export function exportRows(
       exportPdf(rows, filename)
       break
   }
+
+  // Fire-and-forget: record the export for the audit trail. Exports are
+  // generated entirely client-side, so this is the only point the backend
+  // ever finds out one happened — never let a logging failure block or
+  // surface an error for the download itself.
+  apiPost('/api/system/exportlog', { report_type: filename, format }).catch(() => {})
 }

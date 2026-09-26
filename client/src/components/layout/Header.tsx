@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bell, Clock, HelpCircle, LogOut, PanelLeft, Settings, Star, Trash2, UserCog } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { apiGet, apiPost } from '../../lib/api'
+import { useSystemSettings } from '../../contexts/SystemSettingsContext'
+import { useCurrentUser } from '../../contexts/CurrentUserContext'
+import { fromRawNotification, formatRelativeTime as formatNotificationTime, type NotificationItem, type NotificationsResponse } from '../../types/notification'
 
 const pageTitles: Record<string, { section: string; page: string }> = {
   '/dashboard': { section: 'Dashboards', page: 'Overview' },
@@ -18,25 +22,12 @@ const FAVORITES_KEY = 'nds:favorites'
 const HISTORY_KEY = 'nds:history'
 const MAX_HISTORY = 15
 
-type NotificationItem = {
-  id: string
-  title: string
-  detail: string
-  time: string
-  read: boolean
-}
-
 type HistoryEntry = {
   path: string
   visitedAt: number
 }
 
-// abang - dummy lang muna to, palitan pag live na yung /api/notifications
-const seedNotifications: NotificationItem[] = [
-  { id: '1', title: 'Device offline', detail: 'SW-CORE-02 stopped responding', time: '5m ago', read: false },
-  { id: '2', title: 'Plugin installed', detail: 'SNMP Monitor v2 added', time: '1h ago', read: false },
-  { id: '3', title: 'Report ready', detail: 'Link Health report finished generating', time: 'Yesterday', read: true },
-]
+const UNREAD_POLL_INTERVAL_MS = 30_000
 
 function useOutsideClick(onOutside: () => void) {
   const ref = useRef<HTMLDivElement>(null)
@@ -91,6 +82,11 @@ function loadHistory(): HistoryEntry[] {
 export function Header() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
+  // Settings → General → Notifications turns the bell off system-wide, and
+  // the user's role needs the notifications permission to read them.
+  const { hasPermission } = useCurrentUser()
+  const notificationsEnabled =
+    useSystemSettings().savedSettings.notifications && hasPermission('system.notifications')
 
   const { section, page } = pageTitles[pathname] ?? {
     section: 'Dashboards',
@@ -108,8 +104,9 @@ export function Header() {
 
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
 
-  const [notifications, setNotifications] = useState<NotificationItem[]>(seedNotifications)
-  const unreadCount = notifications.filter((n) => !n.read).length
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(false)
 
   const [openMenu, setOpenMenu] = useState<'notifications' | 'history' | 'account' | null>(null)
   const menuRef = useOutsideClick(() => setOpenMenu(null))
@@ -126,6 +123,48 @@ export function Header() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
+
+  // Poll the lightweight unread-count endpoint to drive the bell badge.
+  useEffect(() => {
+    if (!notificationsEnabled) return
+
+    async function pollUnread() {
+      try {
+        const data = await apiGet<{ unread_count: number }>('/api/system/notifications/unread-count')
+        setUnreadCount(data.unread_count)
+      } catch {
+        // Non-fatal — badge just won't update this cycle.
+      }
+    }
+    pollUnread()
+    const id = window.setInterval(pollUnread, UNREAD_POLL_INTERVAL_MS)
+    return () => window.clearInterval(id)
+  }, [notificationsEnabled])
+
+  // Load the full notification list when the panel is opened.
+  useEffect(() => {
+    if (openMenu !== 'notifications') return
+
+    let cancelled = false
+    setIsLoadingNotifications(true)
+
+    apiGet<NotificationsResponse>('/api/system/notifications?limit=20')
+      .then((data) => {
+        if (cancelled) return
+        setNotifications(data.notifications.map(fromRawNotification))
+        setUnreadCount(data.unread_count)
+      })
+      .catch(() => {
+        // Non-fatal — panel just shows whatever it last had (possibly empty).
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingNotifications(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [openMenu])
 
   // log every actual page visit dito, may timestamp na para di na basta list lang ng paths
   // ayaw natin i-log ulit kung same page lang paulit ulit (avoid spam sa list)
@@ -160,9 +199,15 @@ export function Header() {
     })
   }
 
-  const markAllRead = () => {
-    // abang - dapat PATCH sa backend to pag connected na
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
+  const markAllRead = async () => {
+    const newestTs = notifications.reduce((max, n) => Math.max(max, n.timestamp), 0)
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
+    setUnreadCount(0)
+    try {
+      await apiPost('/api/system/notifications/mark-read', newestTs > 0 ? { up_to: newestTs } : {})
+    } catch {
+      // Non-fatal — worst case the next poll/open re-syncs the real count.
+    }
   }
 
   const handleLogout = async () => {
@@ -224,59 +269,65 @@ export function Header() {
 
       <div className="flex items-center gap-3" ref={menuRef}>
         {/* Notifications */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => toggleMenu('notifications')}
-            className="relative rounded-2xl p-2 text-gray-500 transition hover:bg-black/5 hover:text-gray-900 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
-            aria-label="Notifications"
-          >
-            <Bell className="h-5 w-5" />
-            {unreadCount > 0 && (
-              <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-medium text-white">
-                {unreadCount}
-              </span>
-            )}
-          </button>
+        {notificationsEnabled && (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => toggleMenu('notifications')}
+              className="relative rounded-2xl p-2 text-gray-500 transition hover:bg-black/5 hover:text-gray-900 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
+              aria-label="Notifications"
+            >
+              <Bell className="h-5 w-5" />
+              {unreadCount > 0 && (
+                <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-medium text-white">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
 
-          {openMenu === 'notifications' && (
-            <div className="absolute right-0 top-full z-20 mt-2 w-80 rounded-xl border border-gray-200 bg-white shadow-lg dark:border-white/10 dark:bg-[#171B20]">
-              <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-white/10">
-                <span className="text-sm font-medium text-gray-900 dark:text-white">Notifications</span>
-                {unreadCount > 0 && (
-                  <button
-                    onClick={markAllRead}
-                    className="text-xs font-medium text-[#ffb100] hover:underline"
-                  >
-                    Mark all read
-                  </button>
-                )}
-              </div>
-
-              <div className="max-h-72 overflow-y-auto">
-                {notifications.length === 0 ? (
-                  <p className="px-4 py-6 text-center text-sm text-gray-400">No notifications</p>
-                ) : (
-                  notifications.map((n) => (
-                    <div
-                      key={n.id}
-                      className={`border-b border-gray-50 px-4 py-3 last:border-0 dark:border-white/5 ${
-                        !n.read ? 'bg-[#ffb100]/5' : ''
-                      }`}
+            {openMenu === 'notifications' && (
+              <div className="absolute right-0 top-full z-20 mt-2 w-80 rounded-xl border border-gray-200 bg-white shadow-lg dark:border-white/10 dark:bg-[#171B20]">
+                <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-white/10">
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">Notifications</span>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={markAllRead}
+                      className="text-xs font-medium text-[#ffb100] hover:underline"
                     >
-                      <div className="flex items-center gap-2">
-                        {!n.read && <span className="h-1.5 w-1.5 rounded-full bg-[#ffb100]" />}
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">{n.title}</span>
+                      Mark all read
+                    </button>
+                  )}
+                </div>
+
+                <div className="max-h-72 overflow-y-auto">
+                  {isLoadingNotifications ? (
+                    <p className="px-4 py-6 text-center text-sm text-gray-400">Loading…</p>
+                  ) : notifications.length === 0 ? (
+                    <p className="px-4 py-6 text-center text-sm text-gray-400">No notifications</p>
+                  ) : (
+                    notifications.map((n) => (
+                      <div
+                        key={n.id}
+                        className={`border-b border-gray-50 px-4 py-3 last:border-0 dark:border-white/5 ${
+                          !n.isRead ? 'bg-[#ffb100]/5' : ''
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {!n.isRead && <span className="h-1.5 w-1.5 rounded-full bg-[#ffb100]" />}
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">
+                            {n.type} {n.hostname}{n.serviceName ? ` / ${n.serviceName}` : ''}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{n.message}</p>
+                        <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{formatNotificationTime(n.timestamp)}</p>
                       </div>
-                      <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{n.detail}</p>
-                      <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{n.time}</p>
-                    </div>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* History */}
         <div className="relative">

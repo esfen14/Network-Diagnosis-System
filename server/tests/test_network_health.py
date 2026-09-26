@@ -227,3 +227,88 @@ class TestNetworkHealthPlugins:
         db_session.session.commit()
         groups = logged_in_client.get("/api/system/network-health/plugins").get_json()["data"]["groups"]
         assert any(g["display_name"] == "NCPA" for g in groups)
+
+
+# ==========================================================
+# GET /api/system/network-health/summary — shared "Last Scan"
+# ==========================================================
+
+class TestNetworkHealthLastScan:
+    """
+    last_scan comes from NetworkDiscoveryStatus, so every user sees the
+    same value (it used to be a per-browser placeholder on the page).
+    """
+
+    def _scan(self, db_session, user, status, started, completed=None):
+        from app.logging.user_activity import create_user_log
+        from app.system_models import NetworkDiscoveryStatus
+
+        log = create_user_log(user.UserID, "Discovering Network Hosts")
+        db_session.session.add(NetworkDiscoveryStatus(
+            Status=status, Progress=100, Message="m", LogID=log.LogID,
+            Start_At=started, Completed_At=completed,
+        ))
+        db_session.session.commit()
+
+    def _last_scan(self, client):
+        resp = client.get("/api/system/network-health/summary")
+        assert resp.status_code == 200
+        return resp.get_json()["data"]["last_scan"]
+
+    def test_no_scans_yet(self, logged_in_client, db_session):
+        assert self._last_scan(logged_in_client) == {"completed_at": None, "is_running": False}
+
+    def test_latest_successful_scan_in_utc(self, logged_in_client, db_session, admin_user):
+        from datetime import datetime
+        from app.system_models import DiscoveryStatus
+
+        self._scan(db_session, admin_user, DiscoveryStatus.SUCCESS,
+                   datetime(2026, 9, 26, 8, 0), datetime(2026, 9, 26, 8, 5))
+        self._scan(db_session, admin_user, DiscoveryStatus.SUCCESS,
+                   datetime(2026, 9, 26, 9, 0), datetime(2026, 9, 26, 9, 7))
+
+        last_scan = self._last_scan(logged_in_client)
+
+        assert last_scan["completed_at"] == "2026-09-26T09:07:00+00:00"
+        assert last_scan["is_running"] is False
+
+    def test_failed_scan_does_not_count(self, logged_in_client, db_session, admin_user):
+        from datetime import datetime
+        from app.system_models import DiscoveryStatus
+
+        self._scan(db_session, admin_user, DiscoveryStatus.SUCCESS,
+                   datetime(2026, 9, 26, 8, 0), datetime(2026, 9, 26, 8, 5))
+        self._scan(db_session, admin_user, DiscoveryStatus.FAILED,
+                   datetime(2026, 9, 26, 9, 0), datetime(2026, 9, 26, 9, 1))
+
+        assert self._last_scan(logged_in_client)["completed_at"] == "2026-09-26T08:05:00+00:00"
+
+    def test_reports_running_scan(self, logged_in_client, db_session, admin_user):
+        from datetime import datetime
+        from app.system_models import DiscoveryStatus
+
+        self._scan(db_session, admin_user, DiscoveryStatus.SUCCESS,
+                   datetime(2026, 9, 26, 8, 0), datetime(2026, 9, 26, 8, 5))
+        self._scan(db_session, admin_user, DiscoveryStatus.RUNNING, datetime(2026, 9, 26, 9, 0))
+
+        last_scan = self._last_scan(logged_in_client)
+
+        assert last_scan["is_running"] is True
+        assert last_scan["completed_at"] == "2026-09-26T08:05:00+00:00"
+
+    def test_same_for_every_user(self, client, db_session, admin_user, regular_user, regular_role):
+        from datetime import datetime
+        from app.system_models import DiscoveryStatus, Permission, RolePermission
+
+        permission = db_session.session.query(Permission).filter_by(Name="system.network_health").one()
+        db_session.session.add(RolePermission(RoleID=regular_role.RoleID, PermissionID=permission.PermissionID))
+        self._scan(db_session, admin_user, DiscoveryStatus.SUCCESS,
+                   datetime(2026, 9, 26, 8, 0), datetime(2026, 9, 26, 8, 5))
+
+        client.post("/api/user/login", json={"email": "admin@example.com", "password": "AdminPass1!"})
+        as_admin = self._last_scan(client)
+        client.post("/api/user/logout")
+        client.post("/api/user/login", json={"email": "regular@example.com", "password": "RegularPass1!"})
+        as_regular = self._last_scan(client)
+
+        assert as_admin == as_regular

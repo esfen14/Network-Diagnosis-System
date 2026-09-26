@@ -2,10 +2,20 @@ from pathlib import Path
 from datetime import datetime, timezone
 import subprocess
 import shutil
-import json
 
 from app.network_discovery.network_discovery import discover_network
 from app.network_discovery.host_config_templates import *
+from app.network_discovery.plugin_registry import (
+    GENERIC_PLUGIN_FOR_TRANSPORT,
+    PluginConfigurationError,
+    Transport,
+    build_service_checks,
+    render_command_definition,
+    resolve_plugin_command,
+    resolve_plugin_name,
+    resolve_plugin_variables,
+    sanitize_name_part,
+)
 
 from app import db
 from flask import current_app
@@ -20,7 +30,7 @@ from app.system_models import \
     NCPADeployment, \
     NCPADevicePartition, \
     AgentStatus 
-from app.logging import create_network_discovery_status, update_network_discovery_status, calculate_progress
+from app.logging import create_network_discovery_status, update_network_discovery_status, calculate_progress, create_skipped_service_logs
 from app.logging.deployment_history import update_ncpa_deployment_status
 from app.system_models import DiscoveryStatus, DeploymentStatus
 import socket
@@ -35,10 +45,6 @@ import tempfile
 # same-named local at the top of the function, so the settings are
 # centralized without a Settings UI needing to touch call sites here.
 
-DEFAULT_TCP_COMMAND = "check_tcp"
-
-DEFAULT_UDP_COMMAND = "check_udp"
-
 PROGRESS_WEIGHT = [40,50,55,60,70,80,90,95,100]
 
 # Progress stages for add_ncpa_port: adding the port to the db, reloading
@@ -47,55 +53,209 @@ PROGRESS_WEIGHT = [40,50,55,60,70,80,90,95,100]
 # a real module-level constant (not a config-backed local alias).
 ADD_NCPA_PORT_PROGRESS_WEIGHT = [40, 55, 70, 85, 100]
 
-# Get the folder for command maps
-MAP_DIR = Path(__file__).parent / "command_maps"
-
-# get the tcp command map
-with open(MAP_DIR / "tcp_commands.json") as f:
-    TCP_COMMANDS = json.load(f)
-
-# get the udp command map
-with open(MAP_DIR / "udp_commands.json") as f:
-    UDP_COMMANDS = json.load(f)
-
 def _add_space(spaces):
     return "\n" * spaces
 
 
-# this is the function that will give a command based on the service name
-# if its not in the map, you'll have to make your own default command
-# ex: checkudp!63
-def _get_command(service_name, port, command_map, default_command, args=None):
+# ==========================================================
+# PLUGIN SERVICE GENERATION
+# ==========================================================
+#
+# Commands are resolved from the PLUGIN NAME, never the port — see
+# plugin_registry.py for the full resolution order. The helpers below only
+# gather each host's inputs (discovered ports, system facts, overrides) and
+# turn the registry's output into uniquely named services.
 
-    command = command_map.get(service_name)
+def load_host_plugin_facts():
+    """
+    Return plugin variables that come from the system itself rather than
+    from configuration, keyed by NetDiscoveryID and then plugin name — for
+    now each deployed NCPA agent's token and recorded partitions, e.g.
+    {12: {"ncpa": {"token": "...", "partitions": ["sda1"]}}}.
 
-    # ------------------------------------------------------------------ #
-    # No map entry — fall back to the supplied default                    #
-    # ------------------------------------------------------------------ #
-    if default_command == DEFAULT_UDP_COMMAND:
-        # check_udp requires -s and -e; supply empty strings so the plugin
-        # runs and returns a result instead of aborting with an error.
-        command = f'{default_command}!{port}!-s "" -e ""'
-    else:
-        command = f"{default_command}!{port}"
+    Devices without a deployed token are left out, so their NCPA port falls
+    back to a plain TCP check. If a device has several deployments, the most
+    recent one wins. Read-only; does not touch the session.
+    """
+    deployments = db.session.scalars(
+        sa.select(NCPADeployment)
+        .where(NCPADeployment.Token.is_not(None))
+        .order_by(NCPADeployment.NCPADeployID)
+    ).all()
 
-    if args is not None:
-        command += f"!{args}"
+    partitions_by_deployment = {}
+    partitions = db.session.scalars(
+        sa.select(NCPADevicePartition).order_by(NCPADevicePartition.PartitionID)
+    ).all()
+    for partition in partitions:
+        partitions_by_deployment.setdefault(partition.NCPADeployID, []).append(partition.Name)
 
-    return command
+    facts = {}
+    for deployment in deployments:
+        facts.setdefault(deployment.NetworkDiscoveryID, {})["ncpa"] = {
+            "token": deployment.Token,
+            "partitions": partitions_by_deployment.get(deployment.NCPADeployID, []),
+        }
+    return facts
 
-def _create_host_cfg_file(discovered_hosts):
+
+def plan_plugin_services(plugin_name, service_label, port, transport, facts, overrides, app_config):
+    """
+    Resolve one discovered port into the services plugin_name produces for
+    it — one per metric for multi-check plugins such as SNMP and NCPA.
+
+    Returns a list of dicts with base_name ("<label>[-<metric>]-<port>"),
+    transport, check_command and plugin. Raises PluginConfigurationError if
+    the plugin cannot be configured for this host.
+    """
+    variables = resolve_plugin_variables(
+        plugin_name,
+        app_config,
+        discovered={"port": port, **facts.get(plugin_name, {})},
+        overrides=overrides.get(plugin_name),
+    )
+
+    planned = []
+    for check, service_variables in build_service_checks(plugin_name, variables):
+        name_parts = [service_label]
+        if check.metric:
+            name_parts.append(sanitize_name_part(check.metric))
+        name_parts.append(str(service_variables.get("port", port)))
+
+        planned.append({
+            "base_name": "-".join(name_parts),
+            "transport": transport,
+            "check_command": resolve_plugin_command(plugin_name, service_variables, transport),
+            "plugin": plugin_name,
+        })
+    return planned
+
+
+def finalize_service_names(planned):
+    """
+    Turn planned services into (service_name, check_command, plugin) tuples
+    whose names are unique on the host. A "-TCP"/"-UDP" suffix is added only
+    when the same base name exists on both transports (e.g. DNS on 53/TCP
+    and 53/UDP); any remaining duplicate gets a numeric suffix.
+    """
+    transports_by_name = {}
+    for service in planned:
+        transports_by_name.setdefault(service["base_name"], set()).add(service["transport"])
+
+    services = []
+    used_names = set()
+    for service in planned:
+        name = service["base_name"]
+        if len(transports_by_name[name]) > 1:
+            name = f"{name}-{service['transport'].value}"
+
+        unique_name = name
+        counter = 2
+        while unique_name in used_names:
+            unique_name = f"{name}-{counter}"
+            counter += 1
+
+        used_names.add(unique_name)
+        services.append((unique_name, service["check_command"], service["plugin"]))
+    return services
+
+
+def build_host_services(host_data, facts, app_config, skipped=None):
+    """
+    Plan every Nagios service for one host from its discovered TCP and UDP
+    services. Each port resolves to a plugin by its service NAME; the port
+    is only passed along as that plugin's "port" variable.
+
+    If the matched TCP plugin cannot be configured for this host (e.g. NCPA
+    with no deployed token, MySQL with no user) the port falls back to the
+    generic TCP port check so it is still monitored.
+
+    UDP ports are only monitored through a plugin that speaks their protocol
+    (dns, ntp, snmp). A generic UDP check cannot tell a healthy port from a
+    dead one — most UDP services ignore an empty probe — so a UDP port with no
+    matching plugin, or whose plugin cannot be configured, is skipped.
+
+    Every skipped port is appended to skipped (if a list is given) as a dict
+    with hostname, port, protocol, service_name and reason. Reasons never
+    contain variable values, so secrets are not leaked into the log.
+
+    Expects host_data in _load_monitored_hosts()'s shape and facts from
+    load_host_plugin_facts(). Returns (service_name, check_command, plugin)
+    tuples.
+    """
+    hostname = host_data["data"]["hostname"]
+    overrides = host_data["data"].get("plugin_variables")
+    if not isinstance(overrides, dict):
+        overrides = {}
+    host_facts = facts.get(host_data["data"].get("net_discovery_id"), {})
+
+    def skip(discovered_name, port, transport, reason):
+        current_app.logger.warning(
+            f"Skipping {discovered_name} {port}/{transport.value} on {hostname}: {reason}"
+        )
+        if skipped is not None:
+            skipped.append({
+                "hostname": hostname,
+                "port": port,
+                "protocol": transport.value,
+                "service_name": discovered_name,
+                "reason": reason,
+            })
+
+    planned = []
+    for transport in Transport:
+        discovered_services = host_data["services"].get(transport.value.lower(), {})
+        generic_plugin = GENERIC_PLUGIN_FOR_TRANSPORT[transport]
+
+        for port, service_data in discovered_services.items():
+            discovered_name = service_data.get("service_name") or "unknown"
+            plugin_name = resolve_plugin_name(discovered_name, transport)
+            service_label = sanitize_name_part(discovered_name)
+            if plugin_name != generic_plugin:
+                service_label = plugin_name
+
+            if transport is Transport.UDP and plugin_name == generic_plugin:
+                skip(discovered_name, port, transport,
+                     "No plugin can check this UDP service.")
+                continue
+
+            try:
+                planned.extend(plan_plugin_services(
+                    plugin_name, service_label, port, transport, host_facts, overrides, app_config
+                ))
+                continue
+            except PluginConfigurationError as e:
+                if plugin_name == generic_plugin or transport is Transport.UDP:
+                    skip(discovered_name, port, transport, str(e))
+                    continue
+                current_app.logger.warning(
+                    f"{hostname} {discovered_name} {port}/{transport.value}: {e} "
+                    f"Falling back to the generic {generic_plugin} check."
+                )
+
+            try:
+                planned.extend(plan_plugin_services(
+                    generic_plugin, sanitize_name_part(discovered_name), port, transport,
+                    host_facts, overrides, app_config
+                ))
+            except PluginConfigurationError as e:
+                skip(discovered_name, port, transport, str(e))
+
+    return finalize_service_names(planned)
+
+def _create_host_cfg_file(discovered_hosts, skipped=None):
     """
     Creates a new host configuration file.
+
+    If skipped is a list, every discovered port that was not turned into a
+    Nagios service is appended to it (see build_host_services), with the
+    host's ip_address added.
 
     Returns:
         pathlib.Path: Path to the newly created file.
     """
 
     HOST_CONFIG_DIR = current_app.config['HOST_CONFIG_DIR']
-    NCPA_PORT = current_app.config['NCPA_PORT']
-    SNMP_COMMUNITY_STRING = current_app.config['SNMP_COMMUNITY_STRING']
-    SNMP_OID = current_app.config['SNMP_OID']
     HOST_CONFIG_DIR.mkdir(exist_ok=True)
 
     timestamp = datetime.now().strftime("%d-%m-%Y-%H-%M")
@@ -216,22 +376,29 @@ def _create_host_cfg_file(discovered_hosts):
 
             }
 
-    SNMP_Devices = []
+    # System-derived plugin variables (e.g. NCPA tokens and partitions),
+    # fetched once for all hosts rather than once per host.
+    plugin_facts = load_host_plugin_facts()
 
-    NCPA_Devices = []
+    # Plugins actually used by at least one service - each needs its own
+    # `define command` object, rendered once at the end of the file.
+    used_plugins = set()
 
     for hosts in discovered_hosts.values():
         for ip, host_data in hosts.items():
             host = {}
-            host["host_name"] = host_data["data"]["hostname"] 
-            host["alias"] = "alias" 
+            host["host_name"] = host_data["data"]["hostname"]
+            host["alias"] = "alias"
             host["address"] = ip
             host["contact_groups"] = "system_users"
             host_config.append(create_host(host))
             host_config.append(_add_space(4))
 
-            # Assigns hostgroup's list to be used in creating hostgroups
-            
+            # FIX (BUG_FINDINGS.md, Bug 1): restored — commit 6109a08e removed
+            # this along with service generation, which left every OS
+            # hostgroup below empty so none were ever written to the config.
+            # Assigns the host to its OS hostgroup ("Unknown" if the OS isn't
+            # one of the predefined groups).
             os_name = host_data["data"]["os"]
             if os_name in hostgroups:
                 hostgroups[os_name]["devices"].append(host_data["data"]["hostname"])
@@ -250,40 +417,30 @@ def _create_host_cfg_file(discovered_hosts):
                 """
             )
 
-            tcp_services = host_data["services"]["tcp"]
+            # FIX (BUG_FINDINGS.md, Bug 1): restored service generation.
+            # Without it the generated config only had `define host` blocks,
+            # so Nagios checked host up/down but never ran any plugin.
+            # Each discovered port resolves to a plugin by service name
+            # (plugin_registry.py); a plugin may produce several services
+            # (one per SNMP OID, one per NCPA metric/partition), all bound to
+            # this host only.
+            host_skipped = []
+            host_services = build_host_services(host_data, plugin_facts, current_app.config, host_skipped)
+            if skipped is not None:
+                for entry in host_skipped:
+                    skipped.append({**entry, "ip_address": ip})
 
-            for port, service_data in tcp_services.items():
-                service_name = f"{service_data['service_name']}-{port}-TCP"
-
-                command = _get_command(service_name,port,TCP_COMMANDS,DEFAULT_TCP_COMMAND)
-
-                service = {
-                    "host_name": host_data["data"]["hostname"],
-                    "service_name": service_name,
-                    "contact_groups": "system_users"
-                }
-
-                host_config.append(
-                    create_service(service,command)
-                )
-                host_config.append(_add_space(4))
-
-            udp_services = host_data["services"]["udp"]
-
-            for port, service_data in udp_services.items():
-                service_name = f"{service_data['service_name']}-{port}-UDP"
-
-                if service_name == "snmp":
-                    SNMP_Devices.append(host_data["data"]["hostname"])
-                else:
-                    command = _get_command(service_name,port,UDP_COMMANDS,DEFAULT_UDP_COMMAND)
+            for service_name, command, plugin_name in host_services:
+                # Remember the plugin so its `define command` is written once
+                # in the "Define Commands" section at the end of the file.
+                used_plugins.add(plugin_name)
 
                 service = {
                     "host_name": host_data["data"]["hostname"],
                     "service_name": service_name,
                     "contact_groups": "system_users"
                 }
-            
+
                 host_config.append(
                     create_service(service,command)
                 )
@@ -302,15 +459,14 @@ def _create_host_cfg_file(discovered_hosts):
     host_config.append(_add_space(4))
 
     host_config.append(
-            f"""
+        f"""
     
-            #
-            # Define OS Groups
-            #  
+        #
+        # Define OS Groups
+        #  
     
-            """
+        """
     )
-
 
     for os, group_devices in hostgroups.items():
 
@@ -327,161 +483,23 @@ def _create_host_cfg_file(discovered_hosts):
         host_config.append(create_hostgroup(host_group))
         host_config.append(_add_space(4))
 
-    if SNMP_Devices is not None:
-        host_config.append(
-                f"""
-            
-                #
-                # Define SNMP Devices
-                #  
-            
-                """
-        )
+    # FIX (BUG_FINDINGS.md, Bug 1): restored the command definitions.
+    # Every check_command above refers to a pinpoint_nd_<plugin> command;
+    # Nagios rejects the config if that command isn't defined, so write one
+    # `define command` per plugin actually used (sorted for stable output).
+    host_config.append(
+        f"""
 
-        host_group={
-            "group_name": "snmp-devices",
-            "alias_name": "SNMP Devices",
-            "member_list": ",".join(SNMP_Devices)
-        }
+        #
+        # Define Commands
+        #
 
-        host_config.append(host_group)
+        """
+    )
 
-        host_config.append(_add_space(4))
-
-        for oid, description in SNMP_OID.items():
-            service_name = f"snmp{description}-{port}-UDP"
-            command = _get_command(
-                            "snmp",
-                            "161",
-                            UDP_COMMANDS,
-                            DEFAULT_UDP_COMMAND,
-                            f"-C {SNMP_COMMUNITY_STRING} {oid}"
-                        )
-            snmp_service = create_multi_host_service(
-                                "snmp-devices",
-                                service_name,
-                                command,
-                                "system_users"
-                            )
-            host_config.append(snmp_service)
-
-        host_config.append(_add_space(4))
-
-    if SNMP_Devices is not None:
-        host_config.append(
-                f"""
-            
-                #
-                # Define NCPA Service
-                #  
-            
-                """
-        )
-
-        devices = db.session.execute(
-            sa.select(NetworkDiscovery, NCPADeployment).join(
-                NCPADeployment,
-                NetworkDiscovery.NetDiscoveryID == NCPADeployment.NetworkDiscoveryID
-            ).where(
-                NetworkDiscovery.Hostname.in_(NCPA_Devices),
-                NetworkDiscovery.NCPA_Eligible.is_(True)
-            )
-        ).all()
-
-        if devices is not None:
-            for device, ncpa_deployment in devices:
-                service_name = f"{"ncpa"}_cpu_usage-{port}-TCP"
-                ncpa_cpu_usage = {
-                    "hostname":device.Hostname,
-                    "service_name": service_name,
-                    "contact_groups": "system_users"
-                }
-                command = _get_command(
-                    "ncpa",
-                    NCPA_PORT,
-                    UDP_COMMANDS,
-                    DEFAULT_TCP_COMMAND,
-                    f' -t {ncpa_deployment.Token} -P {NCPA_PORT} -M cpu/percent -w 50 -c 80 -q "aggregate=avg" '
-                )
-                service = create_service(
-                    ncpa_cpu_usage,
-                    command
-                )
-
-                host_config.append(service)
-
-                service_name = f"{"ncpa"}_memory_usage-{port}-TCP"
-                ncpa_memory_usage = {
-                    "hostname":device.Hostname,
-                    "service_name": service_name,
-                    "contact_groups": "system_users"
-                }
-                command = _get_command(
-                    "ncpa",
-                    NCPA_PORT,
-                    UDP_COMMANDS,
-                    DEFAULT_TCP_COMMAND,
-                    f' -t {ncpa_deployment.Token} -P {NCPA_PORT} -M memory/virtual/percent -w 50 -c 80 -u Gi '
-                )
-                service = create_service(
-                    ncpa_memory_usage,
-                    command
-                )
-
-                host_config.append(service)
-
-                # --- Per-partition disk usage services ---
-                # Query the partitions that were discovered on this device
-                # during NCPA installation and stored in NCPADevicePartition.
-                # Each partition gets its own Nagios service so the dashboard
-                # can track them individually.
-                partitions = db.session.scalars(
-                    sa.select(NCPADevicePartition).where(
-                        NCPADevicePartition.NCPADeployID == ncpa_deployment.NCPADeployID
-                    )
-                ).all()
-
-                if partitions:
-                    for partition in partitions:
-                        service_name = f"{"ncpa"}-{port}-TCP-disk_usage_{partition.Name}"
-                        ncpa_disk_usage = {
-                            "hostname": device.Hostname,
-                            "service_name": service_name,
-                            "contact_groups": "system_users"
-                        }
-                        command = _get_command(
-                            "ncpa",
-                            NCPA_PORT,
-                            UDP_COMMANDS,
-                            DEFAULT_TCP_COMMAND,
-                            f' -t {ncpa_deployment.Token} -P {NCPA_PORT} -M disk/logical/{partition.Name}/percent -w 70 -c 95'
-                        )
-                        service = create_service(
-                            ncpa_disk_usage,
-                            command
-                        )
-                        host_config.append(service)
-                else:
-                    # Fallback: no partition data stored — use the generic
-                    # disk/logical endpoint so the service is still generated
-                    service_name = f"{"ncpa"}_disk_usage-{port}-TCP"
-                    ncpa_disk_usage = {
-                        "hostname": device.Hostname,
-                        "service_name": service_name,
-                        "contact_groups": "system_users"
-                    }
-                    command = _get_command(
-                        "ncpa",
-                        NCPA_PORT,
-                        UDP_COMMANDS,
-                        DEFAULT_TCP_COMMAND,
-                        f' -t {ncpa_deployment.Token} -P {NCPA_PORT} -M disk/logical/percent -w 70 -c 95 '
-                    )
-                    service = create_service(
-                        ncpa_disk_usage,
-                        command
-                    )
-                    host_config.append(service)
+    for plugin_name in sorted(used_plugins):
+        host_config.append(render_command_definition(plugin_name))
+        host_config.append(_add_space(2))
 
     with open(cfg_path, "w") as f:
         # remember to f.write("string") here after you're done with discovering devices
@@ -743,7 +761,8 @@ def _load_monitored_hosts(network_discovery_id=None, progress_weight=None):
         {
             network: {
                 ip_address: {
-                    "data": {"hostname": ..., "mac_address": ..., "os": ...},
+                    "data": {"hostname": ..., "mac_address": ..., "os": ...,
+                             "net_discovery_id": ..., "plugin_variables": {...} | None},
                     "services": {"tcp": {port: {"service_name": ...}}, "udp": {...}}
                 }
             }
@@ -800,6 +819,10 @@ def _load_monitored_hosts(network_discovery_id=None, progress_weight=None):
                 "hostname": device.Hostname,
                 "mac_address": device.MAC_Address,
                 "os": device.OS_Type,
+                # Used by build_host_services() to look up this device's
+                # plugin facts and per-host plugin variable overrides.
+                "net_discovery_id": device.NetDiscoveryID,
+                "plugin_variables": device.Plugin_Variables,
             },
             "services": {
                 "tcp": tcp_by_device.get(device.NetDiscoveryID, {}),
@@ -1128,8 +1151,10 @@ def discover_network_create_hosts(app, user_id, stop_event):
             if stop_event.is_set():
                 return
             
-            new_cfg = _create_host_cfg_file(system_hosts)
+            skipped_services = []
+            new_cfg = _create_host_cfg_file(system_hosts, skipped_services)
             print(f"Created: {new_cfg}")
+            create_skipped_service_logs(network_discovery_id, skipped_services)
             update_network_discovery_status(
                 network_discovery_id,
                 DiscoveryStatus.RUNNING,

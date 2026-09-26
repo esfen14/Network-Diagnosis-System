@@ -180,6 +180,87 @@ def get_plugin_inventory(page, per_page, search, plugin_type, status, sort_by, o
     }
 
 
+def get_running_checks(page, per_page, search):
+    """
+    Paginated list of monitoring checks that are live in Nagios right
+    now: every PluginConfiguration with Status APPLIED, i.e. one plugin
+    wired to one target device as a Nagios service. Backs the Plugin
+    Manager's "Currently Running" tab. Pending and failed configurations
+    are left out since they aren't running.
+
+    Args:
+        page, per_page: pagination.
+        search: matched against plugin name, service description,
+            device hostname and IP (case-insensitive).
+
+    Returns: dict shaped for success() -> items/page/per_page/pages/
+        total/has_next/has_prev.
+
+    Raises: InvalidQueryError for invalid pagination.
+    """
+    if page < 1:
+        raise InvalidQueryError("Page must be greater than 0")
+    if per_page < 1 or per_page > 100:
+        raise InvalidQueryError("per_page must be between 1 and 100")
+
+    query = (
+        sa.select(PluginConfiguration)
+        .join(Plugin, Plugin.PluginID == PluginConfiguration.PluginID)
+        .outerjoin(NetworkDiscovery, NetworkDiscovery.NetDiscoveryID == PluginConfiguration.NetDiscoveryID)
+        .where(PluginConfiguration.Status == PluginConfigurationStatus.APPLIED)
+    )
+
+    if search:
+        query = query.where(
+            sa.or_(
+                Plugin.Name.ilike(f"%{search}%"),
+                Plugin.Display_Name.ilike(f"%{search}%"),
+                PluginConfiguration.Service_Description.ilike(f"%{search}%"),
+                NetworkDiscovery.Hostname.ilike(f"%{search}%"),
+                NetworkDiscovery.IP_Address.ilike(f"%{search}%"),
+            )
+        )
+
+    query = query.order_by(
+        Plugin.Name.asc(),
+        NetworkDiscovery.Hostname.asc(),
+        PluginConfiguration.Service_Description.asc(),
+    )
+
+    result = db.paginate(query, page=page, per_page=per_page, error_out=False)
+
+    items = []
+    for config in result.items:
+        plugin = config.Plugin_Configuration
+        target = config.Target_Device
+        items.append({
+            "id": config.PluginConfigurationID,
+            "plugin": {
+                "id": plugin.PluginID,
+                "name": plugin.Name,
+                "display_name": plugin.Display_Name,
+                "status": plugin.Status.value,
+            },
+            "target": {
+                "id": target.NetDiscoveryID,
+                "hostname": target.Hostname,
+                "ip_address": target.IP_Address,
+            } if target else None,
+            "service_description": config.Service_Description,
+            "applied_at": config.Updated_At.isoformat(),
+        })
+
+    return {
+        "items": items,
+        "page": result.page,
+        "per_page": result.per_page,
+        "pages": result.pages,
+        "total": result.total,
+        "has_next": result.has_next,
+        "has_prev": result.has_prev,
+    }
+
+
 def get_plugin_details(plugin_id):
     """
     Single plugin's full detail view (UI Flow Section 8).

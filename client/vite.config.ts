@@ -2,6 +2,8 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+// Test settings live in vitest.config.ts: Vitest 3 bundles its own Vite 7,
+// so its `test` option does not type-check inside this Vite 8 config.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
@@ -11,10 +13,5 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
-  },
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
   },
 })

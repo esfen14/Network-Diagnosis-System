@@ -7,6 +7,7 @@ POST /plugin/scan            - Start a background filesystem scan (Phase 2)
 GET  /plugin/scan/status     - Latest scan status (Phase 2)
 GET  /plugin                 - Paginated plugin inventory (Phase 3)
 GET  /plugin/summary         - Landing page summary counts (Phase 3)
+GET  /plugin/running         - Monitoring checks currently live in Nagios
 GET  /plugin/<id>            - Single plugin's full details (Phase 3)
 GET  /plugin/history         - Global plugin history, optional ?plugin_id= (Phase 3)
 GET  /plugin/<id>/commands   - A plugin's commands + active overrides (Phase 3)
@@ -28,7 +29,7 @@ from app.api.plugin import plugin_bp
 from app.api.plugin import service
 from app.api.helper import success, error, validate_json_data, validate_json_fields
 from app.api.helper.database_access.permissions import require_permission
-from app.api.plugin.scanner import scan_plugin_directory, sync_plugin_inventory, NAGIOS_PLUGIN_DIR
+from app.api.plugin.scanner import scan_plugin_directory, sync_plugin_inventory, get_plugin_dir
 from app.logging.plugin_scan_status import (
     create_plugin_scan_status,
     update_plugin_scan_status,
@@ -41,6 +42,37 @@ from app import app, db
 scan_thread = None
 
 
+def is_plugin_scan_running():
+    """Whether a plugin directory scan thread is currently running."""
+    return scan_thread is not None and scan_thread.is_alive()
+
+
+def start_plugin_scan_thread(user_id):
+    """
+    Create a PluginScanStatus row and start a plugin directory scan in a
+    background daemon thread, attributed to user_id. Returns False if a
+    scan is already running or the status row could not be created.
+    Shared by the scan route and the scheduled update check in
+    app/automation.py.
+    """
+    global scan_thread
+
+    if is_plugin_scan_running():
+        return False
+
+    plugin_scan_status = create_plugin_scan_status(user_id)
+    if plugin_scan_status is None:
+        return False
+
+    scan_thread = threading.Thread(
+        daemon=True,
+        target=_run_scan,
+        args=(app, user_id, plugin_scan_status.PluginScanStatusID),
+    )
+    scan_thread.start()
+    return True
+
+
 def _run_scan(flask_app, user_id, plugin_scan_status_id):
     """
     Background worker: performs the actual scan + inventory sync,
@@ -51,7 +83,7 @@ def _run_scan(flask_app, user_id, plugin_scan_status_id):
     """
     with flask_app.app_context():
         try:
-            scan_results = scan_plugin_directory(NAGIOS_PLUGIN_DIR)
+            scan_results = scan_plugin_directory(get_plugin_dir())
             summary = sync_plugin_inventory(scan_results)
 
             update_plugin_scan_status(
@@ -73,7 +105,7 @@ def _run_scan(flask_app, user_id, plugin_scan_status_id):
                 100,
                 "Plugin scan failed.",
                 completed_at=datetime.now(timezone.utc),
-                error=f"Plugin directory not found: {NAGIOS_PLUGIN_DIR}",
+                error=f"Plugin directory not found: {get_plugin_dir()}",
             )
 
         except Exception as e:
@@ -113,21 +145,11 @@ def start_plugin_scan():
         500 - Unexpected server error (e.g. could not create the
               status record).
     """
-    global scan_thread
-
-    if scan_thread is not None and scan_thread.is_alive():
+    if is_plugin_scan_running():
         return error("A plugin scan is already running.", 400)
 
-    plugin_scan_status = create_plugin_scan_status(current_user.UserID)
-    if plugin_scan_status is None:
+    if not start_plugin_scan_thread(current_user.UserID):
         return error("Could not start plugin scan.", 500)
-
-    scan_thread = threading.Thread(
-        daemon=True,
-        target=_run_scan,
-        args=(app, current_user.UserID, plugin_scan_status.PluginScanStatusID),
-    )
-    scan_thread.start()
 
     return success(message="Plugin scan started.", status=202)
 
@@ -268,6 +290,68 @@ def plugin_inventory():
     except Exception:
         current_app.logger.exception(
             "An unexpected error occurred while retrieving the plugin inventory."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
+# ==========================================================
+# RUNNING CHECKS
+# ==========================================================
+
+@plugin_bp.get('/running')
+@login_required
+@require_permission('plugin.view')
+def running_checks():
+    """
+    Retrieve the monitoring checks currently running in Nagios: each
+    plugin applied to a target device, for the Plugin Manager's
+    "Currently Running" tab. Only applied configurations are listed.
+
+    **Query Parameters**
+
+    page (int, default 1)
+    per_page (int, default 10, max 100)
+    search (str, optional): matched against plugin name, service
+        description, device hostname and IP address
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": {
+                "items": [
+                    {
+                        "id": 4,
+                        "plugin": {"id": 2, "name": "check_snmp", "display_name": null, "status": "Active"},
+                        "target": {"id": 7, "hostname": "core-switch", "ip_address": "192.168.130.2"},
+                        "service_description": "Uptime",
+                        "applied_at": "2026-09-26T09:30:00+00:00"
+                    }
+                ],
+                "page": 1, "per_page": 10, "pages": 1, "total": 1,
+                "has_next": false, "has_prev": false
+            }
+        }
+
+    **Errors**
+
+    * ``400`` - invalid page or per_page.
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        page = request.args.get("page", default=1, type=int)
+        per_page = request.args.get("per_page", default=10, type=int)
+        search = request.args.get("search", default="", type=str)
+
+        return success(service.get_running_checks(page=page, per_page=per_page, search=search))
+
+    except service.InvalidQueryError as e:
+        return error(str(e), 400)
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while retrieving running plugin checks."
         )
         return error("An unexpected error occurred.", 500)
 

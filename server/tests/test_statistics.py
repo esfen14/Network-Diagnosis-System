@@ -51,7 +51,9 @@ class TestPluginKey:
         with app.app_context():
             assert _plugin_key("snmp-161-UDP") == "check_snmp"
             assert _plugin_key("dns-53-UDP")   == "check_dns"
-            assert _plugin_key("ntp-123-UDP")  == "check_ntp"
+            # check_ntp is deprecated per Plugins_List.md; the registry's
+            # ntp plugin runs its replacement, check_ntp_time.
+            assert _plugin_key("ntp-123-UDP")  == "check_ntp_time"
 
     def test_ncpa_bare(self, app):
         """ncpa-5693-TCP → check_ncpa (disk-per-partition form)."""
@@ -101,6 +103,51 @@ class TestPluginKey:
         from app.api.system.statistics import _plugin_key
         with app.app_context():
             assert _plugin_key("HTTP-80-TCP") == "check_http"
+
+    def test_current_service_name_format(self, app):
+        """{plugin}[-{metric}]-{port} names resolve through the registry."""
+        from app.api.system.statistics import _plugin_key
+        with app.app_context():
+            assert _plugin_key("snmp-uptime-161")     == "check_snmp"
+            assert _plugin_key("ncpa-cpu-5693")       == "check_ncpa"
+            assert _plugin_key("ncpa-disk_sda1-5693") == "check_ncpa"
+            assert _plugin_key("dns-53-UDP")          == "check_dns"
+            assert _plugin_key("domain-53")           == "check_dns"
+            assert _plugin_key("https-443")           == "check_http"
+
+    def test_check_command_takes_precedence_over_name(self, app):
+        """A recorded Check_Command wins over whatever the service is named."""
+        from app.api.system.statistics import _plugin_key
+        with app.app_context():
+            assert _plugin_key("Anything At All", "pinpoint_nd_snmp") == "check_snmp"
+            assert _plugin_key("http-80", "pinpoint_nd_ncpa")         == "check_ncpa"
+            assert _plugin_key("web", "pinpoint_nd_https")            == "check_http"
+
+    def test_check_command_arguments_are_ignored(self, app):
+        from app.api.system.statistics import _plugin_key
+        with app.app_context():
+            assert _plugin_key("x", "pinpoint_nd_tcp!8080!") == "check_tcp"
+            assert _plugin_key("x", "check_ping!100.0,20%!500.0,60%") == "check_ping"
+
+    def test_plugin_manager_commands(self, app):
+        """Plugin Manager's pinpoint_<plugin> commands resolve to <plugin>."""
+        from app.api.system.statistics import _plugin_key
+        with app.app_context():
+            assert _plugin_key("DNS lookup", "pinpoint_check_dig") == "check_dig"
+
+    def test_stock_local_commands(self, app):
+        """Stock Nagios localhost commands (check_local_*) map to check_*."""
+        from app.api.system.statistics import _plugin_key
+        with app.app_context():
+            assert _plugin_key("Current Load", "check_local_load")    == "check_load"
+            assert _plugin_key("Root Partition", "check_local_disk")  == "check_disk"
+            assert _plugin_key("Swap Usage", "check_local_swap")      == "check_swap"
+
+    def test_empty_check_command_falls_back_to_name(self, app):
+        from app.api.system.statistics import _plugin_key
+        with app.app_context():
+            assert _plugin_key("ssh-22", None) == "check_ssh"
+            assert _plugin_key("ssh-22", "")   == "check_ssh"
 
 
 # ==========================================================

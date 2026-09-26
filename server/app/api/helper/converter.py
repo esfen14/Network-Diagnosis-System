@@ -35,63 +35,75 @@ def convert_connection_state_type_enum(val):
 
 def convert_service_state_type_enum(val):
     """Convert Nagios status to ServiceStateType enum.
-    
-    Nagios sends status as "0" (OK), "1" (WARNING), "2" (CRITICAL), "3" (UNKNOWN).
+
+    Accepts numeric codes "0" (OK), "1" (WARNING), "2" (CRITICAL), "3" (UNKNOWN)
+    or the state name in any case. statusjson.cgi with formatoptions=enumerate
+    sends lowercase names ("ok", "warning", "critical", "unknown").
+    Anything else (e.g. "pending") falls back to UNKNOWN.
     """
     if val is None:
         return ServiceStateType.UNKNOWN
-    s = str(val).strip()
+    s = str(val).strip().lower()
     mapping = {
         "0": ServiceStateType.OK,
         "1": ServiceStateType.WARNING,
         "2": ServiceStateType.CRITICAL,
         "3": ServiceStateType.UNKNOWN,
-        "Ok": ServiceStateType.OK,
-        "OK": ServiceStateType.OK,
-        "Warning": ServiceStateType.WARNING,
-        "WARNING": ServiceStateType.WARNING,
-        "Critical": ServiceStateType.CRITICAL,
-        "CRITICAL": ServiceStateType.CRITICAL,
-        "Unknown": ServiceStateType.UNKNOWN,
-        "UNKNOWN": ServiceStateType.UNKNOWN,
+        "ok": ServiceStateType.OK,
+        "warning": ServiceStateType.WARNING,
+        "critical": ServiceStateType.CRITICAL,
+        "unknown": ServiceStateType.UNKNOWN,
     }
     return mapping.get(s, ServiceStateType.UNKNOWN)
 
 def convert_plugin_status_type_enum(val):
     """Convert plugin status string to PluginStatusType enum.
-    
-    Handles both direct enum names ("Ok", "Warning", etc.) and Nagios
-    numeric codes ("0", "1", "2", "3").
+
+    Accepts Nagios numeric codes ("0"-"3") or the status name in any case
+    ("OK", "warning", ...). Anything unrecognised, including empty input,
+    falls back to UNKNOWN — an unparseable status must never read as healthy.
     """
     if val is None:
         return PluginStatusType.UNKNOWN
-    s = str(val).strip()
+    s = str(val).strip().lower()
     mapping = {
         "0": PluginStatusType.OK,
         "1": PluginStatusType.WARNING,
         "2": PluginStatusType.CRITICAL,
         "3": PluginStatusType.UNKNOWN,
-        "Ok": PluginStatusType.OK,
-        "OK": PluginStatusType.OK,
-        "Warning": PluginStatusType.WARNING,
-        "WARNING": PluginStatusType.WARNING,
-        "Critical": PluginStatusType.CRITICAL,
-        "CRITICAL": PluginStatusType.CRITICAL,
-        "Unknown": PluginStatusType.UNKNOWN,
-        "UNKNOWN": PluginStatusType.UNKNOWN,
+        "ok": PluginStatusType.OK,
+        "warning": PluginStatusType.WARNING,
+        "critical": PluginStatusType.CRITICAL,
+        "unknown": PluginStatusType.UNKNOWN,
     }
-    return mapping.get(s, PluginStatusType.OK)
+    return mapping.get(s, PluginStatusType.UNKNOWN)
 
-def convert_acknowledgement_type_enum(str):
-    return getattr(AcknowledgementType, str.upper())
+def convert_acknowledgement_type_enum(val):
+    """Convert Nagios acknowledgement_type string to AcknowledgementType enum.
+
+    Nagios statusjson sends: "none", "normal", or "sticky".
+    The enum members are NOACK, NORMACK, STICKYACK.
+    Falls back to NOACK for any unrecognised value.
+    """
+    if val is None:
+        return AcknowledgementType.NOACK
+    mapping = {
+        "none":   AcknowledgementType.NOACK,
+        "normal": AcknowledgementType.NORMACK,
+        "sticky": AcknowledgementType.STICKYACK,
+        # Also accept the enum name directly (e.g. from internal code)
+        "noack":     AcknowledgementType.NOACK,
+        "normack":   AcknowledgementType.NORMACK,
+        "stickyack": AcknowledgementType.STICKYACK,
+    }
+    return mapping.get(str(val).lower().strip(), AcknowledgementType.NOACK)
 
 def convert_to_UTC(timestamp):
-    # Bug fix: was datetime.datetime.fromtimestamp(..., datetime.timezone.utc)
-    # — datetime is already imported as the class, so it's just datetime.fromtimestamp
-    # Nagios timestamps are Unix seconds (int), not milliseconds.
+    # Nagios statusjson.cgi returns timestamps in milliseconds (e.g. 1790410811000).
+    # Python's datetime.fromtimestamp expects seconds, so divide by 1000.
     if timestamp is None:
         return None
-    return datetime.fromtimestamp(timestamp, timezone.utc)
+    return datetime.fromtimestamp(timestamp / 1000, timezone.utc)
 
 def convert_to_UNIX(date_str, time_obj):
     # Bug fix: was strptime(f"{date_str} {time_str}", "%m:%d:%Y %H:%M")

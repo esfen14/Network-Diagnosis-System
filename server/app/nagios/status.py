@@ -2,14 +2,14 @@ import requests
 from flask import current_app
 import sqlalchemy as sa
 from app import db
-from history_models import *
+from app.history_models import *
 from datetime import datetime, timezone
 from app.nagios.version import latest, last_checked
 from app.api.helper import convert_host_state_type_enum, convert_plugin_status_type_enum, convert_acknowledgement_type_enum, convert_connection_state_type_enum, convert_service_state_type_enum, convert_to_UTC, parse_perf_token
 
 # NAGIOS_URL/USERNAME/PASSWORD now live in server/config.py's Config
-# class as NAGIOS_STATUS_URL, NAGIOS_USERNAME, NAGIOS_PASSWORD — read
-# into same-named locals inside get_status() below.
+# class as NAGIOS_STATUS_URL, NAGIOS_OBJECT_URL, NAGIOS_USERNAME,
+# NAGIOS_PASSWORD — read into same-named locals inside get_status() below.
 
 def insert_programstatus_data(data):
     try:
@@ -23,7 +23,7 @@ def insert_programstatus_data(data):
             Enable_Notifications=data.get('enable_notifications'),
             Enable_Flap_Detection=data.get('enable_flap_detection'),
             Daemon_Mode=data.get('daemon_mode'),
-            Program_Start_Time=data.get('program_start'),
+            Program_Start_Time=convert_to_UTC(data.get('program_start')),
             Passive_Host_Checks_Enabled=data.get('passive_host_checks_enabled'),
             Active_Host_Checks_Enabled=data.get('active_host_checks_enabled'),
             Passive_Service_Checks_Enabled=data.get('passive_service_checks_enabled'),
@@ -66,7 +66,7 @@ def insert_host_status_data(data):
             Plugin_Output=data.get('plugin_output', ''),
             State_Type=convert_connection_state_type_enum(data.get('state_type')),
             Current_Attempt=int(data.get('current_attempt', 1)),
-            Max_Attempts=int(data.get('max_attempt', 3)),
+            Max_Attempts=int(data.get('max_attempts', 3)),
             Last_Check=convert_to_UTC(data.get('last_check')),
             Next_Check=convert_to_UTC(data.get('next_check')),
             Last_State_Change=convert_to_UTC(data.get('last_state_change')),
@@ -85,10 +85,9 @@ def insert_host_status_data(data):
         db.session.add(host_status)
         db.session.flush()
         
-        # data['performance_data'] or perf_data field. Nagios statusjson puts
-        # perf data in 'performance_data', which is space-separated key=value
-        # pairs.  We guard against an empty / missing field gracefully.
-        perf_raw = data.get('performance_data', '') or ''
+        # Nagios statusjson.cgi returns perf data in the 'perf_data' field
+        # as a space-separated sequence of key=value tokens.
+        perf_raw = data.get('perf_data', '') or ''
 
         for perf in perf_raw.split(" "):
 
@@ -114,12 +113,15 @@ def insert_host_status_data(data):
         db.session.rollback()
         current_app.logger.exception("Failed to insert host status")
         
-def insert_service_status_data(service, data):
+def insert_service_status_data(hostname, service, data):
     try:
         service_status = ServiceStatus(
             Timestamp=convert_to_UTC(data.get('last_update')),
-            Hostname=data.get('name'),
+            Hostname=hostname,
             Service=service,
+            # Keep only the command name; its "!" arguments can hold secrets
+            # (e.g. the NCPA token) that must not be copied into history.db.
+            Check_Command=(data.get('check_command') or '').split('!')[0].strip() or None,
             Current_State=convert_service_state_type_enum(data.get('status')),
             Plugin_Output=data.get('plugin_output', ''),
             State_Type=convert_connection_state_type_enum(data.get('state_type')),
@@ -128,7 +130,7 @@ def insert_service_status_data(service, data):
             Last_Time_Critical=convert_to_UTC(data.get('last_time_critical')),
             Last_Time_Unknown=convert_to_UTC(data.get('last_time_unknown')),
             Current_Attempt=int(data.get('current_attempt', 1)),
-            Max_Attempts=int(data.get('max_attempt', 3)),
+            Max_Attempts=int(data.get('max_attempts', 3)),
             Last_Check=convert_to_UTC(data.get('last_check')),
             Next_Check=convert_to_UTC(data.get('next_check')),
             Last_State_Change=convert_to_UTC(data.get('last_state_change')),
@@ -144,9 +146,8 @@ def insert_service_status_data(service, data):
         db.session.add(service_status)
         db.session.flush()
         
-        # Bug fix: was data['plugin_putput'] (typo) and was missing add+flush
-        # inside loop; now uses performance_data field correctly
-        perf_raw = data.get('performance_data', '') or ''
+        # Nagios statusjson.cgi returns perf data in the 'perf_data' field.
+        perf_raw = data.get('perf_data', '') or ''
 
         for perf in perf_raw.split(" "):
             # Bug fix: bare "=" check silently dropped colon-separated
@@ -176,8 +177,38 @@ def insert_service_status_data(service, data):
         db.session.rollback()
         current_app.logger.exception("Failed to insert service status")
 
+def get_check_commands(object_url, auth):
+    """
+    Return {(hostname, service_description): check_command} for every
+    service Nagios has configured. statusjson.cgi does not report a
+    service's check_command, so it is looked up once per poll from
+    objectjson.cgi. On any request or parse failure an empty dict is
+    returned and a warning logged — the poll still stores status rows,
+    just with Check_Command NULL.
+    """
+    try:
+        response = requests.get(
+            object_url,
+            params={"query": "servicelist", "details": "true"},
+            auth=auth,
+            timeout=10
+        )
+        response.raise_for_status()
+        servicelist = response.json()['data']['servicelist']
+    except (requests.RequestException, ValueError, KeyError, TypeError) as e:
+        current_app.logger.warning("Failed to fetch Nagios check commands: %s", e)
+        return {}
+
+    check_commands = {}
+    for hostname, services in servicelist.items():
+        for service, service_object in services.items():
+            check_commands[(hostname, service)] = service_object.get('check_command')
+    return check_commands
+
+
 def get_status():
     NAGIOS_URL = current_app.config['NAGIOS_STATUS_URL']
+    OBJECT_URL = current_app.config['NAGIOS_OBJECT_URL']
     USERNAME = current_app.config['NAGIOS_USERNAME']
     PASSWORD = current_app.config['NAGIOS_PASSWORD']
     try:
@@ -216,6 +247,8 @@ def get_status():
 
         data = response.json()
         hostlist = data['data']['hostlist']
+
+        check_commands = get_check_commands(OBJECT_URL, (USERNAME, PASSWORD))
         
         for hostname, host_data in hostlist.items():
             
@@ -239,6 +272,7 @@ def get_status():
             servicelist = data['data']['servicelist'].get(hostname, {})
 
             for service, service_data in servicelist.items():
-                insert_service_status_data(service, service_data)
+                service_data = {**service_data, 'check_command': check_commands.get((hostname, service))}
+                insert_service_status_data(hostname, service, service_data)
     except requests.RequestException as e:
         current_app.logger.error("Failed to request Nagios status: %s", e)

@@ -194,6 +194,7 @@ The models class need to be imported to use the Enums
 class ExportFormat(Enum):
     CSV="csv"
     PDF="pdf"
+    XLS="xls"
     
 class ExportLog(db.Model):
     # Table Name
@@ -240,6 +241,44 @@ class NetworkDiscoveryStatus(db.Model):
 
     Logs: so.Mapped[ActivityLog] = so.relationship(back_populates='NetDiscover_Logs')
     Devices: so.Mapped['NetworkDiscovery'] = so.relationship(back_populates='DiscoveryRecord')
+    Skipped_Services: so.WriteOnlyMapped['SkippedService'] = so.relationship(back_populates='DiscoveryRecord')
+
+"""
+ServiceProtocol Enum so that Protocol is consistent
+To call use "SkippedService.Protocol = ServiceProtocol.UDP"
+The models class need to be imported to use the Enums
+"""
+
+class ServiceProtocol(Enum):
+    TCP = "TCP"
+    UDP = "UDP"
+
+"""
+A discovered open port that Network Discovery did NOT turn into a Nagios
+service during one discovery run (e.g. a UDP port with no plugin that can
+check it). Kept so administrators can see in the discovery log what was left
+unmonitored and why. Hostname and IP_Address are snapshots taken at the time
+of the run, so the record stays readable if the device changes later.
+"""
+
+class SkippedService(db.Model):
+    # Table name
+    __tablename__ = "SKIPPED_SERVICE"
+
+    # Table Fields
+    SkippedServiceID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Hostname: so.Mapped[str] = so.mapped_column(sa.String(255))
+    IP_Address: so.Mapped[Optional[str]] = so.mapped_column(sa.String(45))
+    Port_Number: so.Mapped[int] = so.mapped_column()
+    Protocol: so.Mapped[ServiceProtocol] = so.mapped_column(sa.Enum(ServiceProtocol))
+    Service_Name: so.Mapped[str] = so.mapped_column(sa.String(100))
+    Reason: so.Mapped[str] = so.mapped_column(sa.String(255))
+    Skipped_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+
+    # Foreign Key Fields
+    DiscoveryStatusID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscoveryStatus.DiscoveryStatusID), index=True)
+
+    DiscoveryRecord: so.Mapped[NetworkDiscoveryStatus] = so.relationship(back_populates='Skipped_Services')
 
 """
 ScanStatus Enum so that Scan_Status is consistent
@@ -262,6 +301,11 @@ class NetworkDiscovery(db.Model):
     NCPA_Eligible: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False)
     Scanned_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Include_Device_In_Scanning: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=True)
+    # Per-host plugin variable overrides keyed by plugin name, e.g.
+    # {"snmp": {"community": "private", "port": 1161}}. Layered on top of
+    # the defaults in network_discovery/plugin_registry.py when this host's
+    # Nagios services are generated.
+    Plugin_Variables: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
 
     # Foreign Key Fields
     DiscoveryStatusID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscoveryStatus.DiscoveryStatusID), index=True)

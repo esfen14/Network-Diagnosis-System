@@ -3,6 +3,8 @@ network_health.py — API routes for the Network Health page.
 
 Sections from Display_Requirements.md covered here:
   §2.1  Page-Level Summary Strip          (GET /system/network-health/summary)
+        — also carries the last network scan time, so every user sees
+          the same "Last Scan" instead of a per-browser value
   §2.4  Network-Wide Performance Trends   (GET /system/network-health/trends)
   §2.5  Service Health by Plugin Type     (GET /system/network-health/plugins)
 
@@ -12,6 +14,8 @@ Host and service status tables (§2.2, §2.3) live in their own files:
 
 All routes require login and the "system.network_health" permission.
 """
+
+from datetime import timezone
 
 import sqlalchemy as sa
 from flask import request, current_app
@@ -34,10 +38,46 @@ from app.api.system.statistics import (
     _plugin_key,
 )
 from app.history_models import ServiceStatus
+from app.system_models import DiscoveryStatus, NetworkDiscoveryStatus
 
 # ---------------------------------------------------------------------------
 # §2.1  Page-Level Summary Strip
 # ---------------------------------------------------------------------------
+
+def utc_isoformat(value):
+    """
+    ISO-8601 string for a datetime stored as UTC, with the offset always
+    included. SQLite returns these columns without a timezone, and a
+    browser would otherwise read the bare string as local time. None
+    passes through.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.isoformat()
+
+
+def last_scan_info():
+    """
+    When the most recent successful network discovery scan finished, and
+    whether a scan is running now. Read from NetworkDiscoveryStatus, so
+    it is the same for every user and includes scheduled scans.
+    """
+    last_completed = db.session.scalar(
+        sa.select(sa.func.max(NetworkDiscoveryStatus.Completed_At))
+        .where(NetworkDiscoveryStatus.Status == DiscoveryStatus.SUCCESS)
+    )
+    latest_status = db.session.scalar(
+        sa.select(NetworkDiscoveryStatus.Status)
+        .order_by(NetworkDiscoveryStatus.Start_At.desc())
+        .limit(1)
+    )
+    return {
+        "completed_at": utc_isoformat(last_completed),
+        "is_running": latest_status == DiscoveryStatus.RUNNING,
+    }
+
 
 @system_bp.get("/network-health/summary")
 @login_required
@@ -56,8 +96,15 @@ def network_health_summary():
             "total": int, "ok": int, "warning": int, "critical": int,
             "unknown": int, "flapping": int, "in_downtime": int
         },
-        "active_alerts": { "total": int, "critical": int, "warning": int, "unknown": int }
+        "active_alerts": { "total": int, "critical": int, "warning": int, "unknown": int },
+        "last_scan": {
+            "completed_at": "2026-09-26T09:30:00+00:00" | null,
+            "is_running": bool
+        }
     }
+
+    last_scan.completed_at is when the last successful network discovery
+    scan finished (null if none has); is_running is true while one runs.
     """
     try:
         latest_hosts    = get_latest_hosts()
@@ -67,6 +114,7 @@ def network_health_summary():
             "hosts":         host_counts(latest_hosts),
             "services":      service_counts(latest_services),
             "active_alerts": active_alert_count(latest_hosts, latest_services),
+            "last_scan":     last_scan_info(),
         })
 
     except Exception:
@@ -150,7 +198,7 @@ def network_health_trends():
         latest_services = get_latest_services()
 
         # ── Ping trends ──────────────────────────────────────────────────────
-        has_ping = any(_plugin_key(s.Service) in PING_PLUGINS for s in latest_services)
+        has_ping = any(_plugin_key(s.Service, s.Check_Command) in PING_PLUGINS for s in latest_services)
 
         if has_ping:
             rta_trend = perf_trends(
@@ -170,7 +218,7 @@ def network_health_trends():
             ping_section = {"configured": False, "rta": [], "packet_loss": []}
 
         # ── NCPA trends ──────────────────────────────────────────────────────
-        ncpa_svcs = [s for s in latest_services if _plugin_key(s.Service) == "check_ncpa"]
+        ncpa_svcs = [s for s in latest_services if _plugin_key(s.Service, s.Check_Command) == "check_ncpa"]
 
         if ncpa_svcs:
             cpu_trend  = _ncpa_trend("cpu",    hours, buckets)
@@ -353,7 +401,7 @@ def _nagios_server_trends(
     from app.api.system.statistics import LOAD_PLUGIN, DISK_PLUGIN, SWAP_PLUGIN
 
     nagios_svcs = {
-        _plugin_key(s.Service): s.Service
+        _plugin_key(s.Service, s.Check_Command): s.Service
         for s in latest_services
         if s.Hostname == NAGIOS_HOST
     }
@@ -402,7 +450,7 @@ def _nagios_server_trends(
         from app.history_models import ServiceStatus, ServicePerfData
         disk_svc = next(
             (s for s in latest_services
-             if s.Hostname == NAGIOS_HOST and _plugin_key(s.Service) == DISK_PLUGIN),
+             if s.Hostname == NAGIOS_HOST and _plugin_key(s.Service, s.Check_Command) == DISK_PLUGIN),
             None,
         )
         if disk_svc:

@@ -169,32 +169,42 @@ class TestGeneratePluginServicesCfg:
 # ─── ensure_cfg_file_directive ──────────────────────────────────────────────
 
 class TestEnsureCfgFileDirective:
+    # FIX (BUG_FINDINGS.md, Bug 3): ensure_cfg_file_directive() reads
+    # current_app.config, which needs an active Flask app context.
+    # _patched_config() only updates app.config — it doesn't push a context —
+    # so each call is now wrapped in app.app_context() explicitly instead of
+    # relying on a context some other code happened to leave pushed.
+
     def test_adds_directive_when_missing(self, app, tmp_path):
         paths = _patch_nagios_paths(tmp_path)
-        with _patched_config(app, **paths):
-            result = ensure_cfg_file_directive()
+        with app.app_context():
+            with _patched_config(app, **paths):
+                result = ensure_cfg_file_directive()
         assert result is True
         content = paths["NAGIOS_MAIN_CFG"].read_text()
         assert f"cfg_file={paths['PLUGIN_SERVICE_CFG']}" in content
 
     def test_idempotent_second_call_no_duplicate(self, app, tmp_path):
         paths = _patch_nagios_paths(tmp_path)
-        with _patched_config(app, **paths):
-            ensure_cfg_file_directive()
-            ensure_cfg_file_directive()
+        with app.app_context():
+            with _patched_config(app, **paths):
+                ensure_cfg_file_directive()
+                ensure_cfg_file_directive()
         content = paths["NAGIOS_MAIN_CFG"].read_text()
         assert content.count(str(paths["PLUGIN_SERVICE_CFG"])) == 1
 
     def test_creates_empty_service_cfg_if_missing(self, app, tmp_path):
         paths = _patch_nagios_paths(tmp_path)
-        with _patched_config(app, **paths):
-            ensure_cfg_file_directive()
+        with app.app_context():
+            with _patched_config(app, **paths):
+                ensure_cfg_file_directive()
         assert paths["PLUGIN_SERVICE_CFG"].exists()
 
     def test_backs_up_nagios_cfg_before_modifying(self, app, tmp_path):
         paths = _patch_nagios_paths(tmp_path)
-        with _patched_config(app, **paths):
-            ensure_cfg_file_directive()
+        with app.app_context():
+            with _patched_config(app, **paths):
+                ensure_cfg_file_directive()
         backups = list(paths["PLUGIN_SERVICE_BACKUP_DIR"].glob("nagios-*.cfg"))
         assert len(backups) == 1
 

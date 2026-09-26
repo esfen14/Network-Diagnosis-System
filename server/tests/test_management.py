@@ -55,7 +55,7 @@ class TestPermissionsOptions:
     def test_permissions_options_returns_list(self, logged_in_client, db_session, seeded_permissions):
         resp = logged_in_client.get("/api/user/permissions/options")
         assert resp.status_code == 200
-        data = resp.get_json()
+        data = resp.get_json()["data"]
         assert "items" in data
         assert isinstance(data["items"], list)
         assert len(data["items"]) > 0
@@ -79,7 +79,7 @@ class TestRolesList:
         # Only the admin_role exists; the list should still return it
         resp = logged_in_client.get("/api/user/roles")
         assert resp.status_code == 200
-        data = resp.get_json()
+        data = resp.get_json()["data"]
         assert "items" in data
         assert "total" in data
 
@@ -87,7 +87,7 @@ class TestRolesList:
         extra = _make_role(db_session, "SupportRole")
         resp = logged_in_client.get("/api/user/roles")
         assert resp.status_code == 200
-        data = resp.get_json()
+        data = resp.get_json()["data"]
         names = [item["name"] for item in data["items"]]
         assert "SupportRole" in names
 
@@ -98,7 +98,7 @@ class TestRolesList:
 
         resp = logged_in_client.get("/api/user/roles?page=2&per_page=5")
         assert resp.status_code == 200
-        data = resp.get_json()
+        data = resp.get_json()["data"]
         assert data["page"] == 2
         assert data["per_page"] == 5
         assert len(data["items"]) <= 5
@@ -109,7 +109,7 @@ class TestRolesList:
 
         resp = logged_in_client.get("/api/user/roles?search=NetworkMan")
         assert resp.status_code == 200
-        data = resp.get_json()
+        data = resp.get_json()["data"]
         names = [item["name"] for item in data["items"]]
         assert "NetworkManager" in names
         assert "SystemViewer" not in names
@@ -136,7 +136,7 @@ class TestRolesOptions:
 
         resp = logged_in_client.get("/api/user/roles/options")
         assert resp.status_code == 200
-        data = resp.get_json()
+        data = resp.get_json()["data"]
         names = [item["name"] for item in data["items"]]
         assert "InactiveRole" not in names
         assert "ActiveRole" in names
@@ -156,7 +156,7 @@ class TestRoleInfo:
     def test_role_info_returns_data(self, logged_in_client, db_session, admin_role, seeded_permissions):
         resp = logged_in_client.get(f"/api/user/roles/{admin_role.RoleID}")
         assert resp.status_code == 200
-        data = resp.get_json()
+        data = resp.get_json()["data"]
         assert data["id"] == admin_role.RoleID
         assert data["name"] == admin_role.Name
         assert "description" in data
@@ -306,13 +306,75 @@ class TestRoleStatusToggle:
         role = _make_role(db_session, "ToggleRole", is_active=True)
         resp = logged_in_client.put(f"/api/user/roles/{role.RoleID}/status")
         assert resp.status_code == 200
-        data = resp.get_json()
+        data = resp.get_json()["data"]
         assert data["previous_status"] is True
         assert data["current_status"] is False
 
     def test_role_status_not_found(self, logged_in_client, db_session, admin_role):
         resp = logged_in_client.put("/api/user/roles/99999/status")
         assert resp.status_code == 404
+
+
+# ─── Role Status in Create / Edit Form ────────────────────────────────────────
+
+class TestRoleStatusInForm:
+    def _get_role(self, db_session, name):
+        return db_session.session.query(Role).filter_by(Name=name).one()
+
+    def test_create_role_defaults_to_active(self, logged_in_client, db_session, seeded_permissions):
+        resp = logged_in_client.post(
+            "/api/user/roles",
+            json={"role_name": "DefaultActive", "description": "d", "permissions": []},
+        )
+        assert resp.status_code == 201
+        assert self._get_role(db_session, "DefaultActive").Is_Active is True
+
+    def test_create_role_inactive(self, logged_in_client, db_session, seeded_permissions):
+        resp = logged_in_client.post(
+            "/api/user/roles",
+            json={"role_name": "StartsInactive", "description": "d", "permissions": [], "is_active": False},
+        )
+        assert resp.status_code == 201
+        assert self._get_role(db_session, "StartsInactive").Is_Active is False
+
+    def test_create_role_rejects_non_boolean_status(self, logged_in_client, db_session, seeded_permissions):
+        resp = logged_in_client.post(
+            "/api/user/roles",
+            json={"role_name": "BadStatus", "description": "d", "permissions": [], "is_active": "no"},
+        )
+        assert resp.status_code == 400
+        assert db_session.session.query(Role).filter_by(Name="BadStatus").first() is None
+
+    @pytest.mark.parametrize("start, target", [(True, False), (False, True)])
+    def test_edit_role_sets_status(self, logged_in_client, db_session, seeded_permissions, start, target):
+        role = _make_role(db_session, "StatusRole", is_active=start)
+        resp = logged_in_client.put(
+            f"/api/user/roles/{role.RoleID}",
+            json={"name": role.Name, "description": "d", "permissions": [], "is_active": target},
+        )
+        assert resp.status_code == 200
+        db_session.session.refresh(role)
+        assert role.Is_Active is target
+
+    def test_edit_role_without_status_keeps_it(self, logged_in_client, db_session, seeded_permissions):
+        role = _make_role(db_session, "KeepStatusRole", is_active=False)
+        resp = logged_in_client.put(
+            f"/api/user/roles/{role.RoleID}",
+            json={"name": role.Name, "description": "d", "permissions": []},
+        )
+        assert resp.status_code == 200
+        db_session.session.refresh(role)
+        assert role.Is_Active is False
+
+    def test_edit_role_rejects_non_boolean_status(self, logged_in_client, db_session, seeded_permissions):
+        role = _make_role(db_session, "BadEditStatus", is_active=True)
+        resp = logged_in_client.put(
+            f"/api/user/roles/{role.RoleID}",
+            json={"name": role.Name, "description": "d", "permissions": [], "is_active": 0},
+        )
+        assert resp.status_code == 400
+        db_session.session.refresh(role)
+        assert role.Is_Active is True
 
 
 # ─── Accounts List ────────────────────────────────────────────────────────────
@@ -326,7 +388,7 @@ class TestAccountsList:
         extra = _make_user(db_session, admin_role, "extra@example.com", first_name="Extra")
         resp = logged_in_client.get("/api/user/accounts")
         assert resp.status_code == 200
-        data = resp.get_json()
+        data = resp.get_json()["data"]
         assert "items" in data
         emails = [u["email"] for u in data["items"]]
         assert "extra@example.com" in emails
@@ -335,7 +397,7 @@ class TestAccountsList:
         _make_user(db_session, admin_role, "uniquefirst@example.com", first_name="Zephyr")
         resp = logged_in_client.get("/api/user/accounts?search=Zephyr")
         assert resp.status_code == 200
-        data = resp.get_json()
+        data = resp.get_json()["data"]
         names = [u["first_name"] for u in data["items"]]
         assert "Zephyr" in names
 
@@ -358,7 +420,7 @@ class TestAccountInfo:
     def test_account_info_returns_data(self, logged_in_client, db_session, admin_user):
         resp = logged_in_client.get(f"/api/user/accounts/{admin_user.UserID}")
         assert resp.status_code == 200
-        data = resp.get_json()
+        data = resp.get_json()["data"]
         assert data["id"] == admin_user.UserID
         assert "first_name" in data
         assert "last_name" in data
@@ -515,7 +577,7 @@ class TestMeEndpoint:
     def test_me_returns_user_data(self, logged_in_client, db_session, admin_user):
         resp = logged_in_client.get("/api/user/me")
         assert resp.status_code == 200
-        data = resp.get_json()
+        data = resp.get_json()["data"]
         assert data["first_name"] == admin_user.First_Name
         assert data["last_name"] == admin_user.Last_Name
         assert "role" in data

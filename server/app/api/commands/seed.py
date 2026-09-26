@@ -9,7 +9,8 @@ from app.system_models import (
     Role,
     RolePermission,
     User,
-    UserStatus
+    UserStatus,
+    SystemSettings,
 )
 
 # =========================
@@ -31,6 +32,9 @@ PERMISSIONS = [
     "system.report",
     "system.notifications",
     "system.services",
+    "system.network_health",
+    "system.acknowledge_alerts",
+    "system.dashboard",
     "plugin.scan",
     "plugin.view",
     "plugin.enable",
@@ -42,6 +46,8 @@ PERMISSIONS = [
     "plugin.update",
     "plugin.update_rollback",
     "plugin.configure",
+    "settings.security",
+    "settings.system",
 ]
 
 ROLES = [
@@ -256,11 +262,18 @@ def seed_command(remove, permissions_only, reset):
 
     except Exception as e:
         db.session.rollback()
-        click.echo(f"❌ Seed failed: {e}")
+        click.echo(f"Seed failed: {e}")
 
-    from app.system_models import SystemSettings
+    seed_system_settings()
 
-    def seed_system_settings():
-        if db.session.get(SystemSettings, 1) is None:
-            db.session.add(SystemSettings(Id=1))
-            db.session.commit()
+
+# =========================
+# SEED: SYSTEM SETTINGS
+# =========================
+
+def seed_system_settings():
+    """Create the singleton SystemSettings row with defaults if it does not
+    exist yet. Does not overwrite an existing row."""
+    if db.session.get(SystemSettings, 1) is None:
+        db.session.add(SystemSettings(Id=1))
+        db.session.commit()

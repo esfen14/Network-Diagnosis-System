@@ -83,6 +83,7 @@ export function SecuritySettings() {
 
           <SettingsSelect
             label="Security Check Frequency"
+            description="How often to re-validate every plugin's file, permissions and execution"
             value={
               settings.securityCheckFrequency
             }

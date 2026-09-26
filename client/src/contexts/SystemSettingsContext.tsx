@@ -2,8 +2,10 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -80,6 +82,7 @@ interface SystemSettingsContextValue {
   savedSettings: SystemSettings
   updateSettings: (updates: Partial<SystemSettings>) => void
   saveSettings: () => Promise<void>
+  refreshSettings: () => Promise<void>
   discardChanges: () => void
   resetSettings: () => void
   hasUnsavedChanges: boolean
@@ -91,6 +94,57 @@ interface SystemSettingsContextValue {
 
 const SystemSettingsContext =
   createContext<SystemSettingsContextValue | undefined>(undefined)
+
+/*
+|--------------------------------------------------------------------------
+| Conflict handling
+|
+| The backend rejects a save (409) whose `version` is older than the stored
+| one, i.e. when settings were saved from somewhere else (another tab,
+| another admin) after this page loaded them. Rather than failing outright,
+| the provider re-applies only the fields this user actually edited on top
+| of the latest settings, and only reports a conflict when someone else
+| changed one of those same fields.
+|--------------------------------------------------------------------------
+*/
+
+class SettingsConflictError extends Error {}
+
+// Bookkeeping fields, not user-editable settings.
+const UNTRACKED_KEYS = new Set(['version', 'updatedAt'])
+
+function changedKeys(
+  from: SystemSettings,
+  to: SystemSettings
+): (keyof SystemSettings)[] {
+  return (Object.keys(to) as (keyof SystemSettings)[]).filter(
+    (key) =>
+      !UNTRACKED_KEYS.has(key) &&
+      JSON.stringify(from[key]) !== JSON.stringify(to[key])
+  )
+}
+
+// `latest` with the edits the user made (from `base` to `edited`) applied.
+function rebase(
+  latest: SystemSettings,
+  base: SystemSettings,
+  edited: SystemSettings
+): SystemSettings {
+  const result: SystemSettings = {
+    ...latest,
+    exportFormats: [...latest.exportFormats],
+  }
+  for (const key of changedKeys(base, edited)) {
+    ;(result as unknown as Record<string, unknown>)[key] = edited[key]
+  }
+  return result
+}
+
+// "sessionTimeout" -> "Session Timeout"
+function settingLabel(key: string): string {
+  const words = key.replace(/([A-Z])/g, ' $1')
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -195,7 +249,7 @@ async function persistSystemSettings(
 
   if (!res.ok) {
     if (res.status === 409) {
-      throw new Error(
+      throw new SettingsConflictError(
         'Settings were changed by someone else. Reload and try again.'
       )
     }
@@ -301,8 +355,81 @@ export function SystemSettingsProvider({
     }
   }, [])
 
+  /*
+  |--------------------------------------------------------------------------
+  | Keep settings current while the app stays open: reload them whenever the
+  | tab regains focus (and when the Settings page opens — see SettingsPage),
+  | keeping any unsaved edits on top of the latest values.
+  |--------------------------------------------------------------------------
+  */
+
+  const stateRef = useRef({ settings, savedSettings, isSaving })
+  useEffect(() => {
+    stateRef.current = { settings, savedSettings, isSaving }
+  })
+
+  const refreshSettings = useCallback(async () => {
+    if (stateRef.current.isSaving) return
+
+    try {
+      const latest = await fetchSettings()
+      const { settings: current, savedSettings: base, isSaving: saving } =
+        stateRef.current
+      if (saving) return
+
+      setSavedSettings(latest)
+      setSettings(rebase(latest, base, current))
+      writeCache(latest)
+      setLoadError(null)
+    } catch (error) {
+      // Keep what we have — the next save still detects conflicts.
+      console.error('Unable to refresh system settings:', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshSettings()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisible)
+    window.addEventListener('focus', handleVisible)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisible)
+      window.removeEventListener('focus', handleVisible)
+    }
+  }, [refreshSettings])
+
   function updateSettings(updates: Partial<SystemSettings>) {
     setSettings((current) => ({ ...current, ...updates }))
+  }
+
+  // Save onto the latest settings after a version conflict. Throws if
+  // someone else changed a field this user also edited, leaving the user's
+  // values on screen so a second save deliberately keeps them.
+  async function saveOverConflict(): Promise<SystemSettings> {
+    const latest = await fetchSettings()
+    const edited = changedKeys(savedSettings, settings)
+    const conflicts = edited.filter(
+      (key) => JSON.stringify(latest[key]) !== JSON.stringify(savedSettings[key])
+    )
+    const rebased = rebase(latest, savedSettings, settings)
+
+    if (conflicts.length > 0) {
+      setSavedSettings(latest)
+      setSettings(rebased)
+      writeCache(latest)
+      throw new Error(
+        `${conflicts.map(settingLabel).join(', ')} ${
+          conflicts.length === 1 ? 'was' : 'were'
+        } also changed by someone else. Your value is still shown — save again to keep it, or discard to use theirs.`
+      )
+    }
+
+    return persistSettings(rebased)
   }
 
   async function saveSettings() {
@@ -315,7 +442,13 @@ export function SystemSettingsProvider({
     }
 
     try {
-      const confirmed = await persistSettings(toSave)
+      let confirmed: SystemSettings
+      try {
+        confirmed = await persistSettings(toSave)
+      } catch (error) {
+        if (!(error instanceof SettingsConflictError)) throw error
+        confirmed = await saveOverConflict()
+      }
       setSavedSettings(confirmed)
       setSettings(confirmed)
       writeCache(confirmed)
@@ -411,6 +544,7 @@ export function SystemSettingsProvider({
         savedSettings,
         updateSettings,
         saveSettings,
+        refreshSettings,
         discardChanges,
         resetSettings,
         hasUnsavedChanges,

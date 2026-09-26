@@ -8,9 +8,10 @@ These helpers create HostStatus, ServiceStatus, PerfData and ProgramStatus
 rows in the in-memory history DB.  All data mirrors real Nagios plugin output
 as documented in spec files/Plugins_List.md.
 
-Service names follow the "{service}-{port}-{protocol}" convention used by
-create_host_cfg.py so that _plugin_key() in statistics.py extracts the correct
-plugin key.
+Service names follow the "{plugin}[-{metric}]-{port}" convention used by
+create_host_cfg.py, so _plugin_key() in statistics.py can resolve them from
+the name alone when no Check_Command is seeded (pass check_command= to
+_make_service to exercise the command-based path instead).
 
 Usage
 -----
@@ -53,20 +54,20 @@ def _ts(offset_seconds: int = 0) -> datetime:
 # ---------------------------------------------------------------------------
 # NCPA service name constants — match create_host_cfg.py exactly.
 #
-# create_host_cfg.py generates these NCPA service descriptions per host:
-#   ncpa_cpu_usage-5693-TCP
-#   ncpa_memory_usage-5693-TCP
-#   ncpa-5693-TCP-disk_usage_{partition_name}   (per-partition)
-#   ncpa_disk_usage-5693-TCP                    (fallback, no partition data)
+# create_host_cfg.py (via plugin_registry.py) generates one NCPA service per
+# configured metric (config.NCPA_METRICS) per host:
+#   ncpa-cpu-5693
+#   ncpa-memory-5693
+#   ncpa-disk_{partition}-5693     (per partition, e.g. ncpa-disk_sda1-5693)
+#   ncpa-disk-5693                 (fallback, no partition data)
 #
-# _plugin_key() in statistics.py splits on '-' then '_', extracting "ncpa"
-# as the bare prefix for all of these, then looks it up in tcp_commands.json
-# which maps "ncpa" → "check_ncpa".  All four forms therefore resolve to
-# "check_ncpa" correctly.
+# Each runs Nagios command "pinpoint_nd_ncpa", which _plugin_key() resolves
+# to "check_ncpa"; without a Check_Command, the "ncpa" name prefix resolves
+# to the same plugin through the registry.
 # ---------------------------------------------------------------------------
-NCPA_CPU_SERVICE    = "ncpa_cpu_usage-5693-TCP"
-NCPA_MEMORY_SERVICE = "ncpa_memory_usage-5693-TCP"
-NCPA_DISK_SERVICE   = "ncpa-5693-TCP-disk_usage_/"   # per-partition (root partition)
+NCPA_CPU_SERVICE    = "ncpa-cpu-5693"
+NCPA_MEMORY_SERVICE = "ncpa-memory-5693"
+NCPA_DISK_SERVICE   = "ncpa-disk_sda1-5693"   # per-partition
 
 def _make_host(
     db_session,
@@ -150,12 +151,14 @@ def _make_service(
     downtime_depth: int = 0,
     plugin_output: str = "HTTP OK: 200",
     ack_type: AcknowledgementType = AcknowledgementType.NOACK,
+    check_command: str | None = None,
 ) -> ServiceStatus:
     """Insert a ServiceStatus row and return it (flushed, not committed)."""
     s = ServiceStatus(
         Timestamp=ts or _ts(),
         Hostname=hostname,
         Service=service,
+        Check_Command=check_command,
         Current_State=state,
         Plugin_Output=plugin_output,
         State_Type=ConnectionStateType.HARD,

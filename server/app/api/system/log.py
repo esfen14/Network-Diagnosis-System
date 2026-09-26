@@ -1,48 +1,7 @@
-"""System log endpoints for the Network Diagnosis System.
-
-Provides paginated, filterable, and sortable read-only access to five
-log categories used for auditing and monitoring:
-
-1. **Activity Logs** – user actions (login, logout, config changes, etc.)
-2. **Configuration Change Logs** – parameter-level before/after snapshots
-3. **Network Discovery Logs** – status of network discovery scans
-4. **NCPA Deployment Logs** – status of NCPA agent deployments
-5. **Export Logs** – history of report exports (PDF, CSV, etc.)
-
-All routes require authentication and the ``system.logs`` permission.
-Each endpoint returns a ``success(...)`` envelope containing a list of
-log items plus pagination metadata.
-
-Routes
-------
-GET /log
-    Paginated user activity logs (logins, logouts, config changes, etc.).
-    Supports filtering by date range, search across action type and user fields,
-    and sorting by id, action_type, or performed_at.
-
-GET /configurationchange
-    Paginated configuration change audit trail with old/new value snapshots.
-    Supports filtering by date range, search across parameter and config type,
-    and sorting by id, type, parameter, or changed_at.
-
-GET /networkdiscovery
-    Paginated network discovery scan status logs (queued, running, completed, failed).
-    Supports filtering by date range, search across message and error fields,
-    and sorting by id, status, progress, start_at, or completed_at.
-
-GET /ncpadeployment
-    Paginated NCPA agent deployment status logs (queued, running, completed, failed).
-    Supports filtering by date range, search across message and error fields,
-    and sorting by id, status, progress, start_at, or completed_at.
-
-GET /exportlog
-    Paginated history of system report exports (PDF, CSV, etc.).
-    Supports filtering by date range, search across report type and user,
-    and sorting by id, report_type, format, or exported_at.
-"""
+from datetime import datetime, timezone
 
 from flask import request, current_app
-from flask_login import login_required
+from flask_login import login_required, current_user
 import sqlalchemy as sa
 
 from app import db
@@ -51,12 +10,36 @@ from app.system_models import (
     ConfigurationChanges,
     NetworkDiscoveryStatus,
     NCPADeploymentStatus,
+    SkippedService,
     ExportLog,
+    ExportFormat,
     User
 )
 from app.api.helper import success, error
 from app.api.helper.database_access.permissions import require_permission
 from app.api.system import system_bp
+from app.logging.export_logs import create_export_log
+
+
+class _ManualPagination:
+
+    def __init__(self, items, page, per_page, total):
+        self.items = items
+        self.page = page
+        self.per_page = per_page
+        self.total = total
+        self.pages = max(1, (total + per_page - 1) // per_page) if per_page else 1
+        self.has_next = page < self.pages
+        self.has_prev = page > 1
+
+
+def _paginate_multi(query, page, per_page):
+    total = db.session.scalar(
+        sa.select(sa.func.count()).select_from(query.subquery())
+    ) or 0
+    offset = (page - 1) * per_page
+    rows = db.session.execute(query.limit(per_page).offset(offset)).all()
+    return _ManualPagination(rows, page, per_page, total)
 
 
 # ==========================================================
@@ -150,9 +133,22 @@ def activity_logs():
         if per_page < 1 or per_page > 100:
             return error("per_page must be between 1 and 100", 400)
 
+        # Every specialized log category (config change, discovery, NCPA
+        # deployment, export) also writes a generic ActivityLog row to hang
+        # its details off of — that's how ConfigurationChanges.LogID etc.
+        # link back to a user/timestamp. Without this exclusion, each of
+        # those events would show up twice: once here as a generic entry,
+        # and once under its own specialized tab. Activity Log should only
+        # surface genuinely generic actions (logins, account changes, etc).
         query = (
             sa.select(ActivityLog, User)
             .join(User, User.UserID == ActivityLog.UserID)
+            .where(
+                ~sa.exists(sa.select(1).where(ConfigurationChanges.LogID == ActivityLog.LogID)),
+                ~sa.exists(sa.select(1).where(NetworkDiscoveryStatus.LogID == ActivityLog.LogID)),
+                ~sa.exists(sa.select(1).where(NCPADeploymentStatus.LogID == ActivityLog.LogID)),
+                ~sa.exists(sa.select(1).where(ExportLog.LogID == ActivityLog.LogID)),
+            )
         )
 
         if search:
@@ -181,7 +177,7 @@ def activity_logs():
         else:
             return error("Invalid order.", 400)
 
-        logs = db.paginate(query, page=page, per_page=per_page, error_out=False)
+        logs = _paginate_multi(query, page, per_page)
 
         items = []
         for activity, user in logs.items:
@@ -346,7 +342,7 @@ def configuration_change_logs():
         else:
             return error("Invalid order.", 400)
 
-        logs = db.paginate(query, page=page, per_page=per_page, error_out=False)
+        logs = _paginate_multi(query, page, per_page)
 
         items = []
         for config, activity, user in logs.items:
@@ -400,7 +396,9 @@ def network_discovery_logs():
 
     Queries the ``NetworkDiscoveryStatus`` table joined with
     ``ActivityLog`` and ``User`` to track the lifecycle of network
-    discovery scans (queued, running, completed, failed).
+    discovery scans (queued, running, completed, failed). Each entry also
+    lists the discovered ports that run did not turn into a Nagios service
+    (``SkippedService``), e.g. UDP ports with no plugin that can check them.
 
     **Query Parameters**
 
@@ -447,7 +445,17 @@ def network_discovery_logs():
                             "start_at":     "2025-01-15T10:00:00",
                             "completed_at": "2025-01-15T10:30:00",
                             "error":        null,
-                            "log_id":       1
+                            "log_id":       1,
+                            "skipped_services": [
+                                {
+                                    "hostname":     "switch-1",
+                                    "ip_address":   "10.10.99.4",
+                                    "port":         162,
+                                    "protocol":     "UDP",
+                                    "service_name": "snmptrap",
+                                    "reason":       "No plugin can check this UDP service."
+                                }
+                            ]
                         }
                     }
                 ],
@@ -522,7 +530,26 @@ def network_discovery_logs():
         else:
             return error("Invalid order.", 400)
 
-        logs = db.paginate(query, page=page, per_page=per_page, error_out=False)
+        logs = _paginate_multi(query, page, per_page)
+
+        # Skipped ports for every run on this page, fetched in one query.
+        discovery_ids = [discovery.DiscoveryStatusID for discovery, _activity, _user in logs.items]
+        skipped_by_discovery = {}
+        if discovery_ids:
+            skipped_rows = db.session.scalars(
+                sa.select(SkippedService)
+                .where(SkippedService.DiscoveryStatusID.in_(discovery_ids))
+                .order_by(SkippedService.Hostname, SkippedService.Port_Number)
+            ).all()
+            for skipped in skipped_rows:
+                skipped_by_discovery.setdefault(skipped.DiscoveryStatusID, []).append({
+                    "hostname":     skipped.Hostname,
+                    "ip_address":   skipped.IP_Address,
+                    "port":         skipped.Port_Number,
+                    "protocol":     skipped.Protocol.value,
+                    "service_name": skipped.Service_Name,
+                    "reason":       skipped.Reason,
+                })
 
         items = []
         for discovery, activity, user in logs.items:
@@ -544,6 +571,7 @@ def network_discovery_logs():
                     "completed_at": discovery.Completed_At.isoformat() if discovery.Completed_At else None,
                     "error":        discovery.Error,
                     "log_id":       discovery.LogID,
+                    "skipped_services": skipped_by_discovery.get(discovery.DiscoveryStatusID, []),
                 },
             })
 
@@ -623,7 +651,17 @@ def ncpa_deployment_logs():
                             "start_at":     "2025-01-15T10:00:00",
                             "completed_at": "2025-01-15T10:30:00",
                             "error":        null,
-                            "log_id":       1
+                            "log_id":       1,
+                            "skipped_services": [
+                                {
+                                    "hostname":     "switch-1",
+                                    "ip_address":   "10.10.99.4",
+                                    "port":         162,
+                                    "protocol":     "UDP",
+                                    "service_name": "snmptrap",
+                                    "reason":       "No plugin can check this UDP service."
+                                }
+                            ]
                         }
                     }
                 ],
@@ -698,7 +736,7 @@ def ncpa_deployment_logs():
         else:
             return error("Invalid order.", 400)
 
-        logs = db.paginate(query, page=page, per_page=per_page, error_out=False)
+        logs = _paginate_multi(query, page, per_page)
 
         items = []
         for deployment, activity, user in logs.items:
@@ -743,6 +781,66 @@ def ncpa_deployment_logs():
 # ==========================================================
 # EXPORT LOG
 # ==========================================================
+
+@system_bp.post('/exportlog')
+@login_required
+def record_export():
+    """Record that the current user exported data from a page.
+
+    Exports are generated entirely client-side (CSV/XLS/PDF built in the
+    browser, no server round-trip for the file itself) — this endpoint
+    just records that it happened, for the Export Log audit trail.
+
+    Request body (JSON):
+    {
+        "report_type": str,           // e.g. "host-availability", "accounts"
+        "format":      "CSV"|"PDF"|"XLS",
+        "start_date":  str, optional  // ISO-8601, defaults to now
+        "end_date":    str, optional  // ISO-8601, defaults to now
+    }
+
+    Only requires being logged in — exporting data you can already see
+    doesn't need a separate permission grant.
+    """
+    try:
+        body = request.get_json(silent=True) or {}
+        report_type = (body.get("report_type") or "").strip()
+        export_format = (body.get("format") or "").strip().upper()
+
+        if not report_type:
+            return error("report_type is required.", 400)
+
+        try:
+            format_enum = ExportFormat[export_format]
+        except KeyError:
+            return error(
+                f"Invalid format. Valid values: {', '.join(f.name for f in ExportFormat)}",
+                400,
+            )
+
+        def _parse_date(value):
+            if not value:
+                return datetime.now(timezone.utc)
+            try:
+                return datetime.fromisoformat(value)
+            except ValueError:
+                return datetime.now(timezone.utc)
+
+        start_date = _parse_date(body.get("start_date"))
+        end_date = _parse_date(body.get("end_date"))
+
+        create_export_log(current_user.UserID, report_type, format_enum, start_date, end_date)
+        db.session.commit()
+
+        return success(message="Export recorded.", status=201)
+
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(
+            "An unexpected error occurred while recording an export."
+        )
+        return error("An unexpected error occurred.", 500)
+
 
 @system_bp.get('/exportlog')
 @login_required
@@ -871,7 +969,7 @@ def export_logs():
         else:
             return error("Invalid order.", 400)
 
-        logs = db.paginate(query, page=page, per_page=per_page, error_out=False)
+        logs = _paginate_multi(query, page, per_page)
 
         items = []
         for export, activity, user in logs.items:

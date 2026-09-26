@@ -1,32 +1,29 @@
 import { MoreHorizontal } from 'lucide-react'
 import { useSystemSettings } from '../../contexts/SystemSettingsContext'
-import { formatDateTime, parseMockDate } from '../../utils/formatDateTime'
+import { formatDateTime } from '../../utils/formatDateTime'
+import type { AlertRow } from '../../types/dashboard'
 
-type OutageStatus = 'In Progress' | 'Resolved' | 'Warning' | 'Completed'
-type OutageRow = { device: string; dateTime: string; cause: string; status: OutageStatus }
-
-const statusStyles: Record<OutageStatus, string> = {
-  'In Progress': 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
-  Resolved:      'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
-  Warning:       'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-  Completed:     'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300',
+type RecentOutageTableProps = {
+  alerts: AlertRow[]
+  isLoading: boolean
+  onAcknowledge: (alert: AlertRow) => void
 }
 
-const outages: OutageRow[] = [
-  { device: 'Access Switch - SW02',  dateTime: 'Oct 21, 2025 - 14:32', cause: 'High CPU & Memory Utilization',       status: 'In Progress' },
-  { device: 'Access Switch - SW02',  dateTime: 'Oct 19, 2025 - 15:02', cause: 'Interface G1/0/2 Link Down',           status: 'Resolved'    },
-  { device: 'CICT Server - SRV01',   dateTime: 'Oct 17, 2025 - 02:00', cause: 'OS Version 3 Major Releases Behind',   status: 'Warning'     },
-  { device: 'Core Network Link',     dateTime: 'Oct 15, 2025 - 09:18', cause: 'ISP Packet Loss Spike (0.3% - 4.5%)', status: 'Resolved'    },
-  { device: 'Edge Switch - SW03',    dateTime: 'Oct 14, 2025 - 23:33', cause: 'Unexpected Restart / Power Event',     status: 'Completed'   },
-]
+const stateStyles: Record<string, string> = {
+  DOWN: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+  UNREACHABLE: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+  CRITICAL: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+  WARNING: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300',
+  UNKNOWN: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+}
 
-export function RecentOutageTable() {
+export function RecentOutageTable({ alerts, isLoading, onAcknowledge }: RecentOutageTableProps) {
   const { settings } = useSystemSettings()
 
   return (
     <div className="rounded-2xl bg-[var(--card)] border border-[var(--border)] p-6 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-[var(--text)]">Recent Outage</h2>
+        <h2 className="text-lg font-semibold text-[var(--text)]">Active Alerts</h2>
         <button type="button" className="rounded-xl bg-[var(--card-alt)] p-2 text-[var(--text-muted)] hover:bg-[var(--hover)]" aria-label="More options">
           <MoreHorizontal className="h-4 w-4" />
         </button>
@@ -35,25 +32,51 @@ export function RecentOutageTable() {
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="text-xs text-[var(--text-muted)] border-b border-[var(--border)]">
-              <th className="pb-3 pr-4 font-medium">Affected Device/Link</th>
-              <th className="pb-3 pr-4 font-medium">Date &amp; Time</th>
-              <th className="pb-3 pr-4 font-medium">Cause</th>
-              <th className="pb-3 font-medium">Status</th>
+              <th className="pb-3 pr-4 font-medium">Affected Device/Service</th>
+              <th className="pb-3 pr-4 font-medium">Since</th>
+              <th className="pb-3 pr-4 font-medium">Output</th>
+              <th className="pb-3 pr-4 font-medium">Status</th>
+              <th className="pb-3 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {outages.map((row) => (
-              <tr key={row.device + row.dateTime} className="border-t border-[var(--border)]">
-                <td className="py-3 pr-4 text-[var(--text)]">{row.device}</td>
-                <td className="py-3 pr-4 text-[var(--text-muted)]">
-                  {formatDateTime(parseMockDate(row.dateTime), settings.dateTimeFormat, settings.timeZone)}
-                </td>
-                <td className="py-3 pr-4 text-[var(--text-muted)]">{row.cause}</td>
-                <td className="py-3">
-                  <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusStyles[row.status]}`}>{row.status}</span>
-                </td>
-              </tr>
-            ))}
+            {isLoading ? (
+              <tr><td colSpan={5} className="py-8 text-center text-[var(--text-muted)]">Loading…</td></tr>
+            ) : alerts.length === 0 ? (
+              <tr><td colSpan={5} className="py-8 text-center text-[var(--text-muted)]">No active alerts</td></tr>
+            ) : (
+              alerts.map((alert) => (
+                <tr key={`${alert.hostname}-${alert.serviceName ?? ''}`} className="border-t border-[var(--border)]">
+                  <td className="py-3 pr-4 text-[var(--text)]">
+                    {alert.hostname}{alert.serviceName ? ` / ${alert.serviceName}` : ''}
+                  </td>
+                  <td className="py-3 pr-4 text-[var(--text-muted)]">
+                    {formatDateTime(new Date(alert.timestamp * 1000), settings.dateTimeFormat, settings.timeZone)}
+                  </td>
+                  <td className="py-3 pr-4 text-[var(--text-muted)] max-w-xs truncate">{alert.pluginOutput}</td>
+                  <td className="py-3 pr-4">
+                    <span className={`rounded-full px-3 py-1 text-xs font-medium ${stateStyles[alert.state] ?? stateStyles.UNKNOWN}`}>
+                      {alert.state}{alert.inDowntime ? ' · Downtime' : ''}
+                    </span>
+                  </td>
+                  <td className="py-3">
+                    {alert.ack ? (
+                      <span className="text-xs text-[var(--text-muted)]" title={alert.ack.comment}>
+                        Acked by {alert.ack.acknowledgedBy}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onAcknowledge(alert)}
+                        className="rounded-lg bg-[#ffb100] px-3 py-1 text-xs font-semibold text-black hover:brightness-105"
+                      >
+                        Acknowledge
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

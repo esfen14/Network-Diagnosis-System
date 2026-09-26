@@ -1,124 +1,152 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ArrowUpDown, Filter, Pencil, Search, X } from 'lucide-react'
 import { PageHeader } from '../components/shared/PageHeader'
+import { apiGet, apiPost, apiPut, errorMessage } from '../lib/api'
+import {
+  fromRoleDetailRecord,
+  fromRoleRecord,
+  type Permission,
+  type Role,
+  type RoleDetail,
+} from '../types/role'
 
-type RoleType = 'admin' | 'manager' | 'staff'
-type RoleFilter = 'all' | RoleType
+type StatusFilter = 'all' | 'active' | 'inactive'
 
-type Role = {
-  id: string
-  fullName: string
-  roleId: string
-  username: string
-  roleType: RoleType
-  assignedDate: string
-  lastCommit: string
+function formatDate(iso: string) {
+  if (!iso) return '—'
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
-const initialRoles: Role[] = [
-  { id: '1', fullName: 'Rafael Esfen', roleId: '10ad4471', username: 'esfen14', roleType: 'admin', assignedDate: '2025-10-20', lastCommit: '2 minutes ago' },
-  { id: '2', fullName: 'Karell Ramos', roleId: '20mg8823', username: 'karell_r', roleType: 'admin', assignedDate: '2025-10-10', lastCommit: '1 hour ago' },
-  { id: '3', fullName: 'Chloe Baltazar', roleId: '38ud6389', username: 'chloehh', roleType: 'manager', assignedDate: '2025-10-23', lastCommit: '1 day ago' },
-  { id: '4', fullName: 'Joshua Vilar', roleId: '48950ip3', username: 'joshh_min', roleType: 'manager', assignedDate: '2025-09-02', lastCommit: '15 minutes ago' },
-  { id: '5', fullName: 'Lucas Mitchell', roleId: '32894jsg', username: 'lucamich', roleType: 'staff', assignedDate: '2025-10-06', lastCommit: '4 hours ago' },
-  { id: '6', fullName: 'Marie Santos', roleId: '93872jp0', username: 'marie092', roleType: 'staff', assignedDate: '2025-10-23', lastCommit: '1 minute ago' },
-]
-
-const permissionsList = [
-  'View Dashboard',
-  'Manage Devices',
-  'Manage Users',
-  'Manage Roles',
-  'View Reports',
-  'Export Data',
-  'System Settings',
-]
-
-function generateRoleId() {
-  return Array.from({ length: 8 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
+async function fetchRoles(): Promise<Role[]> {
+  const data = await apiGet<{ items: Parameters<typeof fromRoleRecord>[0][] }>(
+    '/api/user/roles?per_page=100'
+  )
+  return data.items.map(fromRoleRecord)
 }
 
-const roleBadgeStyle: Record<string, string> = {
-  admin: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-  manager: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-  staff: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+async function fetchPermissionOptions(): Promise<Permission[]> {
+  const data = await apiGet<{ items: Permission[] }>('/api/user/permissions/options')
+  return data.items
 }
-const defaultBadgeStyle = 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+
+async function fetchRoleDetail(id: number): Promise<RoleDetail> {
+  const data = await apiGet<Parameters<typeof fromRoleDetailRecord>[0]>(`/api/user/roles/${id}`)
+  return fromRoleDetailRecord(data)
+}
+
+// Active/Inactive switch used in the Create and Edit role forms. Inactive
+// roles can't be assigned to accounts (they're left out of /roles/options).
+function RoleStatusField({
+  label,
+  isActive,
+  onChange,
+  labelClassName,
+}: {
+  label: string
+  isActive: boolean
+  onChange: (isActive: boolean) => void
+  labelClassName: string
+}) {
+  return (
+    <div>
+      <span className={labelClassName}>{label}</span>
+      <div className="flex h-[42px] items-center gap-3">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={isActive}
+          aria-label="Role status"
+          onClick={() => onChange(!isActive)}
+          className={`relative h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#ffb100]/40 ${
+            isActive ? 'bg-[#ffb100]' : 'bg-gray-300'
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+              isActive ? 'left-5.5' : 'left-0.5'
+            }`}
+          />
+        </button>
+        <span className={`text-sm font-medium ${isActive ? 'text-emerald-700' : 'text-gray-500'}`}>
+          {isActive ? 'Active' : 'Inactive'}
+        </span>
+      </div>
+    </div>
+  )
+}
 
 export function ManageRolesPage() {
-  const [roleFilter, setRoleFilter] = useState<RoleFilter>('all')
-  const [allRoles, setAllRoles] = useState<Role[]>(initialRoles)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [allRoles, setAllRoles] = useState<Role[]>([])
+  const [permissionOptions, setPermissionOptions] = useState<Permission[]>([])
+
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingRole, setEditingRole] = useState<Role | null>(null)
+  const [togglingId, setTogglingId] = useState<number | null>(null)
 
-  const [newRole, setNewRole] = useState({
-    fullName: '',
-    username: '',
-    roleId: generateRoleId(),
-    roleName: '',
-    description: '',
-    permissions: [] as string[],
-  })
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      setIsLoading(true)
+      setLoadError(null)
+      try {
+        const [roles, permissions] = await Promise.all([fetchRoles(), fetchPermissionOptions()])
+        if (cancelled) return
+        setAllRoles(roles)
+        setPermissionOptions(permissions)
+      } catch (err) {
+        if (cancelled) return
+        setLoadError(errorMessage(err, 'Unable to load roles.'))
+      } finally {
+        if (!cancelled) setIsLoading(false)
+      }
+    }
+
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function refreshRoles() {
+    try {
+      setAllRoles(await fetchRoles())
+    } catch (err) {
+      setLoadError(errorMessage(err, 'Unable to refresh roles.'))
+    }
+  }
 
   const filteredRoles = useMemo(() => {
-    let result = roleFilter === 'all' ? allRoles : allRoles.filter((r) => r.roleType === roleFilter)
+    let result = allRoles
+    if (statusFilter !== 'all') {
+      result = result.filter((r) => (statusFilter === 'active' ? r.isActive : !r.isActive))
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       result = result.filter(
-        (r) => r.fullName.toLowerCase().includes(q) || r.username.toLowerCase().includes(q)
+        (r) => r.name.toLowerCase().includes(q) || r.description.toLowerCase().includes(q)
       )
     }
     return result
-  }, [allRoles, roleFilter, searchQuery])
+  }, [allRoles, statusFilter, searchQuery])
 
-  const resetAddForm = () => {
-    setNewRole({
-      fullName: '',
-      username: '',
-      roleId: generateRoleId(),
-      roleName: '',
-      description: '',
-      permissions: [],
-    })
-  }
-
-  const closeAddModal = () => {
-    setShowAddModal(false)
-    resetAddForm()
-  }
-
-  const togglePermission = (perm: string) => {
-    setNewRole((prev) => ({
-      ...prev,
-      permissions: prev.permissions.includes(perm)
-        ? prev.permissions.filter((p) => p !== perm)
-        : [...prev.permissions, perm],
-    }))
-  }
-
-  const addFormValid = newRole.fullName.trim() && newRole.username.trim() && newRole.roleName.trim()
-
-  const handleAddRole = () => {
-    if (!addFormValid) return
-    const today = new Date().toISOString().split('T')[0]
-    const role: Role = {
-      id: newRole.roleId,
-      fullName: newRole.fullName.trim(),
-      roleId: newRole.roleId,
-      username: newRole.username.trim(),
-      roleType: newRole.roleName.trim().toLowerCase() as RoleType,
-      assignedDate: today,
-      lastCommit: 'Never',
+  async function toggleStatus(role: Role) {
+    setTogglingId(role.id)
+    try {
+      await apiPut(`/api/user/roles/${role.id}/status`)
+      await refreshRoles()
+    } catch (err) {
+      setLoadError(errorMessage(err, 'Unable to change role status.'))
+    } finally {
+      setTogglingId(null)
     }
-    setAllRoles((prev) => [...prev, role])
-    closeAddModal()
-  }
-
-  const handleSaveEdit = (updated: Role) => {
-    setAllRoles((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
-    setEditingRole(null)
   }
 
   return (
@@ -129,19 +157,25 @@ export function ManageRolesPage() {
           description="Define roles and permissions for system users."
         />
 
+        {loadError && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
+            {loadError}
+          </div>
+        )}
+
         {/* Filter tabs */}
         <div className="flex gap-6 border-b border-gray-200 dark:border-white/10">
-          {(['all', 'admin', 'manager', 'staff'] as RoleFilter[]).map((role) => (
+          {(['all', 'active', 'inactive'] as StatusFilter[]).map((status) => (
             <button
-              key={role}
-              onClick={() => setRoleFilter(role)}
+              key={status}
+              onClick={() => setStatusFilter(status)}
               className={`pb-3 text-sm capitalize transition ${
-                roleFilter === role
+                statusFilter === status
                   ? 'border-b-2 border-gray-900 font-medium text-gray-900 dark:border-white dark:text-white'
                   : 'text-gray-500 hover:text-gray-900 dark:text-white/60 dark:hover:text-white'
               }`}
             >
-              {role}
+              {status}
             </button>
           ))}
         </div>
@@ -184,285 +218,379 @@ export function ManageRolesPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-xs text-gray-500 dark:border-white/10 dark:text-gray-400">
-                  <th className="px-4 py-3 font-normal">Full Name</th>
-                  <th className="px-4 py-3 font-normal">Role ID</th>
-                  <th className="px-4 py-3 font-normal">Username</th>
-                  <th className="px-4 py-3 font-normal">Role</th>
-                  <th className="px-4 py-3 font-normal">Assigned Date</th>
-                  <th className="px-4 py-3 font-normal">Last Commit</th>
-                  <th className="px-4 py-3 font-normal">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRoles.map((role) => (
-                  <tr key={role.id} className="border-b border-gray-100 transition hover:bg-gray-50 dark:border-white/5 dark:hover:bg-white/5">
-                    <td className="px-4 py-3 text-gray-900 dark:text-white">{role.fullName}</td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{role.roleId}</td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{role.username}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${
-                          roleBadgeStyle[role.roleType] ?? defaultBadgeStyle
-                        }`}
-                      >
-                        {role.roleType}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{role.assignedDate}</td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{role.lastCommit}</td>
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={() => setEditingRole(role)}
-                        className="text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
-                        aria-label="Edit role"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                    </td>
+          {isLoading ? (
+            <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">Loading roles…</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-xs text-gray-500 dark:border-white/10 dark:text-gray-400">
+                    <th className="px-4 py-3 font-normal">Role Name</th>
+                    <th className="px-4 py-3 font-normal">Description</th>
+                    <th className="px-4 py-3 font-normal">Status</th>
+                    <th className="px-4 py-3 font-normal">Created</th>
+                    <th className="px-4 py-3 font-normal">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {filteredRoles.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                        No roles match your search or filter
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredRoles.map((role) => (
+                      <tr key={role.id} className="border-b border-gray-100 transition hover:bg-gray-50 dark:border-white/5 dark:hover:bg-white/5">
+                        <td className="px-4 py-3 text-gray-900 dark:text-white">{role.name}</td>
+                        <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{role.description || '—'}</td>
+                        <td className="px-4 py-3">
+                          <button
+                            type="button"
+                            onClick={() => toggleStatus(role)}
+                            disabled={togglingId === role.id}
+                            className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize disabled:opacity-50 ${
+                              role.isActive
+                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                            }`}
+                          >
+                            {togglingId === role.id ? '…' : role.isActive ? 'Active' : 'Inactive'}
+                          </button>
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{formatDate(role.createdAt)}</td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => setEditingRole(role)}
+                            className="text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
+                            aria-label="Edit role"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 text-sm text-gray-500 dark:border-white/10 dark:text-gray-400">
             <span>Showing {filteredRoles.length} of {allRoles.length} roles</span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled
-                className="rounded-lg px-3 py-1 hover:bg-gray-100 disabled:cursor-not-allowed dark:hover:bg-white/10"
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                className="rounded-lg bg-white border border-gray-200 px-3 py-1 text-gray-900 shadow-sm hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:border-transparent dark:hover:bg-white/20"
-              >
-                1
-              </button>
-              <button
-                type="button"
-                className="rounded-lg px-3 py-1 hover:bg-gray-100 dark:hover:bg-white/10"
-              >
-                Next
-              </button>
-            </div>
           </div>
         </div>
       </div>
 
       {/* ADD ROLE MODAL */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="relative w-full max-w-xl rounded-3xl bg-white p-8 shadow-xl">
-            <button
-              onClick={closeAddModal}
-              className="absolute right-5 top-5 text-gray-400 hover:text-gray-600"
+        <AddRoleModal
+          permissionOptions={permissionOptions}
+          onCancel={() => setShowAddModal(false)}
+          onCreated={() => {
+            setShowAddModal(false)
+            refreshRoles()
+          }}
+        />
+      )}
+
+      {/* EDIT ROLE MODAL */}
+      {editingRole && (
+        <EditRoleModal
+          role={editingRole}
+          permissionOptions={permissionOptions}
+          onCancel={() => setEditingRole(null)}
+          onSaved={() => {
+            setEditingRole(null)
+            refreshRoles()
+          }}
+        />
+      )}
+    </main>
+  )
+}
+
+function AddRoleModal({
+  permissionOptions,
+  onCancel,
+  onCreated,
+}: {
+  permissionOptions: Permission[]
+  onCancel: () => void
+  onCreated: () => void
+}) {
+  const [form, setForm] = useState({
+    roleName: '',
+    description: '',
+    permissions: [] as number[],
+    isActive: true,
+  })
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const formValid = form.roleName.trim().length > 0
+
+  const togglePermission = (id: number) => {
+    setForm((prev) => ({
+      ...prev,
+      permissions: prev.permissions.includes(id)
+        ? prev.permissions.filter((p) => p !== id)
+        : [...prev.permissions, id],
+    }))
+  }
+
+  const handleAddRole = async () => {
+    if (!formValid) return
+    setIsSaving(true)
+    setError(null)
+    try {
+      await apiPost('/api/user/roles', {
+        role_name: form.roleName.trim(),
+        description: form.description.trim(),
+        permissions: form.permissions,
+        is_active: form.isActive,
+      })
+      onCreated()
+    } catch (err) {
+      setError(errorMessage(err, 'Unable to create the role.'))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="relative w-full max-w-xl rounded-3xl bg-white p-8 shadow-xl">
+        <button
+          onClick={onCancel}
+          className="absolute right-5 top-5 text-gray-400 hover:text-gray-600"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        <h2 className="text-center text-xl font-semibold text-gray-900">
+          Role Info
+        </h2>
+
+        <div className="mt-6 grid grid-cols-2 gap-4">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-500">
+              ROLE NAME
+            </label>
+            <input
+              value={form.roleName}
+              onChange={(e) => setForm({ ...form, roleName: e.target.value })}
+              placeholder="e.g. Supervisor"
+              className="w-full rounded-full border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-500 placeholder:text-gray-400"
+            />
+          </div>
+
+          <RoleStatusField
+            label="STATUS"
+            isActive={form.isActive}
+            onChange={(isActive) => setForm({ ...form, isActive })}
+            labelClassName="mb-1.5 block text-xs font-medium tracking-wide text-gray-500"
+          />
+
+          <div className="col-span-2">
+            <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-500">
+              DESCRIPTION
+            </label>
+            <textarea
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="Short description of this role"
+              rows={2}
+              className="w-full rounded-2xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-500 placeholder:text-gray-400"
+            />
+          </div>
+        </div>
+
+        <div className="my-6 border-t border-gray-200" />
+
+        <h2 className="text-center text-xl font-semibold text-gray-900">
+          Permission
+        </h2>
+
+        <div className="mt-4 max-h-56 overflow-y-auto rounded-2xl border border-gray-200">
+          {permissionOptions.length === 0 && (
+            <p className="px-4 py-3 text-sm text-gray-500">No permissions available.</p>
+          )}
+          {permissionOptions.map((perm, i) => (
+            <label
+              key={perm.id}
+              className={`flex cursor-pointer items-center justify-between px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 ${
+                i !== permissionOptions.length - 1 ? 'border-b border-gray-200' : ''
+              }`}
             >
-              <X className="h-5 w-5" />
-            </button>
+              <span>{perm.name}</span>
+              <input
+                type="checkbox"
+                checked={form.permissions.includes(perm.id)}
+                onChange={() => togglePermission(perm.id)}
+                className="h-4 w-4 rounded border-gray-300 accent-[#ffb100]"
+              />
+            </label>
+          ))}
+        </div>
 
-            <h2 className="text-center text-xl font-semibold text-gray-900">
-              Role Info
-            </h2>
+        {error && <p className="mt-3 text-center text-sm text-red-600">{error}</p>}
 
+        <button
+          onClick={handleAddRole}
+          disabled={!formValid || isSaving}
+          className="mx-auto mt-6 block rounded-full bg-[#ffb100] px-10 py-2.5 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isSaving ? 'SAVING…' : 'SAVE CHANGES'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function EditRoleModal({
+  role,
+  permissionOptions,
+  onCancel,
+  onSaved,
+}: {
+  role: Role
+  permissionOptions: Permission[]
+  onCancel: () => void
+  onSaved: () => void
+}) {
+  const [form, setForm] = useState({
+    name: role.name,
+    description: role.description,
+    isActive: role.isActive,
+  })
+  const [permissions, setPermissions] = useState<number[]>([])
+  const [isLoadingDetail, setIsLoadingDetail] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetchRoleDetail(role.id)
+      .then((detail) => {
+        if (cancelled) return
+        setForm({ name: detail.name, description: detail.description, isActive: detail.isActive })
+        setPermissions(detail.permissions.map((p) => p.id))
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setError(errorMessage(err, 'Unable to load role details.'))
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingDetail(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [role.id])
+
+  const togglePermission = (id: number) => {
+    setPermissions((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]))
+  }
+
+  const handleSave = async () => {
+    setIsSaving(true)
+    setError(null)
+    try {
+      await apiPut(`/api/user/roles/${role.id}`, {
+        name: form.name.trim(),
+        description: form.description.trim(),
+        permissions,
+        is_active: form.isActive,
+      })
+      onSaved()
+    } catch (err) {
+      setError(errorMessage(err, 'Unable to update the role.'))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="relative w-full max-w-2xl rounded-3xl bg-white p-8 shadow-xl">
+        <button
+          onClick={onCancel}
+          className="absolute right-5 top-5 text-gray-400 hover:text-gray-600"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        <h2 className="text-xl font-semibold text-gray-900">Edit Role</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          Update role information and assigned permissions.
+        </p>
+
+        {isLoadingDetail ? (
+          <p className="mt-6 text-sm text-gray-500">Loading role details…</p>
+        ) : (
+          <>
             <div className="mt-6 grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-500">
-                  FULL NAME
-                </label>
+                <label className="mb-1.5 block text-sm text-gray-600">Role Name</label>
                 <input
-                  value={newRole.fullName}
-                  onChange={(e) => setNewRole({ ...newRole, fullName: e.target.value })}
-                  placeholder="e.g. JUAN CRUZ"
-                  className="w-full rounded-full border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-500 placeholder:text-gray-400"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className="w-full rounded-full border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-500"
                 />
               </div>
 
               <div>
-                <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-500">
-                  USERNAME
-                </label>
+                <label className="mb-1.5 block text-sm text-gray-600">Description</label>
                 <input
-                  value={newRole.username}
-                  onChange={(e) => setNewRole({ ...newRole, username: e.target.value })}
-                  placeholder="Create a valid username."
-                  className="w-full rounded-full border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-500 placeholder:text-gray-400"
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  className="w-full rounded-full border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-500"
                 />
               </div>
 
-              <div>
-                <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-500">
-                  ROLE NAME
-                </label>
-                <input
-                  value={newRole.roleName}
-                  onChange={(e) => setNewRole({ ...newRole, roleName: e.target.value })}
-                  placeholder="e.g. Supervisor"
-                  className="w-full rounded-full border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-500 placeholder:text-gray-400"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-500">
-                  ROLE ID
-                </label>
-                <input
-                  value={newRole.roleId}
-                  disabled
-                  className="w-full rounded-full border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-400 outline-none"
-                />
-              </div>
-
-              <div className="col-span-2">
-                <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-500">
-                  DESCRIPTION
-                </label>
-                <textarea
-                  value={newRole.description}
-                  onChange={(e) => setNewRole({ ...newRole, description: e.target.value })}
-                  placeholder="Short description of this role"
-                  rows={2}
-                  className="w-full rounded-2xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-500 placeholder:text-gray-400"
-                />
-              </div>
+              <RoleStatusField
+                label="Status"
+                isActive={form.isActive}
+                onChange={(isActive) => setForm({ ...form, isActive })}
+                labelClassName="mb-1.5 block text-sm text-gray-600"
+              />
             </div>
 
-            <div className="my-6 border-t border-gray-200" />
-
-            <h2 className="text-center text-xl font-semibold text-gray-900">
-              Permission
-            </h2>
-
-            <div className="mt-4 max-h-56 overflow-y-auto rounded-2xl border border-gray-200">
-              {permissionsList.map((perm, i) => (
+            <h3 className="mt-6 text-sm font-medium text-gray-700">Permissions</h3>
+            <div className="mt-2 max-h-56 overflow-y-auto rounded-2xl border border-gray-200">
+              {permissionOptions.map((perm, i) => (
                 <label
-                  key={perm}
+                  key={perm.id}
                   className={`flex cursor-pointer items-center justify-between px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 ${
-                    i !== permissionsList.length - 1 ? 'border-b border-gray-200' : ''
+                    i !== permissionOptions.length - 1 ? 'border-b border-gray-200' : ''
                   }`}
                 >
-                  <span>{perm}</span>
+                  <span>{perm.name}</span>
                   <input
                     type="checkbox"
-                    checked={newRole.permissions.includes(perm)}
-                    onChange={() => togglePermission(perm)}
+                    checked={permissions.includes(perm.id)}
+                    onChange={() => togglePermission(perm.id)}
                     className="h-4 w-4 rounded border-gray-300 accent-[#ffb100]"
                   />
                 </label>
               ))}
             </div>
 
-            <button
-              onClick={handleAddRole}
-              disabled={!addFormValid}
-              className="mx-auto mt-6 block rounded-full bg-[#ffb100] px-10 py-2.5 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              SAVE CHANGES
-            </button>
-          </div>
-        </div>
-      )}
+            {error && <p className="mt-4 text-center text-sm text-red-600">{error}</p>}
 
-      {/* EDIT ROLE MODAL */}
-      {editingRole && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="relative w-full max-w-2xl rounded-3xl bg-white p-8 shadow-xl">
-            <button
-              onClick={() => setEditingRole(null)}
-              className="absolute right-5 top-5 text-gray-400 hover:text-gray-600"
-            >
-              <X className="h-5 w-5" />
-            </button>
-
-            <h2 className="text-xl font-semibold text-gray-900">Edit Role</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Update user information and assigned role.
-            </p>
-
-            <EditRoleForm role={editingRole} onSave={handleSaveEdit} />
-          </div>
-        </div>
-      )}
-    </main>
-  )
-}
-
-function EditRoleForm({
-  role,
-  onSave,
-}: {
-  role: Role
-  onSave: (updated: Role) => void
-}) {
-  const [form, setForm] = useState({
-    fullName: role.fullName,
-    username: role.username,
-    roleType: role.roleType,
-  })
-
-  const handleSave = () => {
-    onSave({
-      ...role,
-      fullName: form.fullName,
-      username: form.username,
-      roleType: form.roleType,
-    })
-  }
-
-  return (
-    <>
-      <div className="mt-6 grid grid-cols-2 gap-4">
-        <div>
-          <label className="mb-1.5 block text-sm text-gray-600">Full Name</label>
-          <input
-            value={form.fullName}
-            onChange={(e) => setForm({ ...form, fullName: e.target.value })}
-            className="w-full rounded-full border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-500"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm text-gray-600">Username</label>
-          <input
-            value={form.username}
-            onChange={(e) => setForm({ ...form, username: e.target.value })}
-            className="w-full rounded-full border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-500"
-          />
-        </div>
+            <div className="mt-6 flex justify-center gap-3">
+              <button
+                onClick={handleSave}
+                disabled={isSaving || !form.name.trim()}
+                className="rounded-full bg-[#ffb100] px-8 py-2.5 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSaving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
-
-      <div className="mt-4">
-        <label className="mb-1.5 block text-sm text-gray-600">Role Name</label>
-        <input
-          value={form.roleType}
-          onChange={(e) => setForm({ ...form, roleType: e.target.value as RoleType })}
-          className="w-full rounded-full border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-500"
-        />
-      </div>
-
-      <div className="mt-4">
-        <label className="mb-1.5 block text-sm text-gray-600">Role ID</label>
-        <input
-          value={role.roleId}
-          disabled
-          className="w-full rounded-full border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-400 outline-none"
-        />
-      </div>
-
-      <div className="mt-6 flex justify-center gap-3">
-        <button
-          onClick={handleSave}
-          className="rounded-full bg-[#ffb100] px-8 py-2.5 text-sm font-semibold text-black"
-        >
-          Save Changes
-        </button>
-      </div>
-    </>
+    </div>
   )
 }

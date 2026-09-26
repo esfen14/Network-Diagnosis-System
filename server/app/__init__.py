@@ -31,6 +31,10 @@ app.cli.add_command(seed_command)
 from app import system_models, history_models, plugin_models
 
 #where the bluprints are called and registered
-from app.api import api_bp 
+from app.api import api_bp
 
 app.register_blueprint(api_bp)
+
+from app.scheduler import init_scheduler
+
+init_scheduler()
