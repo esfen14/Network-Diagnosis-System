@@ -113,6 +113,8 @@ PERMISSION_NAMES = [
     "plugin.update",
     "plugin.update_rollback",
     "plugin.configure",
+    "settings.security",
+    "settings.system",
 ]
 
 

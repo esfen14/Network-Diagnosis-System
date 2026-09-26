@@ -315,6 +315,68 @@ class TestRoleStatusToggle:
         assert resp.status_code == 404
 
 
+# ─── Role Status in Create / Edit Form ────────────────────────────────────────
+
+class TestRoleStatusInForm:
+    def _get_role(self, db_session, name):
+        return db_session.session.query(Role).filter_by(Name=name).one()
+
+    def test_create_role_defaults_to_active(self, logged_in_client, db_session, seeded_permissions):
+        resp = logged_in_client.post(
+            "/api/user/roles",
+            json={"role_name": "DefaultActive", "description": "d", "permissions": []},
+        )
+        assert resp.status_code == 201
+        assert self._get_role(db_session, "DefaultActive").Is_Active is True
+
+    def test_create_role_inactive(self, logged_in_client, db_session, seeded_permissions):
+        resp = logged_in_client.post(
+            "/api/user/roles",
+            json={"role_name": "StartsInactive", "description": "d", "permissions": [], "is_active": False},
+        )
+        assert resp.status_code == 201
+        assert self._get_role(db_session, "StartsInactive").Is_Active is False
+
+    def test_create_role_rejects_non_boolean_status(self, logged_in_client, db_session, seeded_permissions):
+        resp = logged_in_client.post(
+            "/api/user/roles",
+            json={"role_name": "BadStatus", "description": "d", "permissions": [], "is_active": "no"},
+        )
+        assert resp.status_code == 400
+        assert db_session.session.query(Role).filter_by(Name="BadStatus").first() is None
+
+    @pytest.mark.parametrize("start, target", [(True, False), (False, True)])
+    def test_edit_role_sets_status(self, logged_in_client, db_session, seeded_permissions, start, target):
+        role = _make_role(db_session, "StatusRole", is_active=start)
+        resp = logged_in_client.put(
+            f"/api/user/roles/{role.RoleID}",
+            json={"name": role.Name, "description": "d", "permissions": [], "is_active": target},
+        )
+        assert resp.status_code == 200
+        db_session.session.refresh(role)
+        assert role.Is_Active is target
+
+    def test_edit_role_without_status_keeps_it(self, logged_in_client, db_session, seeded_permissions):
+        role = _make_role(db_session, "KeepStatusRole", is_active=False)
+        resp = logged_in_client.put(
+            f"/api/user/roles/{role.RoleID}",
+            json={"name": role.Name, "description": "d", "permissions": []},
+        )
+        assert resp.status_code == 200
+        db_session.session.refresh(role)
+        assert role.Is_Active is False
+
+    def test_edit_role_rejects_non_boolean_status(self, logged_in_client, db_session, seeded_permissions):
+        role = _make_role(db_session, "BadEditStatus", is_active=True)
+        resp = logged_in_client.put(
+            f"/api/user/roles/{role.RoleID}",
+            json={"name": role.Name, "description": "d", "permissions": [], "is_active": 0},
+        )
+        assert resp.status_code == 400
+        db_session.session.refresh(role)
+        assert role.Is_Active is True
+
+
 # ─── Accounts List ────────────────────────────────────────────────────────────
 
 class TestAccountsList:

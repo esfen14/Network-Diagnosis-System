@@ -106,3 +106,18 @@ class Config:
     # Folders where candidate/backed-up plugin service configs are stored.
     PLUGIN_SERVICE_STAGING_DIR = Path(basedir) / "plugin-service-config-files"
     PLUGIN_SERVICE_BACKUP_DIR = Path(basedir) / "running-plugin-service-config-backup"
+
+    """
+    |------------------------------------------------------------------
+    | Scheduled automation (app/automation.py)
+    |------------------------------------------------------------------
+    """
+
+    # How often the scheduler checks whether a scheduled scan, update
+    # check, security check or backup is due.
+    AUTOMATION_CHECK_MINUTES = 5
+
+    # Where automatic database backups are written, and how many of the
+    # most recent backups to keep. Older ones are deleted.
+    DATABASE_BACKUP_DIR = Path(os.environ.get('DATABASE_BACKUP_DIR') or Path(basedir) / "database-backups")
+    DATABASE_BACKUP_KEEP = 7

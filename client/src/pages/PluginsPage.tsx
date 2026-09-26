@@ -3,15 +3,23 @@ import { AlertTriangle, Boxes, CheckCircle2, PackagePlus, Puzzle, RefreshCcw } f
 import { PageHeader } from '../components/shared/PageHeader'
 import { SummaryStatCard } from '../components/shared/SummaryStatCard'
 import { PluginInventoryTable } from '../components/plugin-manager/PluginInventoryTable'
+import { RunningChecksTable } from '../components/plugin-manager/RunningChecksTable'
 import { PluginDetailsDrawer } from '../components/plugin-manager/PluginDetailsDrawer'
 import { AddCustomPluginModal } from '../components/plugin-manager/AddCustomPluginModal'
 import { errorMessage } from '../lib/api'
-import { getPluginInventory, getPluginScanStatus, getPluginSummary, startPluginScan } from '../lib/pluginApi'
+import { getPluginInventory, getPluginScanStatus, getPluginSummary, getRunningChecks, startPluginScan } from '../lib/pluginApi'
 import type { PluginListItem, PluginStatus, PluginSummary, PluginType } from '../types/plugin'
 
 const PER_PAGE = 10
 
+type PluginTab = 'all' | 'running'
+
 export function PluginsPage() {
+  const [activeTab, setActiveTab] = useState<PluginTab>('running')
+  const [runningCount, setRunningCount] = useState<number | null>(null)
+  // Bumped after any change so the Currently Running list reloads too.
+  const [refreshKey, setRefreshKey] = useState(0)
+
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<'All' | PluginType>('All')
@@ -74,6 +82,11 @@ export function PluginsPage() {
     } catch {
       // Non-fatal — summary cards just won't update.
     }
+    try {
+      setRunningCount((await getRunningChecks({ page: 1, per_page: 1 })).total)
+    } catch {
+      // Non-fatal — the tab just shows no count.
+    }
   }, [])
 
   useEffect(() => {
@@ -87,6 +100,7 @@ export function PluginsPage() {
   const refreshAll = useCallback(() => {
     loadInventory()
     loadSummary()
+    setRefreshKey((key) => key + 1)
   }, [loadInventory, loadSummary])
 
   const stopPolling = () => {
@@ -191,29 +205,70 @@ export function PluginsPage() {
         />
       </div>
 
-      <PluginInventoryTable
-        plugins={plugins}
-        isLoading={isLoading}
-        query={query}
-        onQueryChange={setQuery}
-        typeFilter={typeFilter}
-        onTypeFilterChange={(t) => { setTypeFilter(t); setShowFilter(false) }}
-        statusFilter={statusFilter}
-        onStatusFilterChange={(s) => { setStatusFilter(s); setShowFilter(false) }}
-        showFilter={showFilter}
-        onToggleFilter={() => setShowFilter((v) => !v)}
-        sortAsc={sortAsc}
-        onToggleSort={() => setSortAsc((v) => !v)}
-        page={page}
-        pageCount={listMeta.pages}
-        total={listMeta.total}
-        hasNext={listMeta.hasNext}
-        hasPrev={listMeta.hasPrev}
-        onPageChange={setPage}
-        onSelectPlugin={(plugin) => setSelectedPluginId(plugin.id)}
-        onScan={handleScan}
-        isScanning={isScanning}
-      />
+      <div className="border-b border-gray-200 dark:border-white/10">
+        <div className="flex gap-8" role="tablist">
+          {([
+            { id: 'running' as const, label: 'Currently Running', count: runningCount ?? undefined },
+            { id: 'all' as const, label: 'All Plugins', count: summary?.installed_plugins },
+          ]).map((tab) => {
+            const active = activeTab === tab.id
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium transition ${
+                  active
+                    ? 'border-[#ffb100] text-gray-900 dark:text-white'
+                    : 'border-transparent text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
+                }`}
+              >
+                {tab.label}
+                {tab.count !== undefined && (
+                  <span className={`rounded-full px-2 py-0.5 text-xs ${
+                    active ? 'bg-[#ffb100]/20 text-[#b37b00] dark:text-[#ffb100]' : 'bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-gray-400'
+                  }`}>
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {activeTab === 'running' ? (
+        <RunningChecksTable
+          refreshKey={refreshKey}
+          onSelectPlugin={setSelectedPluginId}
+        />
+      ) : (
+        <PluginInventoryTable
+          plugins={plugins}
+          isLoading={isLoading}
+          query={query}
+          onQueryChange={setQuery}
+          typeFilter={typeFilter}
+          onTypeFilterChange={(t) => { setTypeFilter(t); setShowFilter(false) }}
+          statusFilter={statusFilter}
+          onStatusFilterChange={(s) => { setStatusFilter(s); setShowFilter(false) }}
+          showFilter={showFilter}
+          onToggleFilter={() => setShowFilter((v) => !v)}
+          sortAsc={sortAsc}
+          onToggleSort={() => setSortAsc((v) => !v)}
+          page={page}
+          pageCount={listMeta.pages}
+          total={listMeta.total}
+          hasNext={listMeta.hasNext}
+          hasPrev={listMeta.hasPrev}
+          onPageChange={setPage}
+          onSelectPlugin={(plugin) => setSelectedPluginId(plugin.id)}
+          onScan={handleScan}
+          isScanning={isScanning}
+        />
+      )}
 
       {selectedPluginId !== null && (
         <PluginDetailsDrawer

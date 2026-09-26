@@ -29,3 +29,16 @@ def is_failed_login_monitoring_enabled() -> bool:
 def is_strong_password_policy_enabled() -> bool:
     settings = _get_settings()
     return settings is None or settings.Strong_Password_Policy
+
+
+DEFAULT_SESSION_TIMEOUT_MINUTES = 30
+
+
+def get_session_timeout_minutes() -> int:
+    """Idle minutes before a logged-in session expires. Falls back to
+    DEFAULT_SESSION_TIMEOUT_MINUTES if settings don't exist yet or hold
+    a non-positive value, so a bad row can never disable the timeout."""
+    settings = _get_settings()
+    if settings is None or not settings.Session_Timeout or settings.Session_Timeout <= 0:
+        return DEFAULT_SESSION_TIMEOUT_MINUTES
+    return settings.Session_Timeout

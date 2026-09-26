@@ -36,6 +36,47 @@ async function fetchRoleDetail(id: number): Promise<RoleDetail> {
   return fromRoleDetailRecord(data)
 }
 
+// Active/Inactive switch used in the Create and Edit role forms. Inactive
+// roles can't be assigned to accounts (they're left out of /roles/options).
+function RoleStatusField({
+  label,
+  isActive,
+  onChange,
+  labelClassName,
+}: {
+  label: string
+  isActive: boolean
+  onChange: (isActive: boolean) => void
+  labelClassName: string
+}) {
+  return (
+    <div>
+      <span className={labelClassName}>{label}</span>
+      <div className="flex h-[42px] items-center gap-3">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={isActive}
+          aria-label="Role status"
+          onClick={() => onChange(!isActive)}
+          className={`relative h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#ffb100]/40 ${
+            isActive ? 'bg-[#ffb100]' : 'bg-gray-300'
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+              isActive ? 'left-5.5' : 'left-0.5'
+            }`}
+          />
+        </button>
+        <span className={`text-sm font-medium ${isActive ? 'text-emerald-700' : 'text-gray-500'}`}>
+          {isActive ? 'Active' : 'Inactive'}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 export function ManageRolesPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -282,6 +323,7 @@ function AddRoleModal({
     roleName: '',
     description: '',
     permissions: [] as number[],
+    isActive: true,
   })
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -306,6 +348,7 @@ function AddRoleModal({
         role_name: form.roleName.trim(),
         description: form.description.trim(),
         permissions: form.permissions,
+        is_active: form.isActive,
       })
       onCreated()
     } catch (err) {
@@ -341,6 +384,13 @@ function AddRoleModal({
               className="w-full rounded-full border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-500 placeholder:text-gray-400"
             />
           </div>
+
+          <RoleStatusField
+            label="STATUS"
+            isActive={form.isActive}
+            onChange={(isActive) => setForm({ ...form, isActive })}
+            labelClassName="mb-1.5 block text-xs font-medium tracking-wide text-gray-500"
+          />
 
           <div className="col-span-2">
             <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-500">
@@ -409,7 +459,11 @@ function EditRoleModal({
   onCancel: () => void
   onSaved: () => void
 }) {
-  const [form, setForm] = useState({ name: role.name, description: role.description })
+  const [form, setForm] = useState({
+    name: role.name,
+    description: role.description,
+    isActive: role.isActive,
+  })
   const [permissions, setPermissions] = useState<number[]>([])
   const [isLoadingDetail, setIsLoadingDetail] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -420,7 +474,7 @@ function EditRoleModal({
     fetchRoleDetail(role.id)
       .then((detail) => {
         if (cancelled) return
-        setForm({ name: detail.name, description: detail.description })
+        setForm({ name: detail.name, description: detail.description, isActive: detail.isActive })
         setPermissions(detail.permissions.map((p) => p.id))
       })
       .catch((err) => {
@@ -447,6 +501,7 @@ function EditRoleModal({
         name: form.name.trim(),
         description: form.description.trim(),
         permissions,
+        is_active: form.isActive,
       })
       onSaved()
     } catch (err) {
@@ -493,6 +548,13 @@ function EditRoleModal({
                   className="w-full rounded-full border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-500"
                 />
               </div>
+
+              <RoleStatusField
+                label="Status"
+                isActive={form.isActive}
+                onChange={(isActive) => setForm({ ...form, isActive })}
+                labelClassName="mb-1.5 block text-sm text-gray-600"
+              />
             </div>
 
             <h3 className="mt-6 text-sm font-medium text-gray-700">Permissions</h3>
