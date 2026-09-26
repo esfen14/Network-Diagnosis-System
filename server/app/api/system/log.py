@@ -10,6 +10,7 @@ from app.system_models import (
     ConfigurationChanges,
     NetworkDiscoveryStatus,
     NCPADeploymentStatus,
+    SkippedService,
     ExportLog,
     ExportFormat,
     User
@@ -395,7 +396,9 @@ def network_discovery_logs():
 
     Queries the ``NetworkDiscoveryStatus`` table joined with
     ``ActivityLog`` and ``User`` to track the lifecycle of network
-    discovery scans (queued, running, completed, failed).
+    discovery scans (queued, running, completed, failed). Each entry also
+    lists the discovered ports that run did not turn into a Nagios service
+    (``SkippedService``), e.g. UDP ports with no plugin that can check them.
 
     **Query Parameters**
 
@@ -442,7 +445,17 @@ def network_discovery_logs():
                             "start_at":     "2025-01-15T10:00:00",
                             "completed_at": "2025-01-15T10:30:00",
                             "error":        null,
-                            "log_id":       1
+                            "log_id":       1,
+                            "skipped_services": [
+                                {
+                                    "hostname":     "switch-1",
+                                    "ip_address":   "10.10.99.4",
+                                    "port":         162,
+                                    "protocol":     "UDP",
+                                    "service_name": "snmptrap",
+                                    "reason":       "No plugin can check this UDP service."
+                                }
+                            ]
                         }
                     }
                 ],
@@ -519,6 +532,25 @@ def network_discovery_logs():
 
         logs = _paginate_multi(query, page, per_page)
 
+        # Skipped ports for every run on this page, fetched in one query.
+        discovery_ids = [discovery.DiscoveryStatusID for discovery, _activity, _user in logs.items]
+        skipped_by_discovery = {}
+        if discovery_ids:
+            skipped_rows = db.session.scalars(
+                sa.select(SkippedService)
+                .where(SkippedService.DiscoveryStatusID.in_(discovery_ids))
+                .order_by(SkippedService.Hostname, SkippedService.Port_Number)
+            ).all()
+            for skipped in skipped_rows:
+                skipped_by_discovery.setdefault(skipped.DiscoveryStatusID, []).append({
+                    "hostname":     skipped.Hostname,
+                    "ip_address":   skipped.IP_Address,
+                    "port":         skipped.Port_Number,
+                    "protocol":     skipped.Protocol.value,
+                    "service_name": skipped.Service_Name,
+                    "reason":       skipped.Reason,
+                })
+
         items = []
         for discovery, activity, user in logs.items:
             status = discovery.Status.value if discovery.Status else "Unknown"
@@ -539,6 +571,7 @@ def network_discovery_logs():
                     "completed_at": discovery.Completed_At.isoformat() if discovery.Completed_At else None,
                     "error":        discovery.Error,
                     "log_id":       discovery.LogID,
+                    "skipped_services": skipped_by_discovery.get(discovery.DiscoveryStatusID, []),
                 },
             })
 
@@ -618,7 +651,17 @@ def ncpa_deployment_logs():
                             "start_at":     "2025-01-15T10:00:00",
                             "completed_at": "2025-01-15T10:30:00",
                             "error":        null,
-                            "log_id":       1
+                            "log_id":       1,
+                            "skipped_services": [
+                                {
+                                    "hostname":     "switch-1",
+                                    "ip_address":   "10.10.99.4",
+                                    "port":         162,
+                                    "protocol":     "UDP",
+                                    "service_name": "snmptrap",
+                                    "reason":       "No plugin can check this UDP service."
+                                }
+                            ]
                         }
                     }
                 ],

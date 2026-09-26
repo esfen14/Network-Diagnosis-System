@@ -128,10 +128,11 @@ class TestEnablePlugin:
         assert history.Result.value == "Failed"
 
     def test_enable_no_nagios_binary(self, logged_in_client, db_session):
-        """Real behavior with no mocking at all — matches a dev machine
-        without Nagios installed. Should fail honestly, not crash."""
+        """Simulates a machine without Nagios installed by patching the binary
+        path to a nonexistent file. Should fail honestly, not crash."""
         plugin = _make_plugin(db_session, "check_ping", status=PluginStatus.READY)
-        resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/enable")
+        with patch("app.api.plugin.nagios_validator.NAGIOS_BINARY_PATH", "/nonexistent/nagios"):
+            resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/enable")
         assert resp.status_code == 502
 
 
@@ -194,7 +195,8 @@ class TestDisablePlugin:
 class TestNagiosValidator:
     def test_returns_false_when_binary_missing(self):
         from app.api.plugin.nagios_validator import validate_nagios_configuration
-        is_valid, output = validate_nagios_configuration()
+        with patch("app.api.plugin.nagios_validator.NAGIOS_BINARY_PATH", "/nonexistent/nagios"):
+            is_valid, output = validate_nagios_configuration()
         assert is_valid is False
         assert "not found" in output
 

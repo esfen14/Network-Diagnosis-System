@@ -102,11 +102,12 @@ class Config:
     NAGIOS_BIN = Path(os.environ.get('NAGIOS_BIN') or "/usr/local/nagios/bin/nagios")
     NAGIOS_MAIN_CFG = Path(os.environ.get('NAGIOS_MAIN_CFG') or "/usr/local/nagios/etc/nagios.cfg")
 
-    # Nagios web/API host, used to build the status + archive JSON CGI
-    # endpoints. Override via env if Nagios runs elsewhere (e.g. Docker).
+    # Nagios web/API host, used to build the status, archive and object
+    # JSON CGI endpoints. Override via env if Nagios runs elsewhere (e.g. Docker).
     NAGIOS_HOST = os.environ.get('NAGIOS_HOST') or "192.168.130.10"
     NAGIOS_STATUS_URL = f"http://{NAGIOS_HOST}/nagios/cgi-bin/statusjson.cgi"
     NAGIOS_ARCHIVE_URL = f"http://{NAGIOS_HOST}/nagios/cgi-bin/archivejson.cgi"
+    NAGIOS_OBJECT_URL = f"http://{NAGIOS_HOST}/nagios/cgi-bin/objectjson.cgi"
     NAGIOS_USERNAME = os.environ.get('NAGIOS_USERNAME') or "nagiosadmin"
     NAGIOS_PASSWORD = os.environ.get('NAGIOS_PASSWORD') or "password"
 

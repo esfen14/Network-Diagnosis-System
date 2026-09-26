@@ -6,7 +6,7 @@ import { formatDateTime } from '../utils/formatDateTime'
 import { exportRows } from '../utils/exportData'
 import { ExportMenu } from '../components/shared/ExportMenu'
 import { apiGet, errorMessage } from '../lib/api'
-import { LOG_ENDPOINTS, type LogCategory, type LogEntry, type LogListResponse } from '../types/log'
+import { LOG_ENDPOINTS, type LogCategory, type LogEntry, type LogListResponse, type SkippedService } from '../types/log'
 
 const PER_PAGE = 10
 
@@ -238,13 +238,35 @@ export function SystemLogsPage() {
                   <p>User: {selectedLog.user}</p>
                   <p>Date &amp; Time: {formatDateTime(new Date(selectedLog.timestamp), settings.dateTimeFormat, settings.timeZone)}</p>
                   {selectedLog.details && Object.entries(selectedLog.details).map(([key, value]) => (
-                    value == null || value === '' ? null : (
+                    value == null || value === '' || key === 'skipped_services' ? null : (
                       <p key={key} className="capitalize">
                         {key.replace(/_/g, ' ')}: {String(value)}
                       </p>
                     )
                   ))}
                 </div>
+                {(() => {
+                  const skipped = selectedLog.details?.skipped_services as SkippedService[] | undefined
+                  if (!skipped || skipped.length === 0) return null
+                  return (
+                    <div className="text-xs text-[var(--text-muted)] space-y-2">
+                      <p className="font-semibold text-[var(--text)]">
+                        Skipped services ({skipped.length}) — not monitored
+                      </p>
+                      <ul className="space-y-2 max-h-60 overflow-y-auto">
+                        {skipped.map((service, index) => (
+                          <li key={index} className="border border-[var(--border)] rounded-lg p-2">
+                            <p className="text-[var(--text)]">
+                              {service.hostname}{service.ip_address ? ` (${service.ip_address})` : ''}
+                            </p>
+                            <p>{service.port}/{service.protocol} · {service.service_name}</p>
+                            <p>{service.reason}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )
+                })()}
                 <div className="flex gap-2 pt-4">
                   <button onClick={() => setSelectedLog(null)} className="flex-1 bg-[var(--text)] text-[var(--card)] py-2 rounded-lg text-sm">Close</button>
                   <ExportMenu

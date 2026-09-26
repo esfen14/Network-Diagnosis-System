@@ -89,9 +89,15 @@ def init_scheduler():
     monitor process (no WERKZEUG_RUN_MAIN) and once in the real worker
     process (WERKZEUG_RUN_MAIN=true). Starting in both would double every
     poll/purge, so skip the monitor process when debug+reloader are active.
+
+    The scheduler is also suppressed entirely under ``app.testing`` so that
+    background jobs never race against test-created in-memory databases.
     """
     global _scheduler
     if _scheduler is not None:
+        return
+
+    if app.testing:
         return
 
     if app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true":

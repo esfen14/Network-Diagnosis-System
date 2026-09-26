@@ -114,7 +114,7 @@ class TestConvertServiceStateTypeEnum:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 class TestConvertPluginStatusTypeEnum:
-    """Same mapping as service, but fallback is OK instead of UNKNOWN."""
+    """Same mapping as service: case-insensitive, fallback is UNKNOWN."""
 
     @pytest.mark.parametrize("val,expected", [
         ("0", PluginStatusType.OK),
@@ -134,16 +134,18 @@ class TestConvertPluginStatusTypeEnum:
         ("Unknown", PluginStatusType.UNKNOWN),
         ("UNKNOWN", PluginStatusType.UNKNOWN),
         (None, PluginStatusType.UNKNOWN),
-        ("", PluginStatusType.OK),   # empty → fallback to OK
+        ("ok", PluginStatusType.OK),
+        ("critical", PluginStatusType.CRITICAL),
+        ("", PluginStatusType.UNKNOWN),   # empty → fallback to UNKNOWN
     ])
     def test_numeric_and_text_inputs(self, val, expected):
         result = convert_plugin_status_type_enum(val)
         assert result == expected
 
     def test_fallback_unknown_string(self):
-        """Unknown string should fall back to OK (not crash)."""
+        """Unknown string should fall back to UNKNOWN, never OK (not crash)."""
         result = convert_plugin_status_type_enum("bogus")
-        assert result == PluginStatusType.OK
+        assert result == PluginStatusType.UNKNOWN
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

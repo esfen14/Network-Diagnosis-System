@@ -1,4 +1,4 @@
-from flask_login import login_user, logout_user, login_required
+from flask_login import login_user, logout_user, login_required, current_user
 from flask import request, current_app
 from app import db
 from app.api.helper import (
@@ -79,6 +79,9 @@ def login():
 
     if user.Status.value != "Active":
         return error("Account inactive.", 403)
+
+    if current_user.is_authenticated:
+        return success(message="User already logged in.")
 
     login_user(user)
 

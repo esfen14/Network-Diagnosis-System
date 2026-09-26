@@ -9,7 +9,8 @@ actually discovered on, and overridable per host.
 Resolution order
 ----------------
     discovered service name ──► plugin name   (name/alias match, else the
-            │                                  generic "tcp"/"udp" plugin)
+            │                                  generic "tcp" plugin; unmatched
+            │                                  UDP ports are skipped)
             ▼
     PluginDefinition ──► transports, variables, checks, command layout
             │
@@ -215,6 +216,11 @@ PLUGIN_DEFINITIONS = {
             transports=(Transport.UDP,),
             arguments=(("-p", "port"),),
             # check_udp aborts without -s/-e; empty strings let it run.
+            # Network Discovery no longer generates this check: most UDP
+            # services ignore an empty probe, so it cannot tell up from down.
+            # UDP ports without a protocol plugin are skipped and recorded in
+            # SkippedService instead (create_host_cfg.build_host_services).
+            # Kept so existing pinpoint_nd_udp services still resolve.
             fixed_flags="-s '' -e ''",
             options={"warning": "-w", "critical": "-c"},
         ),

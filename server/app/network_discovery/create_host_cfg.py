@@ -30,7 +30,7 @@ from app.system_models import \
     NCPADeployment, \
     NCPADevicePartition, \
     AgentStatus 
-from app.logging import create_network_discovery_status, update_network_discovery_status, calculate_progress
+from app.logging import create_network_discovery_status, update_network_discovery_status, calculate_progress, create_skipped_service_logs
 from app.logging.deployment_history import update_ncpa_deployment_status
 from app.system_models import DiscoveryStatus, DeploymentStatus
 import socket
@@ -160,25 +160,47 @@ def finalize_service_names(planned):
     return services
 
 
-def build_host_services(host_data, facts, app_config):
+def build_host_services(host_data, facts, app_config, skipped=None):
     """
     Plan every Nagios service for one host from its discovered TCP and UDP
     services. Each port resolves to a plugin by its service NAME; the port
     is only passed along as that plugin's "port" variable.
 
-    If the matched plugin cannot be configured for this host (e.g. NCPA with
-    no deployed token, MySQL with no user) the port falls back to the
-    transport's generic port check so it is still monitored.
+    If the matched TCP plugin cannot be configured for this host (e.g. NCPA
+    with no deployed token, MySQL with no user) the port falls back to the
+    generic TCP port check so it is still monitored.
+
+    UDP ports are only monitored through a plugin that speaks their protocol
+    (dns, ntp, snmp). A generic UDP check cannot tell a healthy port from a
+    dead one — most UDP services ignore an empty probe — so a UDP port with no
+    matching plugin, or whose plugin cannot be configured, is skipped.
+
+    Every skipped port is appended to skipped (if a list is given) as a dict
+    with hostname, port, protocol, service_name and reason. Reasons never
+    contain variable values, so secrets are not leaked into the log.
 
     Expects host_data in _load_monitored_hosts()'s shape and facts from
     load_host_plugin_facts(). Returns (service_name, check_command, plugin)
-    tuples. Logs, but never includes variable values in, fallback warnings.
+    tuples.
     """
     hostname = host_data["data"]["hostname"]
     overrides = host_data["data"].get("plugin_variables")
     if not isinstance(overrides, dict):
         overrides = {}
     host_facts = facts.get(host_data["data"].get("net_discovery_id"), {})
+
+    def skip(discovered_name, port, transport, reason):
+        current_app.logger.warning(
+            f"Skipping {discovered_name} {port}/{transport.value} on {hostname}: {reason}"
+        )
+        if skipped is not None:
+            skipped.append({
+                "hostname": hostname,
+                "port": port,
+                "protocol": transport.value,
+                "service_name": discovered_name,
+                "reason": reason,
+            })
 
     planned = []
     for transport in Transport:
@@ -192,16 +214,19 @@ def build_host_services(host_data, facts, app_config):
             if plugin_name != generic_plugin:
                 service_label = plugin_name
 
+            if transport is Transport.UDP and plugin_name == generic_plugin:
+                skip(discovered_name, port, transport,
+                     "No plugin can check this UDP service.")
+                continue
+
             try:
                 planned.extend(plan_plugin_services(
                     plugin_name, service_label, port, transport, host_facts, overrides, app_config
                 ))
                 continue
             except PluginConfigurationError as e:
-                if plugin_name == generic_plugin:
-                    current_app.logger.warning(
-                        f"Skipping {discovered_name} {port}/{transport.value} on {hostname}: {e}"
-                    )
+                if plugin_name == generic_plugin or transport is Transport.UDP:
+                    skip(discovered_name, port, transport, str(e))
                     continue
                 current_app.logger.warning(
                     f"{hostname} {discovered_name} {port}/{transport.value}: {e} "
@@ -214,15 +239,17 @@ def build_host_services(host_data, facts, app_config):
                     host_facts, overrides, app_config
                 ))
             except PluginConfigurationError as e:
-                current_app.logger.warning(
-                    f"Skipping {discovered_name} {port}/{transport.value} on {hostname}: {e}"
-                )
+                skip(discovered_name, port, transport, str(e))
 
     return finalize_service_names(planned)
 
-def _create_host_cfg_file(discovered_hosts):
+def _create_host_cfg_file(discovered_hosts, skipped=None):
     """
     Creates a new host configuration file.
+
+    If skipped is a list, every discovered port that was not turned into a
+    Nagios service is appended to it (see build_host_services), with the
+    host's ip_address added.
 
     Returns:
         pathlib.Path: Path to the newly created file.
@@ -397,7 +424,11 @@ def _create_host_cfg_file(discovered_hosts):
             # (plugin_registry.py); a plugin may produce several services
             # (one per SNMP OID, one per NCPA metric/partition), all bound to
             # this host only.
-            host_services = build_host_services(host_data, plugin_facts, current_app.config)
+            host_skipped = []
+            host_services = build_host_services(host_data, plugin_facts, current_app.config, host_skipped)
+            if skipped is not None:
+                for entry in host_skipped:
+                    skipped.append({**entry, "ip_address": ip})
 
             for service_name, command, plugin_name in host_services:
                 # Remember the plugin so its `define command` is written once
@@ -1120,8 +1151,10 @@ def discover_network_create_hosts(app, user_id, stop_event):
             if stop_event.is_set():
                 return
             
-            new_cfg = _create_host_cfg_file(system_hosts)
+            skipped_services = []
+            new_cfg = _create_host_cfg_file(system_hosts, skipped_services)
             print(f"Created: {new_cfg}")
+            create_skipped_service_logs(network_discovery_id, skipped_services)
             update_network_discovery_status(
                 network_discovery_id,
                 DiscoveryStatus.RUNNING,

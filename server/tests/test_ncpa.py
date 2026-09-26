@@ -73,7 +73,7 @@ class TestNcpaEligibleDevices:
         # No devices seeded — should return an empty list
         resp = logged_in_client.get("/api/system/deployment/ncpa/devices")
         assert resp.status_code == 200
-        data = resp.get_json()
+        data = resp.get_json()["data"]
         assert data["devices"] == []
 
     def test_ncpa_eligible_devices_returns_eligible(self, logged_in_client, db_session, admin_user):
@@ -82,7 +82,7 @@ class TestNcpaEligibleDevices:
 
         resp = logged_in_client.get("/api/system/deployment/ncpa/devices")
         assert resp.status_code == 200
-        data = resp.get_json()
+        data = resp.get_json()["data"]
         device_ids = [d["device_id"] for d in data["devices"]]
         assert eligible.NetDiscoveryID in device_ids
         assert non_eligible.NetDiscoveryID not in device_ids
@@ -209,7 +209,7 @@ class TestDeployNcpaStart:
             )
 
         assert resp.status_code == 202
-        data = resp.get_json()
+        data = resp.get_json()["data"]
         assert len(data["rejected"]) > 0
         rejected_ids = [r["device_id"] for r in data["rejected"]]
         assert 99999 in rejected_ids
@@ -232,7 +232,7 @@ class TestDeployNcpaStart:
             )
 
         assert resp.status_code == 202
-        data = resp.get_json()
+        data = resp.get_json()["data"]
         assert len(data["rejected"]) > 0
         rejected_ids = [r["device_id"] for r in data["rejected"]]
         assert device.NetDiscoveryID in rejected_ids
@@ -266,5 +266,5 @@ class TestTrustedDevices:
         """When no devices are trusted (no NCPADeployment rows with PENDING_NCPA), return empty list."""
         resp = logged_in_client.get("/api/system/deployment/ncpa/devices/trusted")
         assert resp.status_code == 200
-        data = resp.get_json()
+        data = resp.get_json()["data"]
         assert data["devices"] == []

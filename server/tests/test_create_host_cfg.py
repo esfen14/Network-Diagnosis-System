@@ -178,15 +178,19 @@ class TestSnmpHost:
             "snmp-if_in-1161": "pinpoint_nd_snmp!1161!private!1.3.6.1.2.1.2.2.1.10.1!",
         }
 
-    def test_unsafe_override_falls_back_to_generic_check(self, app, plugin_config, caplog):
+    def test_unsafe_override_is_skipped_without_leaking_value(self, app, plugin_config, caplog):
         host = make_host(
             "switch-c", udp={"161": "snmp"}, plugin_variables={"snmp": {"community": "x';reboot'"}}
         )
+        skipped = []
         with app.app_context():
-            services = as_dict(build_host_services(host, {}, plugin_config))
+            services = as_dict(build_host_services(host, {}, plugin_config, skipped))
 
-        assert services == {"snmp-161": "pinpoint_nd_udp!161!"}
+        # UDP never falls back to the generic check_udp — the port is skipped.
+        assert services == {}
+        assert [entry["port"] for entry in skipped] == ["161"]
         assert "reboot" not in caplog.text
+        assert "reboot" not in skipped[0]["reason"]
 
 
 class TestNcpaHost:
@@ -235,13 +239,13 @@ class TestTcpUdpHosts:
         }
 
     def test_udp_services_resolve_by_name(self, app, plugin_config):
-        host = make_host("ntp-d", udp={"123": "ntp", "69": "tftp"})
+        host = make_host("ntp-d", udp={"123": "ntp", "53": "domain"})
         with app.app_context():
             services = as_dict(build_host_services(host, {}, plugin_config))
 
         assert services == {
             "ntp-123": "pinpoint_nd_ntp!123!",
-            "tftp-69": "pinpoint_nd_udp!69!",
+            "dns-53": "pinpoint_nd_dns!localhost!",
         }
 
     def test_nrpe_port_gets_plain_tcp_check(self, app, plugin_config):
@@ -264,6 +268,62 @@ class TestTcpUdpHosts:
             assert as_dict(build_host_services(host, {}, plugin_config)) == {
                 "mysql-3306": "pinpoint_nd_mysql!3306!nagios!"
             }
+
+
+class TestSkippedUdpServices:
+    """UDP ports without a plugin that speaks their protocol are not monitored
+    (a generic UDP check cannot tell up from down) but are reported."""
+
+    def test_udp_without_plugin_is_skipped_and_reported(self, app, plugin_config):
+        host = make_host("router", udp={"161": "snmp", "69": "tftp", "514": "syslog"})
+        skipped = []
+        with app.app_context():
+            services = as_dict(build_host_services(host, {}, plugin_config, skipped))
+
+        assert all(name.startswith("snmp-") for name in services)
+        assert not any("pinpoint_nd_udp" in command for command in services.values())
+        assert sorted((entry["port"], entry["service_name"]) for entry in skipped) == [
+            ("514", "syslog"), ("69", "tftp"),
+        ]
+        for entry in skipped:
+            assert entry["hostname"] == "router"
+            assert entry["protocol"] == "UDP"
+            assert entry["reason"] == "No plugin can check this UDP service."
+
+    def test_override_to_plugin_name_is_monitored(self, app, plugin_config):
+        # UDP_SERVICE_OVERRIDES renames by port before planning; a name that
+        # matches a UDP plugin is monitored, not skipped.
+        host = make_host("switch", udp={"161": "snmp"})
+        skipped = []
+        with app.app_context():
+            services = build_host_services(host, {}, plugin_config, skipped)
+
+        assert services and skipped == []
+
+    def test_unconfigurable_udp_plugin_is_skipped_not_generic(self, app, plugin_config):
+        # A malformed SNMP OID list cannot build a check; UDP must not fall
+        # back to the generic check_udp.
+        host = make_host("switch", udp={"161": "snmp"}, plugin_variables={"snmp": {"oids": "not-a-list"}})
+        skipped = []
+        with app.app_context():
+            services = build_host_services(host, {}, plugin_config, skipped)
+
+        assert services == []
+        assert [entry["port"] for entry in skipped] == ["161"]
+
+    def test_tcp_without_plugin_still_gets_generic_check(self, app, plugin_config):
+        host = make_host("box", tcp={"9000": "cslistener"})
+        skipped = []
+        with app.app_context():
+            services = as_dict(build_host_services(host, {}, plugin_config, skipped))
+
+        assert services == {"cslistener-9000": "pinpoint_nd_tcp!9000!"}
+        assert skipped == []
+
+    def test_skipped_list_is_optional(self, app, plugin_config):
+        host = make_host("router", udp={"69": "tftp"})
+        with app.app_context():
+            assert build_host_services(host, {}, plugin_config) == []
 
 
 class TestServiceNames:
@@ -406,6 +466,29 @@ class TestCreateHostCfgFile:
 
         groups = dict(re.findall(r"hostgroup_name\s+(.+?)\n.*?members\s+(\S+)", cfg_text, re.S))
         assert groups == {"Linux": "linux-1", "Windows": "win-1", "Unknown": "mystery"}
+
+    def test_skipped_services_are_collected_with_ip(self, app, db_session, admin_user, plugin_config, tmp_path):
+        discovered = {
+            "10.0.0.0/24": {
+                "10.0.0.11": make_host("host-a", udp={"161": "snmp", "162": "snmptrap"}),
+                "10.0.0.13": make_host("host-c", tcp={"22": "ssh"}),
+            }
+        }
+        skipped = []
+
+        with patched_config(app, HOST_CONFIG_DIR=tmp_path):
+            cfg_text = _create_host_cfg_file(discovered, skipped).read_text()
+
+        assert skipped == [{
+            "hostname": "host-a",
+            "port": "162",
+            "protocol": "UDP",
+            "service_name": "snmptrap",
+            "reason": "No plugin can check this UDP service.",
+            "ip_address": "10.0.0.11",
+        }]
+        assert "snmptrap" not in cfg_text
+        assert "pinpoint_nd_udp" not in cfg_text
 
     def test_host_without_services_generates_no_commands(self, app, db_session, admin_user, plugin_config, tmp_path):
         discovered = {"10.0.0.0/24": {"10.0.0.20": make_host("quiet-host")}}

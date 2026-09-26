@@ -35,52 +35,48 @@ def convert_connection_state_type_enum(val):
 
 def convert_service_state_type_enum(val):
     """Convert Nagios status to ServiceStateType enum.
-    
-    Nagios sends status as "0" (OK), "1" (WARNING), "2" (CRITICAL), "3" (UNKNOWN).
+
+    Accepts numeric codes "0" (OK), "1" (WARNING), "2" (CRITICAL), "3" (UNKNOWN)
+    or the state name in any case. statusjson.cgi with formatoptions=enumerate
+    sends lowercase names ("ok", "warning", "critical", "unknown").
+    Anything else (e.g. "pending") falls back to UNKNOWN.
     """
     if val is None:
         return ServiceStateType.UNKNOWN
-    s = str(val).strip()
+    s = str(val).strip().lower()
     mapping = {
         "0": ServiceStateType.OK,
         "1": ServiceStateType.WARNING,
         "2": ServiceStateType.CRITICAL,
         "3": ServiceStateType.UNKNOWN,
-        "Ok": ServiceStateType.OK,
-        "OK": ServiceStateType.OK,
-        "Warning": ServiceStateType.WARNING,
-        "WARNING": ServiceStateType.WARNING,
-        "Critical": ServiceStateType.CRITICAL,
-        "CRITICAL": ServiceStateType.CRITICAL,
-        "Unknown": ServiceStateType.UNKNOWN,
-        "UNKNOWN": ServiceStateType.UNKNOWN,
+        "ok": ServiceStateType.OK,
+        "warning": ServiceStateType.WARNING,
+        "critical": ServiceStateType.CRITICAL,
+        "unknown": ServiceStateType.UNKNOWN,
     }
     return mapping.get(s, ServiceStateType.UNKNOWN)
 
 def convert_plugin_status_type_enum(val):
     """Convert plugin status string to PluginStatusType enum.
-    
-    Handles both direct enum names ("Ok", "Warning", etc.) and Nagios
-    numeric codes ("0", "1", "2", "3").
+
+    Accepts Nagios numeric codes ("0"-"3") or the status name in any case
+    ("OK", "warning", ...). Anything unrecognised, including empty input,
+    falls back to UNKNOWN — an unparseable status must never read as healthy.
     """
     if val is None:
         return PluginStatusType.UNKNOWN
-    s = str(val).strip()
+    s = str(val).strip().lower()
     mapping = {
         "0": PluginStatusType.OK,
         "1": PluginStatusType.WARNING,
         "2": PluginStatusType.CRITICAL,
         "3": PluginStatusType.UNKNOWN,
-        "Ok": PluginStatusType.OK,
-        "OK": PluginStatusType.OK,
-        "Warning": PluginStatusType.WARNING,
-        "WARNING": PluginStatusType.WARNING,
-        "Critical": PluginStatusType.CRITICAL,
-        "CRITICAL": PluginStatusType.CRITICAL,
-        "Unknown": PluginStatusType.UNKNOWN,
-        "UNKNOWN": PluginStatusType.UNKNOWN,
+        "ok": PluginStatusType.OK,
+        "warning": PluginStatusType.WARNING,
+        "critical": PluginStatusType.CRITICAL,
+        "unknown": PluginStatusType.UNKNOWN,
     }
-    return mapping.get(s, PluginStatusType.OK)
+    return mapping.get(s, PluginStatusType.UNKNOWN)
 
 def convert_acknowledgement_type_enum(val):
     """Convert Nagios acknowledgement_type string to AcknowledgementType enum.

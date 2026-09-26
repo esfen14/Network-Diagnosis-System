@@ -21,6 +21,17 @@ export type LogEntry = {
   details?: Record<string, unknown>
 }
 
+// A discovered port a Network Discovery run did not turn into a Nagios
+// service (networkDiscovery entries: details.skipped_services).
+export type SkippedService = {
+  hostname: string
+  ip_address: string | null
+  port: number
+  protocol: 'TCP' | 'UDP'
+  service_name: string
+  reason: string
+}
+
 export type LogListResponse = {
   items: LogEntry[]
   page: number
