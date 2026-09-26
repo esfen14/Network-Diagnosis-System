@@ -1,5 +1,5 @@
 from flask import Blueprint
-from app.api import( 
+from app.api import(
     user,
     system,
     plugin

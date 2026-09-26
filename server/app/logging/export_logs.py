@@ -21,8 +21,6 @@ def create_export_log(user_id, report_type, report_format, start_date, end_date)
 
         db.session.add(export_log)
 
-        db.session.commit
-
         return user_log, export_log
     except Exception as e:
         current_app.logger.exception(f"Cannot create export log for user {user_id} error: {e}")

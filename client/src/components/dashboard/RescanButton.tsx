@@ -1,7 +1,17 @@
-import { useState } from 'react'
-import { CheckCircle2, HelpCircle, RefreshCw, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { CheckCircle2, HelpCircle, RefreshCw, X, XCircle } from 'lucide-react'
+import { apiGet, apiPost, errorMessage } from '../../lib/api'
 
-type ScanState = 'idle' | 'confirm' | 'scanning' | 'success'
+type ScanState = 'idle' | 'confirm' | 'scanning' | 'success' | 'error'
+
+type DiscoveryStatus = {
+  status: 'Queued' | 'Running' | 'Completed' | 'Failed' | 'Interrupted'
+  progress: number
+  message: string
+  error: string | null
+}
+
+const POLL_INTERVAL_MS = 2000
 
 export function RescanButton({
   onScanComplete,
@@ -9,18 +19,56 @@ export function RescanButton({
   onScanComplete?: () => void
 } = {}) {
   const [scanState, setScanState] = useState<ScanState>('idle')
+  const [progress, setProgress] = useState(0)
+  const [errorText, setErrorText] = useState<string | null>(null)
+  const pollRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) window.clearInterval(pollRef.current)
+    }
+  }, [])
 
   const startScan = () => setScanState('confirm')
-  const closeModal = () => setScanState('idle')
+  const closeModal = () => {
+    if (pollRef.current) window.clearInterval(pollRef.current)
+    setScanState('idle')
+  }
 
-  const confirmScan = () => {
+  const pollStatus = () => {
+    pollRef.current = window.setInterval(async () => {
+      try {
+        const data = await apiGet<DiscoveryStatus | { message: string }>('/api/system/discover/status')
+        if (!('status' in data)) return
+
+        setProgress(data.progress)
+
+        if (data.status === 'Completed') {
+          if (pollRef.current) window.clearInterval(pollRef.current)
+          setScanState('success')
+          onScanComplete?.()
+        } else if (data.status === 'Failed' || data.status === 'Interrupted') {
+          if (pollRef.current) window.clearInterval(pollRef.current)
+          setErrorText(data.error || `Discovery ${data.status.toLowerCase()}.`)
+          setScanState('error')
+        }
+      } catch {
+        // Transient poll failure — keep polling, don't surface an error yet.
+      }
+    }, POLL_INTERVAL_MS)
+  }
+
+  const confirmScan = async () => {
     setScanState('scanning')
-    // Placeholder delay — replace with an actual await fetch(...) call to the
-    // backend's rescan endpoint once it exists, then setScanState('success') on response.
-    setTimeout(() => {
-      setScanState('success')
-      onScanComplete?.()
-    }, 2500)
+    setProgress(0)
+    setErrorText(null)
+    try {
+      await apiPost('/api/system/discover/start')
+      pollStatus()
+    } catch (err) {
+      setErrorText(errorMessage(err, 'Unable to start network discovery.'))
+      setScanState('error')
+    }
   }
 
   return (
@@ -82,19 +130,19 @@ export function RescanButton({
 
             {scanState === 'scanning' && (
               <>
-                <div className="mx-auto mb-4 h-14 w-14 animate-spin rounded-full border-4 border-blue-200 border-t-blue-500" />
+                <div className="mx-auto mb-4 h-14 w-14 animate-spin rounded-full border-4 border-amber-200 border-t-amber-500" />
                 <h3 className="text-lg font-semibold text-gray-900">
                   Scanning in Progress
                 </h3>
                 <p className="mt-2 text-sm text-gray-500">
-                  Please wait. Do not close the system.
+                  {progress > 0 ? `${progress}% complete. ` : ''}Please wait. Do not close the system.
                 </p>
               </>
             )}
 
             {scanState === 'success' && (
               <>
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-blue-500">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500">
                   <CheckCircle2 className="h-8 w-8 text-white" />
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900">
@@ -107,6 +155,27 @@ export function RescanButton({
                     className="rounded-2xl bg-emerald-500 px-8 py-2 text-sm font-medium text-white hover:bg-emerald-600"
                   >
                     OK
+                  </button>
+                </div>
+              </>
+            )}
+
+            {scanState === 'error' && (
+              <>
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-500">
+                  <XCircle className="h-8 w-8 text-white" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Rescan failed
+                </h3>
+                <p className="mt-2 text-sm text-gray-500">{errorText}</p>
+                <div className="mt-6 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={closeModal}
+                    className="rounded-2xl bg-gray-800 px-8 py-2 text-sm font-medium text-white hover:bg-gray-900"
+                  >
+                    Close
                   </button>
                 </div>
               </>

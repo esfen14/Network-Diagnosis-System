@@ -5,6 +5,7 @@ from app import db
 from app.api.system import system_bp
 from app.api.helper import success, error
 from app.system_models import SystemSettings
+from app.logging.configuration_changes import create_configuration_log
 
 
 def _get_singleton_row():
@@ -46,24 +47,47 @@ def update_settings():
                 409,
             )
 
-        row.Scan_Frequency = payload["scanFrequency"]
-        row.Notifications = payload["notifications"]
-        row.Export_Formats = ",".join(payload["exportFormats"])
+        # Whether to record this save's diffs in the Configuration Change
+        # log — governed by the policy in effect when the save started, not
+        # whatever Audit_Logging ends up as after this same request applies.
+        audit_logging_enabled = bool(row.Audit_Logging)
 
-        row.Session_Timeout = payload["sessionTimeout"]
-        row.Strong_Password_Policy = payload["strongPasswordPolicy"]
-        row.Failed_Login_Monitoring = payload["failedLoginMonitoring"]
-        row.Audit_Logging = payload["auditLogging"]
-        row.Security_Check_Frequency = payload["securityCheckFrequency"]
+        field_map = [
+            ("Scan_Frequency", "scanFrequency"),
+            ("Notifications", "notifications"),
+            ("Session_Timeout", "sessionTimeout"),
+            ("Strong_Password_Policy", "strongPasswordPolicy"),
+            ("Failed_Login_Monitoring", "failedLoginMonitoring"),
+            ("Audit_Logging", "auditLogging"),
+            ("Security_Check_Frequency", "securityCheckFrequency"),
+            ("System_Update_Frequency", "systemUpdateFrequency"),
+            ("Maintenance_Mode", "maintenanceMode"),
+            ("Automatic_Backups", "automaticBackups"),
+            ("Log_Retention_Days", "logRetentionDays"),
+            ("Diagnostic_History_Retention_Days", "diagnosticHistoryRetentionDays"),
+        ]
 
-        row.System_Update_Frequency = payload["systemUpdateFrequency"]
-        row.Maintenance_Mode = payload["maintenanceMode"]
-        row.Automatic_Backups = payload["automaticBackups"]
-        row.Log_Retention_Days = payload["logRetentionDays"]
-        row.Diagnostic_History_Retention_Days = payload["diagnosticHistoryRetentionDays"]
+        changes = []
+        for attr, key in field_map:
+            old_value = getattr(row, attr)
+            new_value = payload[key]
+            if old_value != new_value:
+                changes.append((attr, old_value, new_value))
+                setattr(row, attr, new_value)
+
+        new_export_formats = ",".join(payload["exportFormats"])
+        if row.Export_Formats != new_export_formats:
+            changes.append(("Export_Formats", row.Export_Formats, new_export_formats))
+            row.Export_Formats = new_export_formats
 
         row.Version += 1
         row.Updated_By = current_user.UserID
+
+        if audit_logging_enabled:
+            for attr, old_value, new_value in changes:
+                create_configuration_log(
+                    current_user.UserID, "system_settings", attr, str(old_value), str(new_value)
+                )
 
         db.session.commit()
         return success(row.to_dict(), message="Settings updated.")
