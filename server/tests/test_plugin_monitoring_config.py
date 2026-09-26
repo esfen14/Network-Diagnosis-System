@@ -427,3 +427,29 @@ class TestListConfigurationsRoute:
         assert data[0]["target"]["hostname"] == "router-01"
         assert data[0]["service_description"] == "SNMP Traffic"
         assert data[0]["status"] == "Applied"
+
+
+# ─── GET /plugin/targets ────────────────────────────────────────────────────
+
+class TestConfigurationTargetsRoute:
+    def test_requires_login(self, client, db_session):
+        resp = client.get("/api/plugin/targets")
+        assert resp.status_code in (401, 302)
+
+    def test_requires_permission(self, limited_client, db_session):
+        resp = limited_client.get("/api/plugin/targets")
+        assert resp.status_code == 403
+
+    def test_lists_included_devices_only(self, logged_in_client, db_session, admin_user):
+        _make_target(db_session, admin_user, hostname="switch-02", ip="192.168.130.3")
+        _make_target(db_session, admin_user, hostname="router-01", ip="192.168.130.10")
+        excluded = _make_target(db_session, admin_user, hostname="printer", ip="192.168.130.50")
+        excluded.Include_Device_In_Scanning = False
+        db_session.session.commit()
+
+        resp = logged_in_client.get("/api/plugin/targets")
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        assert [d["hostname"] for d in data] == ["router-01", "switch-02"]
+        assert data[0]["ip_address"] == "192.168.130.10"
+        assert "id" in data[0]

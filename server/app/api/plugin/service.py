@@ -301,6 +301,7 @@ def get_plugin_details(plugin_id):
         "updated_at": plugin.Updated_At.isoformat(),
         "commands_count": commands_count,
         "dependencies_count": dependencies_count,
+        "rollback_available": has_backup(plugin.Name),
         "monitoring_usage": {
             "services": 4,
             "devices": 2,
@@ -1362,6 +1363,29 @@ def build_configuration_tuples(configurations):
             command_line,
         ))
     return tuples
+
+
+def get_configuration_targets():
+    """
+    List the discovered devices a plugin can be applied to, sorted by
+    hostname then IP. Only devices still included in scanning are
+    returned, since excluded devices are not monitored by Nagios.
+    Backs the target picker for POST /plugin/<id>/configurations.
+    """
+    devices = db.session.scalars(
+        sa.select(NetworkDiscovery)
+        .where(NetworkDiscovery.Include_Device_In_Scanning.is_(True))
+        .order_by(NetworkDiscovery.Hostname.asc(), NetworkDiscovery.IP_Address.asc())
+    ).all()
+
+    result = []
+    for device in devices:
+        result.append({
+            "id": device.NetDiscoveryID,
+            "hostname": device.Hostname,
+            "ip_address": device.IP_Address,
+        })
+    return result
 
 
 def get_plugin_configurations(plugin_id):

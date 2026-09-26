@@ -189,7 +189,7 @@ flask db init --multidb
 - `SettingsPage.tsx` — system settings (connected)
 - `SystemLogsPage.tsx` — activity logs (connected)
 - `ReportsPage.tsx` — reports (connected)
-- `PluginsPage.tsx` — plugin management (static/pending)
+- `PluginsPage.tsx` — plugin manager (connected to `/api/plugin/*`)
 - `TopologyPage.tsx` — network topology view (static/pending)
 
 **Component groups:**
@@ -217,7 +217,6 @@ flask db init --multidb
   `AlertAcknowledgement` should be deleted and an `AckHistory` row with
   `AckAction.AUTO_RESOLVED` should be written. This logic is not yet wired
   into the Nagios status polling cycle.
-- **Plugins page** — currently static. Plugin management not implemented.
 - **Installer** — currently being developped in a different repository.
 
 ---
