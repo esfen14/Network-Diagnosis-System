@@ -368,43 +368,8 @@ def _create_host_cfg_file(discovered_hosts):
             host_config.append(_add_space(4))
 
             # Assigns hostgroup's list to be used in creating hostgroups
-            
-            os_name = host_data["data"]["os"]
-            if os_name in hostgroups:
-                hostgroups[os_name]["devices"].append(host_data["data"]["hostname"])
-            else:
-                hostgroups["Unknown"]["devices"].append(host_data["data"]["hostname"])
-
-            host_config.append(
-                f"""
-
-                #
-                # Define Services of
-                # Hostname: {host_data["data"]["hostname"]}
-                # IP: {ip}
-                #
-
-                """
-            )
-
-            # Each discovered port resolves to a plugin by service name; a
-            # plugin may produce several services (one per SNMP OID, one per
-            # NCPA metric/partition), all bound to this host only.
-            host_services = build_host_services(host_data, plugin_facts, current_app.config)
-
-            for service_name, command, plugin_name in host_services:
-                used_plugins.add(plugin_name)
-
-                service = {
-                    "host_name": host_data["data"]["hostname"],
-                    "service_name": service_name,
-                    "contact_groups": "system_users"
-                }
-
-                host_config.append(
-                    create_service(service,command)
-                )
-                host_config.append(_add_space(4))
+             
+            host_config.append(_add_space(4))
 
     host_config.append(
         f"""
@@ -419,15 +384,14 @@ def _create_host_cfg_file(discovered_hosts):
     host_config.append(_add_space(4))
 
     host_config.append(
-            f"""
+        f"""
     
-            #
-            # Define OS Groups
-            #  
+        #
+        # Define OS Groups
+        #  
     
-            """
+        """
     )
-
 
     for os, group_devices in hostgroups.items():
 
@@ -443,20 +407,6 @@ def _create_host_cfg_file(discovered_hosts):
         } 
         host_config.append(create_hostgroup(host_group))
         host_config.append(_add_space(4))
-
-    host_config.append(
-        f"""
-
-        #
-        # Define Commands
-        #
-
-        """
-    )
-
-    for plugin_name in sorted(used_plugins):
-        host_config.append(render_command_definition(plugin_name))
-        host_config.append(_add_space(2))
 
     with open(cfg_path, "w") as f:
         # remember to f.write("string") here after you're done with discovering devices
