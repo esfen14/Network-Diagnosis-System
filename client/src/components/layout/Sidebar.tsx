@@ -78,7 +78,7 @@ export function Sidebar() {
   const [showLogoutModal, setShowLogoutModal] = useState(false)
   const { user: currentUser } = useCurrentUser()
 
-  // Only pages the user's role grants (see lib/pageAccess.ts).
+  // Only pages the user's role grants access to will be displayed in the sidebar. Pero may iba na role na may access sa page dahil sa features.
   const visibleItems = currentUser
     ? navItems.filter((item) => canAccessPage(item.to, currentUser.permissions))
     : []
