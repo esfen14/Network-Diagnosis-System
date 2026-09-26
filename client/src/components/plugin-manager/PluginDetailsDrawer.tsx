@@ -21,6 +21,8 @@ import {
   validatePlugin,
 } from '../../lib/pluginApi'
 import { errorMessage } from '../../lib/api'
+import { PluginConfigurationsSection } from './PluginConfigurationsSection'
+import { PluginUpdateSection } from './PluginUpdateSection'
 import type { PluginCommand, PluginDependency, PluginDetails, PluginValidationResult } from '../../types/plugin'
 
 type Props = {
@@ -54,8 +56,10 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
   const [editingCommandId, setEditingCommandId] = useState<number | null>(null)
   const [overrideValue, setOverrideValue] = useState('')
 
-  async function load() {
-    setIsLoading(true)
+  // silent skips the loading spinner so child sections keep their state
+  // (e.g. an update result message) while the details refresh.
+  async function load(silent = false) {
+    if (!silent) setIsLoading(true)
     setLoadError(null)
     try {
       const [d, c, deps] = await Promise.all([
@@ -90,6 +94,11 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
     } finally {
       setIsBusy(false)
     }
+  }
+
+  const refreshAfterChildAction = async () => {
+    await load(true)
+    onChanged()
   }
 
   const handleEnable = () => runAction(async () => { await enablePlugin(pluginId) })
@@ -188,12 +197,6 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
                   </div>
                 </dl>
 
-                <p className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-white/5 dark:text-gray-400">
-                  Monitoring usage: {details.monitoring_usage.services} services /{' '}
-                  {details.monitoring_usage.devices} devices.{' '}
-                  {details.monitoring_usage.note}
-                </p>
-
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -247,6 +250,10 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
                   </div>
                 )}
               </section>
+
+              <PluginConfigurationsSection details={details} onChanged={refreshAfterChildAction} />
+
+              <PluginUpdateSection details={details} onChanged={refreshAfterChildAction} />
 
               <section>
                 <h4 className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">

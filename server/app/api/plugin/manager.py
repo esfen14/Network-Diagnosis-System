@@ -12,6 +12,7 @@ GET  /plugin/<id>            - Single plugin's full details (Phase 3)
 GET  /plugin/history         - Global plugin history, optional ?plugin_id= (Phase 3)
 GET  /plugin/<id>/commands   - A plugin's commands + active overrides (Phase 3)
 GET  /plugin/<id>/dependencies - A plugin's dependencies (Phase 3)
+GET  /plugin/targets         - Discovered devices a plugin can be applied to
 
 The scan routes (Phase 2) match app/api/system/network_discovery.py's
 background-thread + status-polling pattern. The Phase 3 read routes
@@ -1168,6 +1169,39 @@ def rollback_plugin_update_route(plugin_id):
 # ==========================================================
 # MONITORING CONFIGURATION (Phase 10)
 # ==========================================================
+
+@plugin_bp.get('/targets')
+@login_required
+@require_permission('plugin.configure')
+def get_configuration_targets_route():
+    """
+    List the discovered devices a plugin can be applied to, for the
+    target picker in the Plugin Manager's "Apply to Device" form. Only
+    devices still included in scanning are listed.
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": [
+                {"id": 12, "hostname": "router-01", "ip_address": "192.168.130.10"}
+            ]
+        }
+
+    **Errors**
+
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        return success(service.get_configuration_targets())
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while retrieving configuration targets."
+        )
+        return error("An unexpected error occurred.", 500)
+
 
 @plugin_bp.get('/<int:plugin_id>/configurations')
 @login_required

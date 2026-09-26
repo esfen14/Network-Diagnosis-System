@@ -580,3 +580,38 @@ class TestRealUpdatePipeline:
         version_strings = [v.Version for v in versions]
         assert len(version_strings) == len(set(version_strings))
         assert set(version_strings) == {"2.4.12", "2.4.13"}
+
+
+# ─── GET /plugin/<id> rollback_available ────────────────────────────────────
+
+class TestRollbackAvailableFlag:
+    def test_false_without_backup(self, logged_in_client, db_session, tmp_path):
+        installed_dir = tmp_path / "libexec"
+        installed_dir.mkdir()
+        installed = _write_plugin_script(installed_dir / "check_x", "check_x v1.0.0")
+        plugin = _make_plugin(db_session, "check_x", str(installed))
+
+        with patch("app.api.plugin.plugin_update.get_plugin_dir", return_value=str(installed_dir)):
+            resp = logged_in_client.get(f"/api/plugin/{plugin.PluginID}")
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["rollback_available"] is False
+
+    def test_true_after_update(self, logged_in_client, db_session, tmp_path):
+        installed_dir = tmp_path / "libexec"
+        installed_dir.mkdir()
+        installed = _write_plugin_script(installed_dir / "check_snmp", "check_snmp v2.4.12")
+        plugin = _make_plugin(db_session, "check_snmp", str(installed), version="2.4.12")
+        new_script = _write_plugin_script(tmp_path / "new_check_snmp", "check_snmp v2.4.13")
+        archive = _build_tar_gz(tmp_path / "update.tar.gz", {"check_snmp": str(new_script)})
+
+        with patch("app.api.plugin.plugin_update.get_plugin_dir", return_value=str(installed_dir)), \
+             _mock_nagios_ok(), _mock_update_pipeline(validation_passes=True, versions=["2.4.13"]):
+            with open(archive, "rb") as f:
+                logged_in_client.post(
+                    f"/api/plugin/{plugin.PluginID}/update",
+                    data={"file": (f, "update.tar.gz")},
+                    content_type="multipart/form-data",
+                )
+            resp = logged_in_client.get(f"/api/plugin/{plugin.PluginID}")
+
+        assert resp.get_json()["data"]["rollback_available"] is True

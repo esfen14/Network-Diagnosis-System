@@ -108,6 +108,7 @@ export type PluginDetails = {
   updated_at: string
   commands_count: number
   dependencies_count: number
+  rollback_available: boolean
   monitoring_usage: PluginMonitoringUsage
 }
 
@@ -199,4 +200,52 @@ export type PluginValidationResult = {
     permissions: PluginValidationCheck
     execution: PluginValidationCheck
   }
+}
+
+// POST /<id>/update — HTTP 200 either way; data.success says whether the
+// update itself worked. A failed update leaves the plugin in 'Rollback'.
+export type PluginUpdateResult = {
+  success: boolean
+  plugin_id: number
+  status: PluginStatus
+  rollback_available: boolean
+  previous_version?: string | null
+  current_version?: string | null
+  failed_step?: string
+  validation?: PluginValidationResult | Record<string, unknown>
+  nagios_check?: { passed: boolean; output: string }
+}
+
+export type PluginRollbackResult = {
+  success: boolean
+  plugin_id: number
+  status: PluginStatus
+  restored_version: string | null
+}
+
+export type PluginConfigurationStatus = 'Pending' | 'Applied' | 'Failed'
+
+export type PluginTarget = {
+  id: number
+  hostname: string | null
+  ip_address: string
+}
+
+export type PluginConfiguration = {
+  id: number
+  target: PluginTarget | null
+  service_description: string
+  status: PluginConfigurationStatus
+  configuration_data: unknown
+  updated_at: string
+}
+
+// POST /<id>/configurations — HTTP 200 either way; data.success says
+// whether the configuration was applied to Nagios.
+export type PluginConfigurationApplyResult = {
+  success: boolean
+  configuration_id: number
+  status: PluginConfigurationStatus
+  plugin_status?: PluginStatus
+  validation_output?: string
 }

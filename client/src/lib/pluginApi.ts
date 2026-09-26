@@ -1,17 +1,22 @@
 // Wrappers around the Plugin Manager routes documented in
 // server/app/api/plugin/manager.py (see PinPoint_Plugin_Manager_UI_Architecture
 // reference doc, Section 2 "Route Reference").
-import { apiGet, apiPost } from './api'
+import { ApiError, apiGet, apiPost } from './api'
 import type {
   CustomPluginUploadResult,
   PluginCommand,
+  PluginConfiguration,
+  PluginConfigurationApplyResult,
   PluginDependency,
   PluginDetails,
   PluginHistoryResponse,
   PluginListResponse,
+  PluginRollbackResult,
   PluginScanStatus,
   PluginSummary,
+  PluginTarget,
   PluginTransitionResult,
+  PluginUpdateResult,
   PluginValidationResult,
   RunningChecksResponse,
 } from '../types/plugin'
@@ -96,6 +101,63 @@ export function restoreDefaultCommand(pluginId: number, commandId: number) {
 
 export function validatePlugin(id: number) {
   return apiPost<PluginValidationResult>(`/api/plugin/${id}/validate`)
+}
+
+export function rollbackPluginUpdate(id: number) {
+  return apiPost<PluginRollbackResult>(`/api/plugin/${id}/update/rollback`)
+}
+
+export function getPluginConfigurations(id: number) {
+  return apiGet<PluginConfiguration[]>(`/api/plugin/${id}/configurations`)
+}
+
+export function getConfigurationTargets() {
+  return apiGet<PluginTarget[]>('/api/plugin/targets')
+}
+
+export type ApplyConfigurationInput = {
+  netDiscoveryId: number
+  serviceDescription: string
+  configurationData?: unknown
+}
+
+export function applyPluginConfiguration(id: number, input: ApplyConfigurationInput) {
+  return apiPost<PluginConfigurationApplyResult>(`/api/plugin/${id}/configurations`, {
+    net_discovery_id: input.netDiscoveryId,
+    service_description: input.serviceDescription,
+    ...(input.configurationData !== undefined ? { configuration_data: input.configurationData } : {}),
+  })
+}
+
+// Multipart upload, so it bypasses apiPost's JSON body (same as addCustomPlugin).
+async function postForm<T>(path: string, formData: FormData): Promise<T> {
+  const res = await fetch(path, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  })
+
+  const text = await res.text()
+  let body: { message?: string; data?: unknown } = {}
+  if (text) {
+    try {
+      body = JSON.parse(text)
+    } catch {
+      // Non-JSON error page (e.g. a 401 from @login_required) — fall back below.
+    }
+  }
+  if (!res.ok) {
+    throw new ApiError(body?.message ?? `Request failed (${res.status})`, res.status)
+  }
+  return (body.data ?? body) as T
+}
+
+// Exactly one of file / url must be given — the backend rejects both or neither.
+export function updatePlugin(id: number, source: { file: File } | { url: string }) {
+  const formData = new FormData()
+  if ('file' in source) formData.append('file', source.file)
+  else formData.append('url', source.url)
+  return postForm<PluginUpdateResult>(`/api/plugin/${id}/update`, formData)
 }
 
 export type AddCustomPluginInput = {
