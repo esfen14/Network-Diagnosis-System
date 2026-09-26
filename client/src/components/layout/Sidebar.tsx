@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   Activity,
   FileText,
@@ -13,119 +13,75 @@ import {
   Wrench,
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
+import { useCurrentUser } from '../../contexts/CurrentUserContext'
+import { canAccessPage } from '../../lib/pageAccess'
 
 const navItems = [
   {
     to: '/dashboard',
     label: 'Overview',
     icon: LayoutDashboard,
-    roles: ['network_admin', 'network_technician'],
   },
   {
     to: '/network-health',
     label: 'Network Health',
     icon: Activity,
-    roles: ['network_admin', 'network_technician'],
   },
   {
     to: '/device-inventory',
     label: 'Device Inventory',
     icon: FolderOpen,
-    roles: ['network_admin', 'network_technician'],
   },
 
 {
     to: '/topology',
     label: 'System Status',
     icon: Network,
-    roles: ['network_admin', 'network_technician'],
   },
 
   {
     to: '/plugins',
     label: 'Plugins',
     icon: Wrench,
-    roles: ['network_admin', 'network_technician'],
   },
   {
     to: '/reports',
     label: 'Report',
     icon: FileText,
-    roles: ['network_admin', 'network_technician'],
   },
   {
     to: '/system-logs',
     label: 'System Logs',
     icon: FileText,
-    roles: ['network_admin'],
   },
   {
     to: '/accounts',
     label: 'Manage Accounts',
     icon: Users,
-    roles: ['network_admin'],
   },
 
   {
   to: '/manage-roles',
   label: 'Manage Roles',
   icon: Shield,
-  roles: ['network_admin'],
   },
 
   {
     to: '/settings',
     label: 'Settings',
     icon: Settings,
-    roles: ['network_admin'],
   },
 ]
-
-type CurrentUser = {
-  firstName: string
-  lastName: string
-  email: string
-  role: string
-}
 
 export function Sidebar() {
   const navigate = useNavigate()
   const [showLogoutModal, setShowLogoutModal] = useState(false)
-  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
+  const { user: currentUser } = useCurrentUser()
 
-  useEffect(() => {
-    let cancelled = false
-
-    fetch('/api/user/me', { credentials: 'include' })
-      .then((res) => (res.ok ? res.json() : Promise.reject(res)))
-      .then((body) => {
-        if (cancelled) return
-        const data = body.data ?? body
-        setCurrentUser({
-          firstName: data.first_name,
-          lastName: data.last_name,
-          email: data.email,
-          role: data.role,
-        })
-      })
-      .catch((error) => {
-        console.error('Unable to load current user:', error)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  // Nav visibility is unrelated to the account panel above — every
-  // authenticated user currently sees the full menu regardless of role.
-  const user = {
-    role: 'network_admin',
-  }
-
-  const visibleItems = navItems.filter((item) =>
-    item.roles.includes(user.role)
-  )
+  // Only pages the user's role grants access to will be displayed in the sidebar. Pero may iba na role na may access sa page dahil sa features.
+  const visibleItems = currentUser
+    ? navItems.filter((item) => canAccessPage(item.to, currentUser.permissions))
+    : []
 
   const handleLogout = async () => {
     try {

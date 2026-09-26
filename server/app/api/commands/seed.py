@@ -46,6 +46,8 @@ PERMISSIONS = [
     "plugin.update",
     "plugin.update_rollback",
     "plugin.configure",
+    "settings.security",
+    "settings.system",
 ]
 
 ROLES = [

@@ -309,7 +309,7 @@ class TestUpdatePluginRoute:
         new_script = _write_plugin_script(tmp_path / "new_check_snmp", "check_snmp v2.4.13")
         archive = _build_tar_gz(tmp_path / "update.tar.gz", {"check_snmp": str(new_script)})
 
-        with patch("app.api.plugin.plugin_update.NAGIOS_PLUGIN_DIR", str(installed_dir)), \
+        with patch("app.api.plugin.plugin_update.get_plugin_dir", return_value=str(installed_dir)), \
              _mock_nagios_ok(), _mock_update_pipeline(validation_passes=True, versions=["2.4.13"]):
             with open(archive, "rb") as f:
                 resp = logged_in_client.post(
@@ -342,7 +342,7 @@ class TestUpdatePluginRoute:
         new_script = _write_plugin_script(tmp_path / "new_check_snmp", "check_snmp v2.4.13")
         archive = _build_tar_gz(tmp_path / "update.tar.gz", {"check_snmp": str(new_script)})
 
-        with patch("app.api.plugin.plugin_update.NAGIOS_PLUGIN_DIR", str(installed_dir)), \
+        with patch("app.api.plugin.plugin_update.get_plugin_dir", return_value=str(installed_dir)), \
              _mock_nagios_ok(), _mock_update_pipeline(validation_passes=True, versions=["2.4.13"]):
             with open(archive, "rb") as f:
                 logged_in_client.post(
@@ -368,7 +368,7 @@ class TestUpdatePluginRoute:
         other_script = _write_plugin_script(tmp_path / "check_other", "check_other v1.0.0")
         archive = _build_tar_gz(tmp_path / "update.tar.gz", {"check_other": str(other_script)})
 
-        with patch("app.api.plugin.plugin_update.NAGIOS_PLUGIN_DIR", str(installed_dir)):
+        with patch("app.api.plugin.plugin_update.get_plugin_dir", return_value=str(installed_dir)):
             with open(archive, "rb") as f:
                 resp = logged_in_client.post(
                     f"/api/plugin/{plugin.PluginID}/update",
@@ -388,7 +388,7 @@ class TestUpdatePluginRoute:
         new_script = _write_plugin_script(tmp_path / "new_check_snmp", "check_snmp v2.4.13")
         archive = _build_tar_gz(tmp_path / "update.tar.gz", {"check_snmp": str(new_script)})
 
-        with patch("app.api.plugin.plugin_update.NAGIOS_PLUGIN_DIR", str(installed_dir)), \
+        with patch("app.api.plugin.plugin_update.get_plugin_dir", return_value=str(installed_dir)), \
              _mock_nagios_fail(), _mock_update_pipeline(validation_passes=True):
             with open(archive, "rb") as f:
                 resp = logged_in_client.post(
@@ -438,7 +438,7 @@ class TestRollbackUpdateRoute:
         installed = _write_plugin_script(installed_dir / "check_x", "check_x v1.0.0")
         plugin = _make_plugin(db_session, "check_x", str(installed))
 
-        with patch("app.api.plugin.plugin_update.NAGIOS_PLUGIN_DIR", str(installed_dir)):
+        with patch("app.api.plugin.plugin_update.get_plugin_dir", return_value=str(installed_dir)):
             resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/update/rollback")
         assert resp.status_code == 404
 
@@ -450,7 +450,7 @@ class TestRollbackUpdateRoute:
         new_script = _write_plugin_script(tmp_path / "new_check_snmp", "check_snmp v2.4.13")
         archive = _build_tar_gz(tmp_path / "update.tar.gz", {"check_snmp": str(new_script)})
 
-        with patch("app.api.plugin.plugin_update.NAGIOS_PLUGIN_DIR", str(installed_dir)), \
+        with patch("app.api.plugin.plugin_update.get_plugin_dir", return_value=str(installed_dir)), \
              _mock_nagios_fail(), _mock_update_pipeline(validation_passes=True, versions=["2.4.12"]):
             with open(archive, "rb") as f:
                 logged_in_client.post(
@@ -481,7 +481,7 @@ class TestRollbackUpdateRoute:
         new_script = _write_plugin_script(tmp_path / "new_check_snmp", "check_snmp v2.4.13")
         archive = _build_tar_gz(tmp_path / "update.tar.gz", {"check_snmp": str(new_script)})
 
-        with patch("app.api.plugin.plugin_update.NAGIOS_PLUGIN_DIR", str(installed_dir)), \
+        with patch("app.api.plugin.plugin_update.get_plugin_dir", return_value=str(installed_dir)), \
              _mock_nagios_ok(), _mock_update_pipeline(validation_passes=True, versions=["2.4.13", "2.4.12"]):
             with open(archive, "rb") as f:
                 logged_in_client.post(
@@ -512,7 +512,7 @@ class TestRollbackUpdateRoute:
         new_script = _write_plugin_script(tmp_path / "new_check_snmp", "check_snmp v2.4.13")
         archive = _build_tar_gz(tmp_path / "update.tar.gz", {"check_snmp": str(new_script)})
 
-        with patch("app.api.plugin.plugin_update.NAGIOS_PLUGIN_DIR", str(installed_dir)), \
+        with patch("app.api.plugin.plugin_update.get_plugin_dir", return_value=str(installed_dir)), \
              _mock_nagios_fail(), _mock_update_pipeline(validation_passes=True, versions=["2.4.12"]):
             with open(archive, "rb") as f:
                 logged_in_client.post(
@@ -553,7 +553,7 @@ class TestRealUpdatePipeline:
         new_script = _write_plugin_script(tmp_path / "new_check_snmp", "check_snmp v2.4.13")
         archive = _build_tar_gz(tmp_path / "update.tar.gz", {"check_snmp": str(new_script)})
 
-        with patch("app.api.plugin.plugin_update.NAGIOS_PLUGIN_DIR", str(installed_dir)), _mock_nagios_ok():
+        with patch("app.api.plugin.plugin_update.get_plugin_dir", return_value=str(installed_dir)), _mock_nagios_ok():
             with open(archive, "rb") as f:
                 resp = logged_in_client.post(
                     f"/api/plugin/{plugin.PluginID}/update",
@@ -567,7 +567,7 @@ class TestRealUpdatePipeline:
         # Real extract_version() genuinely parsed this from the real file.
         assert data["current_version"] == "2.4.13"
 
-        with patch("app.api.plugin.plugin_update.NAGIOS_PLUGIN_DIR", str(installed_dir)):
+        with patch("app.api.plugin.plugin_update.get_plugin_dir", return_value=str(installed_dir)):
             resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/update/rollback")
 
         assert resp.status_code == 200

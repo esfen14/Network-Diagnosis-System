@@ -16,6 +16,14 @@ vi.mock('../components/network-health/CpuUtilizationChart', () => ({
   CpuUtilizationChart: () => <div data-testid="cpu-utilization-chart" />,
 }))
 
+// The page reads the signed-in user (to allow rescans) and display settings.
+vi.mock('../contexts/CurrentUserContext', () => ({
+  useCurrentUser: () => ({ user: null, isLoading: false, hasPermission: () => true }),
+}))
+vi.mock('../contexts/SystemSettingsContext', () => ({
+  useSystemSettings: () => ({ savedSettings: { dateTimeFormat: 'DD/MM/YYYY', timeZone: 'UTC+08:00' } }),
+}))
+
 function renderPage() {
   return render(
     <MemoryRouter>

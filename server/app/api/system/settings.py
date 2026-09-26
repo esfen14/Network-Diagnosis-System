@@ -1,11 +1,49 @@
+"""
+System-wide settings: the singleton SystemSettings row.
+
+The Settings page has three tabs. General settings can be changed by any
+logged-in user; the Security and System tabs each need their own
+permission, assigned per role in Manage Roles. The whole object is sent
+on every save, so the check is on which fields actually changed.
+
+Routes
+------
+GET  /system
+    Return the current settings. Open to any logged-in user, since every
+    page reads them (theme, refresh rate, session timeout, maintenance).
+
+PUT  /system
+    Save settings, rejecting fields the user isn't allowed to change.
+"""
 from flask import request, current_app
 from flask_login import login_required, current_user
 
 from app import db
 from app.api.system import system_bp
-from app.api.helper import success, error
+from app.api.helper import success, error, user_has_permission
 from app.system_models import SystemSettings
 from app.logging.configuration_changes import create_configuration_log
+
+
+# Which permission guards each settings field. Fields not listed here
+# are General settings, open to every logged-in user.
+FIELD_PERMISSIONS = {
+    "Session_Timeout": "settings.security",
+    "Strong_Password_Policy": "settings.security",
+    "Failed_Login_Monitoring": "settings.security",
+    "Audit_Logging": "settings.security",
+    "Security_Check_Frequency": "settings.security",
+    "System_Update_Frequency": "settings.system",
+    "Maintenance_Mode": "settings.system",
+    "Automatic_Backups": "settings.system",
+    "Log_Retention_Days": "settings.system",
+    "Diagnostic_History_Retention_Days": "settings.system",
+}
+
+PERMISSION_LABELS = {
+    "settings.security": "Security",
+    "settings.system": "System",
+}
 
 
 def _get_singleton_row():
@@ -31,8 +69,31 @@ def get_settings():
 @system_bp.route("", methods=["PUT"])
 @login_required
 def update_settings():
-    # TODO: replace @login_required with a permission check once
-    # we confirm how Role/Permission is enforced elsewhere.
+    """
+    Save the settings. The client sends the full settings object with the
+    version it loaded; a stale version is rejected with 409. Changing a
+    Security or System field without that tab's permission is rejected
+    with 403 and nothing is saved. Unchanged restricted fields are fine,
+    so users without those permissions can still save General settings.
+
+    JSON Format
+    {
+        "version": 3,
+        "scanFrequency": 6,
+        "notifications": true,
+        "exportFormats": ["CSV", "PDF", "XLS"],
+        "sessionTimeout": 30,
+        "strongPasswordPolicy": true,
+        "failedLoginMonitoring": true,
+        "auditLogging": true,
+        "securityCheckFrequency": "weekly",
+        "systemUpdateFrequency": "monthly",
+        "maintenanceMode": false,
+        "automaticBackups": true,
+        "logRetentionDays": 30,
+        "diagnosticHistoryRetentionDays": 90
+    }
+    """
     try:
         row = _get_singleton_row()
         payload = request.get_json(force=True)
@@ -79,6 +140,19 @@ def update_settings():
         if row.Export_Formats != new_export_formats:
             changes.append(("Export_Formats", row.Export_Formats, new_export_formats))
             row.Export_Formats = new_export_formats
+
+        denied = []
+        for attr, _, _ in changes:
+            permission = FIELD_PERMISSIONS.get(attr)
+            if permission is None or permission in denied:
+                continue
+            if not user_has_permission(permission):
+                denied.append(permission)
+
+        if denied:
+            db.session.rollback()
+            tabs = " and ".join(PERMISSION_LABELS[p] for p in denied)
+            return error(f"You don't have permission to change {tabs} settings.", 403)
 
         row.Version += 1
         row.Updated_By = current_user.UserID

@@ -113,16 +113,35 @@ class Config:
 
     """
     |------------------------------------------------------------------
-    | Plugin Manager — Monitoring Configuration (Phase 10)
-    |
-    | A SEPARATE config file from NAGIOS_HOST_CFG, deliberately: that
-    | file is fully regenerated from scratch by Network Discovery on
-    | every scan (see network_discovery/create_host_cfg.py), which
-    | would silently wipe out any service definitions Plugin Manager
-    | added there. This file is exclusively Plugin Manager's — Network
-    | Discovery never reads or writes it.
+    | Plugin Manager settings
     |------------------------------------------------------------------
     """
+
+    # Directory Nagios loads plugin executables from. Scanned for the
+    # plugin inventory; custom uploads and updates are installed here.
+    # Override via env to point at a local folder on a dev machine.
+    NAGIOS_PLUGIN_DIR = os.environ.get('NAGIOS_PLUGIN_DIR') or "/usr/local/nagios/libexec/"
+
+    # Nagios config file holding Plugin Manager's generated command and
+    # service objects. Kept separate from NAGIOS_HOST_CFG because
+    # Network Discovery fully regenerates hosts.cfg on every scan.
     PLUGIN_SERVICE_CFG = Path(os.environ.get('PLUGIN_SERVICE_CFG') or "/usr/local/nagios/etc/objects/plugin-services.cfg")
+
+    # Folders where candidate/backed-up plugin service configs are stored.
     PLUGIN_SERVICE_STAGING_DIR = Path(basedir) / "plugin-service-config-files"
     PLUGIN_SERVICE_BACKUP_DIR = Path(basedir) / "running-plugin-service-config-backup"
+
+    """
+    |------------------------------------------------------------------
+    | Scheduled automation (app/automation.py)
+    |------------------------------------------------------------------
+    """
+
+    # How often the scheduler checks whether a scheduled scan, update
+    # check, security check or backup is due.
+    AUTOMATION_CHECK_MINUTES = 5
+
+    # Where automatic database backups are written, and how many of the
+    # most recent backups to keep. Older ones are deleted.
+    DATABASE_BACKUP_DIR = Path(os.environ.get('DATABASE_BACKUP_DIR') or Path(basedir) / "database-backups")
+    DATABASE_BACKUP_KEEP = 7

@@ -35,6 +35,32 @@ discovery_thread = None
 discovery_thread_stop_event = threading.Event()
 
 
+def start_discovery_thread(user_id):
+    """
+    Start a network discovery scan in a background daemon thread,
+    attributed to user_id. Returns False without starting anything if a
+    scan is already running. Shared by the start route and the scheduled
+    scan in app/automation.py so both respect the one-scan-at-a-time rule.
+    """
+    global discovery_thread
+
+    if discovery_thread is not None and discovery_thread.is_alive():
+        return False
+
+    discovery_thread_stop_event.clear()
+    discovery_thread = threading.Thread(
+        daemon=True,
+        target=discover_network_create_hosts,
+        args=(app,
+              user_id,
+              discovery_thread_stop_event
+              )
+    )
+
+    discovery_thread.start()
+    return True
+
+
 @system_bp.post('/discover/start')
 @login_required
 @require_permission('system.discover')
@@ -58,22 +84,9 @@ def start_discover_network():
         400 – A discovery scan is already running.
         500 – Unexpected server error.
     """
-    global discovery_thread
-
-    if discovery_thread is not None and discovery_thread.is_alive():
+    if not start_discovery_thread(current_user.UserID):
         return error("Network discovery is already running.", 400)
 
-    discovery_thread_stop_event.clear()
-    discovery_thread = threading.Thread(
-        daemon=True,
-        target=discover_network_create_hosts,
-        args=(app,
-              current_user.UserID,
-              discovery_thread_stop_event
-              )
-    )
-
-    discovery_thread.start()
     return success(message="Network discovery started.", status=202)
 
 

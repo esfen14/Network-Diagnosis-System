@@ -45,11 +45,15 @@ def permission_list():
 @require_permission("role.edit")
 def create_role():
     """
+    Create a role with the given permissions. The role starts active
+    unless "is_active" is false; it is optional.
+
     JSON format
     {
         "role_name": "name"
         "description": "description"
-        "permissions":[1,2,4,5,..]
+        "permissions":[1,2,4,5,..],
+        "is_active": true
     }
     """
     try:
@@ -71,6 +75,10 @@ def create_role():
         role_name = data.get("role_name")
         description = data.get("description")
         permissions = list(set(data.get("permissions")))
+        is_active = data.get("is_active", True)
+
+        if not isinstance(is_active, bool):
+            return error("is_active must be true or false.", 400)
 
         err = validate_role_not_exists(role_name)
         if err is not None:
@@ -82,7 +90,7 @@ def create_role():
                 return err
             
         try:
-            role = Role(Name=role_name, Is_Active=True, Description=description)
+            role = Role(Name=role_name, Is_Active=is_active, Description=description)
         
             db.session.add(role)
             db.session.flush()
@@ -250,11 +258,16 @@ def role_info(id):
 @require_permission("role.edit")
 def edit_role(id):
     """
+    Update a role's name, description and permissions. Permissions are
+    replaced entirely. "is_active" is optional: when given it sets the
+    role's status, otherwise the status is left unchanged.
+
     JSON Format
     {
         "name": "name",
         "description": "description",
-        "permissions": [1,2,4,5,..]
+        "permissions": [1,2,4,5,..],
+        "is_active": true
     }
     """
     try:
@@ -280,6 +293,10 @@ def edit_role(id):
         role_name = data.get("name")
         description = data.get("description")
         permissions = list(set(data.get("permissions")))
+        is_active = data.get("is_active")
+
+        if is_active is not None and not isinstance(is_active, bool):
+            return error("is_active must be true or false.", 400)
 
         if not has_name(role_name, id):
             err = validate_role_name_available(role_name)
@@ -296,6 +313,8 @@ def edit_role(id):
             
             role.Name = role_name
             role.Description = description
+            if is_active is not None:
+                role.Is_Active = is_active
 
             db.session.execute(
                 sa.delete(RolePermission)
@@ -671,15 +690,16 @@ def user_permission():
         for permission in permissions:
             permission_array.append(permission.Name)
         
-        role_name = db.session.scalar(
-            sa.select(Role.Name)
-            .where(
-                Role.RoleID == current_user.RoleID
-            )
-        )
+        role = db.session.get(Role, current_user.RoleID)
 
-        if role_name is None:
+        if role is None:
             return error(f"The role does not exist.", 404)
+
+        # An inactive role grants nothing (require_permission checks the
+        # same), so the front-end hides every permission-gated page.
+        if not role.Is_Active:
+            permission_array = []
+        role_name = role.Name
             
         return success({
             "first_name": current_user.First_Name,

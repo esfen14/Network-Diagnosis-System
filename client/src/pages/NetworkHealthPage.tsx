@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { CheckCircle2, HelpCircle, MonitorOff, MonitorSmartphone, RefreshCw, Timer, WifiOff, X } from 'lucide-react'
+import { MonitorOff, MonitorSmartphone, RefreshCw, Timer, WifiOff } from 'lucide-react'
 import { ActiveConnectionsCard } from '../components/network-health/ActiveConnectionsCard'
 import { CpuLoadChart } from '../components/network-health/CpuLoadChart'
 import { CpuUtilizationChart } from '../components/network-health/CpuUtilizationChart'
@@ -13,9 +13,14 @@ import { SparklineMetricCard } from '../components/network-health/SparklineMetri
 import { SystemActivityCard } from '../components/network-health/SystemActivityCard'
 import { TrendStatCard } from '../components/network-health/TrendStatCard'
 import { PageHeader } from '../components/shared/PageHeader'
+import { RescanModal } from '../components/shared/RescanModal'
+import { useCurrentUser } from '../contexts/CurrentUserContext'
+import { useSystemSettings } from '../contexts/SystemSettingsContext'
+import { useNetworkRescan } from '../hooks/useNetworkRescan'
 import { apiGet, errorMessage } from '../lib/api'
 import { fromTrendsResponse, type TrendPoint, type TrendsResponse } from '../types/dashboard'
 import { fromNetworkHealthSummaryResponse, type NetworkHealthSummary } from '../types/networkHealth'
+import { formatDate, formatTime, formatTimeAgo } from '../utils/formatDateTime'
 
 type MetricKey = 'latency' | 'bandwidth' | 'packetLoss' | 'avgResponseTime' | 'avgResource'
 
@@ -47,13 +52,10 @@ function changeLabel(changePct: number | null): { text: string; type: 'positive'
     : { text: `+${rounded}%`, type: 'negative' }
 }
 
-type ScanState = 'idle' | 'confirm' | 'scanning' | 'success'
+// How often to re-check while a scan (possibly started by someone else) runs.
+const RUNNING_SCAN_POLL_MS = 15_000
 
 export function NetworkHealthPage() {
-  const [scanState, setScanState] = useState<ScanState>('idle')
-  const [lastScanText, setLastScanText] = useState('1 Hour Ago')
-  const [lastScanTime, setLastScanTime] = useState('02:43 PM')
-  const [lastScanDate, setLastScanDate] = useState('Today')
   const [openMetric, setOpenMetric] = useState<MetricKey | null>(null)
 
   const [trendHours, setTrendHours] = useState<TrendHours>(24)
@@ -83,21 +85,43 @@ export function NetworkHealthPage() {
     loadData()
   }, [loadData])
 
-  const startScan = () => setScanState('confirm')
-  const closeModal = () => setScanState('idle')
+  // "Last Scan" comes from the server (the latest successful network
+  // discovery), so every user sees the same time. Running a scan needs the
+  // discover permission; everyone else just sees the time.
+  const { hasPermission } = useCurrentUser()
+  const canRescan = hasPermission('system.discover')
+  const rescan = useNetworkRescan(loadData)
+  const { savedSettings } = useSystemSettings()
 
-  const confirmScan = () => {
-    setScanState('scanning')
-    setTimeout(() => {
-      const now = new Date()
-      const formattedTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      setLastScanText('Just now')
-      setLastScanTime(formattedTime)
-      setLastScanDate('Today')
-      setScanState('success')
-      loadData()
-    }, 2500)
-  }
+  // Keeps "5 min ago" current while the page stays open.
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 60_000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  // While a scan runs (including one another user started), re-check the
+  // summary so the time updates when it finishes.
+  const scanRunning = summary?.lastScan.isRunning ?? false
+  useEffect(() => {
+    if (!scanRunning) return
+    const id = window.setInterval(() => {
+      apiGet<Parameters<typeof fromNetworkHealthSummaryResponse>[0]>('/api/system/network-health/summary')
+        .then((data) => setSummary(fromNetworkHealthSummaryResponse(data)))
+        .catch(() => {
+          // Non-fatal — try again next interval.
+        })
+    }, RUNNING_SCAN_POLL_MS)
+    return () => window.clearInterval(id)
+  }, [scanRunning])
+
+  const lastScanAt = summary?.lastScan.completedAt ?? null
+  const isScanning = scanRunning || rescan.state === 'scanning'
+  const lastScanText = isScanning
+    ? 'Scanning…'
+    : lastScanAt ? formatTimeAgo(lastScanAt, now) : summary ? 'Never' : '—'
+  const lastScanDate = lastScanAt ? formatDate(lastScanAt, savedSettings.dateTimeFormat, savedSettings.timeZone) : 'Never'
+  const lastScanTime = lastScanAt ? formatTime(lastScanAt, savedSettings.timeZone) : '—'
 
   const rta = latestAndChange(trends?.ping.rta)
   const packetLoss = latestAndChange(trends?.ping.packetLoss)
@@ -180,10 +204,12 @@ export function NetworkHealthPage() {
             <div className="flex w-full shrink-0 justify-center pt-2 sm:w-72">
               <button
                 type="button"
-                onClick={startScan}
-                className="flex items-center gap-2 rounded-3xl bg-[#F4A90B] px-4 py-2 text-sm font-medium text-white shadow-md transition hover:opacity-90 active:scale-[0.99] cursor-pointer"
+                onClick={rescan.open}
+                disabled={!canRescan || isScanning}
+                title={canRescan ? undefined : "Your role can't run network scans"}
+                className="flex items-center gap-2 rounded-3xl bg-[#F4A90B] px-4 py-2 text-sm font-medium text-white shadow-md transition hover:opacity-90 active:scale-[0.99] cursor-pointer disabled:cursor-default disabled:hover:opacity-100 disabled:active:scale-100"
               >
-                <RefreshCw className={`h-4 w-4 ${scanState === 'scanning' ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`h-4 w-4 ${isScanning ? 'animate-spin' : ''}`} />
                 Last Scan: {lastScanText}
               </button>
             </div>
@@ -203,7 +229,7 @@ export function NetworkHealthPage() {
                 <NetworkInfoCard
                   lastScanTime={lastScanTime}
                   lastScanDate={lastScanDate}
-                  onStartScan={startScan}
+                  onStartScan={canRescan && !isScanning ? rescan.open : undefined}
                 />
                 <div className="flex-1">
                   <ResourceUsageCard
@@ -293,81 +319,13 @@ export function NetworkHealthPage() {
         </div>
       </div>
 
-      {/* Rescan Modal */}
-      {scanState !== 'idle' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="relative w-full max-w-sm rounded-3xl bg-white p-8 text-center shadow-xl">
-            {scanState !== 'scanning' && (
-              <button
-                type="button"
-                onClick={closeModal}
-                aria-label="Close"
-                className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            )}
-
-            {scanState === 'confirm' && (
-              <>
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#F4A90B]">
-                  <HelpCircle className="h-7 w-7 text-white" />
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900">Confirm Network Rescan</h3>
-                <p className="mt-2 text-sm text-gray-500">
-                  Are you sure you want to rescan the network? This will re-analyze all connected
-                  devices and update the current network health status.
-                </p>
-                <div className="mt-6 flex justify-center gap-3">
-                  <button
-                    type="button"
-                    onClick={closeModal}
-                    className="rounded-2xl border border-gray-300 px-5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={confirmScan}
-                    className="rounded-2xl bg-emerald-500 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-600 cursor-pointer"
-                  >
-                    Confirm
-                  </button>
-                </div>
-              </>
-            )}
-
-            {scanState === 'scanning' && (
-              <>
-                <div className="mx-auto mb-4 h-14 w-14 animate-spin rounded-full border-4 border-blue-200 border-t-blue-500" />
-                <h3 className="text-lg font-semibold text-gray-900">Scanning in Progress</h3>
-                <p className="mt-2 text-sm text-gray-500">Please wait. Do not close the system.</p>
-              </>
-            )}
-
-            {scanState === 'success' && (
-              <>
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500">
-                  <CheckCircle2 className="h-8 w-8 text-white" />
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900">Rescan successful!</h3>
-                <p className="mt-2 text-sm text-gray-500">
-                  Network health metrics and device status have been refreshed.
-                </p>
-                <div className="mt-6 flex justify-center">
-                  <button
-                    type="button"
-                    onClick={closeModal}
-                    className="rounded-2xl bg-emerald-500 px-8 py-2 text-sm font-medium text-white hover:bg-emerald-600 cursor-pointer"
-                  >
-                    OK
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      <RescanModal
+        state={rescan.state}
+        progress={rescan.progress}
+        errorText={rescan.errorText}
+        onConfirm={rescan.confirm}
+        onClose={rescan.close}
+      />
 
       {openMetric && (
         <MetricGraphModal

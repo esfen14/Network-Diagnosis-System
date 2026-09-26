@@ -206,9 +206,11 @@ Mark an item `[x]` once fixed and note whether the **test** or the **code** was 
 - [x] **14. `test_plugin_enable_disable.py::TestEnablePlugin::test_enable_no_nagios_binary`**
   Got 200, expected 502.
   - Resolution: **test** — tests assumed Nagios is not installed; this host has it.
-    They now patch `NAGIOS_BINARY_PATH` to a nonexistent path.
+    They now point `app.config["NAGIOS_BIN"]` at a nonexistent path
+    (was the `NAGIOS_BINARY_PATH` constant, moved to config on `integration`).
 
 - [x] **15. `test_plugin_enable_disable.py::TestNagiosValidator::test_returns_false_when_binary_missing`**
   Validator returns `True` when the binary is missing.
   - Resolution: **test** — tests assumed Nagios is not installed; this host has it.
-    They now patch `NAGIOS_BINARY_PATH` to a nonexistent path.
+    They now point `app.config["NAGIOS_BIN"]` at a nonexistent path
+    (was the `NAGIOS_BINARY_PATH` constant, moved to config on `integration`).

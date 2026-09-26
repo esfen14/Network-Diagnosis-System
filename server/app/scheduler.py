@@ -7,6 +7,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from flask import current_app
 
 from app import app, db
+from app.automation import run_due_automation
 from app.nagios.status import get_status
 
 POLL_INTERVAL_SECONDS = 60
@@ -121,6 +122,14 @@ def init_scheduler():
         max_instances=1,
         coalesce=True,
         next_run_time=datetime.now(),
+    )
+    _scheduler.add_job(
+        run_due_automation,
+        "interval",
+        minutes=app.config["AUTOMATION_CHECK_MINUTES"],
+        id="settings_automation",
+        max_instances=1,
+        coalesce=True,
     )
     _scheduler.start()
     atexit.register(lambda: _scheduler.shutdown(wait=False))

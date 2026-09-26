@@ -18,8 +18,7 @@ an oversight.
 """
 import subprocess
 
-NAGIOS_BINARY_PATH = "/usr/local/nagios/bin/nagios"
-NAGIOS_CONFIG_PATH = "/usr/local/nagios/etc/nagios.cfg"
+from flask import current_app
 
 VALIDATION_TIMEOUT_SECONDS = 30
 
@@ -39,9 +38,12 @@ def validate_nagios_configuration():
         this operation genuinely cannot be safely validated there —
         that's honest behavior, not a bug.
     """
+    NAGIOS_BIN = current_app.config['NAGIOS_BIN']
+    NAGIOS_MAIN_CFG = current_app.config['NAGIOS_MAIN_CFG']
+
     try:
         result = subprocess.run(
-            [NAGIOS_BINARY_PATH, "-v", NAGIOS_CONFIG_PATH],
+            [str(NAGIOS_BIN), "-v", str(NAGIOS_MAIN_CFG)],
             capture_output=True,
             text=True,
             timeout=VALIDATION_TIMEOUT_SECONDS,
@@ -50,7 +52,7 @@ def validate_nagios_configuration():
         return result.returncode == 0, output
 
     except FileNotFoundError:
-        return False, f"Nagios binary not found at {NAGIOS_BINARY_PATH}."
+        return False, f"Nagios binary not found at {NAGIOS_BIN}."
     except subprocess.TimeoutExpired:
         return False, "Nagios configuration validation timed out."
     except Exception as e:

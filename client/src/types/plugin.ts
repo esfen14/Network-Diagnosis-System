@@ -48,6 +48,35 @@ export type PluginListResponse = {
   has_prev: boolean
 }
 
+// One monitoring check live in Nagios: a plugin applied to a target device
+// (GET /api/plugin/running).
+export type RunningCheck = {
+  id: number
+  plugin: {
+    id: number
+    name: string
+    display_name: string | null
+    status: PluginStatus
+  }
+  target: {
+    id: number
+    hostname: string | null
+    ip_address: string
+  } | null
+  service_description: string | null
+  applied_at: string
+}
+
+export type RunningChecksResponse = {
+  items: RunningCheck[]
+  page: number
+  per_page: number
+  pages: number
+  total: number
+  has_next: boolean
+  has_prev: boolean
+}
+
 export type PluginSummary = {
   installed_plugins: number
   active_capabilities: number

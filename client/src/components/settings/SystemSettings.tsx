@@ -82,6 +82,7 @@ export function SystemSettings() {
 
           <SettingsSelect
             label="System Update Frequency"
+            description="How often to re-scan installed plugins for newer versions"
             value={
               settings.systemUpdateFrequency
             }
@@ -102,7 +103,7 @@ export function SystemSettings() {
 
           <SettingsToggle
             label="Maintenance Mode"
-            description="Temporarily place the system into maintenance mode"
+            description="Pause scheduled scans and checks, and show a notice to all users"
             enabled={
               settings.maintenanceMode
             }
@@ -116,7 +117,7 @@ export function SystemSettings() {
 
           <SettingsToggle
             label="Automatic Backups"
-            description="Enable automatic system/database backups"
+            description="Back up the system databases once a day (keeps the last 7)"
             enabled={
               settings.automaticBackups
             }

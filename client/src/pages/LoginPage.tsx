@@ -1,6 +1,6 @@
 import { Eye, EyeOff } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { PinPointLogo } from '../components/login/PinPointLogo'
 
 // Placeholder copy for the login screen's slider — swap with real
@@ -27,6 +27,10 @@ const SLIDE_INTERVAL_MS = 6000
 
 export function LoginPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const sessionExpired = Boolean(
+    (location.state as { sessionExpired?: boolean } | null)?.sessionExpired
+  )
 
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
@@ -144,6 +148,14 @@ export function LoginPage() {
           <h2 className="mt-1 text-[25px] font-medium leading-tight tracking-tight text-black">
             Log In to your Account
           </h2>
+          {sessionExpired && (
+            <p
+              role="status"
+              className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800"
+            >
+              Your session expired due to inactivity. Please log in again.
+            </p>
+          )}
         </header>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">

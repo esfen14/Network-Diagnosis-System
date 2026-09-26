@@ -65,6 +65,16 @@ def require_permission(permission_name):
     return decorator
 
 
+def user_has_permission(permission_name):
+    """
+    Whether the logged-in user's role is active and includes
+    permission_name. Unlike require_permission, returns a plain bool for
+    routes that only restrict part of what they do. A permission that
+    doesn't exist in the database counts as not held.
+    """
+    return _has_permission(permission_name) is None
+
+
 # ============ Checks From Database ===================
 
 def exists_permission_by_id(permission_id):
