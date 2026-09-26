@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, it, expect, vi } from 'vitest'
 import { NetworkHealthPage } from '../pages/NetworkHealthPage'
@@ -23,6 +23,30 @@ vi.mock('../contexts/CurrentUserContext', () => ({
 vi.mock('../contexts/SystemSettingsContext', () => ({
   useSystemSettings: () => ({ savedSettings: { dateTimeFormat: 'DD/MM/YYYY', timeZone: 'UTC+08:00' } }),
 }))
+
+// The page loads the summary and trends from the API; serve a fixed
+// summary so the device counts come from data rather than defaults.
+const HOST_COUNTS = { total: 387, up: 321, down: 60, unreachable: 6, flapping: 0, in_downtime: 0 }
+const SUMMARY = {
+  hosts: HOST_COUNTS,
+  services: { ...HOST_COUNTS, ok: 0, warning: 0, critical: 0, unknown: 0 },
+  active_alerts: { total: 0, critical: 0, warning: 0, unknown: 0 },
+  last_scan: { completed_at: null, is_running: false },
+}
+const EMPTY_TRENDS = { ping: { configured: false, rta: [], packet_loss: [] }, ncpa: null }
+
+vi.mock('../lib/api', async () => {
+  const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api')
+  return {
+    ...actual,
+    apiGet: (path: string) => {
+      if (path.startsWith('/api/system/network-health/summary')) return Promise.resolve(SUMMARY)
+      if (path.startsWith('/api/system/network-health/trends')) return Promise.resolve(EMPTY_TRENDS)
+      return Promise.resolve(null)
+    },
+    apiPost: () => Promise.resolve(null),
+  }
+})
 
 function renderPage() {
   return render(
@@ -82,10 +106,13 @@ describe('NetworkHealthPage', () => {
     expect(screen.getByText('Offline Devices')).toBeInTheDocument()
   })
 
-  it('shows 321 online count and 66 offline count', () => {
+  it('shows online and offline counts from the summary', async () => {
     renderPage()
-    expect(screen.getByText('321')).toBeInTheDocument()
-    expect(screen.getByText('66')).toBeInTheDocument()
+    // Offline = down (60) + unreachable (6).
+    const online = screen.getByText('Online Devices').parentElement!.parentElement!
+    const offline = screen.getByText('Offline Devices').parentElement!.parentElement!
+    expect(await within(online).findByText('321')).toBeInTheDocument()
+    expect(await within(offline).findByText('66')).toBeInTheDocument()
   })
 
   it("shows 'Network Health Insights' panel heading", () => {
