@@ -353,23 +353,67 @@ def _create_host_cfg_file(discovered_hosts):
     # fetched once for all hosts rather than once per host.
     plugin_facts = load_host_plugin_facts()
 
-    # Plugins actually used by at least one service â€” each needs its own
+    # Plugins actually used by at least one service - each needs its own
     # `define command` object, rendered once at the end of the file.
     used_plugins = set()
 
     for hosts in discovered_hosts.values():
         for ip, host_data in hosts.items():
             host = {}
-            host["host_name"] = host_data["data"]["hostname"] 
-            host["alias"] = "alias" 
+            host["host_name"] = host_data["data"]["hostname"]
+            host["alias"] = "alias"
             host["address"] = ip
             host["contact_groups"] = "system_users"
             host_config.append(create_host(host))
             host_config.append(_add_space(4))
 
-            # Assigns hostgroup's list to be used in creating hostgroups
-             
-            host_config.append(_add_space(4))
+            # FIX (BUG_FINDINGS.md, Bug 1): restored — commit 6109a08e removed
+            # this along with service generation, which left every OS
+            # hostgroup below empty so none were ever written to the config.
+            # Assigns the host to its OS hostgroup ("Unknown" if the OS isn't
+            # one of the predefined groups).
+            os_name = host_data["data"]["os"]
+            if os_name in hostgroups:
+                hostgroups[os_name]["devices"].append(host_data["data"]["hostname"])
+            else:
+                hostgroups["Unknown"]["devices"].append(host_data["data"]["hostname"])
+
+            host_config.append(
+                f"""
+
+                #
+                # Define Services of
+                # Hostname: {host_data["data"]["hostname"]}
+                # IP: {ip}
+                #
+
+                """
+            )
+
+            # FIX (BUG_FINDINGS.md, Bug 1): restored service generation.
+            # Without it the generated config only had `define host` blocks,
+            # so Nagios checked host up/down but never ran any plugin.
+            # Each discovered port resolves to a plugin by service name
+            # (plugin_registry.py); a plugin may produce several services
+            # (one per SNMP OID, one per NCPA metric/partition), all bound to
+            # this host only.
+            host_services = build_host_services(host_data, plugin_facts, current_app.config)
+
+            for service_name, command, plugin_name in host_services:
+                # Remember the plugin so its `define command` is written once
+                # in the "Define Commands" section at the end of the file.
+                used_plugins.add(plugin_name)
+
+                service = {
+                    "host_name": host_data["data"]["hostname"],
+                    "service_name": service_name,
+                    "contact_groups": "system_users"
+                }
+
+                host_config.append(
+                    create_service(service,command)
+                )
+                host_config.append(_add_space(4))
 
     host_config.append(
         f"""
@@ -407,6 +451,24 @@ def _create_host_cfg_file(discovered_hosts):
         } 
         host_config.append(create_hostgroup(host_group))
         host_config.append(_add_space(4))
+
+    # FIX (BUG_FINDINGS.md, Bug 1): restored the command definitions.
+    # Every check_command above refers to a pinpoint_nd_<plugin> command;
+    # Nagios rejects the config if that command isn't defined, so write one
+    # `define command` per plugin actually used (sorted for stable output).
+    host_config.append(
+        f"""
+
+        #
+        # Define Commands
+        #
+
+        """
+    )
+
+    for plugin_name in sorted(used_plugins):
+        host_config.append(render_command_definition(plugin_name))
+        host_config.append(_add_space(2))
 
     with open(cfg_path, "w") as f:
         # remember to f.write("string") here after you're done with discovering devices

@@ -177,10 +177,21 @@ class TestConvertHostStateTypeEnum:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 class TestConvertAcknowledgementTypeEnum:
-    """convert_acknowledgement_type_enum uses getattr(AcknowledgementType, str.upper()),
-    so it expects the enum *name* (NOACK, NORMACK, STICKYACK), not the display value."""
+    """convert_acknowledgement_type_enum maps Nagios statusjson's own values
+    (none/normal/sticky) and the enum names (NOACK/NORMACK/STICKYACK),
+    case-insensitively, and falls back to NOACK for anything else.
+
+    Updated to match commit 5cbd26fb, which replaced the old
+    getattr(AcknowledgementType, str.upper()) lookup (raised AttributeError
+    on unknown input) with an explicit mapping plus NOACK fallback."""
 
     @pytest.mark.parametrize("val,expected", [
+        # Values Nagios statusjson.cgi actually sends
+        ("none", AcknowledgementType.NOACK),
+        ("normal", AcknowledgementType.NORMACK),
+        ("sticky", AcknowledgementType.STICKYACK),
+        (" Sticky ", AcknowledgementType.STICKYACK),
+        # Enum names (internal callers)
         ("NOACK", AcknowledgementType.NOACK),
         ("NORMACK", AcknowledgementType.NORMACK),
         ("STICKYACK", AcknowledgementType.STICKYACK),
@@ -192,14 +203,16 @@ class TestConvertAcknowledgementTypeEnum:
         result = convert_acknowledgement_type_enum(val)
         assert result == expected
 
-    def test_invalid_raises_attribute_error(self):
-        with pytest.raises(AttributeError):
-            convert_acknowledgement_type_enum("bogus")
+    # Previously expected AttributeError; unknown values now fall back to NOACK.
+    def test_invalid_falls_back_to_noack(self):
+        assert convert_acknowledgement_type_enum("bogus") == AcknowledgementType.NOACK
 
-    def test_display_value_raises(self):
-        """Display values like 'No Acknowledgement' contain spaces → no enum attr."""
-        with pytest.raises(AttributeError):
-            convert_acknowledgement_type_enum("No Acknowledgement")
+    def test_display_value_falls_back_to_noack(self):
+        """Display values like 'No Acknowledgement' aren't mapped → NOACK."""
+        assert convert_acknowledgement_type_enum("No Acknowledgement") == AcknowledgementType.NOACK
+
+    def test_none_returns_noack(self):
+        assert convert_acknowledgement_type_enum(None) == AcknowledgementType.NOACK
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -210,10 +223,16 @@ class TestConvertToUTC:
     def test_none_returns_none(self):
         assert convert_to_UTC(None) is None
 
-    def test_unix_timestamp(self):
-        """1700000000 = 2023-11-14 22:13:20 UTC."""
-        result = convert_to_UTC(1700000000)
+    # Updated for commit 5cbd26fb: statusjson.cgi timestamps are in
+    # milliseconds, so convert_to_UTC now divides by 1000.
+    def test_millisecond_timestamp(self):
+        """1700000000000 ms = 2023-11-14 22:13:20 UTC."""
+        result = convert_to_UTC(1700000000000)
         assert result == datetime(2023, 11, 14, 22, 13, 20, tzinfo=timezone.utc)
+
+    def test_millisecond_precision_kept(self):
+        result = convert_to_UTC(1700000000500)
+        assert result == datetime(2023, 11, 14, 22, 13, 20, 500000, tzinfo=timezone.utc)
 
     def test_zero_timestamp(self):
         """Unix epoch."""

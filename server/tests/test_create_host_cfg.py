@@ -390,6 +390,23 @@ class TestCreateHostCfgFile:
         assert "$USER1$/check_snmp -H $HOSTADDRESS$" in cfg_text
         assert "snmp-devices" not in cfg_text
 
+    # Added with the Bug 1 fix (BUG_FINDINGS.md): commit 6109a08e had also
+    # removed the OS hostgroup assignment, leaving every OS group empty.
+    def test_hosts_are_added_to_their_os_hostgroup(self, app, db_session, admin_user, plugin_config, tmp_path):
+        discovered = {
+            "10.0.0.0/24": {
+                "10.0.0.11": make_host("linux-1", os_name="Linux"),
+                "10.0.0.12": make_host("win-1", os_name="Windows"),
+                "10.0.0.13": make_host("mystery", os_name="SomethingElse"),
+            }
+        }
+
+        with patched_config(app, HOST_CONFIG_DIR=tmp_path):
+            cfg_text = _create_host_cfg_file(discovered).read_text()
+
+        groups = dict(re.findall(r"hostgroup_name\s+(.+?)\n.*?members\s+(\S+)", cfg_text, re.S))
+        assert groups == {"Linux": "linux-1", "Windows": "win-1", "Unknown": "mystery"}
+
     def test_host_without_services_generates_no_commands(self, app, db_session, admin_user, plugin_config, tmp_path):
         discovered = {"10.0.0.0/24": {"10.0.0.20": make_host("quiet-host")}}
 
@@ -408,32 +425,45 @@ class TestCreateHostCfgFile:
 class TestServiceStatusCheckCommand:
 
     def service_payload(self, check_command):
+        """
+        Minimal statusjson.cgi servicelist entry. Timestamps are in
+        milliseconds and acknowledgement_type uses Nagios' own "none", to
+        match what convert_to_UTC / convert_acknowledgement_type_enum now
+        expect (commit 5cbd26fb). Service entries carry no host name —
+        insert_service_status_data() receives it as its own argument.
+        """
         return {
-            "name": "host-b",
             "check_command": check_command,
             "status": "0",
             "plugin_output": "OK",
             "state_type": "1",
-            "last_update": 1_700_000_000,
-            "last_check": 1_700_000_000,
-            "next_check": 1_700_000_300,
+            "last_update": 1_700_000_000_000,
+            "last_check": 1_700_000_000_000,
+            "next_check": 1_700_000_300_000,
             "current_attempt": 1,
             "max_attempt": 3,
-            "acknowledgement_type": "noack",
+            "acknowledgement_type": "none",
             "is_flapping": False,
             "notifications_enabled": True,
         }
 
+    # FIX (BUG_FINDINGS.md, Bug 2): insert_service_status_data() now takes
+    # (hostname, service, data) since commit 5cbd26fb — pass the hostname
+    # explicitly as the first argument.
     def test_only_command_name_is_stored(self, db_session):
         insert_service_status_data(
-            "ncpa-cpu-5693", self.service_payload("pinpoint_nd_ncpa!5693!secrettoken!cpu/percent!")
+            "host-b",
+            "ncpa-cpu-5693",
+            self.service_payload("pinpoint_nd_ncpa!5693!secrettoken!cpu/percent!"),
         )
 
         row = db_session.session.scalar(db_session.select(ServiceStatus))
+        assert row.Hostname == "host-b"
         assert row.Check_Command == "pinpoint_nd_ncpa"
 
     def test_missing_check_command_stored_as_null(self, db_session):
-        insert_service_status_data("ssh-22", self.service_payload(None))
+        insert_service_status_data("host-b", "ssh-22", self.service_payload(None))
 
         row = db_session.session.scalar(db_session.select(ServiceStatus))
+        assert row.Hostname == "host-b"
         assert row.Check_Command is None
