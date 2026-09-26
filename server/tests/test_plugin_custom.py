@@ -157,12 +157,12 @@ class TestStageUpload:
 
 class TestNameCollisionAndInstall:
     def test_no_collision_when_absent(self, tmp_path):
-        with patch("app.api.plugin.custom_plugin.NAGIOS_PLUGIN_DIR", str(tmp_path)):
+        with patch("app.api.plugin.custom_plugin.get_plugin_dir", return_value=str(tmp_path)):
             check_name_collision("check_new.sh")  # should not raise
 
     def test_collision_when_present(self, tmp_path):
         (tmp_path / "check_existing.sh").write_text("x")
-        with patch("app.api.plugin.custom_plugin.NAGIOS_PLUGIN_DIR", str(tmp_path)):
+        with patch("app.api.plugin.custom_plugin.get_plugin_dir", return_value=str(tmp_path)):
             with pytest.raises(NameCollisionError):
                 check_name_collision("check_existing.sh")
 
@@ -172,7 +172,7 @@ class TestNameCollisionAndInstall:
         fs = FakeFileStorage("check_x.sh", SCRIPT_CONTENT)
         staged_path, safe_filename, staging_dir, checksum, size = stage_upload(fs)
 
-        with patch("app.api.plugin.custom_plugin.NAGIOS_PLUGIN_DIR", str(target_dir)):
+        with patch("app.api.plugin.custom_plugin.get_plugin_dir", return_value=str(target_dir)):
             installed_path = install_staged_file(staged_path, safe_filename)
 
         assert os.path.exists(installed_path)
@@ -197,7 +197,7 @@ class TestRegisterCustomPluginRoute:
         assert resp.status_code == 400
 
     def test_successful_registration(self, logged_in_client, db_session, tmp_path):
-        with patch("app.api.plugin.custom_plugin.NAGIOS_PLUGIN_DIR", str(tmp_path)), _mock_checks_pass():
+        with patch("app.api.plugin.custom_plugin.get_plugin_dir", return_value=str(tmp_path)), _mock_checks_pass():
             resp = logged_in_client.post(
                 "/api/plugin/custom",
                 data=_upload_data(name="check_success", command_name="check_success",
@@ -221,7 +221,7 @@ class TestRegisterCustomPluginRoute:
         assert os.path.exists(plugin.Executable_Path)
 
     def test_creates_version_command_and_history(self, logged_in_client, db_session, tmp_path):
-        with patch("app.api.plugin.custom_plugin.NAGIOS_PLUGIN_DIR", str(tmp_path)), _mock_checks_pass():
+        with patch("app.api.plugin.custom_plugin.get_plugin_dir", return_value=str(tmp_path)), _mock_checks_pass():
             logged_in_client.post(
                 "/api/plugin/custom",
                 data=_upload_data(name="check_full"),
@@ -250,7 +250,7 @@ class TestRegisterCustomPluginRoute:
         assert history.Result.value == "Success"
 
     def test_creates_dependencies(self, logged_in_client, db_session, tmp_path):
-        with patch("app.api.plugin.custom_plugin.NAGIOS_PLUGIN_DIR", str(tmp_path)), _mock_checks_pass():
+        with patch("app.api.plugin.custom_plugin.get_plugin_dir", return_value=str(tmp_path)), _mock_checks_pass():
             logged_in_client.post(
                 "/api/plugin/custom",
                 data=_upload_data(
@@ -270,7 +270,7 @@ class TestRegisterCustomPluginRoute:
         assert dep.Dependency_Type.value == "Package"
 
     def test_dangerous_command_fails_validation_no_persistence(self, logged_in_client, db_session, tmp_path):
-        with patch("app.api.plugin.custom_plugin.NAGIOS_PLUGIN_DIR", str(tmp_path)):
+        with patch("app.api.plugin.custom_plugin.get_plugin_dir", return_value=str(tmp_path)):
             resp = logged_in_client.post(
                 "/api/plugin/custom",
                 data=_upload_data(name="check_bad", command_definition="check_bad; rm -rf /"),
@@ -290,7 +290,7 @@ class TestRegisterCustomPluginRoute:
         assert os.listdir(tmp_path) == []
 
     def test_bad_exit_code_fails_nagios_compatibility(self, logged_in_client, db_session, tmp_path):
-        with patch("app.api.plugin.custom_plugin.NAGIOS_PLUGIN_DIR", str(tmp_path)), \
+        with patch("app.api.plugin.custom_plugin.get_plugin_dir", return_value=str(tmp_path)), \
              _mock_checks_pass(exit_code=127, output="weird"):
             resp = logged_in_client.post(
                 "/api/plugin/custom",
@@ -304,7 +304,7 @@ class TestRegisterCustomPluginRoute:
         assert data["success"] is False
 
     def test_missing_metadata_fails(self, logged_in_client, db_session, tmp_path):
-        with patch("app.api.plugin.custom_plugin.NAGIOS_PLUGIN_DIR", str(tmp_path)):
+        with patch("app.api.plugin.custom_plugin.get_plugin_dir", return_value=str(tmp_path)):
             resp = logged_in_client.post(
                 "/api/plugin/custom",
                 data=_upload_data(name="check_nometa", command_name="", command_definition=""),
@@ -316,7 +316,7 @@ class TestRegisterCustomPluginRoute:
         assert data["success"] is False
 
     def test_invalid_dependency_type_fails(self, logged_in_client, db_session, tmp_path):
-        with patch("app.api.plugin.custom_plugin.NAGIOS_PLUGIN_DIR", str(tmp_path)):
+        with patch("app.api.plugin.custom_plugin.get_plugin_dir", return_value=str(tmp_path)):
             resp = logged_in_client.post(
                 "/api/plugin/custom",
                 data=_upload_data(
@@ -331,7 +331,7 @@ class TestRegisterCustomPluginRoute:
         assert data["success"] is False
 
     def test_malformed_dependencies_json_rejected(self, logged_in_client, db_session, tmp_path):
-        with patch("app.api.plugin.custom_plugin.NAGIOS_PLUGIN_DIR", str(tmp_path)):
+        with patch("app.api.plugin.custom_plugin.get_plugin_dir", return_value=str(tmp_path)):
             resp = logged_in_client.post(
                 "/api/plugin/custom",
                 data=_upload_data(name="check_x2", dependencies="not json"),
@@ -340,7 +340,7 @@ class TestRegisterCustomPluginRoute:
         assert resp.status_code == 400
 
     def test_duplicate_plugin_name_rejected(self, logged_in_client, db_session, tmp_path):
-        with patch("app.api.plugin.custom_plugin.NAGIOS_PLUGIN_DIR", str(tmp_path)), _mock_checks_pass():
+        with patch("app.api.plugin.custom_plugin.get_plugin_dir", return_value=str(tmp_path)), _mock_checks_pass():
             logged_in_client.post(
                 "/api/plugin/custom",
                 data=_upload_data(name="check_dup", filename="check_dup1.sh"),
@@ -355,7 +355,7 @@ class TestRegisterCustomPluginRoute:
 
     def test_installed_file_name_collision_rejected(self, logged_in_client, db_session, tmp_path):
         (tmp_path / "check_taken.sh").write_text("existing")
-        with patch("app.api.plugin.custom_plugin.NAGIOS_PLUGIN_DIR", str(tmp_path)):
+        with patch("app.api.plugin.custom_plugin.get_plugin_dir", return_value=str(tmp_path)):
             resp = logged_in_client.post(
                 "/api/plugin/custom",
                 data=_upload_data(name="check_new_name", filename="check_taken.sh"),
@@ -364,7 +364,7 @@ class TestRegisterCustomPluginRoute:
         assert resp.status_code == 409
 
     def test_invalid_plugin_type_rejected(self, logged_in_client, db_session, tmp_path):
-        with patch("app.api.plugin.custom_plugin.NAGIOS_PLUGIN_DIR", str(tmp_path)):
+        with patch("app.api.plugin.custom_plugin.get_plugin_dir", return_value=str(tmp_path)):
             resp = logged_in_client.post(
                 "/api/plugin/custom",
                 data=_upload_data(name="check_badtype", plugin_type="NotAType"),

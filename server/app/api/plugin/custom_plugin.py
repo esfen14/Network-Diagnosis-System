@@ -23,7 +23,7 @@ import tempfile
 
 from werkzeug.utils import secure_filename
 
-from app.api.plugin.scanner import NAGIOS_PLUGIN_DIR
+from app.api.plugin.scanner import get_plugin_dir
 
 MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB — generous for a plugin script/binary
 
@@ -103,7 +103,7 @@ def check_name_collision(safe_filename):
     Raises:
         NameCollisionError
     """
-    target_path = os.path.join(NAGIOS_PLUGIN_DIR, safe_filename)
+    target_path = os.path.join(get_plugin_dir(), safe_filename)
     if os.path.exists(target_path):
         raise NameCollisionError(
             f"A file named '{safe_filename}' already exists in the Nagios plugin directory."
@@ -119,7 +119,7 @@ def install_staged_file(staged_path, safe_filename):
     Returns:
         the final installed path (str)
     """
-    target_path = os.path.join(NAGIOS_PLUGIN_DIR, safe_filename)
+    target_path = os.path.join(get_plugin_dir(), safe_filename)
     shutil.move(staged_path, target_path)
     os.chmod(target_path, 0o755)
     return target_path

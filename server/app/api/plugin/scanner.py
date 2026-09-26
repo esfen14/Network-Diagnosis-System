@@ -50,14 +50,18 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import sqlalchemy as sa
+from flask import current_app
 
 from app import db
 from app.plugin_models import Plugin, PluginVersion, PluginCommand, PluginType, PluginSource, PluginStatus
 
 
-# Confirmed from the ISO's install-nagios-plugins.sh / install-nagios-core.sh:
-# both build with no --prefix, so the default install path is used.
-NAGIOS_PLUGIN_DIR = "/usr/local/nagios/libexec/"
+def get_plugin_dir():
+    """
+    Return the Nagios plugin directory from app config
+    (config.py's NAGIOS_PLUGIN_DIR). Requires an app context.
+    """
+    return current_app.config['NAGIOS_PLUGIN_DIR']
 
 VERSION_CHECK_TIMEOUT_SECONDS = 5
 
@@ -123,14 +127,14 @@ def is_executable(entry, entry_stat):
     return bool(entry_stat.st_mode & stat.S_IXUSR) and os.access(entry.path, os.X_OK)
 
 
-def scan_plugin_directory(directory=NAGIOS_PLUGIN_DIR):
+def scan_plugin_directory(directory=None):
     """
     Detects every plugin executable under `directory`. Pure detection
     — does not touch the database.
 
     Args:
         directory: local directory to scan (defaults to
-            NAGIOS_PLUGIN_DIR).
+            get_plugin_dir()).
 
     Returns:
         list[ScannedPlugin]
@@ -140,6 +144,9 @@ def scan_plugin_directory(directory=NAGIOS_PLUGIN_DIR):
             decide how to surface this (manager.py turns it into a
             failed PluginScanStatus).
     """
+    if directory is None:
+        directory = get_plugin_dir()
+
     results = []
 
     with os.scandir(directory) as it:

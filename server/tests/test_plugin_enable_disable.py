@@ -192,6 +192,12 @@ class TestDisablePlugin:
 
 
 class TestNagiosValidator:
+    @pytest.fixture(autouse=True)
+    def app_context(self, app):
+        # validate_nagios_configuration() reads NAGIOS_BIN / NAGIOS_MAIN_CFG from app config.
+        with app.app_context():
+            yield
+
     def test_returns_false_when_binary_missing(self):
         from app.api.plugin.nagios_validator import validate_nagios_configuration
         is_valid, output = validate_nagios_configuration()

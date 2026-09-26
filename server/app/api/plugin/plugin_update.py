@@ -35,7 +35,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from app.api.plugin.scanner import NAGIOS_PLUGIN_DIR
+from app.api.plugin.scanner import get_plugin_dir
 
 MAX_ARCHIVE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB — archives can bundle multiple plugins
 DOWNLOAD_TIMEOUT_SECONDS = 15
@@ -265,7 +265,7 @@ def backup_plugin(plugin_name, current_executable_path):
     Returns:
         the backup file path (str)
     """
-    backup_dir = os.path.join(NAGIOS_PLUGIN_DIR, BACKUP_DIR_NAME)
+    backup_dir = os.path.join(get_plugin_dir(), BACKUP_DIR_NAME)
     os.makedirs(backup_dir, exist_ok=True)
     backup_path = os.path.join(backup_dir, plugin_name)
     shutil.copy2(current_executable_path, backup_path)
@@ -273,7 +273,7 @@ def backup_plugin(plugin_name, current_executable_path):
 
 
 def get_backup_path(plugin_name):
-    return os.path.join(NAGIOS_PLUGIN_DIR, BACKUP_DIR_NAME, plugin_name)
+    return os.path.join(get_plugin_dir(), BACKUP_DIR_NAME, plugin_name)
 
 
 def has_backup(plugin_name):

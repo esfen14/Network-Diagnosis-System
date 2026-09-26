@@ -28,7 +28,7 @@ from app.api.plugin import plugin_bp
 from app.api.plugin import service
 from app.api.helper import success, error, validate_json_data, validate_json_fields
 from app.api.helper.database_access.permissions import require_permission
-from app.api.plugin.scanner import scan_plugin_directory, sync_plugin_inventory, NAGIOS_PLUGIN_DIR
+from app.api.plugin.scanner import scan_plugin_directory, sync_plugin_inventory, get_plugin_dir
 from app.logging.plugin_scan_status import (
     create_plugin_scan_status,
     update_plugin_scan_status,
@@ -51,7 +51,7 @@ def _run_scan(flask_app, user_id, plugin_scan_status_id):
     """
     with flask_app.app_context():
         try:
-            scan_results = scan_plugin_directory(NAGIOS_PLUGIN_DIR)
+            scan_results = scan_plugin_directory(get_plugin_dir())
             summary = sync_plugin_inventory(scan_results)
 
             update_plugin_scan_status(
@@ -73,7 +73,7 @@ def _run_scan(flask_app, user_id, plugin_scan_status_id):
                 100,
                 "Plugin scan failed.",
                 completed_at=datetime.now(timezone.utc),
-                error=f"Plugin directory not found: {NAGIOS_PLUGIN_DIR}",
+                error=f"Plugin directory not found: {get_plugin_dir()}",
             )
 
         except Exception as e:
