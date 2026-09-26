@@ -82,16 +82,32 @@ def convert_plugin_status_type_enum(val):
     }
     return mapping.get(s, PluginStatusType.OK)
 
-def convert_acknowledgement_type_enum(str):
-    return getattr(AcknowledgementType, str.upper())
+def convert_acknowledgement_type_enum(val):
+    """Convert Nagios acknowledgement_type string to AcknowledgementType enum.
+
+    Nagios statusjson sends: "none", "normal", or "sticky".
+    The enum members are NOACK, NORMACK, STICKYACK.
+    Falls back to NOACK for any unrecognised value.
+    """
+    if val is None:
+        return AcknowledgementType.NOACK
+    mapping = {
+        "none":   AcknowledgementType.NOACK,
+        "normal": AcknowledgementType.NORMACK,
+        "sticky": AcknowledgementType.STICKYACK,
+        # Also accept the enum name directly (e.g. from internal code)
+        "noack":     AcknowledgementType.NOACK,
+        "normack":   AcknowledgementType.NORMACK,
+        "stickyack": AcknowledgementType.STICKYACK,
+    }
+    return mapping.get(str(val).lower().strip(), AcknowledgementType.NOACK)
 
 def convert_to_UTC(timestamp):
-    # Bug fix: was datetime.datetime.fromtimestamp(..., datetime.timezone.utc)
-    # — datetime is already imported as the class, so it's just datetime.fromtimestamp
-    # Nagios timestamps are Unix seconds (int), not milliseconds.
+    # Nagios statusjson.cgi returns timestamps in milliseconds (e.g. 1790410811000).
+    # Python's datetime.fromtimestamp expects seconds, so divide by 1000.
     if timestamp is None:
         return None
-    return datetime.fromtimestamp(timestamp, timezone.utc)
+    return datetime.fromtimestamp(timestamp / 1000, timezone.utc)
 
 def convert_to_UNIX(date_str, time_obj):
     # Bug fix: was strptime(f"{date_str} {time_str}", "%m:%d:%Y %H:%M")

@@ -23,7 +23,7 @@ def insert_programstatus_data(data):
             Enable_Notifications=data.get('enable_notifications'),
             Enable_Flap_Detection=data.get('enable_flap_detection'),
             Daemon_Mode=data.get('daemon_mode'),
-            Program_Start_Time=data.get('program_start'),
+            Program_Start_Time=convert_to_UTC(data.get('program_start')),
             Passive_Host_Checks_Enabled=data.get('passive_host_checks_enabled'),
             Active_Host_Checks_Enabled=data.get('active_host_checks_enabled'),
             Passive_Service_Checks_Enabled=data.get('passive_service_checks_enabled'),
@@ -114,11 +114,11 @@ def insert_host_status_data(data):
         db.session.rollback()
         current_app.logger.exception("Failed to insert host status")
         
-def insert_service_status_data(service, data):
+def insert_service_status_data(hostname, service, data):
     try:
         service_status = ServiceStatus(
             Timestamp=convert_to_UTC(data.get('last_update')),
-            Hostname=data.get('name'),
+            Hostname=hostname,
             Service=service,
             Current_State=convert_service_state_type_enum(data.get('status')),
             Plugin_Output=data.get('plugin_output', ''),
@@ -239,6 +239,6 @@ def get_status():
             servicelist = data['data']['servicelist'].get(hostname, {})
 
             for service, service_data in servicelist.items():
-                insert_service_status_data(service, service_data)
+                insert_service_status_data(hostname, service, service_data)
     except requests.RequestException as e:
         current_app.logger.error("Failed to request Nagios status: %s", e)
