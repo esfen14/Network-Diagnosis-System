@@ -35,10 +35,6 @@ import tempfile
 # same-named local at the top of the function, so the settings are
 # centralized without a Settings UI needing to touch call sites here.
 
-DEFAULT_TCP_COMMAND = "check_tcp"
-
-DEFAULT_UDP_COMMAND = "check_udp"
-
 PROGRESS_WEIGHT = [40,50,55,60,70,80,90,95,100]
 
 # Progress stages for add_ncpa_port: adding the port to the db, reloading
@@ -46,17 +42,6 @@ PROGRESS_WEIGHT = [40,50,55,60,70,80,90,95,100]
 # directly by app/ncpa_deployment/ncpa_deployment.py, so this must stay
 # a real module-level constant (not a config-backed local alias).
 ADD_NCPA_PORT_PROGRESS_WEIGHT = [40, 55, 70, 85, 100]
-
-# Get the folder for command maps
-MAP_DIR = Path(__file__).parent / "command_maps"
-
-# get the tcp command map
-with open(MAP_DIR / "tcp_commands.json") as f:
-    TCP_COMMANDS = json.load(f)
-
-# get the udp command map
-with open(MAP_DIR / "udp_commands.json") as f:
-    UDP_COMMANDS = json.load(f)
 
 def _add_space(spaces):
     return "\n" * spaces
@@ -231,63 +216,8 @@ def _create_host_cfg_file(discovered_hosts):
             host_config.append(_add_space(4))
 
             # Assigns hostgroup's list to be used in creating hostgroups
-            
-            os_name = host_data["data"]["os"]
-            if os_name in hostgroups:
-                hostgroups[os_name]["devices"].append(host_data["data"]["hostname"])
-            else:
-                hostgroups["Unknown"]["devices"].append(host_data["data"]["hostname"])
-
-            host_config.append(
-                f"""
-
-                #
-                # Define Services of
-                # Hostname: {host_data["data"]["hostname"]}
-                # IP: {ip}
-                #
-
-                """
-            )
-
-            tcp_services = host_data["services"]["tcp"]
-
-            for port, service_data in tcp_services.items():
-                service_name = f"{service_data['service_name']}-{port}-TCP"
-
-                command = _get_command(service_name,port,TCP_COMMANDS,DEFAULT_TCP_COMMAND)
-
-                service = {
-                    "host_name": host_data["data"]["hostname"],
-                    "service_name": service_name,
-                    "contact_groups": "system_users"
-                }
-
-                host_config.append(
-                    create_service(service,command)
-                )
-                host_config.append(_add_space(4))
-
-            udp_services = host_data["services"]["udp"]
-
-            for port, service_data in udp_services.items():
-                service_name = f"{service_data['service_name']}-{port}-UDP"
-
-                if service_name == "snmp":
-                    SNMP_Devices.append(host_data["data"]["hostname"])
-                else:
-                    command = _get_command(service_name,port,UDP_COMMANDS,DEFAULT_UDP_COMMAND)
-
-                service = {
-                    "host_name": host_data["data"]["hostname"],
-                    "service_name": service_name,
-                    "contact_groups": "system_users"
-                }
-            
-                host_config.append(
-                    create_service(service,command)
-                )
-                host_config.append(_add_space(4))
+             
+            host_config.append(_add_space(4))
 
     host_config.append(
         f"""
@@ -302,15 +232,14 @@ def _create_host_cfg_file(discovered_hosts):
     host_config.append(_add_space(4))
 
     host_config.append(
-            f"""
+        f"""
     
-            #
-            # Define OS Groups
-            #  
+        #
+        # Define OS Groups
+        #  
     
-            """
+        """
     )
-
 
     for os, group_devices in hostgroups.items():
 
@@ -326,162 +255,6 @@ def _create_host_cfg_file(discovered_hosts):
         } 
         host_config.append(create_hostgroup(host_group))
         host_config.append(_add_space(4))
-
-    if SNMP_Devices is not None:
-        host_config.append(
-                f"""
-            
-                #
-                # Define SNMP Devices
-                #  
-            
-                """
-        )
-
-        host_group={
-            "group_name": "snmp-devices",
-            "alias_name": "SNMP Devices",
-            "member_list": ",".join(SNMP_Devices)
-        }
-
-        host_config.append(host_group)
-
-        host_config.append(_add_space(4))
-
-        for oid, description in SNMP_OID.items():
-            service_name = f"snmp{description}-{port}-UDP"
-            command = _get_command(
-                            "snmp",
-                            "161",
-                            UDP_COMMANDS,
-                            DEFAULT_UDP_COMMAND,
-                            f"-C {SNMP_COMMUNITY_STRING} {oid}"
-                        )
-            snmp_service = create_multi_host_service(
-                                "snmp-devices",
-                                service_name,
-                                command,
-                                "system_users"
-                            )
-            host_config.append(snmp_service)
-
-        host_config.append(_add_space(4))
-
-    if SNMP_Devices is not None:
-        host_config.append(
-                f"""
-            
-                #
-                # Define NCPA Service
-                #  
-            
-                """
-        )
-
-        devices = db.session.execute(
-            sa.select(NetworkDiscovery, NCPADeployment).join(
-                NCPADeployment,
-                NetworkDiscovery.NetDiscoveryID == NCPADeployment.NetworkDiscoveryID
-            ).where(
-                NetworkDiscovery.Hostname.in_(NCPA_Devices),
-                NetworkDiscovery.NCPA_Eligible.is_(True)
-            )
-        ).all()
-
-        if devices is not None:
-            for device, ncpa_deployment in devices:
-                service_name = f"{"ncpa"}_cpu_usage-{port}-TCP"
-                ncpa_cpu_usage = {
-                    "hostname":device.Hostname,
-                    "service_name": service_name,
-                    "contact_groups": "system_users"
-                }
-                command = _get_command(
-                    "ncpa",
-                    NCPA_PORT,
-                    UDP_COMMANDS,
-                    DEFAULT_TCP_COMMAND,
-                    f' -t {ncpa_deployment.Token} -P {NCPA_PORT} -M cpu/percent -w 50 -c 80 -q "aggregate=avg" '
-                )
-                service = create_service(
-                    ncpa_cpu_usage,
-                    command
-                )
-
-                host_config.append(service)
-
-                service_name = f"{"ncpa"}_memory_usage-{port}-TCP"
-                ncpa_memory_usage = {
-                    "hostname":device.Hostname,
-                    "service_name": service_name,
-                    "contact_groups": "system_users"
-                }
-                command = _get_command(
-                    "ncpa",
-                    NCPA_PORT,
-                    UDP_COMMANDS,
-                    DEFAULT_TCP_COMMAND,
-                    f' -t {ncpa_deployment.Token} -P {NCPA_PORT} -M memory/virtual/percent -w 50 -c 80 -u Gi '
-                )
-                service = create_service(
-                    ncpa_memory_usage,
-                    command
-                )
-
-                host_config.append(service)
-
-                # --- Per-partition disk usage services ---
-                # Query the partitions that were discovered on this device
-                # during NCPA installation and stored in NCPADevicePartition.
-                # Each partition gets its own Nagios service so the dashboard
-                # can track them individually.
-                partitions = db.session.scalars(
-                    sa.select(NCPADevicePartition).where(
-                        NCPADevicePartition.NCPADeployID == ncpa_deployment.NCPADeployID
-                    )
-                ).all()
-
-                if partitions:
-                    for partition in partitions:
-                        service_name = f"{"ncpa"}-{port}-TCP-disk_usage_{partition.Name}"
-                        ncpa_disk_usage = {
-                            "hostname": device.Hostname,
-                            "service_name": service_name,
-                            "contact_groups": "system_users"
-                        }
-                        command = _get_command(
-                            "ncpa",
-                            NCPA_PORT,
-                            UDP_COMMANDS,
-                            DEFAULT_TCP_COMMAND,
-                            f' -t {ncpa_deployment.Token} -P {NCPA_PORT} -M disk/logical/{partition.Name}/percent -w 70 -c 95'
-                        )
-                        service = create_service(
-                            ncpa_disk_usage,
-                            command
-                        )
-                        host_config.append(service)
-                else:
-                    # Fallback: no partition data stored — use the generic
-                    # disk/logical endpoint so the service is still generated
-                    service_name = f"{"ncpa"}_disk_usage-{port}-TCP"
-                    ncpa_disk_usage = {
-                        "hostname": device.Hostname,
-                        "service_name": service_name,
-                        "contact_groups": "system_users"
-                    }
-                    command = _get_command(
-                        "ncpa",
-                        NCPA_PORT,
-                        UDP_COMMANDS,
-                        DEFAULT_TCP_COMMAND,
-                        f' -t {ncpa_deployment.Token} -P {NCPA_PORT} -M disk/logical/percent -w 70 -c 95 '
-                    )
-                    service = create_service(
-                        ncpa_disk_usage,
-                        command
-                    )
-                    host_config.append(service)
 
     with open(cfg_path, "w") as f:
         # remember to f.write("string") here after you're done with discovering devices
