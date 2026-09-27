@@ -297,6 +297,11 @@ def avg_ping_metrics(hosts: list[HostStatus]) -> dict:
     land in HostPerfData, not ServicePerfData. We query the HostPerfData rows
     linked to the latest HostStatus snapshot per host.
 
+    Latency only averages hosts that are UP. A DOWN/UNREACHABLE host's ping
+    times out and check_ping reports its timeout as the rta (e.g. 5000 ms),
+    which is not a real round-trip time and would skew the average. Packet
+    loss still includes every host, since 100% loss on a down host is real.
+
     Returns:
         {
             "configured": bool,
@@ -322,18 +327,23 @@ def avg_ping_metrics(hosts: list[HostStatus]) -> dict:
         )
     ).all()
 
+    up_host_ids = {h.HostStatusID for h in hosts if h.Current_State == HostStateType.UP}
+
     rta_by_host: dict[int, float] = {}
     pl_by_host:  dict[int, float] = {}
+    reporting_host_ids: set[int] = set()
 
     for row in rows:
+        reporting_host_ids.add(row.HostStatusID)
         if row.Metric == "rta":
-            rta_by_host[row.HostStatusID] = row.Measured_Value
+            if row.HostStatusID in up_host_ids:
+                rta_by_host[row.HostStatusID] = row.Measured_Value
         elif row.Metric == "pl":
             pl_by_host[row.HostStatusID] = row.Measured_Value
 
     rta_vals = list(rta_by_host.values())
     pl_vals  = list(pl_by_host.values())
-    host_count = max(len(rta_vals), len(pl_vals))
+    host_count = len(reporting_host_ids)
 
     if host_count == 0:
         return {"configured": False, "avg_rta_ms": None,
@@ -344,7 +354,8 @@ def avg_ping_metrics(hosts: list[HostStatus]) -> dict:
                 "avg_packet_loss_pct": None, "host_count": host_count,
                 "insufficient_data": True}
 
-    avg_rta = round(sum(rta_vals) / len(rta_vals), 3) if rta_vals else None
+    # Same >= 2 rule (§3.5), applied to UP hosts only for latency.
+    avg_rta = round(sum(rta_vals) / len(rta_vals), 3) if len(rta_vals) >= 2 else None
     avg_pl  = round(sum(pl_vals)  / len(pl_vals),  3) if pl_vals  else None
 
     return {

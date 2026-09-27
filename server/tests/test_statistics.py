@@ -385,6 +385,40 @@ class TestAvgPingMetrics:
         assert result["avg_packet_loss_pct"] == pytest.approx(1.0)
         assert result["host_count"] == 2
 
+    def test_down_hosts_excluded_from_latency(self, db_session, app):
+        """A DOWN host's timeout rta is left out; its packet loss still counts."""
+        from app.api.system.statistics import avg_ping_metrics, get_latest_hosts
+        with app.app_context():
+            h1 = _make_host(db_session, "h1")
+            _make_host_perf(db_session, h1, "rta", 4.0, "ms")
+            _make_host_perf(db_session, h1, "pl", 0.0, "%")
+            h2 = _make_host(db_session, "h2")
+            _make_host_perf(db_session, h2, "rta", 6.0, "ms")
+            _make_host_perf(db_session, h2, "pl", 0.0, "%")
+            h3 = _make_host(db_session, "h3", state=HostStateType.DOWN)
+            _make_host_perf(db_session, h3, "rta", 5000.0, "ms")
+            _make_host_perf(db_session, h3, "pl", 100.0, "%")
+            db_session.session.commit()
+            result = avg_ping_metrics(get_latest_hosts())
+        assert result["avg_rta_ms"] == pytest.approx(5.0)
+        assert result["avg_packet_loss_pct"] == pytest.approx(33.333)
+        assert result["host_count"] == 3
+
+    def test_fewer_than_two_up_hosts_gives_no_latency(self, db_session, app):
+        """Only one UP host has an rta → latency is null, packet loss still averaged."""
+        from app.api.system.statistics import avg_ping_metrics, get_latest_hosts
+        with app.app_context():
+            h1 = _make_host(db_session, "h1")
+            _make_host_perf(db_session, h1, "rta", 4.0, "ms")
+            _make_host_perf(db_session, h1, "pl", 0.0, "%")
+            h2 = _make_host(db_session, "h2", state=HostStateType.DOWN)
+            _make_host_perf(db_session, h2, "rta", 5000.0, "ms")
+            _make_host_perf(db_session, h2, "pl", 100.0, "%")
+            db_session.session.commit()
+            result = avg_ping_metrics(get_latest_hosts())
+        assert result["avg_rta_ms"] is None
+        assert result["avg_packet_loss_pct"] == pytest.approx(50.0)
+
     def test_no_perf_data_returns_not_configured(self, db_session, app):
         from app.api.system.statistics import avg_ping_metrics, get_latest_hosts
         with app.app_context():
