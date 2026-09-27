@@ -35,7 +35,8 @@ be disabled — this system is the only interface to Nagios data.
 ## Data Sources
 
 All data comes from the backend API. The relevant sources per section are
-documented in `Backend_Data_Recommendations.md`. This document only defines
+documented in `Data_Model_and_Integrations.md` and the route catalog in
+`Backend_Modules_and_Routes.md`. This document only defines
 *what* to show and *how* to group it — not API structure.
 
 ---
