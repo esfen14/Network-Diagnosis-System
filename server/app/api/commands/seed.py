@@ -1,8 +1,12 @@
+import sys
+
 import click
 import sqlalchemy as sa
+from email_validator import validate_email, EmailNotValidError
 
 from flask.cli import with_appcontext
 from app import db
+from app.api.helper.validation import STRONG_MIN_PASSWORD_LENGTH
 
 from app.system_models import (
     Permission,
@@ -277,3 +281,80 @@ def seed_system_settings():
     if db.session.get(SystemSettings, 1) is None:
         db.session.add(SystemSettings(Id=1))
         db.session.commit()
+
+
+# =========================
+# CLI COMMAND: PRODUCTION INIT
+# =========================
+
+@click.command("init-production")
+@click.option("--admin-email", required=True, help="Email address of the administrator account.")
+@click.option("--first-name", default="Admin", show_default=True)
+@click.option("--last-name", default="User", show_default=True)
+@click.option(
+    "--password-stdin",
+    is_flag=True,
+    required=True,
+    help="Read the administrator password from stdin (required).",
+)
+@with_appcontext
+def init_production_command(admin_email, first_name, last_name, password_stdin):
+    """
+    Prepare a fresh production database: seed permissions, roles and system
+    settings, then create a single active Administrator. No test users are
+    created.
+
+    The password is read from stdin only, never from an argument, so it does
+    not appear in `ps` output or shell history:
+
+        printf '%s' "$PASSWORD" | flask init-production --admin-email admin@pinpoint.lan --password-stdin
+
+    Refuses to run if any user already exists, so re-running it during an
+    upgrade cannot add a second administrator. Exits non-zero on any failure.
+    """
+    if not password_stdin:
+        raise click.UsageError("--password-stdin is required.")
+
+    # Only strip the line ending a shell pipe adds; other whitespace is
+    # part of the password.
+    password = sys.stdin.read().rstrip("\r\n")
+    if len(password) < STRONG_MIN_PASSWORD_LENGTH:
+        raise click.ClickException(
+            f"Password must be at least {STRONG_MIN_PASSWORD_LENGTH} characters long."
+        )
+
+    try:
+        admin_email = validate_email(admin_email, check_deliverability=False).normalized
+    except EmailNotValidError as e:
+        raise click.ClickException(f"Invalid admin email: {e}")
+
+    user_count = db.session.scalar(sa.select(sa.func.count()).select_from(User))
+    if user_count:
+        raise click.ClickException(
+            f"Refusing to initialise: {user_count} user(s) already exist."
+        )
+
+    try:
+        seed_permissions()
+        seed_roles()
+        seed_system_settings()
+
+        role = get_role("Administrator")
+        if role is None:
+            raise RuntimeError("Administrator role was not created.")
+
+        admin = User(
+            First_Name=first_name,
+            Last_Name=last_name,
+            Email=admin_email,
+            RoleID=role.RoleID,
+            Status=UserStatus.ACTIVE,
+        )
+        admin.set_password(password)
+        db.session.add(admin)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        raise click.ClickException(f"Production init failed: {e}")
+
+    click.echo(f"Production database initialised with administrator {admin_email}")

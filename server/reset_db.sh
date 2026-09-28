@@ -1,11 +1,18 @@
 #!/bin/bash
+# Rebuild both development databases from the committed migrations and
+# fill them with development seed data (test users included).
+# Never run this on a production server — it deletes system.db and history.db.
 set -e
-cd /Users/karell/Documents/GitHub/Network-Diagnosis-System/server
-source venv/bin/activate
-export FLASK_APP=server.py
+cd "$(dirname "$0")"
+
+if [ -f .venv/bin/activate ]; then
+    source .venv/bin/activate
+elif [ -f ../.venv/bin/activate ]; then
+    source ../.venv/bin/activate
+fi
+
 echo "Using python: $(which python)"
-flask db init
-flask db migrate -m "initial"
+rm -f system.db history.db
 flask db upgrade
-flask seed --reset
+flask seed
 echo "DONE"

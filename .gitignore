@@ -196,3 +196,12 @@ sketch
 # Database files
 *.db
 
+
+# Runtime files created by the server (never commit these)
+server/cookies.txt*
+server/host-config-files/
+server/running-host-config-backup/
+server/plugin-service-config-files/
+server/running-plugin-service-config-backup/
+server/database-backups/
+.DS_Store
