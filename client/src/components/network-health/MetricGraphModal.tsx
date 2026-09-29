@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, X } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { TrendPoint } from '../../types/dashboard'
+import { formatBucketLabel } from '../../utils/formatBucketLabel'
 
 export type GraphSeriesConfig = {
   key: string
@@ -19,14 +20,6 @@ const HOURS_OPTIONS: { value: TrendHours; label: string }[] = [
   { value: 168, label: 'Last 7 days' },
 ]
 
-function formatBucketLabel(iso: string, hours: TrendHours) {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso
-  return hours === 168
-    ? d.toLocaleDateString(undefined, { weekday: 'short', hour: '2-digit' })
-    : d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-}
-
 export type MetricGraphModalProps = {
   title: string
   unit: string
@@ -41,6 +34,8 @@ export type MetricGraphModalProps = {
   /** False when the backing plugin (e.g. NCPA) isn't deployed/enabled. */
   isConfigured: boolean
   emptyMessage?: string
+  /** Extra content under the stats, e.g. per-host values. */
+  details?: ReactNode
   onClose: () => void
 }
 
@@ -55,6 +50,7 @@ export function MetricGraphModal({
   isLoading,
   isConfigured,
   emptyMessage,
+  details,
   onClose,
 }: MetricGraphModalProps) {
   const [showRangePicker, setShowRangePicker] = useState(false)
@@ -217,6 +213,8 @@ export function MetricGraphModal({
             ))}
           </div>
         </div>
+
+        {details && <div className="mt-5 border-t border-[var(--border)] pt-4">{details}</div>}
       </div>
     </div>
   )

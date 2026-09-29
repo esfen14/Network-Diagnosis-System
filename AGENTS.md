@@ -140,6 +140,16 @@ flask db init --multidb
 - `GET /system/network-health/trends` — time-bucketed perf charts
 - `GET /system/network-health/plugins` — service health by plugin type
 
+**Network Health cards (`api/system/network_health_activity.py`)**
+- `GET /system/network-health/availability` — daily host availability (archivejson.cgi)
+- `GET /system/network-health/system-activity` — check_procs / check_users counts
+- `GET /system/network-health/cpu` — per-host NCPA CPU % trend (host picker)
+- `GET /system/network-health/connections` — TCP sockets on the Nagios server (/proc/net/tcp)
+- `GET /system/network-health/insights` — generated plain-language observations
+- `GET /system/network-health/plugin-trends` — one widget's data per plugin added
+  through the Plugin Manager (`pinpoint_<plugin>` commands only; default-system
+  checks are excluded). Only time (s/ms/us) and % metrics are averaged across hosts.
+
 **Host Status Table (`api/system/network_hosts.py`)**
 - `GET /system/network-health/hosts` — paginated host table with filters
 - `GET /system/network-health/hosts/<hostname>/detail` — host detail panel

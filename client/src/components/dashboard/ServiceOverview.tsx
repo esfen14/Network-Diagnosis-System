@@ -1,5 +1,8 @@
+import { useEffect, useState } from 'react'
 import type { DashboardStatus, DashboardSummary } from '../../types/dashboard'
+import type { PluginGroup } from '../../types/networkHealth'
 import type { ServiceRow } from '../../types/service'
+import { formatTimeAgo } from '../../utils/formatDateTime'
 
 type StatusTone = 'green' | 'yellow' | 'red' | 'blue' | 'gray'
 
@@ -11,11 +14,25 @@ const toneStyles: Record<StatusTone, string> = {
   gray: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
 }
 
-function Row({ label, status, tone }: { label: string; status: string; tone: StatusTone }) {
+function Row({
+  label,
+  status,
+  tone,
+  title,
+  pulse = false,
+}: {
+  label: string
+  status: string
+  tone: StatusTone
+  title?: string
+  pulse?: boolean
+}) {
   return (
-    <div className="flex items-center justify-between rounded-xl px-2 py-2 hover:bg-[var(--hover)]">
+    <div title={title} className="flex items-center justify-between gap-2 rounded-xl px-2 py-2 hover:bg-[var(--hover)]">
       <span className="text-sm text-[var(--text)] truncate">{label}</span>
-      <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${toneStyles[tone]}`}>{status}</span>
+      <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${toneStyles[tone]} ${pulse ? 'animate-pulse' : ''}`}>
+        {status}
+      </span>
     </div>
   )
 }
@@ -37,45 +54,72 @@ function serviceTone(state: ServiceRow['state']): StatusTone {
   }
 }
 
-// Original placeholder content, kept as a fallback for when the backend
-// hasn't ingested any host/service data yet (a fresh environment with the
-// Nagios poller not yet reachable) — an all-zero real panel reads as
-// "broken", so show this illustrative version instead until there's
-// something real to report.
-type PlaceholderItem = { label: string; status: string; tone: StatusTone; isHeader?: boolean }
+// Pinpoint polls Nagios every 60 seconds (server/app/scheduler.py), so a
+// couple of missed polls is "stale" and several is "not updating".
+const STALE_AFTER_MS = 3 * 60_000
+const OUTDATED_AFTER_MS = 10 * 60_000
 
-const placeholderServices: PlaceholderItem[] = [
-  { label: 'System Status', status: 'Operational', tone: 'green' },
-  { label: 'Monitoring Coverage', status: '', tone: 'gray', isHeader: true },
-  { label: 'Network Devices', status: '321 Active', tone: 'blue' },
-  { label: 'NRPE Agents', status: '295/321 Active', tone: 'blue' },
-  { label: 'Network Health', status: '', tone: 'gray', isHeader: true },
-  { label: 'HTTP', status: 'Ok', tone: 'green' },
-  { label: 'DNS Server', status: 'Slow Response', tone: 'yellow' },
-  { label: 'DHCP Server', status: 'Down', tone: 'red' },
-  { label: 'Core Services', status: '', tone: 'gray', isHeader: true },
-  { label: 'Nagios', status: 'Running', tone: 'green' },
-  { label: 'Database', status: 'Healthy', tone: 'green' },
-  { label: 'API Health', status: 'Responsive', tone: 'blue' },
-  { label: 'Alerts & Notifications', status: '', tone: 'gray', isHeader: true },
-  { label: 'Email Notification', status: 'Embedded', tone: 'blue' },
-  { label: 'Alert Severity', status: 'Pending', tone: 'yellow' },
-  { label: 'IMAP/POP', status: 'Operational', tone: 'green' },
-  { label: 'Critical Alerts', status: '47 Alerts', tone: 'red' },
-  { label: 'Warning Alerts', status: '90 Warnings', tone: 'yellow' },
-  { label: 'Service Monitoring', status: '', tone: 'gray', isHeader: true },
-  { label: 'FTP', status: 'Running', tone: 'green' },
-]
+function freshnessTone(lastUpdate: Date | null, now: Date): StatusTone {
+  if (!lastUpdate) return 'red'
+  const age = now.getTime() - lastUpdate.getTime()
+  if (age >= OUTDATED_AFTER_MS) return 'red'
+  if (age >= STALE_AFTER_MS) return 'yellow'
+  return 'green'
+}
+
+// On/Off row for a Nagios program-wide switch. `offTone` is how bad "Off" is.
+function switchRow(label: string, enabled: boolean | null, offTone: StatusTone, offTitle: string) {
+  if (enabled == null) return <Row key={label} label={label} status="Unknown" tone="gray" />
+  return enabled
+    ? <Row key={label} label={label} status="On" tone="green" />
+    : <Row key={label} label={label} status="Off" tone={offTone} title={offTitle} />
+}
+
+const PLUGIN_STATE: Record<PluginGroup['worstState'], { tone: StatusTone; word: string }> = {
+  critical: { tone: 'red', word: 'Critical' },
+  warning: { tone: 'yellow', word: 'Warning' },
+  unknown: { tone: 'gray', word: 'Unknown' },
+  ok: { tone: 'green', word: 'OK' },
+}
+
+/** "3/3 OK", or the count in the worst state, e.g. "1 Critical". */
+function pluginStatus(group: PluginGroup) {
+  const { tone, word } = PLUGIN_STATE[group.worstState]
+  const count = group.worstState === 'ok' ? `${group.ok}/${group.total}` : String(group[group.worstState])
+  return { text: `${count} ${word}`, tone }
+}
 
 type ServiceOverviewProps = {
   status: DashboardStatus | null
   summary: DashboardSummary | null
   problemServices: ServiceRow[]
+  // GET /network-health/plugins; null when it could not be loaded.
+  pluginGroups: PluginGroup[] | null
   isLoading: boolean
 }
 
-export function ServiceOverview({ status, summary, problemServices, isLoading }: ServiceOverviewProps) {
+export function ServiceOverview({ status, summary, problemServices, pluginGroups, isLoading }: ServiceOverviewProps) {
   const hasRealData = (summary?.hosts.total ?? 0) > 0 || (summary?.services.total ?? 0) > 0
+
+  // Keeps "20s ago" and the freshness colour current between refreshes.
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 15_000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  const nagios = status?.nagios
+  const lastUpdate = nagios?.lastStatusUpdate ? new Date(nagios.lastStatusUpdate) : null
+
+  const hosts = summary?.hosts
+  const services = summary?.services
+  const attention = [
+    { label: 'Unknown Services', count: services?.unknown ?? 0, tone: 'gray' as StatusTone },
+    { label: 'Flapping Hosts', count: hosts?.flapping ?? 0, tone: 'yellow' as StatusTone, pulse: true },
+    { label: 'Flapping Services', count: services?.flapping ?? 0, tone: 'yellow' as StatusTone, pulse: true },
+    { label: 'Hosts in Downtime', count: hosts?.inDowntime ?? 0, tone: 'blue' as StatusTone },
+    { label: 'Services in Downtime', count: services?.inDowntime ?? 0, tone: 'blue' as StatusTone },
+  ]
 
   return (
     <aside className="hidden w-72 shrink-0 border-l border-[var(--border)] xl:block">
@@ -84,55 +128,81 @@ export function ServiceOverview({ status, summary, problemServices, isLoading }:
 
         {isLoading ? (
           <p className="text-sm text-[var(--text-muted)]">Loading…</p>
-        ) : !hasRealData ? (
-          <div className="space-y-1">
-            <p className="mb-2 rounded-lg bg-[var(--card-alt)] px-2 py-2 text-xs text-[var(--text-muted)]">
-              No monitoring data yet — showing a preview of what this panel looks like once data comes in.
-            </p>
-            {placeholderServices.map((item) =>
-              item.isHeader ? (
-                <SectionHeader key={item.label} label={item.label} />
-              ) : (
-                <Row key={item.label} label={item.label} status={item.status} tone={item.tone} />
-              )
-            )}
-          </div>
         ) : (
           <div className="space-y-1">
             <SectionHeader label="Monitoring System" />
             <Row
-              label="Nagios"
-              status={status?.nagios.running ? 'Running' : 'Not Running'}
-              tone={status?.nagios.running ? 'green' : 'red'}
+              label={nagios?.version ? `Nagios ${nagios.version}` : 'Nagios'}
+              status={nagios?.running ? 'Running' : 'Not Running'}
+              tone={nagios?.running ? 'green' : 'red'}
             />
-
-            <SectionHeader label="Hosts" />
-            <Row label="Total Hosts" status={String(summary?.hosts.total ?? 0)} tone="blue" />
-            <Row label="Up" status={String(summary?.hosts.up ?? 0)} tone="green" />
             <Row
-              label="Down / Unreachable"
-              status={String((summary?.hosts.down ?? 0) + (summary?.hosts.unreachable ?? 0))}
-              tone={(summary?.hosts.down ?? 0) + (summary?.hosts.unreachable ?? 0) > 0 ? 'red' : 'gray'}
+              label="Data Updated"
+              status={lastUpdate ? formatTimeAgo(lastUpdate, now) : 'Never'}
+              tone={freshnessTone(lastUpdate, now)}
+              title={
+                lastUpdate
+                  ? `Pinpoint last read status from Nagios at ${lastUpdate.toLocaleString()}`
+                  : 'Pinpoint has not read status from Nagios yet'
+              }
             />
+            {switchRow('Host Checks', nagios?.activeHostChecks ?? null, 'red', 'Nagios is not checking hosts — their states will not change.')}
+            {switchRow('Service Checks', nagios?.activeServiceChecks ?? null, 'red', 'Nagios is not checking services — their states will not change.')}
+            {switchRow('Notifications', nagios?.notificationsEnabled ?? null, 'red', 'Nagios will not send any alerts.')}
+            {switchRow('Flap Detection', nagios?.flapDetectionEnabled ?? null, 'yellow', 'Hosts and services that keep changing state will not be flagged.')}
 
-            <SectionHeader label="Services" />
-            <Row label="Total Services" status={String(summary?.services.total ?? 0)} tone="blue" />
-            <Row label="OK" status={String(summary?.services.ok ?? 0)} tone="green" />
-            <Row label="Warning" status={String(summary?.services.warning ?? 0)} tone="yellow" />
-            <Row label="Critical" status={String(summary?.services.critical ?? 0)} tone="red" />
-
-            <SectionHeader label="Services Needing Attention" />
-            {problemServices.length === 0 ? (
-              <p className="px-2 py-2 text-sm text-[var(--text-muted)]">All services OK</p>
+            {!hasRealData ? (
+              <p className="mt-3 rounded-lg bg-[var(--card-alt)] px-2 py-2 text-xs text-[var(--text-muted)]">
+                No hosts or services have been reported yet. Waiting for the first Nagios poll.
+              </p>
             ) : (
-              problemServices.map((svc) => (
-                <Row
-                  key={`${svc.hostname}-${svc.service}`}
-                  label={`${svc.hostname} / ${svc.service}`}
-                  status={svc.state}
-                  tone={serviceTone(svc.state)}
-                />
-              ))
+              <>
+                <SectionHeader label="Needs Attention" />
+                {attention.map(({ label, count, tone, pulse }) => (
+                  <Row
+                    key={label}
+                    label={label}
+                    status={String(count)}
+                    tone={count > 0 ? tone : 'gray'}
+                    pulse={Boolean(pulse) && count > 0}
+                  />
+                ))}
+
+                <SectionHeader label="Services by Type" />
+                {pluginGroups == null ? (
+                  <p className="px-2 py-2 text-sm text-[var(--text-muted)]">Unavailable</p>
+                ) : pluginGroups.length === 0 ? (
+                  <p className="px-2 py-2 text-sm text-[var(--text-muted)]">No services monitored yet</p>
+                ) : (
+                  pluginGroups.map((group) => {
+                    const { text, tone } = pluginStatus(group)
+                    return (
+                      <Row
+                        key={group.displayName}
+                        label={group.displayName}
+                        status={text}
+                        tone={tone}
+                        title={`${group.ok} OK · ${group.warning} warning · ${group.critical} critical · ${group.unknown} unknown`}
+                      />
+                    )
+                  })
+                )}
+
+                <SectionHeader label="Services Needing Attention" />
+                {problemServices.length === 0 ? (
+                  <p className="px-2 py-2 text-sm text-[var(--text-muted)]">All services OK</p>
+                ) : (
+                  problemServices.map((svc) => (
+                    <Row
+                      key={`${svc.hostname}-${svc.service}`}
+                      label={`${svc.hostname} / ${svc.service}`}
+                      status={svc.state}
+                      tone={serviceTone(svc.state)}
+                      title={svc.pluginOutput}
+                    />
+                  ))
+                )}
+              </>
             )}
           </div>
         )}

@@ -108,6 +108,8 @@ export type DashboardStatus = {
     lastStatusUpdate: string | null
     activeHostChecks: boolean | null
     activeServiceChecks: boolean | null
+    notificationsEnabled: boolean | null
+    flapDetectionEnabled: boolean | null
   }
 }
 
@@ -118,6 +120,8 @@ type DashboardStatusApiResponse = {
     last_status_update: string | null
     active_host_checks: boolean | null
     active_service_checks: boolean | null
+    notifications_enabled?: boolean | null
+    enable_flap_detection?: boolean | null
   }
 }
 
@@ -129,6 +133,8 @@ export function fromDashboardStatusResponse(data: DashboardStatusApiResponse): D
       lastStatusUpdate: data.nagios.last_status_update,
       activeHostChecks: data.nagios.active_host_checks,
       activeServiceChecks: data.nagios.active_service_checks,
+      notificationsEnabled: data.nagios.notifications_enabled ?? null,
+      flapDetectionEnabled: data.nagios.enable_flap_detection ?? null,
     },
   }
 }
@@ -195,14 +201,20 @@ function fromTrendPoints(records: TrendPointRecord[]): TrendPoint[] {
 export type TrendsResponse = {
   ping: { configured: boolean; rta: TrendPoint[]; packetLoss: TrendPoint[] }
   ncpa: { cpu: TrendPoint[]; disk: TrendPoint[]; memory: TrendPoint[] } | null
+  // Nagios server's own check_load (load1/5/15). configured=false when absent.
+  nagiosCpuLoad: { configured: boolean; load1: TrendPoint[]; load5: TrendPoint[]; load15: TrendPoint[] }
 }
 
 type TrendsApiResponse = {
   ping: { configured: boolean; rta: TrendPointRecord[]; packet_loss: TrendPointRecord[] }
   ncpa: { cpu: TrendPointRecord[]; disk: TrendPointRecord[]; memory: TrendPointRecord[] } | null
+  nagios_server?: {
+    cpu_load?: { configured: boolean; load1: TrendPointRecord[]; load5: TrendPointRecord[]; load15: TrendPointRecord[] }
+  }
 }
 
 export function fromTrendsResponse(data: TrendsApiResponse): TrendsResponse {
+  const cpuLoad = data.nagios_server?.cpu_load
   return {
     ping: {
       configured: data.ping.configured,
@@ -216,5 +228,11 @@ export function fromTrendsResponse(data: TrendsApiResponse): TrendsResponse {
           memory: fromTrendPoints(data.ncpa.memory),
         }
       : null,
+    nagiosCpuLoad: {
+      configured: cpuLoad?.configured ?? false,
+      load1: fromTrendPoints(cpuLoad?.load1 ?? []),
+      load5: fromTrendPoints(cpuLoad?.load5 ?? []),
+      load15: fromTrendPoints(cpuLoad?.load15 ?? []),
+    },
   }
 }

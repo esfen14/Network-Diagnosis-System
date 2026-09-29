@@ -24,10 +24,11 @@ def insert_programstatus_data(data):
             Enable_Flap_Detection=data.get('enable_flap_detection'),
             Daemon_Mode=data.get('daemon_mode'),
             Program_Start_Time=convert_to_UTC(data.get('program_start')),
-            Passive_Host_Checks_Enabled=data.get('passive_host_checks_enabled'),
-            Active_Host_Checks_Enabled=data.get('active_host_checks_enabled'),
-            Passive_Service_Checks_Enabled=data.get('passive_service_checks_enabled'),
-            Active_Service_Checks_Enabled=data.get('active_service_checks_enabled'),
+            # statusjson.cgi names these execute_*_checks / accept_passive_*_checks.
+            Passive_Host_Checks_Enabled=data.get('accept_passive_host_checks'),
+            Active_Host_Checks_Enabled=data.get('execute_host_checks'),
+            Passive_Service_Checks_Enabled=data.get('accept_passive_service_checks'),
+            Active_Service_Checks_Enabled=data.get('execute_service_checks'),
         )
         db.session.add(program_status)
         db.session.commit()

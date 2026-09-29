@@ -156,6 +156,14 @@ class TestDashboardStatus:
         assert resources["disk"]["configured"] is True
         assert len(resources["disk"]["mounts"]) >= 1
 
+    def test_timestamps_include_utc_offset(self, logged_in_client, db_session):
+        # SQLite returns naive datetimes; without an offset the browser
+        # would read them as local time.
+        _make_program_status(db_session)
+        db_session.session.commit()
+        nagios = logged_in_client.get("/api/system/dashboard/status").get_json()["data"]["nagios"]
+        assert nagios["last_status_update"].endswith("+00:00")
+
     def test_response_shape(self, logged_in_client, db_session):
         resp = logged_in_client.get("/api/system/dashboard/status")
         data = resp.get_json()["data"]

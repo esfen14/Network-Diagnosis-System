@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { MonitorOff, MonitorSmartphone, RefreshCw, Timer, WifiOff } from 'lucide-react'
 import { ActiveConnectionsCard } from '../components/network-health/ActiveConnectionsCard'
+import { AddedPluginsSection } from '../components/network-health/AddedPluginsSection'
 import { CpuLoadChart } from '../components/network-health/CpuLoadChart'
 import { CpuUtilizationChart } from '../components/network-health/CpuUtilizationChart'
 import { DeviceCountCard } from '../components/network-health/DeviceCountCard'
@@ -13,13 +14,29 @@ import { SparklineMetricCard } from '../components/network-health/SparklineMetri
 import { SystemActivityCard } from '../components/network-health/SystemActivityCard'
 import { TrendStatCard } from '../components/network-health/TrendStatCard'
 import { PageHeader } from '../components/shared/PageHeader'
-import { RescanModal } from '../components/shared/RescanModal'
 import { useCurrentUser } from '../contexts/CurrentUserContext'
 import { useSystemSettings } from '../contexts/SystemSettingsContext'
 import { useNetworkRescan } from '../hooks/useNetworkRescan'
 import { apiGet, errorMessage } from '../lib/api'
 import { fromTrendsResponse, type TrendPoint, type TrendsResponse } from '../types/dashboard'
-import { fromNetworkHealthSummaryResponse, type NetworkHealthSummary } from '../types/networkHealth'
+import {
+  fromConnectionsResponse,
+  fromHostAvailabilityResponse,
+  fromHostCpuResponse,
+  fromInsightsResponse,
+  fromNetworkHealthSummaryResponse,
+  fromPluginTrendsResponse,
+  fromPluginsResponse,
+  fromSystemActivityResponse,
+  type ConnectionCounts,
+  type HostAvailability,
+  type HostCpu,
+  type AddedPlugin,
+  type Insight,
+  type NetworkHealthSummary,
+  type PluginsApiResponse,
+  type SystemActivity,
+} from '../types/networkHealth'
 import { formatDate, formatTime, formatTimeAgo } from '../utils/formatDateTime'
 
 type MetricKey = 'latency' | 'bandwidth' | 'packetLoss' | 'avgResponseTime' | 'avgResource'
@@ -52,6 +69,18 @@ function changeLabel(changePct: number | null): { text: string; type: 'positive'
     : { text: `+${rounded}%`, type: 'negative' }
 }
 
+// One independently loaded card: its data, or why it could not load.
+type Widget<T> = { data: T | null; error: string | null }
+
+const EMPTY_WIDGET = { data: null, error: null }
+
+/** Store one widget's result (or its error) as soon as its request settles. */
+function loadWidget<T>(request: Promise<T>, setWidget: (widget: Widget<T>) => void, fallback: string) {
+  request
+    .then((data) => setWidget({ data, error: null }))
+    .catch((err) => setWidget({ data: null, error: errorMessage(err, fallback) }))
+}
+
 // How often to re-check while a scan (possibly started by someone else) runs.
 const RUNNING_SCAN_POLL_MS = 15_000
 
@@ -61,19 +90,65 @@ export function NetworkHealthPage() {
   const [trendHours, setTrendHours] = useState<TrendHours>(24)
   const [summary, setSummary] = useState<NetworkHealthSummary | null>(null)
   const [trends, setTrends] = useState<TrendsResponse | null>(null)
+  const [supportedChecks, setSupportedChecks] = useState<string[] | null>(null)
+  const [availability, setAvailability] = useState<Widget<HostAvailability>>(EMPTY_WIDGET)
+  const [activity, setActivity] = useState<Widget<SystemActivity>>(EMPTY_WIDGET)
+  const [connections, setConnections] = useState<Widget<ConnectionCounts>>(EMPTY_WIDGET)
+  const [insights, setInsights] = useState<Widget<Insight[]>>(EMPTY_WIDGET)
+  const [addedPlugins, setAddedPlugins] = useState<Widget<AddedPlugin[]>>(EMPTY_WIDGET)
+  const [hostCpu, setHostCpu] = useState<Widget<HostCpu>>(EMPTY_WIDGET)
+  // null = let the server pick (the Nagios server, else the first NCPA host).
+  const [cpuHost, setCpuHost] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     setIsLoading(true)
     setLoadError(null)
+
+    // Cards that each have their own backend load independently: one slow
+    // or failing request (e.g. availability waiting on Nagios' archive CGI)
+    // must not hold back or blank the others.
+    loadWidget(
+      apiGet<Parameters<typeof fromHostAvailabilityResponse>[0]>('/api/system/network-health/availability?days=7')
+        .then(fromHostAvailabilityResponse),
+      setAvailability,
+      'Unable to load availability from Nagios.',
+    )
+    loadWidget(
+      apiGet<Parameters<typeof fromSystemActivityResponse>[0]>('/api/system/network-health/system-activity')
+        .then(fromSystemActivityResponse),
+      setActivity,
+      'Unable to load system activity.',
+    )
+    loadWidget(
+      apiGet<Parameters<typeof fromConnectionsResponse>[0]>('/api/system/network-health/connections')
+        .then(fromConnectionsResponse),
+      setConnections,
+      'Unable to load connections.',
+    )
+    loadWidget(
+      apiGet<Parameters<typeof fromInsightsResponse>[0]>('/api/system/network-health/insights')
+        .then(fromInsightsResponse),
+      setInsights,
+      'Unable to load insights.',
+    )
+    loadWidget(
+      apiGet<Parameters<typeof fromPluginTrendsResponse>[0]>(`/api/system/network-health/plugin-trends?hours=${trendHours}&buckets=24`)
+        .then(fromPluginTrendsResponse),
+      setAddedPlugins,
+      'Unable to load added plugins.',
+    )
+
     try {
-      const [summaryData, trendsData] = await Promise.all([
+      const [summaryData, trendsData, pluginsData] = await Promise.all([
         apiGet<Parameters<typeof fromNetworkHealthSummaryResponse>[0]>('/api/system/network-health/summary'),
         apiGet<Parameters<typeof fromTrendsResponse>[0]>(`/api/system/network-health/trends?hours=${trendHours}&buckets=24`),
+        apiGet<PluginsApiResponse | null>('/api/system/network-health/plugins'),
       ])
       setSummary(fromNetworkHealthSummaryResponse(summaryData))
       setTrends(fromTrendsResponse(trendsData))
+      setSupportedChecks(pluginsData ? fromPluginsResponse(pluginsData).map((g) => g.displayName) : [])
     } catch (err) {
       setLoadError(errorMessage(err, 'Unable to load network health data.'))
     } finally {
@@ -84,6 +159,23 @@ export function NetworkHealthPage() {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  // CPU chart follows the page's time range and its own host picker.
+  useEffect(() => {
+    let cancelled = false
+    const params = new URLSearchParams({ hours: String(trendHours), buckets: '24' })
+    if (cpuHost) params.set('hostname', cpuHost)
+    apiGet<Parameters<typeof fromHostCpuResponse>[0]>(`/api/system/network-health/cpu?${params}`)
+      .then((data) => {
+        if (!cancelled) setHostCpu({ data: fromHostCpuResponse(data), error: null })
+      })
+      .catch((err) => {
+        if (!cancelled) setHostCpu({ data: null, error: errorMessage(err, 'Unable to load CPU utilization.') })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [trendHours, cpuHost])
 
   // "Last Scan" comes from the server (the latest successful network
   // discovery), so every user sees the same time. Running a scan needs the
@@ -117,6 +209,7 @@ export function NetworkHealthPage() {
 
   const lastScanAt = summary?.lastScan.completedAt ?? null
   const isScanning = scanRunning || rescan.state === 'scanning'
+  const startScan = canRescan && !isScanning ? rescan.start : undefined
   const lastScanText = isScanning
     ? 'Scanning…'
     : lastScanAt ? formatTimeAgo(lastScanAt, now) : summary ? 'Never' : '—'
@@ -204,7 +297,7 @@ export function NetworkHealthPage() {
             <div className="flex w-full shrink-0 justify-center pt-2 sm:w-72">
               <button
                 type="button"
-                onClick={rescan.open}
+                onClick={startScan}
                 disabled={!canRescan || isScanning}
                 title={canRescan ? undefined : "Your role can't run network scans"}
                 className="flex items-center gap-2 rounded-3xl bg-[#F4A90B] px-4 py-2 text-sm font-medium text-white shadow-md transition hover:opacity-90 active:scale-[0.99] cursor-pointer disabled:cursor-default disabled:hover:opacity-100 disabled:active:scale-100"
@@ -215,6 +308,15 @@ export function NetworkHealthPage() {
             </div>
           </div>
         </div>
+
+        {rescan.errorText && (
+          <div role="alert" className="mt-4 flex items-start justify-between gap-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
+            <span>Network rescan failed: {rescan.errorText}</span>
+            <button type="button" onClick={rescan.dismissError} className="shrink-0 font-medium underline">
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {loadError && (
           <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
@@ -229,7 +331,7 @@ export function NetworkHealthPage() {
                 <NetworkInfoCard
                   lastScanTime={lastScanTime}
                   lastScanDate={lastScanDate}
-                  onStartScan={canRescan && !isScanning ? rescan.open : undefined}
+                  onStartScan={startScan}
                 />
                 <div className="flex-1">
                   <ResourceUsageCard
@@ -258,14 +360,30 @@ export function NetworkHealthPage() {
                   />
                 </div>
 
-                <HostAvailabilityCard />
-                <SystemActivityCard />
+                <HostAvailabilityCard data={availability.data} error={availability.error} />
+                <SystemActivityCard data={activity.data} error={activity.error} />
               </div>
             </div>
 
             <div className="space-y-4">
-              <CpuUtilizationChart />
-              <CpuLoadChart />
+              <CpuUtilizationChart
+                data={hostCpu.data}
+                error={hostCpu.error}
+                hours={trendHours}
+                onHostChange={setCpuHost}
+              />
+              <CpuLoadChart
+                load={trends?.nagiosCpuLoad ?? { configured: false, load1: [], load5: [], load15: [] }}
+                hours={trendHours}
+                isLoading={isLoading}
+              />
+              <AddedPluginsSection
+                plugins={addedPlugins.data}
+                error={addedPlugins.error}
+                hours={trendHours}
+                onHoursChange={setTrendHours}
+                isLoading={isLoading}
+              />
             </div>
           </div>
 
@@ -311,21 +429,18 @@ export function NetworkHealthPage() {
                 onClick={() => setOpenMetric('avgResponseTime')}
               />
 
-              <ActiveConnectionsCard />
+              <ActiveConnectionsCard data={connections.data} error={connections.error} />
             </div>
 
-            <InsightsPanel />
+            <InsightsPanel
+              insights={insights.data}
+              insightsError={insights.error}
+              supportedChecks={supportedChecks}
+              now={now}
+            />
           </div>
         </div>
       </div>
-
-      <RescanModal
-        state={rescan.state}
-        progress={rescan.progress}
-        errorText={rescan.errorText}
-        onConfirm={rescan.confirm}
-        onClose={rescan.close}
-      />
 
       {openMetric && (
         <MetricGraphModal
