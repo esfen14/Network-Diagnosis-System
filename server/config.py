@@ -3,8 +3,22 @@ from pathlib import Path
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
+
+def env_list(name, default):
+    """
+    Read a comma-separated environment variable into a list of stripped,
+    non-empty strings. Returns default when the variable is unset or empty.
+    """
+    value = os.environ.get(name)
+    if not value:
+        return default
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY') or "1VMBzjR2m/0kF7eqw5d5zy_Gk<j-M5<Ga4C^d"
+    # No fallback: a secret committed to source lets anyone forge sessions.
+    # app/__init__.py refuses to start without it outside debug mode.
+    SECRET_KEY = os.environ.get('SECRET_KEY')
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
         'sqlite:///' + os.path.join(basedir, 'system.db')
     SQLALCHEMY_BINDS = {
@@ -25,7 +39,8 @@ class Config:
     # What networks/ports network_discovery.py scans with nmap.
     # NOTE: localhost should never be added here — scanning it can crash
     # or hang the discovery process.
-    NETWORKS = ["192.168.130.0/24"]
+    # Override with PINPOINT_NETWORKS, e.g. "192.168.50.0/24,10.0.0.0/24".
+    NETWORKS = env_list('PINPOINT_NETWORKS', ["192.168.130.0/24"])
     TCP_PORTS = ["1-6000"]
     UDP_PORTS = [53, 67, 68, 69, 123, 161, 162, 514]
 
@@ -47,7 +62,7 @@ class Config:
 
     # Default hostname suffix given to discovered hosts: <ip>.<DOMAIN>
     # e.g. 192.168.130.10.test.local
-    DOMAIN = "test.local"
+    DOMAIN = os.environ.get('PINPOINT_DOMAIN') or "test.local"
     NCPA_PORT = "5693"
 
     # SNMP polling defaults, used when a discovered host exposes SNMP
@@ -102,14 +117,27 @@ class Config:
     NAGIOS_BIN = Path(os.environ.get('NAGIOS_BIN') or "/usr/local/nagios/bin/nagios")
     NAGIOS_MAIN_CFG = Path(os.environ.get('NAGIOS_MAIN_CFG') or "/usr/local/nagios/etc/nagios.cfg")
 
-    # Nagios web/API host, used to build the status, archive and object
-    # JSON CGI endpoints. Override via env if Nagios runs elsewhere (e.g. Docker).
-    NAGIOS_HOST = os.environ.get('NAGIOS_HOST') or "192.168.130.10"
-    NAGIOS_STATUS_URL = f"http://{NAGIOS_HOST}/nagios/cgi-bin/statusjson.cgi"
-    NAGIOS_ARCHIVE_URL = f"http://{NAGIOS_HOST}/nagios/cgi-bin/archivejson.cgi"
-    NAGIOS_OBJECT_URL = f"http://{NAGIOS_HOST}/nagios/cgi-bin/objectjson.cgi"
-    NAGIOS_USERNAME = os.environ.get('NAGIOS_USERNAME') or "nagiosadmin"
-    NAGIOS_PASSWORD = os.environ.get('NAGIOS_PASSWORD') or "password"
+    # Nagios web/API host and port, used to build the status, archive and
+    # object JSON CGI endpoints. Override via env if Nagios runs elsewhere
+    # (e.g. Docker, or the installer's 127.0.0.1:8081).
+    NAGIOS_HOST = os.environ.get('NAGIOS_HOST') or "127.0.0.1"
+    NAGIOS_PORT = os.environ.get('NAGIOS_PORT') or "80"
+
+    # Older installs pack the port into NAGIOS_HOST ("127.0.0.1:8081").
+    # Keep accepting that form so they don't end up with "host:8081:8081".
+    if ":" in NAGIOS_HOST:
+        NAGIOS_BASE_URL = f"http://{NAGIOS_HOST}"
+    else:
+        NAGIOS_BASE_URL = f"http://{NAGIOS_HOST}:{NAGIOS_PORT}"
+
+    NAGIOS_STATUS_URL = f"{NAGIOS_BASE_URL}/nagios/cgi-bin/statusjson.cgi"
+    NAGIOS_ARCHIVE_URL = f"{NAGIOS_BASE_URL}/nagios/cgi-bin/archivejson.cgi"
+    NAGIOS_OBJECT_URL = f"{NAGIOS_BASE_URL}/nagios/cgi-bin/objectjson.cgi"
+
+    # No defaults: set these per server (the installer creates a dedicated
+    # Nagios API account). For local development put them in server/.env.
+    NAGIOS_USERNAME = os.environ.get('NAGIOS_USERNAME')
+    NAGIOS_PASSWORD = os.environ.get('NAGIOS_PASSWORD')
 
     """
     |------------------------------------------------------------------

@@ -17,12 +17,14 @@ from app.nagios.status import (
     get_check_commands,
     get_status,
     insert_host_status_data,
+    insert_programstatus_data,
     insert_service_status_data,
 )
 from app.history_models import (
     HostPerfData,
     HostStatus,
     HostStateType,
+    ProgramStatus,
     ServicePerfData,
     ServiceStatus,
     ServiceStateType,
@@ -135,6 +137,33 @@ class TestServiceStatusParsing:
 # ==========================================================
 # HOST STATUS
 # ==========================================================
+
+class TestProgramStatusParsing:
+    # Field names as a live Nagios 4.5 statusjson.cgi programstatus returns them.
+    PAYLOAD = {
+        "version": "4.5.11",
+        "nagios_pid": 175347,
+        "daemon_mode": True,
+        "program_start": 1790491216000,
+        "enable_notifications": False,
+        "execute_service_checks": True,
+        "accept_passive_service_checks": False,
+        "execute_host_checks": True,
+        "accept_passive_host_checks": True,
+        "enable_flap_detection": True,
+    }
+
+    def test_check_switches_use_statusjson_names(self, db_session):
+        insert_programstatus_data(self.PAYLOAD)
+
+        row = db_session.session.scalar(sa.select(ProgramStatus))
+        assert row.Active_Host_Checks_Enabled is True
+        assert row.Active_Service_Checks_Enabled is True
+        assert row.Passive_Host_Checks_Enabled is True
+        assert row.Passive_Service_Checks_Enabled is False
+        assert row.Enable_Notifications is False
+        assert row.Enable_Flap_Detection is True
+
 
 class TestHostStatusParsing:
 

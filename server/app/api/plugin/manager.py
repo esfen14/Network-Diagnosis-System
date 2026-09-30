@@ -12,6 +12,9 @@ GET  /plugin/<id>            - Single plugin's full details (Phase 3)
 GET  /plugin/history         - Global plugin history, optional ?plugin_id= (Phase 3)
 GET  /plugin/<id>/commands   - A plugin's commands + active overrides (Phase 3)
 GET  /plugin/<id>/dependencies - A plugin's dependencies (Phase 3)
+GET  /plugin/targets         - Devices a plugin can be applied to
+POST /plugin/custom          - Upload and register a custom plugin
+                               (Phase 8, currently disabled — commented out)
 
 The scan routes (Phase 2) match app/api/system/network_discovery.py's
 background-thread + status-polling pattern. The Phase 3 read routes
@@ -900,123 +903,127 @@ def validate_plugin_route(plugin_id):
 # CUSTOM PLUGINS (Phase 8)
 # ==========================================================
 
-@plugin_bp.post('/custom')
-@login_required
-@require_permission('plugin.custom_add')
-def register_custom_plugin_route():
-    """
-    Upload and register a custom plugin (UI Flow Sections 9-11: Add
-    Custom Plugin -> Custom Plugin Validation -> Custom Plugin
-    Registered), in one atomic request.
+# Adding custom plugins is not part of the current release. The route is
+# kept commented out (not deleted) so it can be restored later; the
+# service/custom_plugin.py logic behind it is left in place.
 
-    Confirmed design: unlike the UI mockup's two separate buttons
-    ([Validate Plugin] then [Register Plugin]), this is a single
-    endpoint — no server-side staging state is kept across requests.
-    On validation failure, nothing is persisted; the response still
-    returns the full 7-check structured results either way.
-
-    **Inputs:** multipart/form-data (NOT JSON — this is a file upload)
-
-    - ``file`` (required): the plugin executable.
-    - ``name`` (required): becomes Plugin.Name (must be unique) and
-      the installed filename.
-    - ``version`` (optional): defaults to "1.0.0" if omitted.
-    - ``description``, ``author`` (optional).
-    - ``plugin_type`` (optional, default "Nagios"): "Nagios" or "Custom".
-    - ``command_name`` (required).
-    - ``command_definition`` (required): validated by command_validator.py.
-    - ``dependencies`` (optional): a JSON-encoded string, e.g.
-      ``[{"name": "net-snmp", "type": "Package"}]``. Each ``type``
-      must be a real DependencyType value.
-
-    **Returns (JSON via success())**
-
-    .. code-block:: json
-
-        {
-            "success": true,
-            "data": {
-                "success": true,
-                "checks": [
-                    {"name": "Plugin file detected", "passed": true, "message": "..."},
-                    {"name": "Executable permission", "passed": true, "message": "..."},
-                    {"name": "Plugin execution test", "passed": true, "message": "..."},
-                    {"name": "Command definition detected", "passed": true, "message": "..."},
-                    {"name": "Metadata valid", "passed": true, "message": "..."},
-                    {"name": "Dependency check", "passed": true, "message": "..."},
-                    {"name": "Nagios compatibility", "passed": true, "message": "..."}
-                ],
-                "plugin": {"id": 9, "name": "check_company", "status": "Ready", "...": "..."},
-                "message": "Custom plugin 'check_company' registered successfully."
-            }
-        }
-
-        On validation failure, "plugin" is null and "success" is false
-        — this is still a 200 response, not an error, since the
-        request itself was valid; the SUBMITTED PLUGIN failed
-        validation. Matches UI Flow's "Plugin Validation Failed" screen
-        being a normal outcome, not a server error. Confirmed against
-        client/src/types/plugin.ts (integration branch)'s
-        CustomPluginUploadResult / CustomPluginCheckResult — this
-        shape (success/checks-as-array/message) is deliberately
-        different from validate_custom_plugin_submission()'s internal
-        shape (is_valid/checks-as-dict) to match that contract exactly.
-
-    **Errors**
-
-    * ``400`` - no file provided, invalid filename, file too large,
-      invalid plugin_type, malformed dependencies JSON, or an invalid
-      dependency type within it.
-    * ``409`` - a plugin with that name already exists, or a file with
-      that name already exists in the Nagios plugin directory.
-    * ``500`` - unexpected internal error (logged with traceback).
-    """
-    try:
-        if "file" not in request.files or request.files["file"].filename == "":
-            return error("No file provided.", 400)
-
-        name = request.form.get("name", "").strip()
-        version = request.form.get("version", "").strip() or None
-        description = request.form.get("description", "").strip() or None
-        author = request.form.get("author", "").strip() or None
-        plugin_type = request.form.get("plugin_type", "Nagios").strip()
-        command_name = request.form.get("command_name", "").strip()
-        command_definition = request.form.get("command_definition", "").strip()
-
-        dependencies_raw = request.form.get("dependencies", "")
-        dependencies = []
-        if dependencies_raw:
-            try:
-                dependencies = json.loads(dependencies_raw)
-                if not isinstance(dependencies, list):
-                    raise ValueError
-            except (json.JSONDecodeError, ValueError):
-                return error("'dependencies' must be a JSON array.", 400)
-
-        data = service.register_custom_plugin(
-            file_storage=request.files["file"],
-            name=name, version=version, description=description, author=author,
-            plugin_type=plugin_type, command_name=command_name,
-            command_definition=command_definition, dependencies=dependencies,
-            user_id=current_user.UserID,
-        )
-        return success(data)
-
-    except service.InvalidFilenameError as e:
-        return error(e.message, 400)
-    except service.UploadTooLargeError as e:
-        return error(e.message, 400)
-    except ValueError as e:
-        return error(str(e), 400)
-    except service.NameCollisionError as e:
-        return error(e.message, 409)
-    except service.PluginNameTakenError as e:
-        return error(e.message, 409)
-    except Exception:
-        current_app.logger.exception(
-            "An unexpected error occurred while registering the custom plugin."
-        )
-        return error("An unexpected error occurred.", 500)
+# @plugin_bp.post('/custom')
+# @login_required
+# @require_permission('plugin.custom_add')
+# def register_custom_plugin_route():
+#     """
+#     Upload and register a custom plugin (UI Flow Sections 9-11: Add
+#     Custom Plugin -> Custom Plugin Validation -> Custom Plugin
+#     Registered), in one atomic request.
+#
+#     Confirmed design: unlike the UI mockup's two separate buttons
+#     ([Validate Plugin] then [Register Plugin]), this is a single
+#     endpoint — no server-side staging state is kept across requests.
+#     On validation failure, nothing is persisted; the response still
+#     returns the full 7-check structured results either way.
+#
+#     **Inputs:** multipart/form-data (NOT JSON — this is a file upload)
+#
+#     - ``file`` (required): the plugin executable.
+#     - ``name`` (required): becomes Plugin.Name (must be unique) and
+#       the installed filename.
+#     - ``version`` (optional): defaults to "1.0.0" if omitted.
+#     - ``description``, ``author`` (optional).
+#     - ``plugin_type`` (optional, default "Nagios"): "Nagios" or "Custom".
+#     - ``command_name`` (required).
+#     - ``command_definition`` (required): validated by command_validator.py.
+#     - ``dependencies`` (optional): a JSON-encoded string, e.g.
+#       ``[{"name": "net-snmp", "type": "Package"}]``. Each ``type``
+#       must be a real DependencyType value.
+#
+#     **Returns (JSON via success())**
+#
+#     .. code-block:: json
+#
+#         {
+#             "success": true,
+#             "data": {
+#                 "success": true,
+#                 "checks": [
+#                     {"name": "Plugin file detected", "passed": true, "message": "..."},
+#                     {"name": "Executable permission", "passed": true, "message": "..."},
+#                     {"name": "Plugin execution test", "passed": true, "message": "..."},
+#                     {"name": "Command definition detected", "passed": true, "message": "..."},
+#                     {"name": "Metadata valid", "passed": true, "message": "..."},
+#                     {"name": "Dependency check", "passed": true, "message": "..."},
+#                     {"name": "Nagios compatibility", "passed": true, "message": "..."}
+#                 ],
+#                 "plugin": {"id": 9, "name": "check_company", "status": "Ready", "...": "..."},
+#                 "message": "Custom plugin 'check_company' registered successfully."
+#             }
+#         }
+#
+#         On validation failure, "plugin" is null and "success" is false
+#         — this is still a 200 response, not an error, since the
+#         request itself was valid; the SUBMITTED PLUGIN failed
+#         validation. Matches UI Flow's "Plugin Validation Failed" screen
+#         being a normal outcome, not a server error. Confirmed against
+#         client/src/types/plugin.ts (integration branch)'s
+#         CustomPluginUploadResult / CustomPluginCheckResult — this
+#         shape (success/checks-as-array/message) is deliberately
+#         different from validate_custom_plugin_submission()'s internal
+#         shape (is_valid/checks-as-dict) to match that contract exactly.
+#
+#     **Errors**
+#
+#     * ``400`` - no file provided, invalid filename, file too large,
+#       invalid plugin_type, malformed dependencies JSON, or an invalid
+#       dependency type within it.
+#     * ``409`` - a plugin with that name already exists, or a file with
+#       that name already exists in the Nagios plugin directory.
+#     * ``500`` - unexpected internal error (logged with traceback).
+#     """
+#     try:
+#         if "file" not in request.files or request.files["file"].filename == "":
+#             return error("No file provided.", 400)
+#
+#         name = request.form.get("name", "").strip()
+#         version = request.form.get("version", "").strip() or None
+#         description = request.form.get("description", "").strip() or None
+#         author = request.form.get("author", "").strip() or None
+#         plugin_type = request.form.get("plugin_type", "Nagios").strip()
+#         command_name = request.form.get("command_name", "").strip()
+#         command_definition = request.form.get("command_definition", "").strip()
+#
+#         dependencies_raw = request.form.get("dependencies", "")
+#         dependencies = []
+#         if dependencies_raw:
+#             try:
+#                 dependencies = json.loads(dependencies_raw)
+#                 if not isinstance(dependencies, list):
+#                     raise ValueError
+#             except (json.JSONDecodeError, ValueError):
+#                 return error("'dependencies' must be a JSON array.", 400)
+#
+#         data = service.register_custom_plugin(
+#             file_storage=request.files["file"],
+#             name=name, version=version, description=description, author=author,
+#             plugin_type=plugin_type, command_name=command_name,
+#             command_definition=command_definition, dependencies=dependencies,
+#             user_id=current_user.UserID,
+#         )
+#         return success(data)
+#
+#     except service.InvalidFilenameError as e:
+#         return error(e.message, 400)
+#     except service.UploadTooLargeError as e:
+#         return error(e.message, 400)
+#     except ValueError as e:
+#         return error(str(e), 400)
+#     except service.NameCollisionError as e:
+#         return error(e.message, 409)
+#     except service.PluginNameTakenError as e:
+#         return error(e.message, 409)
+#     except Exception:
+#         current_app.logger.exception(
+#             "An unexpected error occurred while registering the custom plugin."
+#         )
+#         return error("An unexpected error occurred.", 500)
 
 
 # ==========================================================
@@ -1169,6 +1176,39 @@ def rollback_plugin_update_route(plugin_id):
 # MONITORING CONFIGURATION (Phase 10)
 # ==========================================================
 
+@plugin_bp.get('/targets')
+@login_required
+@require_permission('plugin.view')
+def monitoring_targets_route():
+    """
+    List the devices a plugin can be applied to, for the target picker
+    in the plugin details drawer: every discovered device that is still
+    included in scanning (only those have a Nagios host object).
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": [
+                {"id": 12, "hostname": "router-01", "ip_address": "192.168.130.10"}
+            ]
+        }
+
+    **Errors**
+
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        return success(service.get_monitoring_targets())
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while retrieving monitoring targets."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
 @plugin_bp.get('/<int:plugin_id>/configurations')
 @login_required
 @require_permission('plugin.view')
@@ -1272,8 +1312,8 @@ def apply_plugin_configuration_route(plugin_id):
 
     * ``400`` - missing required fields.
     * ``404`` - no plugin with that id, or no target device with that id.
-    * ``409`` - plugin is in a state that blocks configuration, or has
-      no command definition.
+    * ``409`` - plugin is not Enabled/Active (enable it first), is in a
+      state that blocks configuration, or has no command definition.
     * ``500`` - unexpected internal error (logged with traceback).
     """
     try:

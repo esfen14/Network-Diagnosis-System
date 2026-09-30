@@ -21,6 +21,7 @@ export const PAGE_PERMISSIONS: Record<string, string | null> = {
 export const SETTINGS_TAB_PERMISSIONS = {
   security: 'settings.security',
   system: 'settings.system',
+  discovery: 'settings.discovery',
 } as const
 
 // Where to send a user who opens a page they can't access, in sidebar order.

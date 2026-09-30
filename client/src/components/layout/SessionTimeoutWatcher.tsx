@@ -73,11 +73,12 @@ export function SessionTimeoutWatcher() {
     navigateRef.current = navigate
   }, [navigate])
 
-  // A leftover timestamp means the last session in this browser ended
-  // without a logout, so a 401 now means it expired rather than that the
-  // user was never signed in.
+  // Not signed in on page load: go to login without the "session expired"
+  // notice. A leftover activity timestamp can't tell a timed-out session
+  // from a browser that was simply closed, and showing the notice to
+  // someone who never logged in is confusing. The notice is only shown
+  // when the idle timer below ends a session this tab was using.
   useEffect(() => {
-    const hadSession = readLastActivity() !== null
     writeLastActivity(Date.now())
 
     let cancelled = false
@@ -85,7 +86,7 @@ export function SessionTimeoutWatcher() {
     fetch('/api/user/me', { credentials: 'include' })
       .then((res) => {
         if (!cancelled && res.status === 401) {
-          endSession(navigateRef.current, hadSession)
+          endSession(navigateRef.current, false)
         }
       })
       .catch(() => {

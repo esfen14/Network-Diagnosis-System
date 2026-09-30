@@ -164,7 +164,9 @@ class TestPluginDetails:
         assert data["current_version"] == "2.4.12"
         assert data["commands_count"] == 0
         assert data["dependencies_count"] == 0
-        assert data["monitoring_usage"]["placeholder"] is True
+        assert data["monitoring_usage"]["placeholder"] is False
+        assert data["monitoring_usage"]["services"] == 0
+        assert data["monitoring_usage"]["devices"] == 0
 
     def test_counts_reflect_related_rows(self, logged_in_client, db_session):
         plugin = _make_plugin(db_session, "check_snmp")

@@ -48,8 +48,6 @@ export type PluginListResponse = {
   has_prev: boolean
 }
 
-// One monitoring check live in Nagios: a plugin applied to a target device
-// (GET /api/plugin/running).
 export type RunningCheck = {
   id: number
   plugin: {
@@ -182,8 +180,6 @@ export type CustomPluginUploadResult = {
   message: string
 }
 
-// POST /<id>/validate — distinct shape from PluginDetails; checks is a dict
-// keyed by check name, not a list (see server/app/api/plugin/manager.py).
 export type PluginValidationCheck = {
   passed: boolean
   message: string
@@ -199,4 +195,29 @@ export type PluginValidationResult = {
     permissions: PluginValidationCheck
     execution: PluginValidationCheck
   }
+}
+
+export type MonitoringTarget = {
+  id: number
+  hostname: string | null
+  ip_address: string
+}
+
+export type PluginConfigurationStatus = 'Pending' | 'Applied' | 'Failed'
+
+export type PluginConfigurationItem = {
+  id: number
+  target: MonitoringTarget | null
+  service_description: string | null
+  status: PluginConfigurationStatus
+  configuration_data: Record<string, unknown> | null
+  updated_at: string
+}
+
+export type ApplyConfigurationResult = {
+  success: boolean
+  configuration_id: number
+  status: PluginConfigurationStatus
+  plugin_status?: PluginStatus
+  validation_output?: string
 }

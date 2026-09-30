@@ -115,17 +115,18 @@ describe('NetworkHealthPage last scan', () => {
     expect(screen.getByRole('button', { name: /last scan: 1 min ago/i })).toBeInTheDocument()
   })
 
-  it('runs a real scan and refreshes the time when it succeeds', async () => {
+  it('starts a scan in the background without a prompt and refreshes the time when it succeeds', async () => {
     apiPost.mockResolvedValue({})
     renderPage()
     await flush()
 
     fireEvent.click(screen.getByRole('button', { name: /last scan/i }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
     await flush()
 
     expect(apiPost).toHaveBeenCalledWith('/api/system/discover/start')
-    expect(screen.getByText('Scanning in Progress')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /last scan: scanning/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /rescan network/i })).toBeDisabled()
 
     lastScan = { completed_at: '2026-09-26T10:00:00+00:00', is_running: false }
     apiGet.mockImplementation((path: string) => {
@@ -139,8 +140,31 @@ describe('NetworkHealthPage last scan', () => {
       await vi.advanceTimersByTimeAsync(2_000)
     })
 
-    expect(screen.getByText('Rescan successful!')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /last scan: just now/i })).toBeInTheDocument()
+  })
+
+  it('shows a failed scan inline instead of in a dialog', async () => {
+    apiPost.mockResolvedValue({})
+    renderPage()
+    await flush()
+
+    fireEvent.click(screen.getByRole('button', { name: /last scan/i }))
+    await flush()
+
+    apiGet.mockImplementation((path: string) => {
+      if (path === '/api/system/discover/status') {
+        return Promise.resolve({ status: 'Failed', progress: 40, message: 'failed', error: 'nmap not found' })
+      }
+      if (path.startsWith('/api/system/network-health/summary')) return Promise.resolve(summary())
+      return Promise.resolve(EMPTY_TRENDS)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000)
+    })
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Network rescan failed: nmap not found')
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('shows the time but blocks rescans without the discover permission', async () => {

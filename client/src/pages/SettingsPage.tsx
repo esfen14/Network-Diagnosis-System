@@ -1,14 +1,15 @@
-import { Cog, Lock, ServerCog } from 'lucide-react'
+import { Cog, Lock, Radar, ServerCog } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { GeneralSettings } from '../components/settings/GeneralSettings'
 import { SecuritySettings } from '../components/settings/SecuritySettings'
 import { SystemSettings } from '../components/settings/SystemSettings'
+import { DiscoverySettings } from '../components/settings/DiscoverySettings'
 import { useSystemSettings } from '../contexts/SystemSettingsContext'
 import { useCurrentUser } from '../contexts/CurrentUserContext'
 import { SETTINGS_TAB_PERMISSIONS } from '../lib/pageAccess'
 
-type SettingsTab = 'general' | 'security' | 'system'
+type SettingsTab = 'general' | 'security' | 'system' | 'discovery'
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
@@ -22,11 +23,12 @@ export function SettingsPage() {
   }, [refreshSettings])
 
   // General is for everyone; Security and System need their permission
-  // (assigned per role in Manage Roles).
+  // (assigned per role in Manage Roles), as does Network Discovery.
   const tabs = [
     { id: 'general' as const, label: 'General Settings', icon: Cog },
     { id: 'security' as const, label: 'Security', icon: Lock },
     { id: 'system' as const, label: 'System', icon: ServerCog },
+    { id: 'discovery' as const, label: 'Network Discovery', icon: Radar },
   ].filter((tab) => tab.id === 'general' || hasPermission(SETTINGS_TAB_PERMISSIONS[tab.id]))
 
   // Fall back to General if the open tab's permission was removed.
@@ -64,6 +66,7 @@ export function SettingsPage() {
           {shownTab === 'general' && <GeneralSettings />}
           {shownTab === 'security' && <SecuritySettings />}
           {shownTab === 'system' && <SystemSettings />}
+          {shownTab === 'discovery' && <DiscoverySettings />}
         </div>
 
       </div>

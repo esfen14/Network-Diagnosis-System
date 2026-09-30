@@ -236,6 +236,18 @@ class TestHostCounts:
         assert result["up"] == 1
         assert result["down"] == 0
 
+    def test_same_timestamp_counted_once(self, db_session, app):
+        """Two polls storing the same Nagios timestamp keep only the newest row."""
+        from app.api.system.statistics import host_counts, get_latest_hosts
+        with app.app_context():
+            ts = _ts(-60)
+            _make_host(db_session, "h1", HostStateType.DOWN, ts=ts)
+            _make_host(db_session, "h1", HostStateType.UP, ts=ts)
+            db_session.session.commit()
+            result = host_counts(get_latest_hosts())
+        assert result["total"] == 1
+        assert result["up"] == 1
+
 
 # ==========================================================
 # service_counts()
@@ -277,6 +289,17 @@ class TestServiceCounts:
         assert result["total"] == 1
         assert result["ok"] == 1
         assert result["critical"] == 0
+
+    def test_same_timestamp_counted_once(self, db_session, app):
+        from app.api.system.statistics import service_counts, get_latest_services
+        with app.app_context():
+            ts = _ts(-60)
+            _make_service(db_session, "h1", "http-80-TCP", ServiceStateType.CRITICAL, ts=ts)
+            _make_service(db_session, "h1", "http-80-TCP", ServiceStateType.OK, ts=ts)
+            db_session.session.commit()
+            result = service_counts(get_latest_services())
+        assert result["total"] == 1
+        assert result["ok"] == 1
 
     def test_flapping_and_downtime(self, db_session, app):
         from app.api.system.statistics import service_counts, get_latest_services

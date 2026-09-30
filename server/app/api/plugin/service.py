@@ -267,12 +267,9 @@ def get_plugin_details(plugin_id):
 
     Returns None if the plugin doesn't exist (route turns that into 404).
 
-    NOTE on "monitoring_usage": PluginConfiguration has no target
-    (host/service) linkage yet — that's Phase 10. Per explicit decision,
-    this returns non-zero PLACEHOLDER numbers (taken directly from the
-    UI Flow mockup's own example, Section 8) so the frontend has
-    something to render before Phase 10 exists. "placeholder": true
-    marks it clearly as not-yet-real data for any future caller.
+    "monitoring_usage" counts this plugin's APPLIED configurations
+    (services) and the distinct devices they target. "placeholder" is
+    kept (always false) so existing callers don't break.
     """
     plugin = db.session.get(Plugin, plugin_id)
     if plugin is None:
@@ -283,6 +280,16 @@ def get_plugin_details(plugin_id):
     )
     dependencies_count = db.session.scalar(
         sa.select(sa.func.count()).select_from(PluginDependency).where(PluginDependency.PluginID == plugin_id)
+    )
+    applied_filter = (
+        PluginConfiguration.PluginID == plugin_id,
+        PluginConfiguration.Status == PluginConfigurationStatus.APPLIED,
+    )
+    applied_services = db.session.scalar(
+        sa.select(sa.func.count()).select_from(PluginConfiguration).where(*applied_filter)
+    )
+    applied_devices = db.session.scalar(
+        sa.select(sa.func.count(sa.distinct(PluginConfiguration.NetDiscoveryID))).where(*applied_filter)
     )
 
     return {
@@ -302,10 +309,10 @@ def get_plugin_details(plugin_id):
         "commands_count": commands_count,
         "dependencies_count": dependencies_count,
         "monitoring_usage": {
-            "services": 4,
-            "devices": 2,
-            "placeholder": True,
-            "note": "Target linkage not implemented until Phase 10 (Monitoring Configuration).",
+            "services": applied_services,
+            "devices": applied_devices,
+            "placeholder": False,
+            "note": "",
         },
     }
 
@@ -1364,6 +1371,29 @@ def build_configuration_tuples(configurations):
     return tuples
 
 
+def get_monitoring_targets():
+    """
+    Devices a plugin can be applied to: every NetworkDiscovery device
+    still included in scanning, since only those get a Nagios host
+    object in hosts.cfg (see create_host_cfg.py). Ordered by hostname,
+    then IP.
+    """
+    devices = db.session.scalars(
+        sa.select(NetworkDiscovery)
+        .where(NetworkDiscovery.Include_Device_In_Scanning.is_(True))
+        .order_by(NetworkDiscovery.Hostname.asc(), NetworkDiscovery.IP_Address.asc())
+    ).all()
+
+    items = []
+    for device in devices:
+        items.append({
+            "id": device.NetDiscoveryID,
+            "hostname": device.Hostname,
+            "ip_address": device.IP_Address,
+        })
+    return items
+
+
 def get_plugin_configurations(plugin_id):
     """GET /plugin/<id>/configurations — list this plugin's applied/pending/failed targets."""
     configs = db.session.scalars(
@@ -1421,6 +1451,9 @@ def apply_plugin_configuration(plugin_id, net_discovery_id, service_description,
         raise InvalidTransitionError(
             f"Cannot apply monitoring configuration for a plugin in '{plugin.Status.value}' state."
         )
+
+    if plugin.Status not in (PluginStatus.ENABLED, PluginStatus.ACTIVE):
+        raise InvalidTransitionError("Enable the plugin before applying it to a device.")
 
     target = db.session.get(NetworkDiscovery, net_discovery_id)
     if target is None:
