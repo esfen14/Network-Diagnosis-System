@@ -9,6 +9,7 @@ import { ServiceOverview } from '../components/dashboard/ServiceOverview'
 import { SummaryStatCard } from '../components/shared/SummaryStatCard'
 import { useSystemSettings } from '../contexts/SystemSettingsContext'
 import { formatDateTime } from '../utils/formatDateTime'
+import { fromPluginsResponse, type PluginGroup, type PluginsApiResponse } from '../types/networkHealth'
 import { apiGet, apiPost, errorMessage } from '../lib/api'
 import {
   fromAlertRecord,
@@ -33,6 +34,7 @@ export function DashboardPage() {
   const [alerts, setAlerts] = useState<AlertRow[]>([])
   const [trends, setTrends] = useState<TrendsResponse | null>(null)
   const [problemServices, setProblemServices] = useState<ServiceRow[]>([])
+  const [pluginGroups, setPluginGroups] = useState<PluginGroup[] | null>(null)
   const [trendHours, setTrendHours] = useState<TrendHours>(24)
 
   const [isLoading, setIsLoading] = useState(true)
@@ -41,6 +43,13 @@ export function DashboardPage() {
 
   async function loadAll() {
     setLoadError(null)
+
+    // Service Overview's "Services by Type" — optional, so a failure here
+    // shows "Unavailable" in that section instead of failing the dashboard.
+    apiGet<PluginsApiResponse>('/api/system/network-health/plugins')
+      .then((data) => setPluginGroups(fromPluginsResponse(data)))
+      .catch(() => setPluginGroups(null))
+
     try {
       const [statusData, summaryData, alertsData, trendsData, servicesData] = await Promise.all([
         apiGet<Parameters<typeof fromDashboardStatusResponse>[0]>('/api/system/dashboard/status'),
@@ -210,6 +219,7 @@ export function DashboardPage() {
           status={status}
           summary={summary}
           problemServices={problemServices}
+          pluginGroups={pluginGroups}
           isLoading={isLoading}
         />
       </div>

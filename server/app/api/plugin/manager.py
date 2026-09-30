@@ -12,6 +12,7 @@ GET  /plugin/<id>            - Single plugin's full details (Phase 3)
 GET  /plugin/history         - Global plugin history, optional ?plugin_id= (Phase 3)
 GET  /plugin/<id>/commands   - A plugin's commands + active overrides (Phase 3)
 GET  /plugin/<id>/dependencies - A plugin's dependencies (Phase 3)
+GET  /plugin/targets         - Devices a plugin can be applied to
 
 The scan routes (Phase 2) match app/api/system/network_discovery.py's
 background-thread + status-polling pattern. The Phase 3 read routes
@@ -1169,6 +1170,39 @@ def rollback_plugin_update_route(plugin_id):
 # MONITORING CONFIGURATION (Phase 10)
 # ==========================================================
 
+@plugin_bp.get('/targets')
+@login_required
+@require_permission('plugin.view')
+def monitoring_targets_route():
+    """
+    List the devices a plugin can be applied to, for the target picker
+    in the plugin details drawer: every discovered device that is still
+    included in scanning (only those have a Nagios host object).
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "data": [
+                {"id": 12, "hostname": "router-01", "ip_address": "192.168.130.10"}
+            ]
+        }
+
+    **Errors**
+
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        return success(service.get_monitoring_targets())
+    except Exception:
+        current_app.logger.exception(
+            "An unexpected error occurred while retrieving monitoring targets."
+        )
+        return error("An unexpected error occurred.", 500)
+
+
 @plugin_bp.get('/<int:plugin_id>/configurations')
 @login_required
 @require_permission('plugin.view')
@@ -1272,8 +1306,8 @@ def apply_plugin_configuration_route(plugin_id):
 
     * ``400`` - missing required fields.
     * ``404`` - no plugin with that id, or no target device with that id.
-    * ``409`` - plugin is in a state that blocks configuration, or has
-      no command definition.
+    * ``409`` - plugin is not Enabled/Active (enable it first), is in a
+      state that blocks configuration, or has no command definition.
     * ``500`` - unexpected internal error (logged with traceback).
     """
     try:

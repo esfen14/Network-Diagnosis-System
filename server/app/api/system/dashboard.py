@@ -43,6 +43,7 @@ from app import db
 from app.api.helper.database_access.permissions import require_permission
 from app.api.helper.responses import success, error
 from app.api.system import system_bp
+from app.api.system.network_health import utc_isoformat
 from app.api.system.statistics import (
     get_latest_hosts,
     get_latest_services,
@@ -163,18 +164,16 @@ def _build_nagios_info(prog: ProgramStatus | None) -> dict:
             "enable_flap_detection": None,
         }
 
-    program_start_time = None
-    if prog.Program_Start_Time is not None:
-        program_start_time = prog.Program_Start_Time.isoformat()
-
     return {
         # Nagios is considered "running" if it reported a PID.
         "running":               prog.NagiosPID is not None,
         "pid":                   prog.NagiosPID,
         "version":               prog.Version,
-        "program_start_time":    program_start_time,
-        # Timestamp of the most-recent status write is the ProgramStatus row timestamp.
-        "last_status_update":    prog.Timestamp.isoformat(),
+        # SQLite drops the UTC offset; utc_isoformat puts it back so the
+        # browser doesn't read these as local time.
+        "program_start_time":    utc_isoformat(prog.Program_Start_Time),
+        # When Pinpoint last polled Nagios (the ProgramStatus row timestamp).
+        "last_status_update":    utc_isoformat(prog.Timestamp),
         "active_host_checks":    prog.Active_Host_Checks_Enabled,
         "active_service_checks": prog.Active_Service_Checks_Enabled,
         "notifications_enabled": prog.Enable_Notifications,

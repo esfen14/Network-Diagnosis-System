@@ -9,8 +9,10 @@ from app.api.system import settings
 from app.api.system import ncpa_deployment
 from app.api.system import dashboard
 from app.api.system import network_health
+from app.api.system import network_health_activity
 from app.api.system import network_hosts
 from app.api.system import network_services
 from app.api.system import statistics
 from app.api.system import notifications
 from app.api.system import history
+from app.api.system import discovery_settings

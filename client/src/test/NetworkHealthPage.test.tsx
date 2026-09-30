@@ -61,6 +61,12 @@ describe('NetworkHealthPage', () => {
     renderPage()
   })
 
+  it('shows empty states for the CPU load chart and supported checks when nothing is configured', async () => {
+    renderPage()
+    expect(await screen.findByText('check_load is not configured on the Nagios server.')).toBeInTheDocument()
+    expect(screen.getByText('No checks are being monitored yet.')).toBeInTheDocument()
+  })
+
   it("shows 'Network Health' heading", () => {
     renderPage()
     expect(screen.getByText('Network Health')).toBeInTheDocument()

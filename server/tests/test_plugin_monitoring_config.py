@@ -437,3 +437,69 @@ class TestListConfigurationsRoute:
         assert data[0]["target"]["hostname"] == "router-01"
         assert data[0]["service_description"] == "SNMP Traffic"
         assert data[0]["status"] == "Applied"
+
+
+class TestEnableThenApplyShowsRunning:
+    """
+    Regression: enabling a plugin alone never put it on the "Currently
+    Running" tab because nothing in the UI applied it to a device. The
+    drawer now does enable -> pick device -> apply; this covers that
+    flow end to end through the API.
+    """
+
+    def test_disabled_plugin_cannot_be_applied(self, logged_in_client, db_session, admin_user, nagios_paths):
+        target = _make_target(db_session, admin_user)
+        plugin = _make_plugin(db_session, "check_off", status=PluginStatus.DISABLED)
+
+        resp = logged_in_client.post(
+            f"/api/plugin/{plugin.PluginID}/configurations",
+            json={"net_discovery_id": target.NetDiscoveryID, "service_description": "x"},
+        )
+
+        assert resp.status_code == 409
+        assert "Enable the plugin" in resp.get_json()["message"]
+
+    def test_enabled_then_applied_plugin_is_running(self, logged_in_client, db_session, admin_user, nagios_paths):
+        target = _make_target(db_session, admin_user)
+        plugin = _make_plugin(db_session, "check_ping", status=PluginStatus.INSTALLED)
+
+        with patch("app.api.plugin.service.validate_nagios_configuration", return_value=(True, "ok")):
+            resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/enable")
+        assert resp.status_code == 200
+
+        running = logged_in_client.get("/api/plugin/running").get_json()["data"]
+        assert running["total"] == 0
+
+        with patch("app.api.plugin.monitoring_config.subprocess.run", side_effect=_fake_subprocess_success):
+            resp = logged_in_client.post(
+                f"/api/plugin/{plugin.PluginID}/configurations",
+                json={"net_discovery_id": target.NetDiscoveryID, "service_description": "Ping"},
+            )
+        assert resp.get_json()["data"]["success"] is True
+
+        running = logged_in_client.get("/api/plugin/running").get_json()["data"]
+        assert running["total"] == 1
+        assert running["items"][0]["plugin"]["name"] == "check_ping"
+        assert running["items"][0]["target"]["hostname"] == "router-01"
+
+        details = logged_in_client.get(f"/api/plugin/{plugin.PluginID}").get_json()["data"]
+        assert details["monitoring_usage"]["services"] == 1
+        assert details["monitoring_usage"]["devices"] == 1
+
+
+class TestMonitoringTargetsRoute:
+    def test_requires_login(self, client, db_session):
+        resp = client.get("/api/plugin/targets")
+        assert resp.status_code in (401, 302)
+
+    def test_lists_only_devices_included_in_scanning(self, logged_in_client, db_session, admin_user):
+        included = _make_target(db_session, admin_user, hostname="router-01", ip="192.168.130.10")
+        excluded = _make_target(db_session, admin_user, hostname="old-box", ip="192.168.130.99")
+        excluded.Include_Device_In_Scanning = False
+        db_session.session.commit()
+
+        resp = logged_in_client.get("/api/plugin/targets")
+
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        assert data == [{"id": included.NetDiscoveryID, "hostname": "router-01", "ip_address": "192.168.130.10"}]

@@ -100,14 +100,16 @@ describe('SessionTimeoutWatcher', () => {
     expect(screen.getByText('Dashboard Page')).toBeInTheDocument()
   })
 
-  it('shows the expired notice when the server rejects a leftover session', async () => {
+  it('redirects to login without the notice when a leftover session is rejected on load', async () => {
+    // e.g. the browser was closed without logging out, then reopened.
     localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now() - 3_600_000))
     mockMeStatus(401)
 
     renderDashboard()
     await advance(0)
 
-    expect(screen.getByText(EXPIRED_NOTICE)).toBeInTheDocument()
+    expect(screen.getByText('Log In to your Account')).toBeInTheDocument()
+    expect(screen.queryByText(EXPIRED_NOTICE)).not.toBeInTheDocument()
   })
 
   it('redirects to login without the notice when there was no session', async () => {

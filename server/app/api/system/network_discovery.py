@@ -35,6 +35,14 @@ discovery_thread = None
 discovery_thread_stop_event = threading.Event()
 
 
+def is_discovery_running():
+    """
+    Return True while a network discovery scan thread is alive. Used to
+    block edits to the discovery settings mid-scan.
+    """
+    return discovery_thread is not None and discovery_thread.is_alive()
+
+
 def start_discovery_thread(user_id):
     """
     Start a network discovery scan in a background daemon thread,

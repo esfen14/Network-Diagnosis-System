@@ -13,7 +13,10 @@ been discarded). Detection here is plain local filesystem access
 
 IN SCOPE for this phase:
     - Detect plugin executables under NAGIOS_PLUGIN_DIR.
-    - Determine executable state via os.access(path, os.X_OK).
+    - Determine executable state via os.access(path, os.X_OK), then
+      skip anything that isn't a real program (ELF binary or "#!"
+      script) — e.g. nagios-plugins source files copied into the
+      plugin directory with their execute bit set.
     - Determine version by executing every plugin with --version,
       every scan (not just newly-discovered ones) — best-effort: a
       plugin that doesn't support --version, times out, or errors is
@@ -128,6 +131,51 @@ def is_executable(entry, entry_stat):
     return bool(entry_stat.st_mode & stat.S_IXUSR) and os.access(entry.path, os.X_OK)
 
 
+# Build/packaging scripts from the nagios-plugins source tree. They start
+# with "#!" like a real plugin script, so is_plugin_program() can't tell
+# them apart by content alone — and running NP-VERSION-GEN with --version
+# writes an NP-VERSION-FILE into the current directory.
+NON_PLUGIN_SCRIPT_NAMES = {
+    "NP-VERSION-GEN",
+    "autogen.sh",
+    "compile",
+    "config.guess",
+    "config.status",
+    "config.sub",
+    "configure",
+    "depcomp",
+    "install-sh",
+    "libtool",
+    "ltmain.sh",
+    "missing",
+    "mkinstalldirs",
+    "test-driver",
+    "ylwrap",
+}
+
+
+def is_plugin_program(path, name):
+    """
+    Whether an executable file is actually a runnable program — a
+    compiled binary (ELF header) or a script with a "#!" interpreter
+    line — rather than a source/documentation file that merely has its
+    execute bit set (Makefile.in, README, *.m4, *.pm, ...). Known build
+    scripts in NON_PLUGIN_SCRIPT_NAMES are rejected by name. Unreadable
+    files count as not a plugin. Must be checked before extract_version(),
+    since that executes the file.
+    """
+    if name in NON_PLUGIN_SCRIPT_NAMES:
+        return False
+
+    try:
+        with open(path, "rb") as f:
+            header = f.read(4)
+    except OSError:
+        return False
+
+    return header.startswith(b"\x7fELF") or header.startswith(b"#!")
+
+
 def scan_plugin_directory(directory=None):
     """
     Detects every plugin executable under `directory`. Pure detection
@@ -159,6 +207,9 @@ def scan_plugin_directory(directory=None):
             executable = is_executable(entry, entry_stat)
 
             if not executable:
+                continue
+
+            if not is_plugin_program(entry.path, entry.name):
                 continue
 
             version, raw_output = extract_version(entry.path)

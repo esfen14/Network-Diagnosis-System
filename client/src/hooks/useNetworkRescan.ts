@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiError, apiGet, apiPost, errorMessage } from '../lib/api'
 
-// Runs a real network discovery scan (POST /api/system/discover/start) and
-// polls its status until it finishes. Shared by the Dashboard's Rescan
-// button and the Network Health page; pair it with <RescanModal />.
+// Runs a real network discovery scan (POST /api/system/discover/start) in the
+// background and polls its status until it finishes. There is no dialog:
+// callers show `state` on their button (spinner while scanning) and
+// `errorText` inline. Shared by the Dashboard and the Network Health page.
 
-export type RescanState = 'idle' | 'confirm' | 'scanning' | 'success' | 'error'
+export type RescanState = 'idle' | 'scanning' | 'success' | 'error'
 
 type DiscoveryStatusResponse = {
   status: 'Running' | 'Success' | 'Failed' | 'Interrupted'
@@ -61,14 +62,8 @@ export function useNetworkRescan(onComplete?: () => void) {
     }, POLL_INTERVAL_MS)
   }
 
-  const open = () => setState('confirm')
-
-  const close = () => {
-    stopPolling()
-    setState('idle')
-  }
-
-  const confirm = async () => {
+  const start = async () => {
+    if (state === 'scanning') return
     setState('scanning')
     setProgress(0)
     setErrorText(null)
@@ -86,5 +81,10 @@ export function useNetworkRescan(onComplete?: () => void) {
     }
   }
 
-  return { state, progress, errorText, open, close, confirm }
+  const dismissError = () => {
+    setErrorText(null)
+    if (state === 'error') setState('idle')
+  }
+
+  return { state, progress, errorText, start, dismissError }
 }

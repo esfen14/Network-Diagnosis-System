@@ -33,17 +33,19 @@ from app.system_models import \
 from app.logging import create_network_discovery_status, update_network_discovery_status, calculate_progress, create_skipped_service_logs
 from app.logging.deployment_history import update_ncpa_deployment_status
 from app.system_models import DiscoveryStatus, DeploymentStatus
+from app.network_discovery.discovery_settings import get_discovery_setting
 import socket
 import ipaddress
 import tempfile
 
-# Network discovery / host-config settings (TCP_SERVICE_OVERRIDES,
-# UDP_SERVICE_OVERRIDES, DOMAIN, NCPA_PORT, HOST_CONFIG_DIR, BACKUP_DIR)
-# and the advanced Nagios settings (NAGIOS_HOST_CFG, NAGIOS_BIN,
-# NAGIOS_MAIN_CFG) now live in server/config.py's Config class. Each
-# function below that needs one reads it from current_app.config into a
-# same-named local at the top of the function, so the settings are
-# centralized without a Settings UI needing to touch call sites here.
+# Network discovery / host-config settings (DOMAIN, NCPA_PORT,
+# HOST_CONFIG_DIR, BACKUP_DIR) and the advanced Nagios settings
+# (NAGIOS_HOST_CFG, NAGIOS_BIN, NAGIOS_MAIN_CFG) live in server/config.py's
+# Config class. Each function below that needs one reads it from
+# current_app.config into a same-named local at the top of the function.
+# TCP_SERVICE_OVERRIDES and UDP_SERVICE_OVERRIDES are editable from the
+# Settings page, so they are read through get_discovery_setting() instead,
+# which falls back to config.py when nothing has been saved.
 
 PROGRESS_WEIGHT = [40,50,55,60,70,80,90,95,100]
 
@@ -1101,8 +1103,8 @@ def discover_network_create_hosts(app, user_id, stop_event):
    
     with app.app_context():
         try:
-            TCP_SERVICE_OVERRIDES = current_app.config['TCP_SERVICE_OVERRIDES']
-            UDP_SERVICE_OVERRIDES = current_app.config['UDP_SERVICE_OVERRIDES']
+            TCP_SERVICE_OVERRIDES = get_discovery_setting('TCP_SERVICE_OVERRIDES')
+            UDP_SERVICE_OVERRIDES = get_discovery_setting('UDP_SERVICE_OVERRIDES')
 
             print("Created Log")
             network_discovery_id = create_network_discovery_status(user_id).DiscoveryStatusID

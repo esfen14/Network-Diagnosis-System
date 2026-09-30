@@ -3,7 +3,10 @@
 // reference doc, Section 2 "Route Reference").
 import { apiGet, apiPost } from './api'
 import type {
+  ApplyConfigurationResult,
   CustomPluginUploadResult,
+  MonitoringTarget,
+  PluginConfigurationItem,
   PluginCommand,
   PluginDependency,
   PluginDetails,
@@ -96,6 +99,21 @@ export function restoreDefaultCommand(pluginId: number, commandId: number) {
 
 export function validatePlugin(id: number) {
   return apiPost<PluginValidationResult>(`/api/plugin/${id}/validate`)
+}
+
+export function getMonitoringTargets() {
+  return apiGet<MonitoringTarget[]>('/api/plugin/targets')
+}
+
+export function getPluginConfigurations(pluginId: number) {
+  return apiGet<PluginConfigurationItem[]>(`/api/plugin/${pluginId}/configurations`)
+}
+
+export function applyPluginConfiguration(pluginId: number, netDiscoveryId: number, serviceDescription: string) {
+  return apiPost<ApplyConfigurationResult>(`/api/plugin/${pluginId}/configurations`, {
+    net_discovery_id: netDiscoveryId,
+    service_description: serviceDescription,
+  })
 }
 
 export type AddCustomPluginInput = {
