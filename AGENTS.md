@@ -175,6 +175,14 @@ flask db init --multidb
 **Network Discovery (`api/system/network_discovery.py`)**
 - Routes for triggering network scans and reading results.
 
+**Discovery Settings (`api/system/discovery_settings.py`)**
+- `GET/PUT /system/discovery-settings` — networks, TCP/UDP ports and port →
+  service name overrides scanned by Network Discovery. Stored in the
+  `DiscoverySettings` singleton; `config.py` values are the defaults. The scan
+  reads them through `network_discovery/discovery_settings.py`'s
+  `get_discovery_setting()` — do not read `NETWORKS`/`TCP_PORTS`/`UDP_PORTS`/
+  `*_SERVICE_OVERRIDES` from `current_app.config` directly.
+
 **NCPA Deployment (`api/system/ncpa_deployment.py`)**
 - Routes for deploying the NCPA monitoring agent to remote hosts over SSH.
 

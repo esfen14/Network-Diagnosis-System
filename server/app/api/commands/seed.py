@@ -48,6 +48,7 @@ PERMISSIONS = [
     "plugin.configure",
     "settings.security",
     "settings.system",
+    "settings.discovery",
 ]
 
 ROLES = [
