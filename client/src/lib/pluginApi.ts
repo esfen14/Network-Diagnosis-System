@@ -116,6 +116,8 @@ export function applyPluginConfiguration(pluginId: number, netDiscoveryId: numbe
   })
 }
 
+// Used only by AddCustomPluginModal, which is disabled for now: the Add
+// Custom Plugin button and POST /api/plugin/custom are commented out.
 export type AddCustomPluginInput = {
   file: File
   name: string

@@ -5,7 +5,7 @@ discovery scan that scans the network for new devices and populates the
 NetworkDiscovery table.
 
 All routes require authentication and the appropriate permission
-(``system.discover`` or ``network.discovery``).
+(``system.discover``).
 
 Routes
 ------
@@ -26,6 +26,7 @@ import threading
 from app.api.system import system_bp
 from app.api.helper import success, error
 from app.api.helper.database_access.permissions import require_permission
+from app.api.system.network_health import utc_isoformat
 from app.network_discovery import discover_network_create_hosts
 from app.logging.network_discovery_status import get_network_discovery_status
 from app.system_models import NetworkDiscovery
@@ -100,12 +101,13 @@ def start_discover_network():
 
 @system_bp.post('/network-discovery/stop')
 @login_required
-@require_permission('network.discovery')
+@require_permission('system.discover')
 def stop_network_discovery():
     """Request the running network discovery scan to stop.
 
     Sets a threading event flag that the background scan thread checks
-    between devices. The scan will halt gracefully on the next evaluation.
+    between devices and between phases. The scan halts gracefully on the
+    next check and its status record is marked ``Interrupted``.
 
     Inputs:
         None (no request body or query parameters).
@@ -148,7 +150,7 @@ def discover_network_status():
             "success": true,
             "data": {
                 "id":             int,
-                "status":         str   ("Queued" | "Running" | "Completed" | "Failed" | "Interrupted"),
+                "status":         str   ("Running" | "Success" | "Failed" | "Interrupted"),
                 "progress":       int   (0-100),
                 "message":        str,
                 "start_at":       str (ISO-8601),
@@ -177,11 +179,8 @@ def discover_network_status():
             "status": discover_info.Status.value,
             "progress": discover_info.Progress,
             "message": discover_info.Message,
-            "start_at": discover_info.Start_At.isoformat(),
-            "completed_at": (
-                discover_info.Completed_At.isoformat()
-                if discover_info.Completed_At else None
-            ),
+            "start_at": utc_isoformat(discover_info.Start_At),
+            "completed_at": utc_isoformat(discover_info.Completed_At),
             "error": discover_info.Error,
         })
 

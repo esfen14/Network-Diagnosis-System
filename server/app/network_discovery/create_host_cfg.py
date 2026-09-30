@@ -32,7 +32,7 @@ from app.system_models import \
     AgentStatus 
 from app.logging import create_network_discovery_status, update_network_discovery_status, calculate_progress, create_skipped_service_logs
 from app.logging.deployment_history import update_ncpa_deployment_status
-from app.system_models import DiscoveryStatus, DeploymentStatus
+from app.system_models import DiscoveryStatus, DeploymentStatus, NetworkDiscoveryStatus
 from app.network_discovery.discovery_settings import get_discovery_setting
 import socket
 import ipaddress
@@ -1098,6 +1098,24 @@ def _override_service_names(network_discovery_id, discovered_hosts, protocol, se
 
     return discovered_hosts   
 
+def mark_discovery_interrupted(network_discovery_id):
+    """
+    Record that a discovery run was cancelled through the stop route so
+    its status leaves "Running" and pollers see it as finished. Keeps the
+    progress the run had reached. Commits via update_network_discovery_status.
+    """
+    status = db.session.get(NetworkDiscoveryStatus, network_discovery_id)
+    progress = status.Progress if status is not None else 0
+
+    update_network_discovery_status(
+        network_discovery_id,
+        DiscoveryStatus.INTERRUPTED,
+        progress,
+        "Network discovery was cancelled.",
+        datetime.now(timezone.utc)
+    )
+
+
 def discover_network_create_hosts(app, user_id, stop_event):
     network_discovery_id = None
    
@@ -1110,6 +1128,7 @@ def discover_network_create_hosts(app, user_id, stop_event):
             network_discovery_id = create_network_discovery_status(user_id).DiscoveryStatusID
 
             if stop_event.is_set():
+                mark_discovery_interrupted(network_discovery_id)
                 return
             
             # Gets the network info
@@ -1117,22 +1136,18 @@ def discover_network_create_hosts(app, user_id, stop_event):
             discovered_hosts = discover_network(network_discovery_id, PROGRESS_WEIGHT[0], stop_event)
 
             if discovered_hosts is None:
-                update_network_discovery_status(
-                    network_discovery_id,
-                    DiscoveryStatus.INTERRUPTED,
-                    100,
-                    "Network discovery was stopped.",
-                    datetime.now(timezone.utc)
-                )
+                mark_discovery_interrupted(network_discovery_id)
                 return
 
             if stop_event.is_set():
+                mark_discovery_interrupted(network_discovery_id)
                 return
             
             # Creates hostnames for hosts that don't have names
             discovered_hosts = _create_hostname(network_discovery_id, discovered_hosts, PROGRESS_WEIGHT[1])
 
             if stop_event.is_set():
+                mark_discovery_interrupted(network_discovery_id)
                 return
             
             # Overrides services names due to NMAP not always being right
@@ -1140,17 +1155,20 @@ def discover_network_create_hosts(app, user_id, stop_event):
             discovered_hosts = _override_service_names(network_discovery_id, discovered_hosts,"udp", UDP_SERVICE_OVERRIDES, PROGRESS_WEIGHT[3])
 
             if stop_event.is_set():
+                mark_discovery_interrupted(network_discovery_id)
                 return
             
             # Save it to the database
             _save_discovered_hosts(discovered_hosts, network_discovery_id, PROGRESS_WEIGHT[4])
 
             if stop_event.is_set():
+                mark_discovery_interrupted(network_discovery_id)
                 return
             
             system_hosts = _load_monitored_hosts(network_discovery_id, PROGRESS_WEIGHT[5])
 
             if stop_event.is_set():
+                mark_discovery_interrupted(network_discovery_id)
                 return
             
             skipped_services = []
@@ -1165,6 +1183,7 @@ def discover_network_create_hosts(app, user_id, stop_event):
             )
 
             if stop_event.is_set():
+                mark_discovery_interrupted(network_discovery_id)
                 return
             
             update_network_discovery_status(
@@ -1177,6 +1196,7 @@ def discover_network_create_hosts(app, user_id, stop_event):
             is_valid, result = _validate_config(new_cfg)
 
             if stop_event.is_set():
+                mark_discovery_interrupted(network_discovery_id)
                 return
             
             if is_valid:

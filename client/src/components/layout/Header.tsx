@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, Clock, HelpCircle, LogOut, PanelLeft, Settings, Star, Trash2, UserCog } from 'lucide-react'
+import { Bell, CheckCircle2, Clock, HelpCircle, LogOut, PanelLeft, Radar, Settings, Star, Trash2, UserCog, XCircle } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../../lib/api'
 import { useSystemSettings } from '../../contexts/SystemSettingsContext'
 import { useCurrentUser } from '../../contexts/CurrentUserContext'
 import { fromRawNotification, formatRelativeTime as formatNotificationTime, type NotificationItem, type NotificationsResponse } from '../../types/notification'
+import { useDiscoveryStatus, type DiscoveryStatus } from '../../hooks/useDiscoveryStatus'
 
 const pageTitles: Record<string, { section: string; page: string }> = {
   '/dashboard': { section: 'Dashboards', page: 'Overview' },
@@ -79,14 +80,90 @@ function loadHistory(): HistoryEntry[] {
   }
 }
 
+// Top entry of the notification panel: the latest network discovery scan.
+// Shows live progress and a Cancel button while it runs, then its outcome.
+function ScanStatusItem({
+  scan,
+  isCancelling,
+  cancelError,
+  onCancel,
+}: {
+  scan: DiscoveryStatus
+  isCancelling: boolean
+  cancelError: string | null
+  onCancel: () => void
+}) {
+  const finishedAt = scan.completedAt ?? scan.startAt
+  const finishedTime = formatNotificationTime(Math.floor(finishedAt.getTime() / 1000))
+
+  if (scan.status === 'Running') {
+    return (
+      <div className="border-b border-gray-100 bg-[#ffb100]/5 px-4 py-3 dark:border-white/10">
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
+            <Radar className="h-4 w-4 animate-pulse text-[#ffb100]" />
+            {isCancelling ? 'Cancelling network scan…' : 'Network scan in progress'}
+          </span>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isCancelling}
+            className="rounded-lg border border-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600 hover:border-red-300 hover:text-red-500 disabled:cursor-default disabled:opacity-50 disabled:hover:border-gray-200 disabled:hover:text-gray-600 dark:border-white/10 dark:text-gray-300"
+          >
+            {isCancelling ? 'Cancelling…' : 'Cancel'}
+          </button>
+        </div>
+        <div
+          className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-white/10"
+          role="progressbar"
+          aria-label="Network scan progress"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={scan.progress}
+        >
+          <div className="h-full rounded-full bg-[#ffb100] transition-all" style={{ width: `${scan.progress}%` }} />
+        </div>
+        <div className="mt-1 flex justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+          <span className="truncate">{scan.message}</span>
+          <span className="shrink-0">{scan.progress}%</span>
+        </div>
+        {cancelError && (
+          <p role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{cancelError}</p>
+        )}
+      </div>
+    )
+  }
+
+  const outcome = {
+    Success: { icon: <CheckCircle2 className="h-4 w-4 text-green-500" />, title: 'Network scan complete' },
+    Failed: { icon: <XCircle className="h-4 w-4 text-red-500" />, title: 'Network scan failed' },
+    Interrupted: { icon: <XCircle className="h-4 w-4 text-gray-400" />, title: 'Network scan cancelled' },
+  }[scan.status]
+
+  return (
+    <div className="border-b border-gray-100 px-4 py-3 dark:border-white/10">
+      <span className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
+        {outcome.icon}
+        {outcome.title}
+      </span>
+      <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+        {scan.status === 'Failed' && scan.error ? scan.error : scan.message}
+      </p>
+      <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{finishedTime}</p>
+    </div>
+  )
+}
+
 export function Header() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  // Settings → General → Notifications turns the bell off system-wide, and
-  // the user's role needs the notifications permission to read them.
   const { hasPermission } = useCurrentUser()
   const notificationsEnabled =
     useSystemSettings().savedSettings.notifications && hasPermission('system.notifications')
+  const canDiscover = hasPermission('system.discover')
+  const discovery = useDiscoveryStatus(canDiscover)
+  const isScanning = discovery.scan?.status === 'Running'
+  const showBell = notificationsEnabled || canDiscover
 
   const { section, page } = pageTitles[pathname] ?? {
     section: 'Dashboards',
@@ -133,7 +210,6 @@ export function Header() {
         const data = await apiGet<{ unread_count: number }>('/api/system/notifications/unread-count')
         setUnreadCount(data.unread_count)
       } catch {
-        // Non-fatal — badge just won't update this cycle.
       }
     }
     pollUnread()
@@ -141,9 +217,8 @@ export function Header() {
     return () => window.clearInterval(id)
   }, [notificationsEnabled])
 
-  // Load the full notification list when the panel is opened.
   useEffect(() => {
-    if (openMenu !== 'notifications') return
+    if (openMenu !== 'notifications' || !notificationsEnabled) return
 
     let cancelled = false
     setIsLoadingNotifications(true)
@@ -155,7 +230,6 @@ export function Header() {
         setUnreadCount(data.unread_count)
       })
       .catch(() => {
-        // Non-fatal — panel just shows whatever it last had (possibly empty).
       })
       .finally(() => {
         if (!cancelled) setIsLoadingNotifications(false)
@@ -164,7 +238,7 @@ export function Header() {
     return () => {
       cancelled = true
     }
-  }, [openMenu])
+  }, [openMenu, notificationsEnabled])
 
   // log every actual page visit dito, may timestamp na para di na basta list lang ng paths
   // ayaw natin i-log ulit kung same page lang paulit ulit (avoid spam sa list)
@@ -226,6 +300,7 @@ export function Header() {
   }
 
   const toggleMenu = (menu: 'notifications' | 'history' | 'account') => {
+  if (menu === 'notifications') discovery.markSeen()
   setOpenMenu((prev) => (prev === menu ? null : menu))
 }
   return (
@@ -269,7 +344,7 @@ export function Header() {
 
       <div className="flex items-center gap-3" ref={menuRef}>
         {/* Notifications */}
-        {notificationsEnabled && (
+        {showBell && (
           <div className="relative">
             <button
               type="button"
@@ -278,10 +353,15 @@ export function Header() {
               aria-label="Notifications"
             >
               <Bell className="h-5 w-5" />
-              {unreadCount > 0 && (
+              {notificationsEnabled && unreadCount > 0 ? (
                 <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-medium text-white">
                   {unreadCount}
                 </span>
+              ) : (isScanning || discovery.hasUnseenResult) && (
+                <span
+                  className={`absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#ffb100] ${isScanning ? 'animate-pulse' : ''}`}
+                  aria-label={isScanning ? 'Network scan in progress' : 'Network scan finished'}
+                />
               )}
             </button>
 
@@ -289,7 +369,7 @@ export function Header() {
               <div className="absolute right-0 top-full z-20 mt-2 w-80 rounded-xl border border-gray-200 bg-white shadow-lg dark:border-white/10 dark:bg-[#171B20]">
                 <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-white/10">
                   <span className="text-sm font-medium text-gray-900 dark:text-white">Notifications</span>
-                  {unreadCount > 0 && (
+                  {notificationsEnabled && unreadCount > 0 && (
                     <button
                       onClick={markAllRead}
                       className="text-xs font-medium text-[#ffb100] hover:underline"
@@ -299,8 +379,17 @@ export function Header() {
                   )}
                 </div>
 
+                {canDiscover && discovery.scan && (
+                  <ScanStatusItem
+                    scan={discovery.scan}
+                    isCancelling={discovery.isCancelling}
+                    cancelError={discovery.cancelError}
+                    onCancel={discovery.cancel}
+                  />
+                )}
+
                 <div className="max-h-72 overflow-y-auto">
-                  {isLoadingNotifications ? (
+                  {!notificationsEnabled ? null : isLoadingNotifications ? (
                     <p className="px-4 py-6 text-center text-sm text-gray-400">Loading…</p>
                   ) : notifications.length === 0 ? (
                     <p className="px-4 py-6 text-center text-sm text-gray-400">No notifications</p>

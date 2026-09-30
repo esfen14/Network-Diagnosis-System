@@ -183,6 +183,7 @@ class TestNameCollisionAndInstall:
 
 # ─── POST /plugin/custom ────────────────────────────────────────────────────
 
+@pytest.mark.skip(reason="POST /plugin/custom is commented out in manager.py until custom plugins are implemented.")
 class TestRegisterCustomPluginRoute:
     def test_requires_login(self, client, db_session):
         resp = client.post("/api/plugin/custom", data=_upload_data(), content_type="multipart/form-data")
