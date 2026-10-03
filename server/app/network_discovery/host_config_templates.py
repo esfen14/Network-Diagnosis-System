@@ -8,21 +8,44 @@ def _load_template(name):
         _template_cache[name] = template_cache.read_text()
     return _template_cache[name]
 
+def add_inactive_lines(rendered, note):
+    """
+    Append `active_checks_enabled 0` and a notes line to a rendered
+    host/service object, just before its closing brace. Used for devices whose
+    address is unknown, so Nagios stops checking an IP that now belongs to a
+    different machine.
+    """
+    body = rendered.rstrip()
+    assert body.endswith("}")
+    lines = [
+        body[:-1].rstrip(),
+        "    active_checks_enabled           0",
+        f"    notes                           {note}",
+        "}",
+    ]
+    return "\n".join(lines)
+
 def create_host(host):
-    return _load_template("host.cfg.tpl").format(
+    rendered = _load_template("host.cfg.tpl").format(
         host_name=host["host_name"],
         alias=host["alias"],
         address=host["address"],
         contact_groups=host["contact_groups"] 
     )
+    if host.get("active_checks_enabled") is False:
+        rendered = add_inactive_lines(rendered, host.get("notes") or "Address unknown")
+    return rendered
     
 def create_service(service, service_command):
-    return _load_template("service.cfg.tpl").format(
+    rendered = _load_template("service.cfg.tpl").format(
         host_name=service["host_name"],
         service_name=service["service_name"],
         command=service_command,
         contact_groups=service["contact_groups"] 
     ) 
+    if service.get("active_checks_enabled") is False:
+        rendered = add_inactive_lines(rendered, service.get("notes") or "Address unknown")
+    return rendered
     
 def create_contact(contact):
     return _load_template("contact.cfg.tpl").format(

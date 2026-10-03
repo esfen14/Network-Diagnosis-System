@@ -14,3 +14,4 @@ from app.api.system import network_services
 from app.api.system import statistics
 from app.api.system import notifications
 from app.api.system import history
+from app.api.system import device_identity

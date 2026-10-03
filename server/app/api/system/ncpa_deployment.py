@@ -44,7 +44,8 @@ from app.api.system import system_bp
 from app.api.helper import success, error
 from app.api.helper.database_access.permissions import require_permission
 from app.logging.deployment_history import get_deployment_ncpa_status
-from app.system_models import NetworkDiscovery, SSHCredentials, NCPADeployment, AgentStatus
+from app.system_models import NetworkDiscovery, SSHCredentials, NCPADeployment, AgentStatus, IdentifierKind
+from app.network_discovery.device_identity import Evidence, record_device_evidence
 from app.ncpa_deployment.ncpa_deployment import *
 
 deploy_ncpa_thread = None
@@ -177,6 +178,10 @@ def confirm_device_trust(device_id):
             return error("That device has no credentials entry.", 404)
 
         creds.Key_Fingerprint = fingerprint
+
+        # The trusted host key also identifies the device across IP changes.
+        if fingerprint:
+            record_device_evidence(device, [Evidence(IdentifierKind.SSH_HOST_KEY, fingerprint)])
         db.session.commit()
 
         return success(message="Device fingerprint saved.")

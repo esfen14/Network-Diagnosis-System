@@ -281,6 +281,69 @@ class SkippedService(db.Model):
     DiscoveryRecord: so.Mapped[NetworkDiscoveryStatus] = so.relationship(back_populates='Skipped_Services')
 
 """
+Device identity enums (see "spec files/DHCP_Device_Identity_Plan.md").
+
+AddressingMode   - how the device gets its IP; set by a user or inferred.
+IdentityConfidence - how sure PinPoint is that a record is one physical device.
+DeviceState      - lifecycle of a device record and of its Nagios config entry.
+IdentifierKind   - the kind of evidence stored in DeviceIdentifier.
+AddressSource    - what produced a DeviceAddressHistory row.
+ReviewKind       - why a DeviceReviewItem was raised.
+"""
+
+class AddressingMode(Enum):
+    DHCP = "DHCP"
+    STATIC = "Static"
+    UNKNOWN = "Unknown"
+
+class IdentityConfidence(Enum):
+    VERIFIED = "Verified"
+    LIKELY = "Likely"
+    UNVERIFIED = "Unverified"
+
+class DeviceState(Enum):
+    ACTIVE = "Active"
+    MISSING = "Missing"
+    ADDRESS_UNKNOWN = "Address Unknown"
+    RETIRED = "Retired"
+    MERGED = "Merged"
+
+class IdentifierKind(Enum):
+    NCPA_CERT = "NCPA Certificate"
+    MACHINE_ID = "Machine ID"
+    SSH_HOST_KEY = "SSH Host Key"
+    MAC = "MAC"
+    DNS_NAME = "DNS Name"
+
+class AddressSource(Enum):
+    SCAN = "Scan"
+    NCPA_RELOCATE = "NCPA Relocate"
+    MANUAL = "Manual"
+
+class ReviewKind(Enum):
+    CONFLICT = "Conflict"
+    IDENTITY_CHANGED = "Identity Changed"
+    IP_REUSE = "IP Reused"
+    DUPLICATE_IDENTITY = "Duplicate Identity"
+    STATIC_MOVED = "Static Device Moved"
+
+"""
+Port lifecycle enums for Open_TCP_Services / Open_UDP_Services.
+"""
+
+class PortState(Enum):
+    SUGGESTED = "Suggested"
+    MONITORED = "Monitored"
+    MISSING = "Missing"
+    ARCHIVED = "Archived"
+    IGNORED = "Ignored"
+
+class PortSource(Enum):
+    SCAN = "Scan"
+    NCPA = "NCPA"
+    USER = "User"
+
+"""
 ScanStatus Enum so that Scan_Status is consistent
 To call use "NetworkDiscovery.Scan_Status = ScanStatus.PENDING"
 The models class need to be imported to use the Enums
@@ -289,6 +352,9 @@ The models class need to be imported to use the Enums
 class NetworkDiscovery(db.Model):
     # Table Name
     __tablename__ = "NETWORK_DISCOVERY"
+    __table_args__ = (
+        sa.UniqueConstraint('Nagios_Host_Name', name='uq_network_discovery_nagios_host_name'),
+    )
     
     # Table Fields
     NetDiscoveryID:  so.Mapped[int]  = so.mapped_column(primary_key=True)
@@ -307,8 +373,21 @@ class NetworkDiscovery(db.Model):
     # Nagios services are generated.
     Plugin_Variables: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
 
+    # Device identity (DHCP plan section 5). IP_Address always holds the
+    # CURRENT address; Nagios_Host_Name is fixed at creation and never derived
+    # from it. Hostname is only "the name DNS reported" and Nagios ignores it.
+    Nagios_Host_Name: so.Mapped[Optional[str]] = so.mapped_column(sa.String(100))
+    Display_Name: so.Mapped[Optional[str]] = so.mapped_column(sa.String(100))
+    Addressing: so.Mapped[AddressingMode] = so.mapped_column(sa.Enum(AddressingMode), default=AddressingMode.UNKNOWN)
+    Identity_Confidence: so.Mapped[IdentityConfidence] = so.mapped_column(sa.Enum(IdentityConfidence), default=IdentityConfidence.UNVERIFIED)
+    Device_State: so.Mapped[DeviceState] = so.mapped_column(sa.Enum(DeviceState), default=DeviceState.ACTIVE, index=True)
+    First_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+    Last_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+    Missed_Scans: so.Mapped[int] = so.mapped_column(default=0)
+
     # Foreign Key Fields
     DiscoveryStatusID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscoveryStatus.DiscoveryStatusID), index=True)
+    Merged_Into_ID: so.Mapped[Optional[int]] = so.mapped_column(sa.ForeignKey("NETWORK_DISCOVERY.NetDiscoveryID"))
 
     """
     Gets on instnce of ActivityLog
@@ -326,24 +405,117 @@ class NetworkDiscovery(db.Model):
     # Phase 10 (Plugin Manager): plugin configurations targeting this device.
     Plugin_Configurations: so.WriteOnlyMapped['PluginConfiguration'] = so.relationship(back_populates='Target_Device')
     
+class DeviceIdentifier(db.Model):
+    """
+    One piece of evidence that identifies a device across IP changes (NCPA
+    certificate, machine-id, SSH host key, MAC, DNS name). Strong identifiers
+    are unique on (Kind, Value) so one key can never belong to two devices.
+    A multi-NIC device simply has several MAC rows.
+    """
+    __tablename__ = "DEVICE_IDENTIFIER"
+    __table_args__ = (
+        # Unique only for strong identifiers: two devices may share a weak one
+        # (e.g. the same reverse-DNS name).
+        sa.Index('uq_device_identifier_strong', 'Kind', 'Value', unique=True,
+                 sqlite_where=sa.text('"Is_Strong" = 1'),
+                 postgresql_where=sa.text('"Is_Strong" = true')),
+    )
+
+    IdentifierID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Kind: so.Mapped[IdentifierKind] = so.mapped_column(sa.Enum(IdentifierKind))
+    Value: so.Mapped[str] = so.mapped_column(sa.String(255))
+    Is_Strong: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=True)
+    First_Seen_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+    Last_Seen_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+
+    NetDiscoveryID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True)
+
+class DeviceAddressHistory(db.Model):
+    """
+    Every IP a device has been seen at. The open row (Closed_At IS NULL) is
+    the current address; a device has at most one open row.
+    """
+    __tablename__ = "DEVICE_ADDRESS_HISTORY"
+
+    AddressID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    IP_Address: so.Mapped[str] = so.mapped_column(sa.String(45))
+    Network: so.Mapped[Optional[str]] = so.mapped_column(sa.String(18))
+    MAC_Address: so.Mapped[Optional[str]] = so.mapped_column(sa.String(17))
+    Source: so.Mapped[AddressSource] = so.mapped_column(sa.Enum(AddressSource), default=AddressSource.SCAN)
+    First_Seen_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+    Last_Seen_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+    Closed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
+
+    NetDiscoveryID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True)
+
+class DeviceReviewItem(db.Model):
+    """
+    A decision the reconciler refused to make on its own (conflicting
+    identifiers, identity change, IP reuse, ...). Shown on the "Needs review"
+    list until a user resolves it. Candidate_Device_IDs lists the devices
+    involved so the UI can offer Merge / Retire.
+    """
+    __tablename__ = "DEVICE_REVIEW_ITEM"
+
+    ReviewID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Kind: so.Mapped[ReviewKind] = so.mapped_column(sa.Enum(ReviewKind))
+    IP_Address: so.Mapped[Optional[str]] = so.mapped_column(sa.String(45))
+    MAC_Address: so.Mapped[Optional[str]] = so.mapped_column(sa.String(17))
+    Message: so.Mapped[str] = so.mapped_column(sa.String(255))
+    Candidate_Device_IDs: so.Mapped[Optional[list]] = so.mapped_column(sa.JSON())
+    Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+    Resolved_At: so.Mapped[Optional[datetime]] = so.mapped_column()
+
+    DiscoveryStatusID: so.Mapped[Optional[int]] = so.mapped_column(sa.ForeignKey(NetworkDiscoveryStatus.DiscoveryStatusID), index=True)
+
 class Open_TCP_Services(db.Model):
     __tablename__ = "OPEN_TCP_Services"
+    __table_args__ = (
+        sa.UniqueConstraint('NetDiscoveryID', 'Port_Number', name='uq_open_tcp_device_port'),
+    )
 
     OpenPortID: so.Mapped[int] = so.mapped_column(primary_key=True)
     Port_Number: so.Mapped[int] = so.mapped_column()
     Service_Name: so.Mapped[str] = so.mapped_column(sa.String(255))
-    # Closed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
+
+    # Port lifecycle (DHCP plan section 9). Plugin_Name is frozen when the
+    # port becomes MONITORED so a later nmap guess cannot rename the service.
+    Port_State: so.Mapped[PortState] = so.mapped_column(sa.Enum(PortState), default=PortState.MONITORED)
+    Source: so.Mapped[PortSource] = so.mapped_column(sa.Enum(PortSource), default=PortSource.SCAN)
+    Plugin_Name: so.Mapped[Optional[str]] = so.mapped_column(sa.String(100))
+    # Latest nmap guess, kept apart from Service_Name once the port is
+    # monitored so a changed guess becomes a suggestion, not a rename.
+    Observed_Service_Name: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
+    First_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+    Last_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+    Closed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
+    Missed_Scans: so.Mapped[int] = so.mapped_column(default=0)
 
     NetDiscoveryID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True)
 
 class Open_UDP_Services(db.Model):
     __tablename__ = "OPEN_UDP_Services"
+    __table_args__ = (
+        sa.UniqueConstraint('NetDiscoveryID', 'Port_Number', name='uq_open_udp_device_port'),
+    )
 
     OpenPortID: so.Mapped[int] = so.mapped_column(primary_key=True)
     Port_Number: so.Mapped[int] = so.mapped_column()
     Service_Name: so.Mapped[str] = so.mapped_column(sa.String(255))
-    # Closed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
-    
+
+    # Port lifecycle (DHCP plan section 9). Plugin_Name is frozen when the
+    # port becomes MONITORED so a later nmap guess cannot rename the service.
+    Port_State: so.Mapped[PortState] = so.mapped_column(sa.Enum(PortState), default=PortState.MONITORED)
+    Source: so.Mapped[PortSource] = so.mapped_column(sa.Enum(PortSource), default=PortSource.SCAN)
+    Plugin_Name: so.Mapped[Optional[str]] = so.mapped_column(sa.String(100))
+    # Latest nmap guess, kept apart from Service_Name once the port is
+    # monitored so a changed guess becomes a suggestion, not a rename.
+    Observed_Service_Name: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
+    First_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+    Last_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
+    Closed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
+    Missed_Scans: so.Mapped[int] = so.mapped_column(default=0)
+
     NetDiscoveryID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True)
 
 class SSHCredentials(db.Model):

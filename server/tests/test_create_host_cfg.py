@@ -398,7 +398,8 @@ class TestLoadHostPluginFacts:
 
         assert host["data"]["net_discovery_id"] == device.NetDiscoveryID
         assert host["data"]["plugin_variables"] == {"snmp": {"community": "private"}}
-        assert host["services"]["udp"] == {"161": {"service_name": "snmp"}}
+        # plugin_name is the frozen plugin; None for ports that predate it.
+        assert host["services"]["udp"] == {"161": {"service_name": "snmp", "plugin_name": None}}
 
 
 # ==========================================================
