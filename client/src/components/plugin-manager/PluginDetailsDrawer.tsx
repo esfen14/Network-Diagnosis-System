@@ -21,6 +21,7 @@ import {
   validatePlugin,
 } from '../../lib/pluginApi'
 import { errorMessage } from '../../lib/api'
+import { PluginTargetsSection } from './PluginTargetsSection'
 import type { PluginCommand, PluginDependency, PluginDetails, PluginValidationResult } from '../../types/plugin'
 
 type Props = {
@@ -54,8 +55,8 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
   const [editingCommandId, setEditingCommandId] = useState<number | null>(null)
   const [overrideValue, setOverrideValue] = useState('')
 
-  async function load() {
-    setIsLoading(true)
+  async function load(showSpinner = true) {
+    if (showSpinner) setIsLoading(true)
     setLoadError(null)
     try {
       const [d, c, deps] = await Promise.all([
@@ -83,7 +84,7 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
     setActionError(null)
     try {
       await action()
-      await load()
+      await load(false)
       onChanged()
     } catch (err) {
       setActionError(errorMessage(err, 'Action failed.'))
@@ -190,8 +191,7 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
 
                 <p className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-white/5 dark:text-gray-400">
                   Monitoring usage: {details.monitoring_usage.services} services /{' '}
-                  {details.monitoring_usage.devices} devices.{' '}
-                  {details.monitoring_usage.note}
+                  {details.monitoring_usage.devices} devices.
                 </p>
 
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -247,6 +247,17 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
                   </div>
                 )}
               </section>
+
+              <PluginTargetsSection
+                key={pluginId}
+                pluginId={pluginId}
+                pluginName={details.name}
+                pluginStatus={details.status}
+                onApplied={async () => {
+                  await load(false)
+                  onChanged()
+                }}
+              />
 
               <section>
                 <h4 className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">

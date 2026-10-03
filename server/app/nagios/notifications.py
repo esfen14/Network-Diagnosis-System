@@ -6,7 +6,11 @@ from flask import current_app
 # class as NAGIOS_ARCHIVE_URL, NAGIOS_USERNAME, NAGIOS_PASSWORD — read
 # into same-named locals inside _request_archive() below.
 
-def _request_archive(query, params):
+def _request_archive(query, params, result_key=None):
+    """
+    Call archivejson.cgi and return data[result_key] (data[query] by
+    default). Returns None if Nagios can't be reached or the key is missing.
+    """
     NAGIOS_URL = current_app.config['NAGIOS_ARCHIVE_URL']
     USERNAME = current_app.config['NAGIOS_USERNAME']
     PASSWORD = current_app.config['NAGIOS_PASSWORD']
@@ -25,9 +29,12 @@ def _request_archive(query, params):
 
         data = response.json()
         
-        return data['data'][query]
+        return data['data'][result_key or query]
     except requests.RequestException as e:
         current_app.logger.error("Failed to request Nagios archive: %s", e)
+        return None
+    except (KeyError, TypeError, ValueError) as e:
+        current_app.logger.error("Unexpected Nagios archive response for %s: %s", query, e)
         return None
 '''
     There is a difference between notifications and alerts.
@@ -66,6 +73,23 @@ def request_alert_count_range(start_ts, end_ts, hostname=None, service=None):
         params['service'] = service
 
     return _request_archive("alertcount", params)
+
+
+# ======================= AVAILABILITY ===============================
+def request_host_availability_range(start_ts, end_ts):
+    """
+    Query per-host availability for a UNIX timestamp range. Returns the
+    list under data.hosts — one dict per host with time_up, time_down,
+    time_unreachable and time_indeterminate_* (seconds) — or None if
+    Nagios can't be reached.
+    """
+    params = {
+        "availabilityobjecttype": "hosts",
+        "starttime": start_ts,
+        "endtime": end_ts,
+    }
+
+    return _request_archive("availability", params, result_key="hosts")
 
 
 # ================================ NOTIFICATIONS ==============================

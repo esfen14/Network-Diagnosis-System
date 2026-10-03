@@ -267,7 +267,6 @@ def network_health_plugins():
     {
         "groups": [
             {
-                "plugin_key":   str,
                 "display_name": str,
                 "total":        int,
                 "ok":           int,

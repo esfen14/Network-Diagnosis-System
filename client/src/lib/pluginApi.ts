@@ -3,7 +3,10 @@
 // reference doc, Section 2 "Route Reference").
 import { apiGet, apiPost } from './api'
 import type {
+  ApplyConfigurationResult,
   CustomPluginUploadResult,
+  MonitoringTarget,
+  PluginConfigurationItem,
   PluginCommand,
   PluginDependency,
   PluginDetails,
@@ -98,6 +101,23 @@ export function validatePlugin(id: number) {
   return apiPost<PluginValidationResult>(`/api/plugin/${id}/validate`)
 }
 
+export function getMonitoringTargets() {
+  return apiGet<MonitoringTarget[]>('/api/plugin/targets')
+}
+
+export function getPluginConfigurations(pluginId: number) {
+  return apiGet<PluginConfigurationItem[]>(`/api/plugin/${pluginId}/configurations`)
+}
+
+export function applyPluginConfiguration(pluginId: number, netDiscoveryId: number, serviceDescription: string) {
+  return apiPost<ApplyConfigurationResult>(`/api/plugin/${pluginId}/configurations`, {
+    net_discovery_id: netDiscoveryId,
+    service_description: serviceDescription,
+  })
+}
+
+// Used only by AddCustomPluginModal, which is disabled for now: the Add
+// Custom Plugin button and POST /api/plugin/custom are commented out.
 export type AddCustomPluginInput = {
   file: File
   name: string

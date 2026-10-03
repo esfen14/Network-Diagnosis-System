@@ -166,25 +166,32 @@ def _display_name(plugin_key: str) -> str:
 def get_latest_hosts() -> list[HostStatus]:
     """
     Return one HostStatus row per hostname (the most recent snapshot).
+
+    Two polls can store the same Nagios timestamp for a host; only the
+    newest row (highest ID) is kept so nothing is counted twice.
     """
     subq = _latest_host_subquery()
-    return db.session.scalars(
+    rows = db.session.scalars(
         sa.select(HostStatus).join(
             subq,
             sa.and_(
                 HostStatus.Hostname == subq.c.Hostname,
                 HostStatus.Timestamp == subq.c.max_ts,
             ),
-        )
+        ).order_by(HostStatus.HostStatusID)
     ).all()
+    return list({row.Hostname: row for row in rows}.values())
 
 
 def get_latest_services() -> list[ServiceStatus]:
     """
     Return one ServiceStatus row per (hostname, service) pair (most recent snapshot).
+
+    Two polls can store the same Nagios timestamp for a service; only the
+    newest row (highest ID) is kept so nothing is counted twice.
     """
     subq = _latest_service_subquery()
-    return db.session.scalars(
+    rows = db.session.scalars(
         sa.select(ServiceStatus).join(
             subq,
             sa.and_(
@@ -192,8 +199,9 @@ def get_latest_services() -> list[ServiceStatus]:
                 ServiceStatus.Service  == subq.c.Service,
                 ServiceStatus.Timestamp == subq.c.max_ts,
             ),
-        )
+        ).order_by(ServiceStatus.ServiceStatusID)
     ).all()
+    return list({(row.Hostname, row.Service): row for row in rows}.values())
 
 
 def host_counts(hosts: list[HostStatus]) -> dict:

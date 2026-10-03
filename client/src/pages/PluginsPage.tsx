@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Boxes, CheckCircle2, PackagePlus, Puzzle, RefreshCcw } from 'lucide-react'
+// PackagePlus is only used by the commented-out Add Custom Plugin button.
+import { AlertTriangle, Boxes, CheckCircle2, /* PackagePlus, */ Puzzle, RefreshCcw } from 'lucide-react'
 import { PageHeader } from '../components/shared/PageHeader'
 import { SummaryStatCard } from '../components/shared/SummaryStatCard'
 import { PluginInventoryTable } from '../components/plugin-manager/PluginInventoryTable'
 import { RunningChecksTable } from '../components/plugin-manager/RunningChecksTable'
 import { PluginDetailsDrawer } from '../components/plugin-manager/PluginDetailsDrawer'
-import { AddCustomPluginModal } from '../components/plugin-manager/AddCustomPluginModal'
+// Custom plugins are not part of the current release; see the button below.
+// import { AddCustomPluginModal } from '../components/plugin-manager/AddCustomPluginModal'
 import { errorMessage } from '../lib/api'
 import { getPluginInventory, getPluginScanStatus, getPluginSummary, getRunningChecks, startPluginScan } from '../lib/pluginApi'
 import type { PluginListItem, PluginStatus, PluginSummary, PluginType } from '../types/plugin'
@@ -40,7 +42,7 @@ export function PluginsPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const [selectedPluginId, setSelectedPluginId] = useState<number | null>(null)
-  const [showAddCustom, setShowAddCustom] = useState(false)
+  // const [showAddCustom, setShowAddCustom] = useState(false)
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -147,6 +149,11 @@ export function PluginsPage() {
           title="Plugin Manager"
           description="Manage Nagios plugin executables and command definitions on this server."
         />
+        {/*
+          Add Custom Plugin is not part of the current release. Kept
+          commented out (with its modal below and POST /api/plugin/custom
+          in server/app/api/plugin/manager.py) so it can be restored later.
+
         <button
           type="button"
           onClick={() => setShowAddCustom(true)}
@@ -154,6 +161,7 @@ export function PluginsPage() {
         >
           <PackagePlus className="h-4 w-4" /> Add Custom Plugin
         </button>
+        */}
       </div>
 
       {loadError && (
@@ -278,12 +286,14 @@ export function PluginsPage() {
         />
       )}
 
+      {/* Custom plugins are disabled — see the Add Custom Plugin button above.
       {showAddCustom && (
         <AddCustomPluginModal
           onClose={() => setShowAddCustom(false)}
           onAdded={refreshAll}
         />
       )}
+      */}
     </main>
   )
 }

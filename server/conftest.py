@@ -118,6 +118,7 @@ PERMISSION_NAMES = [
     "plugin.configure",
     "settings.security",
     "settings.system",
+    "settings.discovery",
 ]
 
 

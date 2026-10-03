@@ -10,7 +10,7 @@ holds (MACs, SSH host key fingerprints) becomes DeviceIdentifier rows.
 history.db is not touched.
 
 Revision ID: d41f7a2b9e10
-Revises: c3610bb0fc54
+Revises: 7d2e4b9a1c05
 Create Date: 2026-10-03 12:00:00.000000
 
 """
@@ -24,7 +24,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'd41f7a2b9e10'
-down_revision = 'c3610bb0fc54'
+down_revision = '7d2e4b9a1c05'
 branch_labels = None
 depends_on = None
 

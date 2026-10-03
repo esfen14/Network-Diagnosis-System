@@ -35,12 +35,6 @@ class Role(db.Model):
     Description: so.Mapped[Optional[str]] = so.mapped_column(sa.String(150))
     Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
 
-    """
-    Relationship with User and RolePermission table
-    WriteOnlyMappped links each role to many users and many permissions
-    WriteOnlyMapped is to explicity load only that is queried
-    back_populate spcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
-    """
     Users: so.WriteOnlyMapped['User'] = so.relationship(back_populates='Role')
     RolePermissions: so.WriteOnlyMapped['RolePermission'] = so.relationship(back_populates='Role')
 
@@ -60,18 +54,10 @@ class RolePermission(db.Model):
     RoleID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(Role.RoleID), index=True)
     PermissionID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(Permission.PermissionID), index=True)
 
-    """
-    Relationship with Role
-    back_populate spcifies that you can access this table from either side, (i.e DeploymentHistory <--> ActivityLog and vise versa)
-    """
+
     Role: so.Mapped['Role'] = so.relationship(back_populates='RolePermissions')
     Permissions: so.Mapped['Permission'] = so.relationship(back_populates='RolePermission')
    
-"""
-UserStatus Enum so that Status is consistent
-To call use "User.Status = UserStatus.ACTIVE"
-The models class need to be imported to use the Enums
-"""
 class UserStatus(Enum):
     ACTIVE = "Active"
     INACTIVE = "Inactive"
@@ -703,6 +689,27 @@ class SystemSettings(db.Model):
             "version": self.Version,
             "updatedAt": self.Updated_At.isoformat(),
         }
+
+
+class DiscoverySettings(db.Model):
+    # Table Name
+    __tablename__ = "DISCOVERY_SETTINGS"
+
+    # Table Fields
+    Id: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Networks: so.Mapped[Optional[list]] = so.mapped_column(sa.JSON())
+    TCP_Ports: so.Mapped[Optional[list]] = so.mapped_column(sa.JSON())
+    UDP_Ports: so.Mapped[Optional[list]] = so.mapped_column(sa.JSON())
+    TCP_Service_Overrides: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
+    UDP_Service_Overrides: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
+
+    # Concurrency + audit trail
+    Version: so.Mapped[int] = so.mapped_column(sa.Integer(), default=1)
+    Updated_At: so.Mapped[datetime] = so.mapped_column(
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    Updated_By: so.Mapped[Optional[int]] = so.mapped_column(sa.ForeignKey(User.UserID), index=True)
 
 """
 UserPreferences holds per-user personal display settings — one row per
