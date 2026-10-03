@@ -65,6 +65,23 @@ class Config:
     DOMAIN = os.environ.get('PINPOINT_DOMAIN') or "test.local"
     NCPA_PORT = "5693"
 
+    # Device identity and port lifecycle (see "spec files/DHCP_Device_Identity_Plan.md").
+    # Scans a device may go unseen before ACTIVE -> MISSING, and days it may
+    # stay MISSING / ADDRESS_UNKNOWN before it is retired automatically.
+    DEVICE_MISSING_AFTER_SCANS = 2
+    DEVICE_RETIRE_AFTER_DAYS = 30
+    # Consecutive scans a port may be unseen (while its host was seen) before
+    # it counts as gone, and days a MONITORED port stays MISSING before archive.
+    PORT_MISSING_AFTER_SCANS = 3
+    PORT_ARCHIVE_AFTER_DAYS = 30
+    # Services monitored on first sighting; every other new port is only
+    # SUGGESTED until a user monitors it.
+    AUTO_MONITOR_SERVICES = ["ssh", "http", "https", "snmp", "ncpa"]
+    # Never suggested automatically (Linux / Windows ephemeral ranges).
+    EPHEMERAL_PORT_RANGES = [(32768, 60999), (49152, 65535)]
+    # How often the NCPA relocation job looks for NCPA devices that moved.
+    NCPA_RELOCATE_MINUTES = 5
+
     # SNMP polling defaults, used when a discovered host exposes SNMP
     # instead of (or alongside) NCPA. Each SNMP_OIDS entry becomes its own
     # Nagios service ("snmp-<metric>-<port>"); optional keys warning,

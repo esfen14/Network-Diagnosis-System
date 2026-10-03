@@ -10,8 +10,12 @@ import secrets
 import shlex
 import requests
 import os
+import re
 import textwrap
 from app.network_discovery.create_host_cfg import add_ncpa_port, ADD_NCPA_PORT_PROGRESS_WEIGHT
+from app.network_discovery.device_identity import Evidence, is_hardware_mac, normalize_mac, record_device_evidence
+from app.network_discovery.identity_probes import tls_certificate_fingerprint
+from app.system_models import IdentifierKind
 
 
 home = str(os.getenv("HOME"))
@@ -405,6 +409,23 @@ def install_deployment_helper(client, password):
 
     "$SED" -i "s/^community_string = .*/community_string = $TOKEN/" "$NCPA_CONFIG"
 
+    # Use a persistent self-signed certificate instead of NCPA's "adhoc" one,
+    # which may be regenerated on restart. PinPoint identifies the device by
+    # this certificate's fingerprint after its IP changes, so it must survive
+    # restarts. Created once and reused on redeploys.
+    OPENSSL="/usr/bin/openssl"
+    CERT_FILE="/usr/local/ncpa/etc/pinpoint-ncpa.crt"
+    KEY_FILE="/usr/local/ncpa/etc/pinpoint-ncpa.key"
+
+    if [ ! -s "$CERT_FILE" ] || [ ! -s "$KEY_FILE" ]; then
+        "$OPENSSL" req -x509 -newkey rsa:2048 -nodes -days 3650 \\
+            -subj "/CN=$(/usr/bin/hostname)" -keyout "$KEY_FILE" -out "$CERT_FILE"
+        /usr/bin/chmod 600 "$KEY_FILE"
+        /usr/bin/chmod 644 "$CERT_FILE"
+    fi
+
+    "$SED" -i "s|^certificate = .*|certificate = $CERT_FILE,$KEY_FILE|" "$NCPA_CONFIG"
+
     "$NCPA_INIT" stop || true
     sleep 1
     "$NCPA_INIT" start
@@ -426,6 +447,20 @@ def install_deployment_helper(client, password):
     echo "PARTITIONS_BEGIN"
     lsblk -ln -o NAME,TYPE | awk '$2=="part"{print $1}'
     echo "PARTITIONS_END"
+
+    # Identity evidence for PinPoint's device reconciler: the machine-id, the
+    # hardware MACs of physical interfaces (no loopback, bridges or virtual
+    # devices) and the hostname. Only identifiers are printed, never the token.
+    echo "IDENTITY_BEGIN"
+    echo "machine_id=$(/usr/bin/cat /etc/machine-id 2>/dev/null || true)"
+    for iface in /sys/class/net/*; do
+        name="$(/usr/bin/basename "$iface")"
+        if [ -e "$iface/device" ] && [ ! -d "$iface/bridge" ] && [ "$name" != "lo" ]; then
+            echo "mac=$(/usr/bin/cat "$iface/address")"
+        fi
+    done
+    echo "hostname=$(/usr/bin/hostname)"
+    echo "IDENTITY_END"
     ''').lstrip('\n')
 
     try:
@@ -678,6 +713,70 @@ def _parse_partitions(stdout_text: str) -> list[str]:
             names.append(line)
     return names
 
+def _parse_identity(stdout_text: str) -> dict:
+    """
+    Extract the identity block the helper script prints:
+
+        IDENTITY_BEGIN
+        machine_id=<id>
+        mac=aa:bb:cc:dd:ee:ff
+        hostname=<name>
+        IDENTITY_END
+
+    Returns {"machine_id": str | None, "macs": [str], "hostname": str | None}.
+    Only hardware (universally administered) MACs are kept, valid MACs are
+    normalized, and text outside the sentinels is ignored.
+    """
+    identity = {"machine_id": None, "macs": [], "hostname": None}
+    inside = False
+    for raw_line in stdout_text.splitlines():
+        line = raw_line.strip()
+        if line == "IDENTITY_BEGIN":
+            inside = True
+            continue
+        if line == "IDENTITY_END":
+            break
+        if not inside or "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        value = value.strip()
+        if key == "machine_id" and re.fullmatch(r"[0-9a-f]{32}", value):
+            identity["machine_id"] = value
+        elif key == "mac" and is_hardware_mac(value):
+            mac = normalize_mac(value)
+            if mac not in identity["macs"]:
+                identity["macs"].append(mac)
+        elif key == "hostname" and value:
+            identity["hostname"] = value
+    return identity
+
+
+def store_deployment_identity(device_id, identity, cert_fingerprint):
+    """
+    Save what the deployment learned about a device as identifiers: its
+    machine-id, hardware MACs and the NCPA certificate fingerprint. These let
+    the device be recognised after a DHCP lease change. Evidence another
+    device already owns raises a review item instead of being moved.
+    Commits. Returns the list of evidence that could not be attached.
+    """
+    device = db.session.get(NetworkDiscovery, device_id)
+    if device is None:
+        return []
+
+    evidence = []
+    if identity.get("machine_id"):
+        evidence.append(Evidence(IdentifierKind.MACHINE_ID, identity["machine_id"]))
+    for mac in identity.get("macs", []):
+        evidence.append(Evidence(IdentifierKind.MAC, mac))
+    if cert_fingerprint:
+        evidence.append(Evidence(IdentifierKind.NCPA_CERT, cert_fingerprint))
+
+    rejected = record_device_evidence(device, evidence)
+    db.session.commit()
+    return rejected
+
+
 def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
 
     client = None
@@ -710,7 +809,15 @@ def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
             )
             return None
 
-        token = secrets.token_hex(16)
+        # A redeploy to the same device reuses its token rather than minting
+        # a new one, so nothing already configured against it breaks.
+        existing_deployment = db.session.scalar(
+            sa.select(NCPADeployment).where(
+                NCPADeployment.NetworkDiscoveryID == device_id,
+                NCPADeployment.Token.is_not(None),
+            )
+        )
+        token = existing_deployment.Token if existing_deployment is not None else secrets.token_hex(16)
 
         result = run_command(
             client,
@@ -779,6 +886,16 @@ def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
             )
 
         db.session.commit()
+
+        # Identity evidence is best effort: the agent is already deployed, so
+        # a failure here must not mark the deployment as failed.
+        try:
+            identity = _parse_identity(stdout_text)
+            cert_fingerprint = tls_certificate_fingerprint(ip_address, NCPA_PORT)
+            store_deployment_identity(device_id, identity, cert_fingerprint)
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Could not store identity evidence after NCPA deployment.")
 
         return True
 
