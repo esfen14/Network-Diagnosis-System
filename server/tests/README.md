@@ -213,6 +213,13 @@ report generation, and SCP retrieval. The harness self-tests use `unittest` and
 do not require pytest; the application regression gate still uses the pinned
 packages in `requirements-test.txt`.
 
+The disposable nested-VM provisioner is under
+[`live_network_discovery/vm_scripts/`](live_network_discovery/vm_scripts/README.md).
+It is currently an unstaged worktree addition, so review and stage the complete
+kit deliberately before expecting it to exist in a fresh clone. Its own README
+documents the libvirt networks, cloud image, previews, verification, baselines,
+and generated SSH/harness artifacts.
+
 The live lab is not part of the isolated pytest suite. It may create disposable
 guests or containers, scan an isolated subnet, alter test-only Nagios
 configuration, stop services, and reload Nagios. Read and approve the plan and

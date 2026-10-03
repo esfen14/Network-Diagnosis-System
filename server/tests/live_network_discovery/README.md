@@ -31,6 +31,13 @@ live_network_discovery/
 |-- provision/
 |   |-- detect_backend.py
 |   `-- install_test_dependencies.py
+|-- vm_scripts/                  # disposable KVM/libvirt target kit
+|   |-- README.md
+|   |-- fetch_image.py
+|   |-- provision_lab.py
+|   |-- guest_setup.py
+|   |-- self_tests.py
+|   `-- vm-lab.example.json
 |-- services/
 |   |-- configure_target01.sh
 |   |-- configure_target02.sh
@@ -47,11 +54,21 @@ live_network_discovery/
     `-- restore_lab.py
 ```
 
-Guest/network creation remains environment-specific because VirtualBox may or
-may not expose KVM. `detect_backend.py` distinguishes command presence from
-usable daemon access for KVM/libvirt, Incus/LXC (including `/snap/bin/lxc`), and
-Docker. Pre-provisioned disposable targets are also supported. Record the
-selected backend and its verified administrative access in the report.
+Guest/network creation uses the standalone
+[`vm_scripts/`](vm_scripts/README.md) kit when nested KVM/libvirt is available.
+That directory is currently an unstaged worktree addition and is not part of
+the committed harness until it is reviewed and deliberately staged.
+`detect_backend.py` distinguishes command presence from usable daemon access
+for KVM/libvirt, Incus/LXC (including `/snap/bin/lxc`), and Docker.
+Pre-provisioned disposable targets are also supported. Record the selected
+backend and its verified administrative access in the report.
+
+The VM kit creates the isolated network, two cloud-image targets, pinned SSH
+keys, baseline overlays, and harness configuration. Its default
+`10.0.2.0/28` network differs from the plan's preferred network and is valid
+only after the kit proves that it does not overlap any management or reachable
+route. Read its README and run its preview and self-tests before any `--apply`
+command. Do not start discovery until `provision_lab.py verify` succeeds.
 
 After creating minimal Debian/Ubuntu guests, copy the matching bootstrap into
 each guest. Both scripts are preview-only unless `--apply` is explicitly
@@ -86,14 +103,67 @@ network. The real `lab.json`, private keys, and results are ignored by Git.
 Credentials are read only from the environment variables named by `lab.json`:
 
 ```bash
-export PINPOINT_TEST_EMAIL='test-admin@example.invalid'
-export PINPOINT_TEST_PASSWORD='replace-at-runtime'
-export PINPOINT_TEST_SSH_KEY='/absolute/path/to/lab-only-key'
+mkdir -p ~/.config/pinpoint-tests
+chmod 700 ~/.config/pinpoint-tests
+test -e ~/.config/pinpoint-tests/lab.env || \
+  install -m 600 /dev/null ~/.config/pinpoint-tests/lab.env
+chmod 600 ~/.config/pinpoint-tests/lab.env
+nano ~/.config/pinpoint-tests/lab.env
 ```
+
+Add these exports to `~/.config/pinpoint-tests/lab.env`:
+
+```bash
+export PINPOINT_TEST_EMAIL='your-test-account-email'
+export PINPOINT_TEST_PASSWORD='your-test-account-password'
+export PINPOINT_TEST_SSH_KEY='/absolute/path/to/lab-private-key'
+```
+
+Before invoking the harness, the AI sources the file in the same shell:
+
+```bash
+set +x
+source ~/.config/pinpoint-tests/lab.env
+```
+
+The guarded `install` command creates the file only when it does not already
+exist; an unguarded repeat would truncate it. Do not enable shell tracing while
+sourcing the file.
 
 Do not place the actual values in JSON, shell history, test evidence, or source
 control. Pre-populate `known_hosts` for each target and verify its fingerprint;
 remote service control uses strict host-key checking.
+
+### Nested virtualization and Nagios access
+
+Verify the system libvirt connection and nested-virtualization prerequisites:
+
+```bash
+virsh -c qemu:///system list --all
+sudo virt-host-validate
+virsh -c qemu:///system net-list --all
+```
+
+An empty domain list is normal before provisioning. QEMU/KVM failures block the
+VM kit; IOMMU, secure-guest, and unused LXC warnings do not. The `default`
+libvirt NAT network must be active for guest package installation. The VM kit
+attaches a second isolated interface and removes the guest NAT interface before
+the discovery phase.
+
+Grant the `paeng` test account the narrowly scoped Nagios access required by
+the current lab:
+
+```bash
+sudo setfacl -m u:paeng:rx /usr/local/nagios/bin/nagios
+sudo setfacl -m u:paeng:rwx /usr/local/nagios/var/spool/checkresults
+
+getfacl /usr/local/nagios/bin/nagios
+getfacl /usr/local/nagios/var/spool/checkresults
+/usr/local/nagios/bin/nagios -v /usr/local/nagios/etc/nagios.cfg
+```
+
+Install the OS `acl` package first if `setfacl` is unavailable. Do not broaden
+these entries recursively across `/usr/local/nagios`.
 
 ## Review and self-test
 

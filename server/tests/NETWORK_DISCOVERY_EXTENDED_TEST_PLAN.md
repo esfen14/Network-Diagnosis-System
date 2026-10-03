@@ -99,6 +99,23 @@ containers with dedicated addresses are acceptable fallbacks. `target01`
 should be a full VM when possible for SSH fingerprint and NCPA deployment
 testing.
 
+Before provisioning, verify that VirtualBox is exposing nested virtualization
+and that the invoking account can use the system libvirt connection:
+
+```bash
+virsh -c qemu:///system list --all
+sudo virt-host-validate
+virsh -c qemu:///system net-list --all
+```
+
+The QEMU hardware-virtualization, `/dev/kvm`, `/dev/vhost-net`, and
+`/dev/net/tun` checks must pass. IOMMU and secure-guest warnings do not block
+this lab because it does not use device passthrough or encrypted guests. LXC
+controller failures do not block the run when QEMU/KVM is the selected backend.
+An empty domain list is expected before the disposable targets are created.
+Use `qemu:///system` consistently; do not accidentally provision into the
+invoking user's separate `qemu:///session` connection.
+
 ### 4.2 Network
 
 The preferred isolated network is `192.168.130.0/28`:
@@ -113,10 +130,29 @@ A management/NAT interface may be used to install packages. Network Discovery
 must be configured only for the isolated subnet and must never scan the
 management or production network.
 
+The main VirtualBox VM uses its VirtualBox NAT adapter for internet access. The
+nested targets each initially use two libvirt interfaces:
+
+- the active libvirt `default` NAT network, using DHCP, for package downloads;
+- an isolated libvirt network, with static lab addresses and no default gateway
+  or DNS route.
+
+The provisioning workflow must remove the nested targets' temporary NAT
+interfaces after package installation and before discovery. Pinpoint retains
+internet access through the outer VirtualBox NAT adapter, while discovery is
+restricted to the isolated libvirt bridge.
+
 An equivalent private `/28` may be substituted only after read-only interface
 and route inspection proves that it is owned by the disposable lab and is not
 the VirtualBox management/NAT or a production-connected network. Record the
 approved substitution in the final report before scanning.
+
+The bundled VM kit under `live_network_discovery/vm_scripts/` currently
+defaults to `10.0.2.0/28` with Pinpoint at `.1` and the targets at `.2` and
+`.3`. This is an allowable substitute only if its read-only route and interface
+checks prove that the subnet does not overlap the outer VirtualBox NAT,
+management interfaces, or another reachable network. Never assume that a
+private address is isolated merely because it is private.
 
 ## 5. Target services
 
@@ -257,6 +293,63 @@ required cases pass and sufficient time, memory, and dependencies remain.
 - Baseline Nagios configuration hashes and VM snapshots exist.
 - Secrets are stored outside source control.
 
+### 8.1 Test credential environment
+
+Create a user-only environment file outside the repository. The `install`
+command below is for first-time creation; do not rerun it over an existing file
+because doing so would truncate the saved values.
+
+```bash
+mkdir -p ~/.config/pinpoint-tests
+chmod 700 ~/.config/pinpoint-tests
+test -e ~/.config/pinpoint-tests/lab.env || \
+  install -m 600 /dev/null ~/.config/pinpoint-tests/lab.env
+chmod 600 ~/.config/pinpoint-tests/lab.env
+nano ~/.config/pinpoint-tests/lab.env
+```
+
+Store only the runtime exports in that file:
+
+```bash
+export PINPOINT_TEST_EMAIL='your-test-account-email'
+export PINPOINT_TEST_PASSWORD='your-test-account-password'
+export PINPOINT_TEST_SSH_KEY='/absolute/path/to/lab-private-key'
+```
+
+The AI sources the file into the same shell that invokes the harness, with shell
+tracing disabled so values are not echoed:
+
+```bash
+set +x
+source ~/.config/pinpoint-tests/lab.env
+```
+
+`config/lab.json` must contain the environment-variable names, never these
+values. The environment file must remain outside Git and must not be copied into
+the result bundle.
+
+### 8.2 Nagios access for the test operator
+
+The harness must be able to execute Nagios validation and use its check-result
+spool. Grant only the required access to the test account (`paeng` in this lab):
+
+```bash
+sudo setfacl -m u:paeng:rx /usr/local/nagios/bin/nagios
+sudo setfacl -m u:paeng:rwx /usr/local/nagios/var/spool/checkresults
+```
+
+If `setfacl` is unavailable, install the operating system's `acl` package first.
+Verify the resulting entries without printing any credentials:
+
+```bash
+getfacl /usr/local/nagios/bin/nagios
+getfacl /usr/local/nagios/var/spool/checkresults
+/usr/local/nagios/bin/nagios -v /usr/local/nagios/etc/nagios.cfg
+```
+
+Do not recursively grant access to the whole Nagios installation. Reload access
+must remain a separately reviewed, non-interactive administrative capability.
+
 ## 9. Automation requirements
 
 The live harness under `tests/live_network_discovery/` must be manifest-driven.
@@ -289,8 +382,12 @@ user approves an exception.
 
 ### Stage B: provision and inventory
 
-Create the isolated network and targets, configure Profile A, capture actual
-listening ports, verify reachability, and take baseline snapshots.
+Validate the system libvirt connection, then use the reviewed scripts under
+`tests/live_network_discovery/vm_scripts/` to create the isolated network and
+targets. Configure Profile A, remove the temporary guest NAT adapters, capture
+actual listening ports and routes, verify isolation and reachability, and take
+baseline snapshots. Do not begin discovery until the kit's `verify` command
+succeeds.
 
 ### Stage C: core discovery
 
