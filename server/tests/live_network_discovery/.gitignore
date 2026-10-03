@@ -1,0 +1,8 @@
+config/lab.json
+config/plugin-cases.json
+results/
+__pycache__/
+*/__pycache__/
+*.log
+*.key
+*.pem

@@ -1,13 +1,20 @@
 # Backend Test Suite
 
-**Last verified against the repository:** 2026-09-27
+**Last verified against the repository:** 2026-10-03
 
-**Current collection:** 35 test modules, 1,044 collected tests
+**Current collection:** 1,168 collected tests
 
 This directory contains the pytest suite for the Flask backend. It covers API
 authorization and contracts, database models, Nagios parsing and aggregation,
 network discovery, NCPA deployment, scheduled automation, and Plugin Manager
 workflows.
+
+The draft live-lab plan is in
+[`NETWORK_DISCOVERY_EXTENDED_TEST_PLAN.md`](NETWORK_DISCOVERY_EXTENDED_TEST_PLAN.md).
+Its future opt-in automation belongs under
+[`live_network_discovery/`](live_network_discovery/). That harness is separate
+from normal pytest collection and must never run during installation or
+application startup.
 
 The exact number of collected tests will change as parametrized cases and new
 features are added. Use `pytest --collect-only` when an exact current count is
@@ -193,6 +200,20 @@ is marked expected-failure because large Nagios notification histories can time
 out.
 
 Do not put real credentials in source, test output, or documentation.
+
+## Live Network Discovery lab
+
+`NETWORK_DISCOVERY_EXTENDED_TEST_PLAN.md` defines the resource-constrained
+VirtualBox test of real Network Discovery mappings and selected additional
+Nagios checks. `live_network_discovery/` is reserved for its explicitly invoked
+provisioning, service-control, polling, evidence, reporting, and cleanup tools.
+Its [README](live_network_discovery/README.md) documents configuration,
+self-tests, guarded execution, recovery, report generation, and SCP retrieval.
+
+The live lab is not part of the isolated pytest suite. It may create disposable
+guests or containers, scan an isolated subnet, alter test-only Nagios
+configuration, stop services, and reload Nagios. Read and approve the plan and
+the harness configuration before running it.
 
 ## Adding or updating tests
 
