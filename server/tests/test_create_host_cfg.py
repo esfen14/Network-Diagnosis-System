@@ -152,9 +152,9 @@ class TestSnmpHost:
             services = as_dict(build_host_services(host, {}, plugin_config))
 
         assert services == {
-            "snmp-uptime-161": "pinpoint_nd_snmp!161!public!1.3.6.1.2.1.1.3.0!",
-            "snmp-memory_total-161": "pinpoint_nd_snmp!161!public!1.3.6.1.4.1.2021.4.5.0!",
-            "snmp-lan_status-161": "pinpoint_nd_snmp!161!public!1.3.6.1.2.1.2.2.1.8.3!",
+            "snmp-uptime-161-udp": "pinpoint_nd_snmp!161!public!1.3.6.1.2.1.1.3.0!",
+            "snmp-memory_total-161-udp": "pinpoint_nd_snmp!161!public!1.3.6.1.4.1.2021.4.5.0!",
+            "snmp-lan_status-161-udp": "pinpoint_nd_snmp!161!public!1.3.6.1.2.1.2.2.1.8.3!",
         }
 
     def test_host_overrides_community_port_and_oids(self, app, plugin_config):
@@ -174,8 +174,8 @@ class TestSnmpHost:
             services = as_dict(build_host_services(host, {}, plugin_config))
 
         assert services == {
-            "snmp-cpu-1161": "pinpoint_nd_snmp!1161!private!1.3.6.1.4.1.2021.11.9.0!-w '80'",
-            "snmp-if_in-1161": "pinpoint_nd_snmp!1161!private!1.3.6.1.2.1.2.2.1.10.1!",
+            "snmp-cpu-1161-udp": "pinpoint_nd_snmp!1161!private!1.3.6.1.4.1.2021.11.9.0!-w '80'",
+            "snmp-if_in-1161-udp": "pinpoint_nd_snmp!1161!private!1.3.6.1.2.1.2.2.1.10.1!",
         }
 
     def test_unsafe_override_is_skipped_without_leaking_value(self, app, plugin_config, caplog):
@@ -202,10 +202,10 @@ class TestNcpaHost:
             services = as_dict(build_host_services(host, facts, plugin_config))
 
         assert services == {
-            "ncpa-cpu-5693": "pinpoint_nd_ncpa!5693!secrettoken!cpu/percent!-w '50' -c '80'",
-            "ncpa-memory-5693": "pinpoint_nd_ncpa!5693!secrettoken!memory/virtual/percent!-w '50' -c '80'",
-            "ncpa-disk_sda1-5693": "pinpoint_nd_ncpa!5693!secrettoken!disk/logical/sda1/percent!",
-            "ncpa-disk_sdb1-5693": "pinpoint_nd_ncpa!5693!secrettoken!disk/logical/sdb1/percent!",
+            "ncpa-cpu-5693-tcp": "pinpoint_nd_ncpa!5693!secrettoken!cpu/percent!-w '50' -c '80'",
+            "ncpa-memory-5693-tcp": "pinpoint_nd_ncpa!5693!secrettoken!memory/virtual/percent!-w '50' -c '80'",
+            "ncpa-disk_sda1-5693-tcp": "pinpoint_nd_ncpa!5693!secrettoken!disk/logical/sda1/percent!",
+            "ncpa-disk_sdb1-5693-tcp": "pinpoint_nd_ncpa!5693!secrettoken!disk/logical/sdb1/percent!",
         }
 
     def test_without_deployed_token_falls_back_to_tcp(self, app, plugin_config):
@@ -213,7 +213,7 @@ class TestNcpaHost:
         with app.app_context():
             services = as_dict(build_host_services(host, {}, plugin_config))
 
-        assert services == {"ncpa-5693": "pinpoint_nd_tcp!5693!"}
+        assert services == {"ncpa-5693-tcp": "pinpoint_nd_tcp!5693!"}
 
     def test_facts_belong_to_their_own_host_only(self, app, plugin_config):
         host = make_host("linux-y", tcp={"5693": "ncpa"}, net_discovery_id=9)
@@ -232,10 +232,10 @@ class TestTcpUdpHosts:
             services = as_dict(build_host_services(host, {}, plugin_config))
 
         assert services == {
-            "ssh-22": "pinpoint_nd_ssh!22!",
-            "http-8081": "pinpoint_nd_http!8081!",
-            "https-443": "pinpoint_nd_https!443!",
-            "http-proxy-8080": "pinpoint_nd_tcp!8080!",
+            "ssh-22-tcp": "pinpoint_nd_ssh!22!",
+            "http-8081-tcp": "pinpoint_nd_http!8081!",
+            "https-443-tcp": "pinpoint_nd_https!443!",
+            "http-proxy-8080-tcp": "pinpoint_nd_tcp!8080!",
         }
 
     def test_udp_services_resolve_by_name(self, app, plugin_config):
@@ -244,8 +244,8 @@ class TestTcpUdpHosts:
             services = as_dict(build_host_services(host, {}, plugin_config))
 
         assert services == {
-            "ntp-123": "pinpoint_nd_ntp!123!",
-            "dns-53": "pinpoint_nd_dns!localhost!",
+            "ntp-123-udp": "pinpoint_nd_ntp!123!",
+            "dns-53-udp": "pinpoint_nd_dns!localhost!",
         }
 
     def test_nrpe_port_gets_plain_tcp_check(self, app, plugin_config):
@@ -253,20 +253,20 @@ class TestTcpUdpHosts:
         with app.app_context():
             services = as_dict(build_host_services(host, {}, plugin_config))
 
-        assert services == {"nrpe-5666": "pinpoint_nd_tcp!5666!"}
+        assert services == {"nrpe-5666-tcp": "pinpoint_nd_tcp!5666!"}
 
     def test_mysql_without_user_falls_back_to_tcp(self, app, plugin_config):
         host = make_host("db", tcp={"3306": "mysql"})
         with app.app_context():
             assert as_dict(build_host_services(host, {}, plugin_config)) == {
-                "mysql-3306": "pinpoint_nd_tcp!3306!"
+                "mysql-3306-tcp": "pinpoint_nd_tcp!3306!"
             }
 
     def test_mysql_with_user_override(self, app, plugin_config):
         host = make_host("db", tcp={"3306": "mysql"}, plugin_variables={"mysql": {"user": "nagios"}})
         with app.app_context():
             assert as_dict(build_host_services(host, {}, plugin_config)) == {
-                "mysql-3306": "pinpoint_nd_mysql!3306!nagios!"
+                "mysql-3306-tcp": "pinpoint_nd_mysql!3306!nagios!"
             }
 
 
@@ -317,7 +317,7 @@ class TestSkippedUdpServices:
         with app.app_context():
             services = as_dict(build_host_services(host, {}, plugin_config, skipped))
 
-        assert services == {"cslistener-9000": "pinpoint_nd_tcp!9000!"}
+        assert services == {"cslistener-9000-tcp": "pinpoint_nd_tcp!9000!"}
         assert skipped == []
 
     def test_skipped_list_is_optional(self, app, plugin_config):
@@ -328,14 +328,14 @@ class TestSkippedUdpServices:
 
 class TestServiceNames:
 
-    def test_transport_suffix_only_on_collision(self, app, plugin_config):
+    def test_port_and_protocol_always_in_name(self, app, plugin_config):
         host = make_host("dns-server", tcp={"53": "domain", "22": "ssh"}, udp={"53": "domain"})
         with app.app_context():
             services = as_dict(build_host_services(host, {}, plugin_config))
 
-        assert set(services) == {"dns-53-TCP", "dns-53-UDP", "ssh-22"}
+        assert set(services) == {"dns-53-tcp", "dns-53-udp", "ssh-22-tcp"}
 
-    def test_duplicate_metric_names_stay_unique(self, app, plugin_config):
+    def test_duplicate_metric_names_are_dropped_not_renamed(self, app, plugin_config):
         host = make_host(
             "switch-dup",
             udp={"161": "snmp"},
@@ -347,22 +347,26 @@ class TestServiceNames:
         with app.app_context():
             services = as_dict(build_host_services(host, {}, plugin_config))
 
-        assert services == {
-            "snmp-port-161": "pinpoint_nd_snmp!161!public!1.1!",
-            "snmp-port-161-2": "pinpoint_nd_snmp!161!public!1.2!",
-        }
+        assert services == {"snmp-port-161-udp": "pinpoint_nd_snmp!161!public!1.1!"}
+
+    def test_names_are_lowercase(self, app, plugin_config):
+        host = make_host("mixed", tcp={"9000": "MyApp"})
+        with app.app_context():
+            services = as_dict(build_host_services(host, {}, plugin_config))
+
+        assert services == {"myapp-9000-tcp": "pinpoint_nd_tcp!9000!"}
 
     def test_illegal_characters_sanitized(self, app, plugin_config):
         host = make_host("odd", tcp={"9000": "weird(name)"})
         with app.app_context():
             services = as_dict(build_host_services(host, {}, plugin_config))
 
-        assert services == {"weird_name_-9000": "pinpoint_nd_tcp!9000!"}
+        assert services == {"weird_name_-9000-tcp": "pinpoint_nd_tcp!9000!"}
 
     def test_non_dict_plugin_variables_ignored(self, app, plugin_config):
         host = make_host("h", tcp={"22": "ssh"}, plugin_variables=["not", "a", "dict"])
         with app.app_context():
-            assert as_dict(build_host_services(host, {}, plugin_config)) == {"ssh-22": "pinpoint_nd_ssh!22!"}
+            assert as_dict(build_host_services(host, {}, plugin_config)) == {"ssh-22-tcp": "pinpoint_nd_ssh!22!"}
 
 
 # ==========================================================
@@ -427,10 +431,10 @@ class TestCreateHostCfgFile:
         cfg_text = cfg_path.read_text()
         services = services_by_host(cfg_text)
 
-        assert set(services["host-a"]) == {"snmp-uptime-161", "snmp-memory_total-161", "snmp-lan_status-161"}
-        assert set(services["host-b"]) == {"ncpa-cpu-5693", "ncpa-memory-5693", "ncpa-disk_sda1-5693"}
-        assert services["host-c"] == {"ssh-22": "pinpoint_nd_ssh!22!"}
-        assert services["host-d"] == {"ntp-123": "pinpoint_nd_ntp!123!"}
+        assert set(services["host-a"]) == {"snmp-uptime-161-udp", "snmp-memory_total-161-udp", "snmp-lan_status-161-udp"}
+        assert set(services["host-b"]) == {"ncpa-cpu-5693-tcp", "ncpa-memory-5693-tcp", "ncpa-disk_sda1-5693-tcp"}
+        assert services["host-c"] == {"ssh-22-tcp": "pinpoint_nd_ssh!22!"}
+        assert services["host-d"] == {"ntp-123-udp": "pinpoint_nd_ntp!123!"}
 
         assert all(cmd.startswith("pinpoint_nd_snmp!") for cmd in services["host-a"].values())
         assert all(cmd.startswith("pinpoint_nd_ncpa!5693!tokenB!") for cmd in services["host-b"].values())
@@ -537,7 +541,7 @@ class TestServiceStatusCheckCommand:
     def test_only_command_name_is_stored(self, db_session):
         insert_service_status_data(
             "host-b",
-            "ncpa-cpu-5693",
+            "ncpa-cpu-5693-tcp",
             self.service_payload("pinpoint_nd_ncpa!5693!secrettoken!cpu/percent!"),
         )
 
@@ -546,7 +550,7 @@ class TestServiceStatusCheckCommand:
         assert row.Check_Command == "pinpoint_nd_ncpa"
 
     def test_missing_check_command_stored_as_null(self, db_session):
-        insert_service_status_data("host-b", "ssh-22", self.service_payload(None))
+        insert_service_status_data("host-b", "ssh-22-tcp", self.service_payload(None))
 
         row = db_session.session.scalar(db_session.select(ServiceStatus))
         assert row.Hostname == "host-b"

@@ -135,7 +135,7 @@ class TestGeneratedFile:
         assert "host_name                       fridge.lan" in text
         assert "address                         10.0.0.99" in text
         assert "10.0.0.5" not in text.replace("10.0.0.5.", "")  # the old IP is gone
-        assert set(services_by_host(text)["fridge.lan"]) == {"ssh-22"}
+        assert set(services_by_host(text)["fridge.lan"]) == {"ssh-22-tcp"}
 
     def test_template_helpers_render_inactive_objects(self):
         host = create_host({"host_name": "h", "alias": "a", "address": "1.2.3.4", "contact_groups": "g",

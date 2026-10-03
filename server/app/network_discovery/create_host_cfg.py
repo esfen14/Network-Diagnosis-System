@@ -125,8 +125,8 @@ def plan_plugin_services(plugin_name, service_label, port, transport, facts, ove
     Resolve one discovered port into the services plugin_name produces for
     it — one per metric for multi-check plugins such as SNMP and NCPA.
 
-    Returns a list of dicts with base_name ("<label>[-<metric>]-<port>"),
-    transport, check_command and plugin. Raises PluginConfigurationError if
+    Returns a list of dicts with base_name ("<label>[-<metric>]-<port>"; the
+    protocol is appended by finalize_service_names), transport, check_command and plugin. Raises PluginConfigurationError if
     the plugin cannot be configured for this host.
     """
     variables = resolve_plugin_variables(
@@ -154,30 +154,28 @@ def plan_plugin_services(plugin_name, service_label, port, transport, facts, ove
 
 def finalize_service_names(planned):
     """
-    Turn planned services into (service_name, check_command, plugin) tuples
-    whose names are unique on the host. A "-TCP"/"-UDP" suffix is added only
-    when the same base name exists on both transports (e.g. DNS on 53/TCP
-    and 53/UDP); any remaining duplicate gets a numeric suffix.
-    """
-    transports_by_name = {}
-    for service in planned:
-        transports_by_name.setdefault(service["base_name"], set()).add(service["transport"])
+    Turn planned services into (service_name, check_command, plugin) tuples.
 
+    Every service is named "{service}[-{metric}]-{port}-{protocol}" in
+    lowercase, e.g. "ssh-22-tcp", "dns-53-udp", "ncpa-cpu-5693-tcp". The port
+    and protocol are always present, so names are unique per host by
+    construction. If two services still end up with the same name (for
+    instance a metric configured twice) the later one is dropped with a
+    warning rather than renamed, since Nagios rejects duplicate services.
+    """
     services = []
     used_names = set()
     for service in planned:
-        name = service["base_name"]
-        if len(transports_by_name[name]) > 1:
-            name = f"{name}-{service['transport'].value}"
+        name = f"{service['base_name']}-{service['transport'].value}".lower()
+        if name in used_names:
+            current_app.logger.warning(
+                f"Skipping duplicate service name '{name}'; check the plugin's "
+                f"configured metrics."
+            )
+            continue
 
-        unique_name = name
-        counter = 2
-        while unique_name in used_names:
-            unique_name = f"{name}-{counter}"
-            counter += 1
-
-        used_names.add(unique_name)
-        services.append((unique_name, service["check_command"], service["plugin"]))
+        used_names.add(name)
+        services.append((name, service["check_command"], service["plugin"]))
     return services
 
 

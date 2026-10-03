@@ -84,8 +84,9 @@ class Config:
 
     # SNMP polling defaults, used when a discovered host exposes SNMP
     # instead of (or alongside) NCPA. Each SNMP_OIDS entry becomes its own
-    # Nagios service ("snmp-<metric>-<port>"); optional keys warning,
-    # critical, label and units are passed to check_snmp for that service.
+    # Nagios service ("snmp-<metric>-<port>-<protocol>", e.g.
+    # snmp-uptime-161-udp); optional keys warning, critical, label and units
+    # are passed to check_snmp for that service.
     # A host can override any of these (including the whole OID list) via
     # NetworkDiscovery.Plugin_Variables["snmp"] — see
     # network_discovery/plugin_registry.py.
@@ -101,9 +102,9 @@ class Config:
     ]
 
     # NCPA metrics checked on every host with a deployed NCPA agent. Each
-    # entry becomes its own Nagios service ("ncpa-<metric>-<port>"). A path
-    # containing {partition} expands to one service per partition recorded
-    # at install time (NCPADevicePartition), falling back to fallback_path
+    # entry becomes its own Nagios service ("ncpa-<metric>-<port>-<protocol>",
+    # e.g. ncpa-cpu-5693-tcp). A path containing {partition} expands to one
+    # service per partition recorded at install time (NCPADevicePartition), falling back to fallback_path
     # when none were recorded. Overridable per host via
     # NetworkDiscovery.Plugin_Variables["ncpa"].
     NCPA_METRICS = [

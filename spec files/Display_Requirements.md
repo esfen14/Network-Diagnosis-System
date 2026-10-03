@@ -275,9 +275,8 @@ metrics represent the devices being monitored.
 | Average memory usage | `check_ncpa` | `memory/virtual/percent` | % |
 
 **Notes:**
-- NCPA services are registered in Nagios with descriptions that include a
-  qualifier suffix: `ncpa_cpu_usage-5693-TCP`, `ncpa_memory_usage-5693-TCP`,
-  `ncpa_disk_usage-5693-TCP` (or the per-partition form `ncpa-5693-TCP-disk_usage_/`).
+- NCPA services are registered in Nagios as `ncpa-{metric}-5693-tcp`:
+  `ncpa-cpu-5693-tcp`, `ncpa-memory-5693-tcp`, `ncpa-disk_{partition}-5693-tcp`.
   All of these variants resolve to the `check_ncpa` plugin key via the
   command map lookup in `statistics.py` (see §2.5 for full derivation logic).
   The backend is responsible for this normalisation — the front-end always
@@ -385,7 +384,7 @@ between two poll cycles.
         {
             "type":              "service",
             "hostname":          "web-01",
-            "service_name":      "http-80-TCP",
+            "service_name":      "http-80-tcp",
             "state":             "WARNING",
             "state_type":        "SOFT",
             "timestamp":         1724691600,
@@ -457,7 +456,7 @@ has since recovered.
             "timestamp":    1724684400,
             "type":         "SERVICE",
             "hostname":     "web-01",
-            "service_name": "http-80-TCP",
+            "service_name": "http-80-tcp",
             "state":        "CRITICAL",
             "contact":      "admin",
             "message":      "HTTP CRITICAL: Response code = 503"
@@ -636,7 +635,7 @@ navigate away) showing:
     ],
     "services": [
         {
-            "service":       "http-80-TCP",
+            "service":       "http-80-tcp",
             "state":         "Ok",
             "plugin_output": "HTTP OK: Status line output matched",
             "last_check":    "2026-08-26T16:29:00+00:00"
@@ -713,7 +712,7 @@ When the user selects a service row, show:
     "items": [
         {
             "hostname":      "web-01",
-            "service":       "http-80-TCP",
+            "service":       "http-80-tcp",
             "state":         "Warning",
             "state_type":    "Soft",
             "last_check":    "2026-08-26T16:29:00+00:00",
@@ -739,7 +738,7 @@ When the user selects a service row, show:
 ```json
 {
     "hostname":               "web-01",
-    "service":                "http-80-TCP",
+    "service":                "http-80-tcp",
     "state":                  "Warning",
     "state_type":             "Soft",
     "plugin_output":          "HTTP WARNING: Response time 4.2s",
@@ -895,10 +894,10 @@ that command to its check plugin:
 - any other command → itself, e.g. `check_ping`
 
 Rows recorded before `Check_Command` existed fall back to the service
-description. Network Discovery names services `{plugin}[-{metric}]-{port}`
-(e.g. `http-80`, `snmp-uptime-161`, `ncpa-cpu-5693`, `ncpa-disk_sda1-5693`),
-with a `-TCP`/`-UDP` suffix only when the same name exists on both
-transports. The segment before the first `-` (then before the first `_`) is
+description. Network Discovery names every service
+`{service}[-{metric}]-{port}-{protocol}` in lowercase (e.g. `http-80-tcp`,
+`dns-53-udp`, `snmp-uptime-161-udp`, `ncpa-cpu-5693-tcp`); the port and
+protocol are always present. The segment before the first `-` (then before the first `_`) is
 looked up by plugin name/alias in the registry, else `check_{prefix}` is used.
 
 This means every NCPA service — CPU, memory and each disk partition —
@@ -1259,7 +1258,7 @@ have slightly different request shapes suited to their context.
     "comment": "Scheduled maintenance window",
     "alerts": [
         { "hostname": "router-01", "service_name": null },
-        { "hostname": "web-01",    "service_name": "http-80-TCP" }
+        { "hostname": "web-01",    "service_name": "http-80-tcp" }
     ]
 }
 ```
@@ -1295,14 +1294,14 @@ have slightly different request shapes suited to their context.
 
 **`POST /system/network-health/services/acknowledge`** — acknowledge a service alert.
 ```json
-{ "hostname": "web-01", "service_name": "http-80-TCP", "comment": "Investigating" }
+{ "hostname": "web-01", "service_name": "http-80-tcp", "comment": "Investigating" }
 ```
 - `service_name` is required (unlike the dashboard route where it can be null).
 - Returns `201` on success. `409` if already acknowledged or service is OK. `404` if not found.
 
 **`DELETE /system/network-health/services/acknowledge`** — unacknowledge a service.
 ```json
-{ "hostname": "web-01", "service_name": "http-80-TCP" }
+{ "hostname": "web-01", "service_name": "http-80-tcp" }
 ```
 - Returns `200` on success. `404` if no acknowledgement exists.
 
