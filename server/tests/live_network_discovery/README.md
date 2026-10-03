@@ -30,7 +30,8 @@ live_network_discovery/
 |   `-- plugin-cases.example.json
 |-- provision/
 |   |-- detect_backend.py
-|   `-- install_test_dependencies.py
+|   |-- install_test_dependencies.py
+|   `-- prepare_test_host.sh
 |-- vm_scripts/                  # disposable KVM/libvirt target kit
 |   |-- README.md
 |   |-- fetch_image.py
@@ -56,19 +57,18 @@ live_network_discovery/
 
 Guest/network creation uses the standalone
 [`vm_scripts/`](vm_scripts/README.md) kit when nested KVM/libvirt is available.
-That directory is currently an unstaged worktree addition and is not part of
-the committed harness until it is reviewed and deliberately staged.
 `detect_backend.py` distinguishes command presence from usable daemon access
 for KVM/libvirt, Incus/LXC (including `/snap/bin/lxc`), and Docker.
 Pre-provisioned disposable targets are also supported. Record the selected
 backend and its verified administrative access in the report.
 
 The VM kit creates the isolated network, two cloud-image targets, pinned SSH
-keys, baseline overlays, and harness configuration. Its default
-`10.0.2.0/28` network differs from the plan's preferred network and is valid
-only after the kit proves that it does not overlap any management or reachable
-route. Read its README and run its preview and self-tests before any `--apply`
-command. Do not start discovery until `provision_lab.py verify` succeeds.
+keys, baseline overlays, and harness configuration. Its `10.0.2.0/28` network
+is the approved lab range for this installation, but it is valid only after the
+kit proves that it does not overlap any management or reachable route. Never
+scan `192.168.130.0/28` here because it overlaps the management network. Read
+the kit README and run its preview and self-tests before any `--apply` command.
+Do not start discovery until `provision_lab.py verify` succeeds.
 
 After creating minimal Debian/Ubuntu guests, copy the matching bootstrap into
 each guest. Both scripts are preview-only unless `--apply` is explicitly
@@ -116,7 +116,7 @@ Add these exports to `~/.config/pinpoint-tests/lab.env`:
 ```bash
 export PINPOINT_TEST_EMAIL='your-test-account-email'
 export PINPOINT_TEST_PASSWORD='your-test-account-password'
-export PINPOINT_TEST_SSH_KEY='/absolute/path/to/lab-private-key'
+export PINPOINT_TEST_SSH_KEY='/opt/pinpoint/Network-Diagnosis-System/.cache/pinpoint-live-test-access/test_key'
 ```
 
 Before invoking the harness, the AI sources the file in the same shell:
@@ -134,7 +134,7 @@ Do not place the actual values in JSON, shell history, test evidence, or source
 control. Pre-populate `known_hosts` for each target and verify its fingerprint;
 remote service control uses strict host-key checking.
 
-### Nested virtualization and Nagios access
+### Nested virtualization, Nagios, and NCPA SSH access
 
 Verify the system libvirt connection and nested-virtualization prerequisites:
 
@@ -156,14 +156,164 @@ the current lab:
 ```bash
 sudo setfacl -m u:paeng:rx /usr/local/nagios/bin/nagios
 sudo setfacl -m u:paeng:rwx /usr/local/nagios/var/spool/checkresults
+sudo setfacl -m u:paeng:r /usr/local/nagios/etc/resource.cfg
 
 getfacl /usr/local/nagios/bin/nagios
 getfacl /usr/local/nagios/var/spool/checkresults
+getfacl /usr/local/nagios/etc/resource.cfg
 /usr/local/nagios/bin/nagios -v /usr/local/nagios/etc/nagios.cfg
 ```
 
 Install the OS `acl` package first if `setfacl` is unavailable. Do not broaden
-these entries recursively across `/usr/local/nagios`.
+these entries recursively across `/usr/local/nagios`. `resource.cfg` may contain
+secret macro values: verify its ACL without printing, copying, or collecting its
+contents as evidence.
+
+Grant traversal-only access to the application SSH directory and read-only
+access to the reviewed NCPA deployment key:
+
+```bash
+sudo setfacl -m u:paeng:x /opt/pinpoint/.ssh
+sudo setfacl -m u:paeng:r /opt/pinpoint/.ssh/pinpoint_ncpa_deploy
+
+getfacl /opt/pinpoint/.ssh
+getfacl /opt/pinpoint/.ssh/pinpoint_ncpa_deploy
+```
+
+Do not grant directory listing or write access. Never print, copy, checksum, or
+collect the private key as evidence. This deployment identity is separate from
+the VM provisioning/test identity. In this lab, do not point
+`PINPOINT_TEST_SSH_KEY` at `pinpoint_ncpa_deploy`; it is not authorized for the
+pre-deployment `pinpoint-test` guest account.
+
+### Existing lab access and recovery
+
+Do not rebuild the targets merely because SSH rejects the NCPA deployment key
+or `virsh snapshot-list` is empty. The existing disposable lab may still be
+healthy and recoverable.
+
+The NCPA deployment key and the VM provisioning/test key have different roles.
+Using `/opt/pinpoint/.ssh/pinpoint_ncpa_deploy` for the `pinpoint-test` account
+can correctly return `Permission denied (publickey)` even when both guests are
+properly provisioned. Before rebuilding anything:
+
+1. Locate the existing VM-kit state and provisioning artifacts.
+2. Use the dedicated test key together with its pinned `known_hosts` file.
+3. Confirm strict SSH access to both `10.0.2.2` and `10.0.2.3`.
+4. Set `PINPOINT_TEST_SSH_KEY` to the dedicated test key for harness operations.
+5. Run the VM kit's `status` and `verify` commands to check ownership,
+   interfaces, routes, listeners, SSH trust, and baselines.
+
+For the current retained lab, the dedicated artifacts are under:
+
+```text
+/opt/pinpoint/Network-Diagnosis-System/.cache/pinpoint-live-test-access/test_key
+/opt/pinpoint/Network-Diagnosis-System/.cache/pinpoint-live-test-access/known_hosts
+```
+
+Keep the private key mode at `0600`. Never disable strict host-key checking or
+copy private-key contents into reports. Verify the retained identity explicitly:
+
+```bash
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+  -o UserKnownHostsFile=/opt/pinpoint/Network-Diagnosis-System/.cache/pinpoint-live-test-access/known_hosts \
+  -i "$PINPOINT_TEST_SSH_KEY" pinpoint-test@10.0.2.2 true
+
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+  -o UserKnownHostsFile=/opt/pinpoint/Network-Diagnosis-System/.cache/pinpoint-live-test-access/known_hosts \
+  -i "$PINPOINT_TEST_SSH_KEY" pinpoint-test@10.0.2.3 true
+```
+
+The current remote-service helper uses the invoking account's default
+`~/.ssh/known_hosts`. Ensure it contains the same already-pinned entries before
+running service cases; never replace them with unverified `ssh-keyscan` output.
+
+An empty libvirt snapshot list does not prove that recovery baselines are
+missing. The VM kit uses external baseline QCOW2 images and disposable overlays;
+inspect its configured state directory for `target01-baseline.qcow2` and
+`target02-baseline.qcow2`, then use the documented `restore` workflow. Rebuild
+only after the provisioning artifacts, external baselines, and VM-kit
+verification have actually been checked and found unusable.
+
+A previous investigation reported rebuild blockers because it used the NCPA
+deployment key, checked only libvirt-managed snapshots, and did not first inspect
+the existing provisioning artifacts. Subsequent checks confirmed that the
+dedicated key works on both guests, both guests have isolated routes and expected
+listeners, and both external baseline images exist. No rebuild is required.
+
+Nagios reload also requires a reviewed sudoers rule for the application account
+and for whichever account invokes the harness reload. Permit exactly the
+resolved absolute equivalent of `/usr/bin/systemctl reload nagios`; do not grant
+wildcards, unrestricted `systemctl`, or a shell. Validate every sudoers change
+with `visudo`.
+
+## Mandatory tester handoff
+
+Complete this gate before the AI initializes a run or conducts discovery.
+
+1. Preview the privileged host preparation:
+
+   ```bash
+   bash provision/prepare_test_host.sh
+   ```
+
+   Review the printed accounts, paths, libvirt names, state directory, and
+   sudoers destination. Override a value with the documented command-line
+   option when the installed lab differs.
+
+2. Apply and verify the preparation as an administrator:
+
+   ```bash
+   sudo bash provision/prepare_test_host.sh --apply
+   ```
+
+   The script applies only the documented ACLs and exact-command temporary
+   reload rule, prepares protected runtime paths, starts the existing libvirt
+   resources, and runs Nagios/manifest/isolation/VM-kit validation. It refuses
+   missing or extra guest interfaces and does not create a second lab.
+
+   It deliberately does not install missing plugins, create VMs, source
+   credentials as root, run discovery, reload Nagios, change guest services,
+   create the temporary NCPA bootstrap account, or modify application data.
+   Those remain reviewed tester/AI steps.
+
+   After initial preparation, the tester can re-run validation without
+   reapplying ACLs or startup actions. VM verification may refresh its sanitized
+   inventory evidence:
+
+   ```bash
+   sudo bash provision/prepare_test_host.sh --check
+   ```
+
+3. Review the resulting `config/lab.json`:
+
+   - keep `10.0.2.0/28` only after its isolation check succeeds;
+   - do not configure or scan `192.168.130.0/28`;
+   - set `output_root` to `/home/paeng/pinpoint-test-results`;
+   - confirm the Pinpoint API URL;
+   - confirm `/opt/pinpoint/Network-Diagnosis-System/server/system.db`, or use
+     the actual absolute database path if this installation differs;
+   - leave the three credential fields as environment-variable names.
+
+4. Populate `~/.config/pinpoint-tests/lab.env` privately if the script created
+   it empty. Then hand control to the AI, which sources the protected
+   environment and runs preflight:
+
+   ```bash
+   cd /opt/pinpoint/Network-Diagnosis-System/server/tests/live_network_discovery
+   set +x
+   source ~/.config/pinpoint-tests/lab.env
+
+   /opt/pinpoint/venv/bin/python runner/run_tests.py \
+     --config config/lab.json preflight
+   ```
+
+Every preflight value except the informational network and empty
+`missing_environment` list must indicate success. On failure, stop and report
+the sanitized check output. When all checks pass, tell the tester the lab is
+ready and wait for an explicit instruction to resume. The later run may then
+verify backups, conduct discovery, inspect and validate generated configuration,
+and test application, failure, recovery, and rollback.
 
 ## Review and self-test
 
@@ -219,19 +369,12 @@ REG-01 as blocked; do not silently skip it.
 
 ## Execution
 
-Run the read-only checks first:
-
-```bash
-cd server/tests/live_network_discovery
-python provision/detect_backend.py
-python runner/run_tests.py --config config/lab.json preflight
-```
-
-Preflight is read-only. It requires successful interface inspection, Nagios
-execution and configuration access, systemd service access, API authentication,
-database visibility, and the configured SSH-key reference. A mere file or
-command presence is not considered a pass. Run it in an execution context that
-permits these read-only checks.
+Do not enter this section until every step in **Mandatory tester handoff** has
+passed and the tester has explicitly instructed the AI to resume. Preflight is
+read-only but still requires successful interface inspection, Nagios execution
+and configuration access, systemd service access, API authentication, database
+visibility, and the configured SSH-key reference. A mere file or command
+presence is not considered a pass.
 
 Create a result run and note the printed run ID:
 

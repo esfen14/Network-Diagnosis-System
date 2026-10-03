@@ -118,13 +118,13 @@ invoking user's separate `qemu:///session` connection.
 
 ### 4.2 Network
 
-The preferred isolated network is `192.168.130.0/28`:
+The approved isolated network for this installation is `10.0.2.0/28`:
 
 | Address | System |
 |---|---|
-| `192.168.130.1` | Pinpoint and Nagios |
-| `192.168.130.2` | `target01` |
-| `192.168.130.3` | `target02` |
+| `10.0.2.1` | Pinpoint and Nagios |
+| `10.0.2.2` | `target01` |
+| `10.0.2.3` | `target02` |
 
 A management/NAT interface may be used to install packages. Network Discovery
 must be configured only for the isolated subnet and must never scan the
@@ -142,17 +142,12 @@ interfaces after package installation and before discovery. Pinpoint retains
 internet access through the outer VirtualBox NAT adapter, while discovery is
 restricted to the isolated libvirt bridge.
 
-An equivalent private `/28` may be substituted only after read-only interface
-and route inspection proves that it is owned by the disposable lab and is not
-the VirtualBox management/NAT or a production-connected network. Record the
-approved substitution in the final report before scanning.
-
-The bundled VM kit under `live_network_discovery/vm_scripts/` currently
-defaults to `10.0.2.0/28` with Pinpoint at `.1` and the targets at `.2` and
-`.3`. This is an allowable substitute only if its read-only route and interface
-checks prove that the subnet does not overlap the outer VirtualBox NAT,
-management interfaces, or another reachable network. Never assume that a
-private address is isolated merely because it is private.
+Read-only interface and route inspection must still prove that `10.0.2.0/28`
+belongs only to the disposable libvirt lab before every run. The management
+network overlaps `192.168.130.0/28`, so the tester must not configure or scan
+that range. Never assume that a private address is isolated merely because it
+is private. Any future subnet change requires a new documented isolation
+review and corresponding updates to both lab manifests.
 
 ## 5. Target services
 
@@ -313,7 +308,7 @@ Store only the runtime exports in that file:
 ```bash
 export PINPOINT_TEST_EMAIL='your-test-account-email'
 export PINPOINT_TEST_PASSWORD='your-test-account-password'
-export PINPOINT_TEST_SSH_KEY='/absolute/path/to/lab-private-key'
+export PINPOINT_TEST_SSH_KEY='/opt/pinpoint/Network-Diagnosis-System/.cache/pinpoint-live-test-access/test_key'
 ```
 
 The AI sources the file into the same shell that invokes the harness, with shell
@@ -328,7 +323,7 @@ source ~/.config/pinpoint-tests/lab.env
 values. The environment file must remain outside Git and must not be copied into
 the result bundle.
 
-### 8.2 Nagios access for the test operator
+### 8.2 Nagios and NCPA SSH access for the test operator
 
 The harness must be able to execute Nagios validation and use its check-result
 spool. Grant only the required access to the test account (`paeng` in this lab):
@@ -336,6 +331,7 @@ spool. Grant only the required access to the test account (`paeng` in this lab):
 ```bash
 sudo setfacl -m u:paeng:rx /usr/local/nagios/bin/nagios
 sudo setfacl -m u:paeng:rwx /usr/local/nagios/var/spool/checkresults
+sudo setfacl -m u:paeng:r /usr/local/nagios/etc/resource.cfg
 ```
 
 If `setfacl` is unavailable, install the operating system's `acl` package first.
@@ -344,11 +340,98 @@ Verify the resulting entries without printing any credentials:
 ```bash
 getfacl /usr/local/nagios/bin/nagios
 getfacl /usr/local/nagios/var/spool/checkresults
+getfacl /usr/local/nagios/etc/resource.cfg
 /usr/local/nagios/bin/nagios -v /usr/local/nagios/etc/nagios.cfg
 ```
 
-Do not recursively grant access to the whole Nagios installation. Reload access
-must remain a separately reviewed, non-interactive administrative capability.
+Do not recursively grant access to the whole Nagios installation. Do not print,
+copy, or include `resource.cfg` in evidence because it may contain secret macro
+values. Reload access must remain a separately reviewed, non-interactive
+administrative capability.
+The application account needs permission for exactly:
+
+```text
+/usr/bin/systemctl reload nagios
+```
+
+The sudoers entry must use the resolved absolute `systemctl` path, be validated
+with `visudo`, and must not grant a shell, wildcard service names, or unrestricted
+`systemctl` access. The account running `nagios-check --reload` needs the same
+exact capability.
+
+The test account also needs traversal access to the application SSH directory
+and read access to the existing NCPA deployment key:
+
+```bash
+sudo setfacl -m u:paeng:x /opt/pinpoint/.ssh
+sudo setfacl -m u:paeng:r /opt/pinpoint/.ssh/pinpoint_ncpa_deploy
+getfacl /opt/pinpoint/.ssh
+getfacl /opt/pinpoint/.ssh/pinpoint_ncpa_deploy
+```
+
+Do not grant directory listing or write access, and never print, copy, checksum,
+or include the private key in test evidence. The NCPA deployment key is not the
+VM provisioning/test identity and must not be assigned to
+`PINPOINT_TEST_SSH_KEY` for this lab. Use the retained dedicated test key and its
+pinned `known_hosts` file for harness access to the `pinpoint-test` accounts.
+
+### 8.3 Mandatory tester handoff before discovery
+
+The tester must complete this gate before asking the AI to conduct the live
+run. Preview the consolidated privileged preparation first:
+
+```bash
+cd /opt/pinpoint/Network-Diagnosis-System/server/tests/live_network_discovery
+bash provision/prepare_test_host.sh
+```
+
+After reviewing every printed account, path, libvirt name, and destination, the
+tester applies it:
+
+```bash
+sudo bash provision/prepare_test_host.sh --apply
+```
+
+The script consolidates the approved ACLs, exact-command temporary Nagios reload
+rule, protected environment/config/result paths, existing libvirt network and
+domain startup, Nagios validation, interface isolation checks, and VM-kit
+verification. It is idempotent for resources that are already active and
+refuses to continue when a guest has an extra interface or the reviewed VM state
+is unavailable.
+
+The script must not install missing plugins, create VMs, read credentials or
+private-key contents, run discovery, reload Nagios, change guest services,
+create NCPA bootstrap credentials, or modify application data. Those actions
+remain separate and require their applicable review.
+
+Review `tests/live_network_discovery/config/lab.json` against the running lab:
+
+- keep the verified isolated `10.0.2.0/28` network;
+- never scan `192.168.130.0/28`, because it overlaps the management network;
+- set `output_root` to `/home/paeng/pinpoint-test-results`;
+- confirm `http://127.0.0.1:5000` or replace it with the actual Pinpoint API URL;
+- confirm the absolute system database path, normally
+  `/opt/pinpoint/Network-Diagnosis-System/server/system.db` for this install;
+- keep `PINPOINT_TEST_EMAIL`, `PINPOINT_TEST_PASSWORD`, and
+  `PINPOINT_TEST_SSH_KEY` as environment-variable references, not secret values.
+
+Finally run the read-only preflight from the installed clone:
+
+```bash
+cd /opt/pinpoint/Network-Diagnosis-System/server/tests/live_network_discovery
+set +x
+source ~/.config/pinpoint-tests/lab.env
+
+/opt/pinpoint/venv/bin/python runner/run_tests.py \
+  --config config/lab.json preflight
+```
+
+All preflight checks must report success. If any check fails, stop and return
+the sanitized failure details to the tester; do not initialize a run or start
+discovery. Once every check passes, the AI must tell the tester it is ready and
+wait for an explicit instruction to resume. Only then may it verify the lab and
+backups, run discovery, inspect and validate generated configuration, and test
+application, failure, recovery, and rollback.
 
 ## 9. Automation requirements
 
@@ -382,12 +465,15 @@ user approves an exception.
 
 ### Stage B: provision and inventory
 
-Validate the system libvirt connection, then use the reviewed scripts under
-`tests/live_network_discovery/vm_scripts/` to create the isolated network and
-targets. Configure Profile A, remove the temporary guest NAT adapters, capture
-actual listening ports and routes, verify isolation and reachability, and take
-baseline snapshots. Do not begin discovery until the kit's `verify` command
-succeeds.
+Complete the mandatory tester handoff, start the existing isolated network and
+targets, then use the reviewed scripts under
+`tests/live_network_discovery/vm_scripts/` to verify their ownership and state.
+Do not create a second lab. Confirm Profile A, removal of temporary guest NAT
+adapters, actual listening ports and routes, isolation, pinned SSH trust, and
+external baseline QCOW2 images. An empty `virsh snapshot-list` does not establish
+that those baselines are missing. Do not begin discovery until the kit's
+`verify` command and the harness preflight both succeed and the tester explicitly
+says to resume.
 
 ### Stage C: core discovery
 

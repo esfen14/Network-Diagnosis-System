@@ -215,10 +215,21 @@ packages in `requirements-test.txt`.
 
 The disposable nested-VM provisioner is under
 [`live_network_discovery/vm_scripts/`](live_network_discovery/vm_scripts/README.md).
-It is currently an unstaged worktree addition, so review and stage the complete
-kit deliberately before expecting it to exist in a fresh clone. Its own README
-documents the libvirt networks, cloud image, previews, verification, baselines,
-and generated SSH/harness artifacts.
+Its own README documents the libvirt networks, cloud image, previews,
+verification, baselines, and generated SSH/harness artifacts.
+
+Before handing a live run to the AI, the tester can preview and apply the
+consolidated privileged host preparation:
+
+```bash
+cd /opt/pinpoint/Network-Diagnosis-System/server/tests/live_network_discovery
+bash provision/prepare_test_host.sh
+sudo bash provision/prepare_test_host.sh --apply
+```
+
+The script performs only the reviewed ACL, exact-command sudoers, protected
+runtime-path, existing-libvirt-startup, and validation steps. It never installs
+missing plugins, runs discovery, reloads Nagios, or creates VMs.
 
 The live lab is not part of the isolated pytest suite. It may create disposable
 guests or containers, scan an isolated subnet, alter test-only Nagios

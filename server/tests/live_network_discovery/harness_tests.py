@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -96,6 +97,16 @@ class HarnessSelfTests(unittest.TestCase):
             "Network_Discovery_Extended_Test_Report.md",
             checksum.read_text(encoding="utf-8"),
         )
+
+    def test_host_preparation_is_preview_only_by_default(self):
+        script = Path(__file__).parent / "provision" / "prepare_test_host.sh"
+        result = subprocess.run(
+            ["bash", str(script)], capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Preview only", result.stdout)
+        self.assertIn("no files, permissions, services", result.stdout)
+        self.assertIn("Plugin installation", result.stdout)
 
 
 if __name__ == "__main__":

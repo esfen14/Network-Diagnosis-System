@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "lab_network": "192.168.130.0/28",
+  "lab_network": "10.0.2.0/28",
   "pinpoint": {
-    "address": "192.168.130.1",
+    "address": "10.0.2.1",
     "base_url": "http://127.0.0.1:5000",
     "email_env": "PINPOINT_TEST_EMAIL",
     "password_env": "PINPOINT_TEST_PASSWORD"
   },
   "targets": {
     "target01": {
-      "address": "192.168.130.2",
+      "address": "10.0.2.2",
       "hostname": "target01.test.local",
       "ssh_user": "pinpoint-test",
       "ssh_key_env": "PINPOINT_TEST_SSH_KEY",
@@ -17,7 +17,7 @@
       "expected_udp_ports": []
     },
     "target02": {
-      "address": "192.168.130.3",
+      "address": "10.0.2.3",
       "hostname": "target02.test.local",
       "ssh_user": "pinpoint-test",
       "ssh_key_env": "PINPOINT_TEST_SSH_KEY",
@@ -54,7 +54,7 @@
     "service_name": "nagios"
   },
   "databases": {
-    "system": "../../../system.db"
+    "system": "/opt/pinpoint/Network-Diagnosis-System/server/system.db"
   },
-  "output_root": "~/pinpoint-test-results"
+  "output_root": "/home/paeng/pinpoint-test-results"
 }

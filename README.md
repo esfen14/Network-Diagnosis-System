@@ -1,28 +1,119 @@
-# This is the respository for Detech-IT
-This is where development of 4D-G2's capstone will happen.
+# Pinpoint Network Diagnosis System
 
-## Note for the developers:
-Please make a branch for adding features, then merge to the main branch so as to not break things.
+Pinpoint (Detech-IT / 4D-G2) is a network monitoring and administration
+dashboard built around Nagios Core. It provides a Flask API and React interface
+for Network Discovery, host and service monitoring, Plugin Manager workflows,
+NCPA deployment, alerts, reports, user management, and system settings.
 
-# Getting started:
+Nagios remains the monitoring engine. Pinpoint manages application state,
+configuration workflows, history, and the operator experience. The production
+installer is maintained separately from this repository.
 
-## For the front-end
-Please have npm version 11.16.0
-This is usually bundled with Node.js
+## Repository guide
 
+| Path | Purpose |
+|---|---|
+| [`client/`](client/) | React, TypeScript, and Vite frontend |
+| [`server/`](server/) | Flask backend, Nagios integrations, migrations, and tests |
+| [`spec files/`](spec%20files/) | Authoritative system specifications and implementation status |
+| [`server/tests/`](server/tests/) | Backend tests and opt-in live-lab tooling |
 
-## For the backend
-Please have Python 3.14.2
+Start with the [specification index](spec%20files/README.md) before changing
+system behavior. Contributor and agent routing rules are in [AGENTS.md](AGENTS.md).
 
+## Development setup
 
-# Things that need to be address later:
-1. How to connect this system to Nagios, current options:
-- docker in an OS with Nagios
-- running with Nagios as a service in an OS
-2. How do we get data from Nagios?
-3. Things needed to develop the installer
+Use Python 3.14 for the backend. Use a current Node.js/npm installation that
+can install the versions pinned by `client/package-lock.json`; package files are
+the source of truth for exact frontend versions.
 
-# Production settings
+### Backend
+
+```bash
+cd server
+python3.14 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt -r requirements-test.txt
+flask run
+```
+
+Configure local values in the Git-ignored `server/.env`. Production secrets and
+credentials must never be committed.
+
+### Frontend
+
+```bash
+cd client
+npm install
+npm run dev
+```
+
+## Testing
+
+Run the isolated backend suite without probing a live Nagios installation:
+
+```bash
+cd server
+.venv/bin/python -m pytest tests/ --ignore=tests/test_live_nagios.py
+```
+
+Run frontend tests and a production build:
+
+```bash
+cd client
+npm run test
+npm run build
+```
+
+See the [backend test guide](server/tests/README.md) for focused test commands,
+fixtures, and the optional live-Nagios checks.
+
+### Live Network Discovery lab
+
+Live Network Discovery testing is opt-in and separate from the normal test
+suite. It uses disposable nested VMs, scans only an approved isolated subnet,
+controls real services, and may apply test-specific Nagios configuration. Read
+and approve these documents before starting:
+
+- [Extended test plan](server/tests/NETWORK_DISCOVERY_EXTENDED_TEST_PLAN.md)
+- [Live harness guide](server/tests/live_network_discovery/README.md)
+- [Disposable VM-kit guide](server/tests/live_network_discovery/vm_scripts/README.md)
+
+For the retained lab, the tester first previews and applies the consolidated
+privileged host preparation:
+
+```bash
+cd /opt/pinpoint/Network-Diagnosis-System/server/tests/live_network_discovery
+bash provision/prepare_test_host.sh
+sudo bash provision/prepare_test_host.sh --apply
+```
+
+The preparation script does not install missing plugins, create VMs, run
+discovery, reload Nagios, or change guest services. After it passes, the tester
+hands control to the AI. The AI sources the protected test environment, runs
+the harness preflight, reports the result, and waits for explicit approval
+before conducting live tests.
+
+Two retained-lab distinctions are important:
+
+- `PINPOINT_TEST_SSH_KEY` uses the dedicated VM test identity, not the separate
+  NCPA deployment identity. A public-key rejection with the deployment key does
+  not mean the VMs need rebuilding.
+- An empty `virsh snapshot-list` does not mean recovery baselines are missing.
+  The VM kit uses external baseline QCOW2 images and disposable overlays.
+
+The live harness guide contains the detailed ACL, SSH trust, VM verification,
+recovery, evidence, and SCP retrieval procedures. Do not duplicate or improvise
+those sensitive steps from this overview.
+
+## Contributing
+
+Use a feature branch, keep behavioral specifications current, run the smallest
+relevant tests while developing, and broaden verification in proportion to the
+change before merging. Never commit credentials, private keys, runtime lab
+manifests, VM disks, database backups, or unsanitized test evidence.
+
+## Production settings
 
 In production every machine-specific value comes from the environment. The
 PinPoint Installer writes them to `/etc/pinpoint/pinpoint.env`. This table is
