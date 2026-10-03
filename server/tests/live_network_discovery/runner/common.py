@@ -38,6 +38,8 @@ ALLOWED_RESULTS = {
     "Skipped due to resource limit", "Previously verified",
 }
 
+ENVIRONMENT_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}\Z")
+
 
 def utc_now() -> str:
     """Return an ISO-8601 UTC timestamp."""
@@ -88,6 +90,13 @@ def validate_lab_config(config: dict[str, Any]) -> ipaddress.IPv4Network:
     if not isinstance(targets, dict) or not targets:
         raise HarnessError("At least one target is required.")
 
+    for field in ("email_env", "password_env"):
+        reference = config["pinpoint"].get(field)
+        if not isinstance(reference, str) or not ENVIRONMENT_NAME.fullmatch(reference):
+            raise HarnessError(
+                f"pinpoint.{field} must contain an environment-variable name, not a credential value."
+            )
+
     seen = {str(pinpoint_address)}
     for name, target in targets.items():
         try:
@@ -97,6 +106,13 @@ def validate_lab_config(config: dict[str, Any]) -> ipaddress.IPv4Network:
         if address not in network or str(address) in seen:
             raise HarnessError(f"Target {name} is outside the lab or duplicates an address.")
         seen.add(str(address))
+        reference = target.get("ssh_key_env")
+        if reference is not None and (
+            not isinstance(reference, str) or not ENVIRONMENT_NAME.fullmatch(reference)
+        ):
+            raise HarnessError(
+                f"targets.{name}.ssh_key_env must contain an environment-variable name."
+            )
         for key in ("expected_tcp_ports", "expected_udp_ports"):
             ports = target.get(key, [])
             if not isinstance(ports, list) or any(
@@ -111,23 +127,42 @@ def validate_lab_config(config: dict[str, Any]) -> ipaddress.IPv4Network:
         ):
             raise HarnessError(f"Target {name} has invalid expected_skipped_udp_ports.")
 
-    output_root = Path(config.get("output_root", ""))
+    output_root = configured_output_root(config)
     if not output_root.is_absolute() or str(output_root) in {"/", "/home", "/tmp"}:
-        raise HarnessError("output_root must be a specific absolute directory.")
+        raise HarnessError("output_root must resolve to a specific absolute directory.")
     return network
+
+
+def configured_output_root(config: dict[str, Any]) -> Path:
+    """Resolve a user-relative output root without expanding arbitrary variables."""
+    value = config.get("output_root", "")
+    if not isinstance(value, str) or not value.strip():
+        raise HarnessError("output_root is required.")
+    return Path(value).expanduser().resolve()
+
+
+def required_environment_names(config: dict[str, Any]) -> list[str]:
+    """Return validated secret-reference names without reading their values."""
+    pinpoint = config["pinpoint"]
+    references = [pinpoint["email_env"], pinpoint["password_env"]]
+    references.extend(
+        target["ssh_key_env"]
+        for target in config["targets"].values()
+        if target.get("ssh_key_env")
+    )
+    for reference in references:
+        if not isinstance(reference, str) or not ENVIRONMENT_NAME.fullmatch(reference):
+            raise HarnessError("A credential reference is not a valid environment-variable name.")
+    return sorted(set(references))
 
 
 def require_environment(config: dict[str, Any]) -> dict[str, str]:
     """Read required secret values from environment variables without logging them."""
-    pinpoint = config["pinpoint"]
-    names = [pinpoint["email_env"], pinpoint["password_env"]]
-    for target in config["targets"].values():
-        if target.get("ssh_key_env"):
-            names.append(target["ssh_key_env"])
-    missing = sorted({name for name in names if not os.environ.get(name)})
+    names = required_environment_names(config)
+    missing = [name for name in names if not os.environ.get(name)]
     if missing:
         raise HarnessError(f"Missing required environment variables: {', '.join(missing)}")
-    return {name: os.environ[name] for name in set(names)}
+    return {name: os.environ[name] for name in names}
 
 
 def make_run_directory(config: dict[str, Any], run_id: str | None = None) -> Path:
@@ -135,7 +170,7 @@ def make_run_directory(config: dict[str, Any], run_id: str | None = None) -> Pat
     safe_id = run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", safe_id):
         raise HarnessError("run_id may contain only letters, digits, dot, underscore, and hyphen.")
-    run_dir = Path(config["output_root"]) / safe_id
+    run_dir = configured_output_root(config) / safe_id
     (run_dir / "evidence").mkdir(parents=True, exist_ok=False)
     return run_dir
 
@@ -144,7 +179,7 @@ def existing_run_directory(config: dict[str, Any], run_id: str) -> Path:
     """Return an existing validated run directory."""
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", run_id):
         raise HarnessError("Invalid run_id.")
-    run_dir = Path(config["output_root"]) / run_id
+    run_dir = configured_output_root(config) / run_id
     if not run_dir.is_dir():
         raise HarnessError(f"Run directory does not exist: {run_dir}")
     return run_dir

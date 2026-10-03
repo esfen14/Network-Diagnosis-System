@@ -56,5 +56,5 @@
   "databases": {
     "system": "../../../system.db"
   },
-  "output_root": "/home/tester/pinpoint-test-results"
+  "output_root": "~/pinpoint-test-results"
 }

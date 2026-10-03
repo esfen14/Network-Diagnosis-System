@@ -208,7 +208,10 @@ VirtualBox test of real Network Discovery mappings and selected additional
 Nagios checks. `live_network_discovery/` is reserved for its explicitly invoked
 provisioning, service-control, polling, evidence, reporting, and cleanup tools.
 Its [README](live_network_discovery/README.md) documents configuration,
-self-tests, guarded execution, recovery, report generation, and SCP retrieval.
+self-tests, isolated/offline test-dependency setup, guarded execution, recovery,
+report generation, and SCP retrieval. The harness self-tests use `unittest` and
+do not require pytest; the application regression gate still uses the pinned
+packages in `requirements-test.txt`.
 
 The live lab is not part of the isolated pytest suite. It may create disposable
 guests or containers, scan an isolated subnet, alter test-only Nagios

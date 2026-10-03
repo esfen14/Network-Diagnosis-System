@@ -29,7 +29,8 @@ live_network_discovery/
 |   |-- lab.example.json
 |   `-- plugin-cases.example.json
 |-- provision/
-|   `-- detect_backend.py
+|   |-- detect_backend.py
+|   `-- install_test_dependencies.py
 |-- services/
 |   |-- configure_target01.sh
 |   |-- configure_target02.sh
@@ -47,9 +48,10 @@ live_network_discovery/
 ```
 
 Guest/network creation remains environment-specific because VirtualBox may or
-may not expose KVM. `detect_backend.py` reports whether KVM/libvirt, Incus/LXC,
-or Docker is available; the executing AI must provision the two targets using
-the approved available backend, then record that choice in the report.
+may not expose KVM. `detect_backend.py` distinguishes command presence from
+usable daemon access for KVM/libvirt, Incus/LXC (including `/snap/bin/lxc`), and
+Docker. Pre-provisioned disposable targets are also supported. Record the
+selected backend and its verified administrative access in the report.
 
 After creating minimal Debian/Ubuntu guests, copy the matching bootstrap into
 each guest. Both scripts are preview-only unless `--apply` is explicitly
@@ -95,7 +97,9 @@ remote service control uses strict host-key checking.
 
 ## Review and self-test
 
-From `server/`:
+Harness self-tests use only the Python standard library and therefore work even
+when the installed application environment does not contain pytest. From
+`server/`:
 
 ```bash
 .venv/bin/python -m py_compile \
@@ -104,12 +108,44 @@ From `server/`:
   tests/live_network_discovery/provision/*.py \
   tests/live_network_discovery/cleanup/*.py
 
-.venv/bin/python -m pytest \
-  tests/live_network_discovery/harness_tests.py -q
+<test-python> tests/live_network_discovery/harness_tests.py -v
 ```
 
 `harness_tests.py` is intentionally not named `test_*.py`, so the live-harness
-self-tests run only when explicitly selected.
+self-tests run only when explicitly selected. Passing them does not replace the
+focused application regression gate, which still requires the pinned packages
+from `requirements-test.txt`.
+
+### Isolated pytest dependencies
+
+Do not modify the application environment merely to add test tools. If pytest
+is absent, install the pinned test requirements into a separate writable
+directory. The helper is preview-only unless `--apply` is supplied.
+
+With an offline wheelhouse:
+
+```bash
+python provision/install_test_dependencies.py \
+  --python /opt/pinpoint/venv/bin/python \
+  --target ~/pinpoint-test-work/test-deps \
+  --wheelhouse /path/to/wheelhouse
+
+python provision/install_test_dependencies.py \
+  --python /opt/pinpoint/venv/bin/python \
+  --target ~/pinpoint-test-work/test-deps \
+  --wheelhouse /path/to/wheelhouse --apply
+```
+
+When network and DNS access have been explicitly approved, replace
+`--wheelhouse ...` with `--allow-network`. Then run the focused tests with:
+
+```bash
+PYTHONPATH="$HOME/pinpoint-test-work/test-deps" \
+  /opt/pinpoint/venv/bin/python -m pytest <focused-test-files> -v
+```
+
+If neither network access nor compatible offline wheels are available, record
+REG-01 as blocked; do not silently skip it.
 
 ## Execution
 
@@ -120,6 +156,12 @@ cd server/tests/live_network_discovery
 python provision/detect_backend.py
 python runner/run_tests.py --config config/lab.json preflight
 ```
+
+Preflight is read-only. It requires successful interface inspection, Nagios
+execution and configuration access, systemd service access, API authentication,
+database visibility, and the configured SSH-key reference. A mere file or
+command presence is not considered a pass. Run it in an execution context that
+permits these read-only checks.
 
 Create a result run and note the printed run ID:
 
@@ -179,7 +221,7 @@ python runner/run_tests.py \
 The harness will write outside the repository by default:
 
 ```text
-/home/tester/pinpoint-test-results/<run-id>/
+~/pinpoint-test-results/<run-id>/
 ```
 
 The final report and sanitized evidence will be retrieved with SCP. Passwords,
@@ -189,7 +231,7 @@ configuration files must never be committed.
 From the physical host:
 
 ```bash
-scp -r testuser@<vm-address>:/home/tester/pinpoint-test-results/<run-id> ./
+scp -r <vm-user>@<vm-address>:~/pinpoint-test-results/<run-id> ./
 ```
 
 Keep the in-VM copy until the retrieved checksums have been verified.

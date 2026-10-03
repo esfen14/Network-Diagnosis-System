@@ -101,7 +101,7 @@ testing.
 
 ### 4.2 Network
 
-Use an isolated `192.168.130.0/28` network:
+The preferred isolated network is `192.168.130.0/28`:
 
 | Address | System |
 |---|---|
@@ -112,6 +112,11 @@ Use an isolated `192.168.130.0/28` network:
 A management/NAT interface may be used to install packages. Network Discovery
 must be configured only for the isolated subnet and must never scan the
 management or production network.
+
+An equivalent private `/28` may be substituted only after read-only interface
+and route inspection proves that it is owned by the disposable lab and is not
+the VirtualBox management/NAT or a production-connected network. Record the
+approved substitution in the final report before scanning.
 
 ## 5. Target services
 
@@ -235,13 +240,20 @@ required cases pass and sufficient time, memory, and dependencies remain.
 
 - Pinpoint and Nagios are installed and operational.
 - The required plugin executables are present.
+- The harness standard-library self-tests pass with the installed interpreter.
+- The pinned pytest dependencies are available either through an isolated
+  writable directory or a reviewed offline wheelhouse; absence blocks REG-01.
 - The application databases are backed up or disposable.
 - The AI has controlled administrative access inside the lab.
+- The execution context permits read-only interface/route inspection, Nagios
+  validation, configuration reads, and systemd status checks.
 - `/usr/local/bin/nmap-sudo` works with the application's privileges.
 - Nagios validation and non-interactive reload are available.
 - Test users and permissions exist.
 - Target packages and static addresses are configured.
 - The test subnet is isolated from production.
+- A usable disposable-target backend or two pre-provisioned targets exist.
+- The configured user-relative evidence directory is writable.
 - Baseline Nagios configuration hashes and VM snapshots exist.
 - Secrets are stored outside source control.
 
@@ -382,7 +394,7 @@ Other plugins require at least OK, failure, and recovery.
 Each run writes to:
 
 ```text
-/home/tester/pinpoint-test-results/<run-id>/
+~/pinpoint-test-results/<run-id>/
 |-- Network_Discovery_Extended_Test_Report.md
 |-- checksums.sha256
 `-- evidence/
@@ -420,13 +432,13 @@ Valid result labels are **Pass**, **Fail**, **Blocked**, **Not Applicable**,
 Retrieve a complete run from the physical host with:
 
 ```bash
-scp -r testuser@<vm-address>:/home/tester/pinpoint-test-results/<run-id> ./
+scp -r <vm-user>@<vm-address>:~/pinpoint-test-results/<run-id> ./
 ```
 
 Retrieve only the Markdown report with:
 
 ```bash
-scp testuser@<vm-address>:/home/tester/pinpoint-test-results/<run-id>/Network_Discovery_Extended_Test_Report.md ./
+scp <vm-user>@<vm-address>:~/pinpoint-test-results/<run-id>/Network_Discovery_Extended_Test_Report.md ./
 ```
 
 Before export, redact passwords, session cookies, NCPA tokens, SNMP community
