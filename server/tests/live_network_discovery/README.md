@@ -70,6 +70,11 @@ scan `192.168.130.0/28` here because it overlaps the management network. Read
 the kit README and run its preview and self-tests before any `--apply` command.
 Do not start discovery until `provision_lab.py verify` succeeds.
 
+When nested virtualization is enabled after an existing lab was created with
+QEMU software emulation, use the VM kit's preview-first `enable-kvm` action. It
+converts the owned definitions and verifies runtime KVM acceleration without
+rebuilding disks or baselines; see the VM-kit guide for the commands.
+
 After creating minimal Debian/Ubuntu guests, copy the matching bootstrap into
 each guest. Both scripts are preview-only unless `--apply` is explicitly
 provided:

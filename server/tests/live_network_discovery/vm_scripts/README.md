@@ -20,6 +20,10 @@ the guest default route, saves a powered-off baseline, and boots an isolated
 overlay. KVM is used when accessible; otherwise QEMU software emulation is used.
 Software emulation can take 15–30 minutes to configure both guests.
 
+The selected hypervisor is saved in the private VM-kit state. Enabling nested
+virtualization later does not silently change already-defined domains; use the
+explicit conversion workflow below.
+
 ## Prerequisites
 
 On an Ubuntu/Debian monitoring VM, install the host tools if absent:
@@ -111,9 +115,42 @@ sudo python3 provision_lab.py up --config vm-lab.json --state-dir "$LAB_STATE" -
 ```
 
 `verify` checks the saved ownership UUIDs, runtime adapters, guest routes, active
-systemd services and actual TCP/UDP listening sockets. It writes `inventory.json`.
-It does not claim Nagios/Pinpoint visibility, protocol success, or failure/recovery
-acceptance. Run the full test harness separately for those checks.
+systemd services, actual TCP/UDP listening sockets, and the live hypervisor type.
+It writes `inventory.json`. It does not claim Nagios/Pinpoint visibility,
+protocol success, or failure/recovery acceptance. Run the full test harness
+separately for those checks.
+
+### Enable KVM after nested virtualization becomes available
+
+If the lab was originally created while `/dev/kvm` was unavailable, `status`
+will show `persistent hypervisor=qemu` even after the host later passes
+`virt-host-validate`. No VM rebuild is required.
+
+Preview the owned-domain conversion:
+
+```bash
+sudo python3 provision_lab.py enable-kvm \
+  --config vm-lab.json --state-dir "$LAB_STATE"
+```
+
+After reviewing the exact config and state directory, apply it:
+
+```bash
+sudo python3 provision_lab.py enable-kvm \
+  --config vm-lab.json --state-dir "$LAB_STATE" --apply
+```
+
+The action requires usable KVM support, verifies both saved ownership UUIDs,
+saves each original persistent definition as `targetXX-before-kvm.xml`, cleanly
+shuts down both guests, changes only the saved hypervisor/domain definitions,
+and restarts them. It then requires `info kvm` to report enabled and reruns SSH,
+service, interface, route, listener, and baseline verification. Guest disks,
+external baseline QCOW2 images, MAC addresses, UUIDs, and isolated networking are
+not replaced.
+
+If conversion cannot start a guest, inspect the reported error and retained XML
+backup before making another change. Do not use `virsh destroy` merely because a
+clean shutdown takes time.
 
 Restore both VMs to the configured pre-NCPA baselines:
 

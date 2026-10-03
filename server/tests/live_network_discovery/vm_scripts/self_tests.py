@@ -78,6 +78,52 @@ class ProvisionTests(unittest.TestCase):
         xml = ET.fromstring(lab.domain_xml(self.config, self.state, Path('/tmp/test-lab'), 'target02', True))
         self.assertEqual([node.find('source').get('network') for node in xml.findall('./devices/interface')], ['pinpoint-test', 'default'])
 
+    def test_preferred_hypervisor_requires_device_and_libvirt_support(self):
+        with patch.object(lab.os, 'access', return_value=False), patch.object(lab, 'virsh') as mocked:
+            self.assertEqual(lab.preferred_hypervisor(), 'qemu')
+            mocked.assert_not_called()
+        with patch.object(lab.os, 'access', return_value=True), patch.object(
+            lab, 'virsh', return_value=CompletedProcess([], 0, '<domainCapabilities/>', ''),
+        ):
+            self.assertEqual(lab.preferred_hypervisor(), 'kvm')
+        with patch.object(lab.os, 'access', return_value=True), patch.object(
+            lab, 'virsh', return_value=CompletedProcess([], 1, '', 'unsupported'),
+        ):
+            self.assertEqual(lab.preferred_hypervisor(), 'qemu')
+
+    def test_enable_kvm_preserves_disks_and_saves_original_xml(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for target in lab.TARGETS:
+                (root / (target + '-baseline.qcow2')).write_text(target + ' baseline')
+
+            def fake_virsh(*args, check=True):
+                if args[0] == 'dumpxml':
+                    return CompletedProcess([], 0, '<domain type="qemu"/>', '')
+                if args[0] == 'domstate':
+                    return CompletedProcess([], 0, 'shut off\n', '')
+                if args[0] == 'qemu-monitor-command':
+                    return CompletedProcess([], 0, 'kvm support: enabled\n', '')
+                return CompletedProcess([], 0, '', '')
+
+            with patch.object(lab, 'preferred_hypervisor', return_value='kvm'), patch.object(
+                lab, 'domain_hypervisor', side_effect=['qemu', 'qemu', 'kvm', 'kvm'],
+            ), patch.object(lab, 'virsh', side_effect=fake_virsh), patch.object(
+                lab, 'shutoff',
+            ) as shutoff, patch.object(lab, 'wait_for'), patch.object(
+                lab, 'wait_services',
+            ), patch.object(lab, 'verify'):
+                lab.enable_kvm(self.config, self.state, root)
+
+            self.assertEqual(self.state['hypervisor'], 'kvm')
+            self.assertEqual(shutoff.call_count, 2)
+            for target in lab.TARGETS:
+                self.assertTrue((root / (target + '-before-kvm.xml')).is_file())
+                self.assertEqual(
+                    (root / (target + '-baseline.qcow2')).read_text(),
+                    target + ' baseline',
+                )
+
     def test_image_checksum_rejected_before_any_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
             image = Path(directory) / 'image'

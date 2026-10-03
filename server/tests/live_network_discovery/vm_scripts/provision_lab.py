@@ -40,6 +40,14 @@ def virsh(*args, check=True):
     return command(['virsh', '-c', URI, *args], check=check)
 
 
+def preferred_hypervisor():
+    """Return kvm only when its device and libvirt domain type are usable."""
+    if not os.access('/dev/kvm', os.R_OK | os.W_OK):
+        return 'qemu'
+    capability = virsh('domcapabilities', '--virttype', 'kvm', check=False)
+    return 'kvm' if capability.returncode == 0 else 'qemu'
+
+
 def validate(config):
     """Validate names, resources and unique usable private addresses."""
     if config.get('schema_version') != 1:
@@ -269,7 +277,7 @@ def prepare(config, root, image, checksum):
     else:
         if any(p.name != '.provision.lock' for p in root.iterdir()):
             raise ValueError('New lab requires an empty state directory; refusing to reuse unowned files')
-        state = {'schema_version': 1, 'config': config, 'image_sha256': checksum.lower(), 'hypervisor': 'kvm' if os.access('/dev/kvm', os.R_OK | os.W_OK) else 'qemu', 'snmp_community': secrets.token_hex(24), 'mysql_password': secrets.token_hex(24), 'targets': {}}
+        state = {'schema_version': 1, 'config': config, 'image_sha256': checksum.lower(), 'hypervisor': preferred_hypervisor(), 'snmp_community': secrets.token_hex(24), 'mysql_password': secrets.token_hex(24), 'targets': {}}
         for target in TARGETS:
             state['targets'][target] = {'name': config['domain_prefix'] + '-' + target, 'uuid': str(uuid.uuid4()), 'lab_mac': '52:54:00:' + ':'.join(secrets.token_hex(1) for _ in range(3)), 'install_mac': '52:54:00:' + ':'.join(secrets.token_hex(1) for _ in range(3))}
         # Inspect names before writing ownership or any guest definitions.
@@ -325,6 +333,68 @@ def define_start(config, state, root, target, installing):
     write(xml, domain_xml(config, state, root, target, installing))
     virsh('define', str(xml))
     virsh('start', name)
+
+
+def domain_hypervisor(state, target, inactive=False):
+    """Return the owned domain's live or persistent libvirt type."""
+    if not ownership(state, target):
+        raise ValueError('Managed guest is missing')
+    arguments = ['dumpxml', state['targets'][target]['name']]
+    if inactive:
+        arguments.append('--inactive')
+    return ET.fromstring(virsh(*arguments).stdout).get('type')
+
+
+def enable_kvm(config, state, root):
+    """Convert owned QEMU domains to KVM without replacing disks or baselines."""
+    if preferred_hypervisor() != 'kvm':
+        raise ValueError('KVM is not usable; verify nested virtualization and /dev/kvm access')
+
+    types = {target: domain_hypervisor(state, target, inactive=True) for target in TARGETS}
+    unsupported = {target: value for target, value in types.items() if value not in ('qemu', 'kvm')}
+    if unsupported:
+        raise ValueError('Refusing unsupported domain types: ' + str(unsupported))
+
+    live_types = {}
+    for target in TARGETS:
+        name = state['targets'][target]['name']
+        if virsh('domstate', name).stdout.strip() != 'shut off':
+            live_types[target] = domain_hypervisor(state, target)
+
+    if all(value == 'kvm' for value in types.values()) and all(
+        value == 'kvm' for value in live_types.values()
+    ):
+        state['hypervisor'] = 'kvm'
+        save(root, state)
+        print('Both owned guests are already configured for KVM.', flush=True)
+        return
+
+    for target in TARGETS:
+        name = state['targets'][target]['name']
+        backup = root / (target + '-before-kvm.xml')
+        if types[target] == 'qemu' and not backup.exists():
+            write(backup, virsh('dumpxml', name, '--inactive').stdout)
+
+    for target in TARGETS:
+        shutoff(config, state, target)
+
+    state['hypervisor'] = 'kvm'
+    save(root, state)
+    for target in TARGETS:
+        name = state['targets'][target]['name']
+        xml = root / (target + '.xml')
+        write(xml, domain_xml(config, state, root, target, False))
+        virsh('define', str(xml))
+        if domain_hypervisor(state, target, inactive=True) != 'kvm':
+            raise RuntimeError(target + ' persistent definition did not switch to KVM')
+        virsh('start', name)
+        monitor = virsh('qemu-monitor-command', name, '--hmp', 'info kvm')
+        if 'enabled' not in monitor.stdout.lower():
+            raise RuntimeError(target + ' started without KVM acceleration')
+        wait_for(lambda: ssh(config, root, target, 'true', check=False).returncode == 0, config['timeout_seconds'], target + ' KVM SSH')
+        wait_services(config, root, target)
+    verify(config, state, root)
+    print('Both owned guests now run with KVM; disks and baseline images were unchanged.', flush=True)
 
 
 def shutoff(config, state, target):
@@ -385,6 +455,9 @@ def verify(config, state, root):
         if not ownership(state, target):
             raise ValueError('Managed guest is missing')
         xml = ET.fromstring(virsh('dumpxml', state['targets'][target]['name']).stdout)
+        hypervisor = xml.get('type')
+        if hypervisor != state['hypervisor']:
+            raise ValueError(f'{target} runs as {hypervisor}, but saved state requires {state["hypervisor"]}')
         interfaces = xml.findall('./devices/interface')
         if len(interfaces) != 1 or interfaces[0].find('source').get('network') != config['lab_network_name']:
             raise ValueError('Guest still has a non-lab adapter; rerun up to finish isolation')
@@ -404,7 +477,7 @@ def verify(config, state, root):
         for protocol, ports in expected.items():
             if not set(ports).issubset(actual[protocol]):
                 raise ValueError(f'{target} is missing expected {protocol} listeners')
-        inventory[target] = {'address': config[target + '_address'], 'routes': routes, 'listeners': listeners, 'expected_ports': expected}
+        inventory[target] = {'address': config[target + '_address'], 'hypervisor': hypervisor, 'routes': routes, 'listeners': listeners, 'expected_ports': expected}
     write(root / 'inventory.json', json.dumps(inventory, indent=2) + '\n', 0o644)
     print('Both guests have isolated-only adapters/routes and all pre-NCPA Profile A listeners.', flush=True)
 
@@ -424,7 +497,7 @@ def export_harness(config, state, root):
 def main():
     """Preview by default; perform only explicitly selected managed lab operations."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['network', 'prepare', 'up', 'verify', 'status', 'stop', 'restore'])
+    parser.add_argument('action', choices=['network', 'prepare', 'up', 'enable-kvm', 'verify', 'status', 'stop', 'restore'])
     parser.add_argument('--config', type=Path, default=HERE / 'vm-lab.example.json')
     parser.add_argument('--state-dir', type=Path, required=True)
     parser.add_argument('--image', type=Path)
@@ -479,12 +552,20 @@ def main():
     if args.action == 'prepare':
         print('Prepared images, pinned SSH keys and cloud-init seeds. Run up --apply to boot.')
     elif args.action == 'status':
+        print('host preferred hypervisor: ' + preferred_hypervisor())
         for target in TARGETS:
-            print(target + ': ' + (virsh('domstate', state['targets'][target]['name']).stdout.strip() if ownership(state, target) else 'not defined'))
+            if ownership(state, target):
+                runtime = virsh('domstate', state['targets'][target]['name']).stdout.strip()
+                persistent = domain_hypervisor(state, target, inactive=True)
+                print(f'{target}: {runtime}; persistent hypervisor={persistent}')
+            else:
+                print(target + ': not defined')
     elif args.action == 'stop':
         for target in TARGETS:
             shutoff(config, state, target)
         print('Owned guests stopped; all disks and baselines retained.')
+    elif args.action == 'enable-kvm':
+        enable_kvm(config, state, root)
     elif args.action == 'restore':
         if any(not (root / (target + '-baseline.qcow2')).is_file() for target in TARGETS):
             raise ValueError('Both cold baselines are required before restoration')
