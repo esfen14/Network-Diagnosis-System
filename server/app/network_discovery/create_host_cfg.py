@@ -893,11 +893,16 @@ def _apply_new_host_cfg(cfg_path):
         )
 
         if result.returncode != 0:
-            current_app.logger.error(result.stdout + result.stderr)
+            raise RuntimeError(
+                f"reload exited with code {result.returncode}: "
+                f"{result.stdout}{result.stderr}".strip()
+            )
 
     except Exception as e:
-        # Reload failed — roll back to the last known-good config so Nagios
-        # never keeps running on a broken/half-applied file
+        # Reload failed (nonzero exit, timeout, or could not run) — roll back
+        # to the last known-good config so Nagios never keeps running on a
+        # broken/half-applied file
+        current_app.logger.error(f"Nagios reload failed: {e}")
         shutil.copy2(backup_path, NAGIOS_HOST_CFG)
         return False, (
             f"Failed to reload Nagios after applying new config. "

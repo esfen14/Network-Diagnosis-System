@@ -8,7 +8,7 @@ changed, and the single config-writer lock. Nagios itself is never run.
 """
 import threading
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -350,3 +350,45 @@ class TestDiscoveryFlow:
         assert status.Status.name == "SUCCESS"
         validate.assert_called_once()
         apply.assert_called_once()
+
+
+# ==========================================================
+# APPLYING A CONFIG — RELOAD FAILURE ROLLBACK
+# ==========================================================
+
+class TestApplyReloadFailure:
+
+    @staticmethod
+    def apply_with_reload(app, tmp_path, reload_result=None, reload_error=None):
+        """Apply a candidate with a mocked reload; returns (ok, message, live_file)."""
+        live = tmp_path / "hosts.cfg"
+        live.write_text("OLD")
+        candidate = tmp_path / "candidate.cfg"
+        candidate.write_text("NEW")
+        with patched_config(app, NAGIOS_HOST_CFG=live, BACKUP_DIR=tmp_path / "backups"), \
+             patch.object(create_host_cfg.subprocess, "run",
+                          return_value=reload_result, side_effect=reload_error):
+            ok, message = create_host_cfg._apply_new_host_cfg(candidate)
+        return ok, message, live
+
+    def test_nonzero_reload_exit_fails_and_restores_the_backup(self, app, tmp_path):
+        result = MagicMock(returncode=1, stdout="", stderr="reload failed")
+
+        ok, message, live = self.apply_with_reload(app, tmp_path, reload_result=result)
+
+        assert ok is False
+        assert "Rolled back" in message
+        assert live.read_text() == "OLD"
+
+    def test_reload_exception_fails_and_restores_the_backup(self, app, tmp_path):
+        ok, _message, live = self.apply_with_reload(app, tmp_path, reload_error=OSError("no sudo"))
+
+        assert ok is False
+        assert live.read_text() == "OLD"
+
+    def test_clean_reload_keeps_the_new_config(self, app, tmp_path):
+        ok, _message, live = self.apply_with_reload(
+            app, tmp_path, reload_result=MagicMock(returncode=0, stdout="", stderr=""))
+
+        assert ok is True
+        assert live.read_text() == "NEW"
