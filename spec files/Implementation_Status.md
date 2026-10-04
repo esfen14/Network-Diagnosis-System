@@ -58,8 +58,18 @@ the normative behavior in the requirement specifications.
 | Reports frontend breadth | Backend has six report endpoints; UI currently exposes availability and network-services views | Add other views only when product requirements call for them |
 | Network Health plugin section | Backend endpoint exists; current page does not call `/network-health/plugins` | Connect it when implementing the corresponding `Display_Requirements.md` section |
 | Device discovery inventory | Historical docs described `/system/hosts` and port endpoints, but those routes do not exist; current Device Inventory uses latest Nagios host status | Treat the current host-status API as implemented behavior unless a separate discovery inventory contract is approved |
-| Live-test remediation (see `Live_Test_Remediation_Plan.md`) | Code done on branches: A (plugin reload rollback), D (`flask sync-permissions`), E (service naming plus history rename in `service_name_migration.py`), B (NCPA key permissions and listener probe), C (NCPA disk nodes from the agent API, `POST /system/deployment/ncpa/<id>/refresh-disks`), H (content-only config copy, reload after rollback), F/G (5-missed-scans lifecycle, TFTP fixture, UDP `open\|filtered` recorded as skipped, ENV-01 KVM check) | Verify B, C, H on a VM; investigate NCPA listener loss; share one `apply_with_rollback` helper once A is merged; re-run the live harness |
+| Plugin lifecycle and discovery | Discovery generates its own commands without checking Plugin Manager status; disable changes database status without stopping existing Nagios checks. The live harness now enables required plugins through APIs before discovery | Unify product lifecycle enforcement in a separate behavior change; enable setup alone does not close this integration gap |
 | Installer | Developed in another repository | Keep installer work out of this repository unless scope changes |
+
+## Test approach status
+
+Backend tests are organized under `server/tests/unit/`, `integration/`, `e2e/`,
+`support/`, and `plans/`. Default pytest collection is isolated. The deterministic
+browser-to-Nagios approach is recorded in
+[`TEST_APPROACH_ADJUSTMENT_PLAN.md`](../server/tests/plans/TEST_APPROACH_ADJUSTMENT_PLAN.md)
+as **Proposed — implementation deferred pending fixes**. Missing UI workflows,
+complete orchestration and automatic disposable-instance recovery are not yet
+implemented; existing harness improvements do not satisfy full acceptance.
 
 ## Explicit exclusions
 

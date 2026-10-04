@@ -98,7 +98,7 @@ Randomized (locally administered) MACs are treated as no MAC. In the "ambiguous"
 | `scheduler.py` | Adds the `ncpa_relocation` job (interval `NCPA_RELOCATE_MINUTES`) | Plan section 7 |
 | `api/commands/seed.py` | New permission `system.hosts.edit` | Plan section 11 |
 | `config.py` | New settings from plan section 12 | Kept in `config.py` (not `SystemSettings`), the plan allowed either |
-| `conftest.py`, `tests/test_create_host_cfg.py` | Test permissions; one assertion updated because loaded services now carry `plugin_name` | |
+| `conftest.py`, `tests/unit/test_create_host_cfg.py` | Test permissions; one assertion updated because loaded services now carry `plugin_name` | |
 
 ### 3.5 Routes (`server/app/api/system/device_identity.py`)
 
@@ -147,9 +147,9 @@ These are worth a second look in review.
 Run from `server/` with the virtualenv active.
 
 ```bash
-pytest tests/test_device_identity.py tests/test_port_lifecycle.py tests/test_device_config.py \
-       tests/test_ncpa_identity.py tests/test_device_identity_routes.py \
-       tests/test_device_name_consumers.py tests/test_device_migration.py
+pytest tests/unit/test_device_identity.py tests/unit/test_port_lifecycle.py tests/unit/test_device_config.py \
+       tests/unit/test_ncpa_identity.py tests/unit/test_device_identity_routes.py \
+       tests/unit/test_device_name_consumers.py tests/unit/test_device_migration.py
 pytest        # everything
 ```
 
@@ -165,7 +165,7 @@ pytest        # everything
 | `test_device_name_consumers.py` | 6 | Plugin configurations and the hosts-by-OS report use the stable name; trust confirmation records the host key and flags a key another device owns |
 | `test_device_migration.py` | 9 | The migration on throwaway SQLite files seeded with pre-migration rows (subprocess): names kept and de-duplicated, confidence, identifiers, address rows, ports kept monitored and duplicates collapsed, constraints enforced, `history.db` untouched, downgrade then upgrade |
 
-Shared builders are in `tests/identity_helpers.py`; the migration is driven by `tests/migration_runner.py`. As with the existing suite, nmap, SSH and Nagios are mocked.
+Shared builders are in `tests/support/identity_helpers.py`; the migration is driven by `tests/support/migration_runner.py`. As with the existing suite, nmap, SSH and Nagios are mocked.
 
 Bugs found by the tests while writing them, and fixed: new Linux devices were not getting their SSH/NCPA placeholder records, and plain "new device" decisions were wrongly sent through review-item creation.
 
@@ -173,7 +173,7 @@ Bugs found by the tests while writing them, and fixed: new Linux devices were no
 
 `1261 passed, 33 skipped, 1 failed`. Before this branch's work the same suite was `1026 passed, 33 skipped, 1 failed` (measured part-way through development, so the 235 new tests account for the difference).
 
-The one failure, `tests/test_automation.py::TestSecurityCheck::test_flags_broken_plugins_and_logs_summary`, **is not caused by this branch**: it also fails on a clean checkout of `HEAD`. It writes and executes a shell script as a "good" plugin, which cannot run on this Windows machine.
+The one failure, `tests/unit/test_automation.py::TestSecurityCheck::test_flags_broken_plugins_and_logs_summary`, **is not caused by this branch**: it also fails on a clean checkout of `HEAD`. It writes and executes a shell script as a "good" plugin, which cannot run on this Windows machine.
 
 ### 6.3 Not covered by automated tests
 

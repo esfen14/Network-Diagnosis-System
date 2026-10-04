@@ -91,7 +91,13 @@ Use lockfiles and requirements files as the source of truth for exact versions.
     |   |-- history_models.py   Nagios snapshot models on the history bind
     |   |-- scheduler.py        periodic jobs
     |   `-- automation.py       settings-driven scheduled operations
-    `-- tests/                  pytest tests
+    |-- pytest.ini              isolated collection defaults
+    `-- tests/
+        |-- unit/               isolated unit and mocked API/database tests
+        |-- integration/        opt-in real Nagios CGI tests
+        |-- e2e/                opt-in live lab tooling
+        |-- support/            shared builders and migration helper
+        `-- plans/              proposed approach, live plan, historical findings
 ```
 
 ## Architectural invariants

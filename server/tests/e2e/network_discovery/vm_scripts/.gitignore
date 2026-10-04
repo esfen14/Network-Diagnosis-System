@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+vm-lab.json
+state/
+images/
+*.qcow2
+*.img
+*.partial
+*.private.json
+lab.json
+state.json
+lab_key*
+known_hosts
+*-host-key*
+*-user-data
+*-meta-data
+*-network
