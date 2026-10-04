@@ -29,6 +29,8 @@ import flask_migrate  # noqa: E402
 from app import app  # noqa: E402
 
 BEFORE = "c3610bb0fc54"
+# The revision this runner checks; later migrations have their own runners.
+TARGET = "d41f7a2b9e10"
 report = {}
 
 with app.app_context():
@@ -63,7 +65,7 @@ c.commit()
 c.close()
 
 with app.app_context():
-    flask_migrate.upgrade(directory="migrations", revision="head")
+    flask_migrate.upgrade(directory="migrations", revision=TARGET)
 
 c = sqlite3.connect(sysdb)
 report["version"] = c.execute("select version_num from alembic_version").fetchall()
@@ -120,7 +122,7 @@ report["devices_after_downgrade"] = c.execute("select NetDiscoveryID, Hostname f
 c.close()
 
 with app.app_context():
-    flask_migrate.upgrade(directory="migrations", revision="head")
+    flask_migrate.upgrade(directory="migrations", revision=TARGET)
 c = sqlite3.connect(sysdb)
 report["version_after_reupgrade"] = c.execute("select version_num from alembic_version").fetchall()
 c.close()

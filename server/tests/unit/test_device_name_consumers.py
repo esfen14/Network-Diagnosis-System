@@ -83,7 +83,8 @@ class TestTrustConfirmationRecordsIdentity:
 
     def confirm(self, client, device, fingerprint):
         with patch("app.api.system.ncpa_deployment.get_host_key_fingerprint", return_value=fingerprint):
-            return client.post(f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/confirm-trust")
+            return client.post(f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/confirm-trust",
+                               json={"fingerprint": fingerprint})
 
     def test_host_key_becomes_a_strong_identifier(self, logged_in_client, db_session, admin_user):
         device = device_named(db_session, make_status(db_session, admin_user))

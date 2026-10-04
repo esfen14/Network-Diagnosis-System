@@ -23,7 +23,9 @@ acknowledgements belong in `system.db` even though they relate to Nagios alerts.
 - Audit/logging: `ActivityLog`, `ConfigurationChanges`, `ExportLog`.
 - Discovery: `NetworkDiscoveryStatus`, `SkippedService`, `NetworkDiscovery`,
   `Open_TCP_Services`, `Open_UDP_Services`.
-- NCPA deployment: `SSHCredentials`, `NCPADeploymentStatus`, `NCPADeployment`,
+- NCPA deployment: `SSHCredentials`, `NCPADeploymentStatus` (one row per run,
+  with `Reviewed_At`/`Reviewed_By`), `NCPADeploymentResult` (one row per device
+  per run), `NCPADeployment` (each device's latest agent state),
   `NCPADevicePartition`.
 - Settings: singleton `SystemSettings`, one-per-user `UserPreferences`.
 - Notifications/alerts: `NotificationCursor`, `AlertAcknowledgement`,

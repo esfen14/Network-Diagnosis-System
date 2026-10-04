@@ -26,6 +26,7 @@ from app.network_discovery import create_host_cfg, identity_probes, ncpa_relocat
 from app.ncpa_deployment import ncpa_deployment as ncpa
 from app.system_models import (
     AddressSource,
+    DeploymentOutcome,
     DeviceState,
     IdentifierKind,
     IdentityConfidence,
@@ -201,7 +202,8 @@ class TestInstallNcpa:
              patch.object(ncpa, "run_command", run), \
              patch.object(ncpa, "verify_ncpa_reachable", return_value={"success": True, "message": ""}), \
              patch.object(ncpa, "tls_certificate_fingerprint", return_value=CERT_1) as probe:
-            ok = ncpa.install_ncpa(device.NetDiscoveryID, None, device.IP_Address)
+            # install_ncpa returns (outcome, error); success is (SUCCESS, None).
+            ok = ncpa.install_ncpa(device.NetDiscoveryID, None, device.IP_Address) == (DeploymentOutcome.SUCCESS, None)
         return ok, run, probe
 
     def test_deployment_stores_identity_evidence(self, db_session, admin_user):

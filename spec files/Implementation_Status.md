@@ -19,8 +19,9 @@ the normative behavior in the requirement specifications.
   events and Pinpoint acknowledgement history.
 - Header notification feed with per-user unread cursor.
 - Network discovery start/stop/status and Nagios host/service config generation.
-- NCPA eligibility, SSH fingerprint trust, deployment, cancellation, status,
-  and trusted-device routes.
+- NCPA eligibility, SSH fingerprint trust (approved key only), login checks,
+  deployment with per-device outcomes, cancellation, status, run history and
+  review, and trusted-device routes.
 - Activity, configuration, discovery, NCPA, and export logs.
 - Availability, OS, network-service, device-service, alert, and notification
   report APIs.
@@ -43,6 +44,9 @@ the normative behavior in the requirement specifications.
 - Reports UI for host availability and network services.
 - Plugin Manager inventory/running tabs, details, scan, custom plugin, and
   administrative actions.
+- NCPA Deployment page: device list, deploy wizard with host-key verification
+  and per-device login checks, live progress, header bell item, and Deployment
+  History with run review.
 - Header notification feed/unread behavior, session timeout, maintenance banner,
   shared export UI, and network rescan workflow.
 

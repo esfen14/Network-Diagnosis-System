@@ -117,7 +117,8 @@ class TestConfirmTrust:
         with patch("app.api.system.ncpa_deployment.get_host_key_fingerprint") as mock_fp:
             mock_fp.return_value = "fp:123"
             resp = logged_in_client.post(
-                "/api/system/deployment/ncpa/99999/confirm-trust"
+                "/api/system/deployment/ncpa/99999/confirm-trust",
+                json={"fingerprint": "fp:123"},
             )
         assert resp.status_code == 404
 
@@ -149,7 +150,8 @@ class TestConfirmTrust:
         with patch("app.api.system.ncpa_deployment.get_host_key_fingerprint") as mock_fp:
             mock_fp.return_value = "fp:123"
             resp = logged_in_client.post(
-                f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/confirm-trust"
+                f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/confirm-trust",
+                json={"fingerprint": "fp:123"},
             )
         assert resp.status_code == 404
 
@@ -160,7 +162,8 @@ class TestConfirmTrust:
         with patch("app.api.system.ncpa_deployment.get_host_key_fingerprint") as mock_fp:
             mock_fp.return_value = "fp:123"
             resp = logged_in_client.post(
-                f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/confirm-trust"
+                f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/confirm-trust",
+                json={"fingerprint": "fp:123"},
             )
 
         assert resp.status_code == 200
@@ -197,7 +200,7 @@ class TestDeployNcpaStart:
         assert resp.status_code == 400
 
     def test_deploy_ncpa_device_not_found_rejected(self, logged_in_client, db_session, admin_user):
-        """Device 99999 doesn't exist — should be in the rejected list; response is 202."""
+        """Device 99999 doesn't exist — it is rejected, and with nothing left to deploy the response is 400."""
         with patch("app.api.system.ncpa_deployment.deploy_ncpa_thread", None), \
              patch("app.api.system.ncpa_deployment.threading.Thread") as mock_thread_cls:
             mock_thread_instance = MagicMock()
@@ -208,14 +211,15 @@ class TestDeployNcpaStart:
                 json={"devices": [{"device_id": 99999, "username": "u", "password": "p"}]},
             )
 
-        assert resp.status_code == 202
+        assert resp.status_code == 400
+        mock_thread_cls.assert_not_called()
         data = resp.get_json()["data"]
         assert len(data["rejected"]) > 0
         rejected_ids = [r["device_id"] for r in data["rejected"]]
         assert 99999 in rejected_ids
 
     def test_deploy_ncpa_untrusted_device_rejected(self, logged_in_client, db_session, admin_user):
-        """Device exists but has no Key_Fingerprint (not trust-confirmed) — should be rejected."""
+        """Device exists but has no Key_Fingerprint (not trust-confirmed) — rejected, so nothing starts."""
         device, creds = _make_ncpa_device(db_session, admin_user, trusted=False)
         assert creds.Key_Fingerprint is None
 
@@ -231,7 +235,8 @@ class TestDeployNcpaStart:
                 ]},
             )
 
-        assert resp.status_code == 202
+        assert resp.status_code == 400
+        mock_thread_cls.assert_not_called()
         data = resp.get_json()["data"]
         assert len(data["rejected"]) > 0
         rejected_ids = [r["device_id"] for r in data["rejected"]]
