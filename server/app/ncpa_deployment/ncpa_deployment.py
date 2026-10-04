@@ -14,7 +14,7 @@ import re
 import textwrap
 from app.network_discovery.create_host_cfg import add_ncpa_port, ADD_NCPA_PORT_PROGRESS_WEIGHT
 from app.network_discovery.device_identity import Evidence, is_hardware_mac, normalize_mac, record_device_evidence
-from app.network_discovery.identity_probes import tls_certificate_fingerprint
+from app.network_discovery.identity_probes import port_accepts_connections, tls_certificate_fingerprint
 from app.system_models import IdentifierKind
 
 
@@ -30,14 +30,22 @@ REMOTE_AUTHORIZED_KEYS = f"{REMOTE_SSH_DIR}/authorized_keys"
 REMOTE_HELPER = "/usr/local/sbin/pinpoint-ncpa-deploy" 
 REMOTE_SUDOERS = "/etc/sudoers.d/pinpoint-ncpa-deploy"
 
+LEFTOVER_NOTE = "The deployment account, its key, sudo rule and helper remain on the device; a retry will reuse them."
+NCPA_STOPPED_MESSAGE = "NCPA stopped listening after the identity check."
+NCPA_PORT_MESSAGE = "NCPA_PORT must be an integer between 1 and 65535."
+
+
 def ncpa_port():
     """
     NCPA's listener port from Config.NCPA_PORT as an int. Raises ValueError if
     it is not a valid TCP port, since it is written into the remote helper.
     """
-    port = int(current_app.config["NCPA_PORT"])
+    try:
+        port = int(current_app.config["NCPA_PORT"])
+    except (TypeError, ValueError):
+        raise ValueError(NCPA_PORT_MESSAGE) from None
     if not 1 <= port <= 65535:
-        raise ValueError("NCPA_PORT must be between 1 and 65535.")
+        raise ValueError(NCPA_PORT_MESSAGE)
     return port
 
 
@@ -406,7 +414,7 @@ def install_deployment_helper(client, password):
     TEE="/usr/bin/tee"
     SED="/usr/bin/sed"
     UFW="/usr/sbin/ufw"
-    NCPA_INIT="/etc/init.d/ncpa"
+    SYSTEMCTL="/usr/bin/systemctl"
     CURL="/usr/bin/curl"
 
     KEYRING_DIR="/etc/apt/keyrings"
@@ -443,8 +451,17 @@ def install_deployment_helper(client, password):
 
     "$SED" -i "s/^community_string = .*/community_string = $TOKEN/" "$NCPA_CONFIG"
 
-    # Listen on PinPoint's configured NCPA port (only the [listener] section).
-    "$SED" -i "/^\\[listener\\]/,/^\\[/ s/^port = .*/port = $NCPA_PORT/" "$NCPA_CONFIG"
+    # Listen on PinPoint's configured NCPA port. Stock ncpa.cfg has only a
+    # commented "# port =" in [listener], so drop any port line there (active
+    # or commented) and write exactly one after the section header.
+    "$SED" -i "/^\\[listener\\]/,/^\\[/ {/^#\\? *port *=/d}" "$NCPA_CONFIG"
+    "$SED" -i "/^\\[listener\\]/a port = $NCPA_PORT" "$NCPA_CONFIG"
+
+    PORT_LINES="$("$SED" -n "/^\\[listener\\]/,/^\\[/ {/^port = $NCPA_PORT\\$/p}" "$NCPA_CONFIG" | /usr/bin/wc -l)"
+    if [ "$PORT_LINES" -ne 1 ]; then
+        echo "Could not set the NCPA listener port." >&2
+        exit 1
+    fi
 
     # Use a persistent self-signed certificate instead of NCPA's "adhoc" one,
     # which may be regenerated on restart. PinPoint identifies the device by
@@ -473,9 +490,9 @@ def install_deployment_helper(client, password):
 
     "$SED" -i "s|^certificate = .*|certificate = $CERT_FILE,$KEY_FILE|" "$NCPA_CONFIG"
 
-    "$NCPA_INIT" stop || true
-    sleep 1
-    "$NCPA_INIT" start
+    # Restart through systemd so the ncpa.service unit tracks the agent
+    # (the init script would leave the unit "failed").
+    "$SYSTEMCTL" restart ncpa
 
     # "init status" can report running while the listener is down, so probe
     # the port and make an authenticated HTTPS request, retrying briefly.
@@ -492,7 +509,7 @@ def install_deployment_helper(client, password):
 
     if [ "$NCPA_OK" -ne 1 ]; then
         echo "NCPA is not listening or rejected an authenticated request on port $NCPA_PORT." >&2
-        "$NCPA_INIT" status >&2 || true
+        "$SYSTEMCTL" status ncpa --no-pager >&2 || true
         exit 1
     fi
 
@@ -817,9 +834,14 @@ def verify_ncpa_reachable(ip_address, token, timeout=5):
 # Filesystem types and node names that never carry a monitorable disk.
 PSEUDO_FILESYSTEMS = frozenset({
     "tmpfs", "devtmpfs", "squashfs", "overlay", "proc", "sysfs", "cgroup",
-    "cgroup2", "devpts", "efivarfs", "ramfs", "swap", "iso9660",
+    "cgroup2", "devpts", "efivarfs", "ramfs", "swap", "iso9660", "bpf",
+    "tracefs", "debugfs", "securityfs", "configfs", "pstore", "mqueue",
+    "hugetlbfs", "fusectl", "autofs", "binfmt_misc", "rpc_pipefs", "nsfs",
 })
-DISK_PERCENT_LEAF = "percent"
+# NCPA node names ("|" is "/") that are never monitored, with everything under
+# them: kernel and runtime trees, and the small UEFI boot partition.
+EXCLUDED_NODE_PREFIXES = ("|sys", "|proc", "|run", "|dev", "|boot|efi")
+DISK_PERCENT_LEAF = "used_percent"
 
 
 def _ncpa_get(ip_address, token, path, timeout=5):
@@ -845,6 +867,9 @@ def _is_monitorable_disk_node(name, info):
     """Mounted, real filesystems only; no swap, boot-only or pseudo nodes."""
     if not name or any(char in name for char in ("!", ";", "'", '"', " ", "\n")):
         return False
+    for prefix in EXCLUDED_NODE_PREFIXES:
+        if name == prefix or name.startswith(prefix + "|"):
+            return False
     if isinstance(info, dict):
         fstype = info.get("fstype")
         if isinstance(fstype, list):
@@ -1051,6 +1076,11 @@ def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
             db.session.rollback()
             current_app.logger.exception("Could not store identity evidence after NCPA deployment.")
 
+        # The identity probe talks to the agent; make sure it did not stop it.
+        if not port_accepts_connections(ip_address, ncpa_port()):
+            current_app.logger.error("NCPA stopped listening after the identity check.")
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, NCPA_STOPPED_MESSAGE)
+
         return DeploymentOutcome.SUCCESS, None
 
     except paramiko.SSHException:
@@ -1086,7 +1116,15 @@ def deploy_device(device_id, ncpa_deployment_status_id, ip_address, username, pa
     outcome, error = give_program_permissions(device_id, ncpa_deployment_status_id, ip_address, username, password)
     if outcome is not DeploymentOutcome.SUCCESS:
         return outcome, error
-    return install_ncpa(device_id, ncpa_deployment_status_id, ip_address)
+    outcome, error = install_ncpa(device_id, ncpa_deployment_status_id, ip_address)
+    if outcome is DeploymentOutcome.SUCCESS:
+        return outcome, error
+
+    # Step one already created the deployment account on the device; say so,
+    # since nothing removes it and the user may want to clean it up.
+    error = f"{error} {LEFTOVER_NOTE}"
+    update_ncpa_deployment_info(device_id, ncpa_deployment_status_id, error=error)
+    return outcome, error
 
 
 def final_run_status(successful, failed):

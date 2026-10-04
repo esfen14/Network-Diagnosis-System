@@ -48,8 +48,9 @@ If one of these fails, record it as a defect rather than adjusting the case.
 
 1. nmap marks a probed service `method="probed"` and TLS-wrapped HTTP
    `tunnel="ssl"` (SVC-00). The classifier depends on both.
-2. The real `ncpa.cfg` has the listener port on a `port =` line under
-   `[listener]`, so the install script's `sed` changes it (NCPA-10).
+2. (Corrected after the 2026-10-05 run.) Stock `ncpa.cfg` has only a commented
+   `# port =` under `[listener]`; the install script now replaces any port line
+   with exactly one, so the agent must listen on `NCPA_PORT` only (NCPA-10).
 3. Deploying with port 22 closed succeeds only if the pinned port is used
    everywhere, including paramiko's host-key lookup (NCPA-08).
 4. `-sU -sV` does not make discovery unacceptably slower (SCAN-02).
@@ -66,6 +67,17 @@ If one of these fails, record it as a defect rather than adjusting the case.
 - Record `git log -1 --oneline` of the deployed code and
   `sqlite3 server/system.db "select version_num from alembic_version"` as the
   starting revision.
+- The `sqlite3` CLI may be missing on the host: use Python's `sqlite3` module for
+  the queries below.
+- NCPA deployment needs internet on the guest (`apt`, `repo.nagios.com`); attach a
+  temporary NAT interface to the target for deployments and detach it before scans.
+- The deployment API logs in with a username and password, but the guests allow
+  key login only: create throwaway password accounts for the test and remove them
+  afterwards (they are removed by restoring the baseline).
+- The deploy key pair is read from `$HOME/.ssh/pinpoint_ncpa_deploy(.pub)` of the
+  user running the app; a `flask run` session needs one.
+- Baseline restores recreate the live overlay on `*-baseline.qcow2`; re-authorize
+  any test SSH key that is not in the baseline image.
 - Keep hypervisor console access to the guests. Moving sshd (NCPA-05..09) closes
   port 22, so recovery must not depend on SSH.
 - Use **target01** only for the existing standard-port cases. Use **target02** for
@@ -144,7 +156,7 @@ Stop after SVC-00 if its gate fails (see SVC-00).
 1. Work on a copy. Record the starting revision.
 2. `flask db heads` prints exactly one head, `f3b7d2e8a614`. Two heads mean the
    merge migration is missing.
-3. `flask db upgrade --multidb`, then check `alembic_version` equals
+3. `flask db upgrade` (upgrades both databases; `--multidb` is not an option), then check `alembic_version` equals
    `f3b7d2e8a614`.
 4. `OPEN_TCP_Services` and `OPEN_UDP_Services` have `Identified_By`;
    `DISCOVERY_SETTINGS` has `TCP_Forced_Services` and `UDP_Forced_Services`;
@@ -162,7 +174,7 @@ Stop after SVC-00 if its gate fails (see SVC-00).
 
 1. From a fresh clone: `python -m compileall -q app` exits 0, and
    `SECRET_KEY=x FLASK_DEBUG=1 python -c "import app"` prints no error.
-2. On an empty database, `flask db upgrade --multidb` reaches `f3b7d2e8a614`.
+2. On an empty database, `flask db upgrade` (upgrades both databases; `--multidb` is not an option) reaches `f3b7d2e8a614`.
 3. `flask run` serves the login page; the log has no traceback at startup.
 4. If the installer is available, run it against this branch. First boot must
    get past the step that failed on `main` and create the admin account and the
@@ -210,8 +222,11 @@ not only the service description.
 
 ### SVC-02: a guess is a suggestion (extends ND-07)
 
-- Port 5666 (accepts and closes) on target02 and port 9000 on target01 are
-  stored with `Identified_By = PORT_HINT` and `Port_State = SUGGESTED`.
+- Port 5666 (accepts and closes) on target02 is stored with
+  `Identified_By = PORT_HINT` and `Port_State = SUGGESTED`. Port 9000 on target01
+  is probed by nmap as `echo`, so it is `FINGERPRINT` / `SUGGESTED`; for the
+  guess-only case use a listener nmap cannot name. A port that accepts and closes
+  (`tcpwrapped`) is stored with service name `unknown`.
 - Neither appears in the generated Nagios config.
 - Promote 5666 through `PUT /api/system/hosts/<id>/ports/tcp/5666` with
   `{"state": "MONITORED"}` (the existing ND-07 flow). It becomes monitored.

@@ -175,6 +175,10 @@ def upsert_scanned_port(model, protocol, device_id, port_number, service_name, n
         port.Plugin_Name = resolve_plugin_name(port.Service_Name, transport_for(protocol))
 
     if port.Port_State is PortState.MONITORED and not pinned:
+        # A removed port rule no longer vouches for the label; the name and
+        # plugin stay frozen, only how the port was identified is refreshed.
+        if port.Identified_By is ServiceIdentification.PORT_RULE and identified_by is not ServiceIdentification.PORT_RULE:
+            port.Identified_By = identified_by
         flag_service_change(port, protocol, device_id, service_name, identified_by)
     return port
 

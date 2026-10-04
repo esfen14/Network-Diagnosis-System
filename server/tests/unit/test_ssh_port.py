@@ -8,6 +8,8 @@ every later deployment connection uses. Discovery probes the SSH host key on
 every port nmap identified as ssh. The NCPA helper configures the agent's
 listener on Config.NCPA_PORT.
 """
+import shutil
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -300,7 +302,7 @@ class TestHelperUsesConfiguredNcpaPort:
             helper = self.install_helper()
         assert 'NCPA_PORT="5693"' in helper
         assert "__NCPA_PORT__" not in helper
-        assert "/^\\[listener\\]/,/^\\[/ s/^port = .*/port = $NCPA_PORT/" in helper
+        assert "/^\\[listener\\]/a port = $NCPA_PORT" in helper
 
     def test_configured_port(self, app):
         with app.app_context(), patched_config(app, NCPA_PORT="5800"):
@@ -317,8 +319,75 @@ class TestHelperUsesConfiguredNcpaPort:
         urls = [call.args[0] for call in get.call_args_list]
         assert urls == ["https://10.0.0.5:5800/api", "https://10.0.0.5:5800/api/disk/logical"]
 
-    @pytest.mark.parametrize("bad", ["0", "70000", "56a"])
+    @pytest.mark.parametrize("bad", ["0", "70000", "56a", "abc", None])
     def test_an_invalid_port_is_never_written_into_the_helper(self, app, bad):
         with app.app_context(), patched_config(app, NCPA_PORT=bad), \
-             pytest.raises(ValueError):
+             pytest.raises(ValueError, match="NCPA_PORT must be an integer between 1 and 65535."):
             ncpa.ncpa_port()
+
+    def test_agent_restarts_through_systemd(self, app):
+        with app.app_context():
+            helper = self.install_helper()
+        assert '"$SYSTEMCTL" restart ncpa' in helper
+        assert "/etc/init.d/ncpa" not in helper
+
+
+STOCK_LISTENER = """[listener]
+# ip =
+# port =
+uuid = abc
+
+[api]
+community_string = old
+"""
+
+
+@pytest.mark.skipif(shutil.which("bash") is None or shutil.which("sed") is None, reason="needs bash and sed")
+class TestHelperListenerPortEdit:
+    """Run the helper's real [listener] port edit against sample ncpa.cfg files."""
+
+    def edit(self, app, tmp_path, config_text, port="5800"):
+        with app.app_context(), patched_config(app, NCPA_PORT=port):
+            helper = TestHelperUsesConfiguredNcpaPort().install_helper()
+        start = helper.index("# Listen on PinPoint's configured NCPA port.")
+        end = helper.index("# Use a persistent self-signed certificate")
+        config = tmp_path / "ncpa.cfg"
+        config.write_text(config_text)
+        script = (
+            'set -euo pipefail\nSED=/usr/bin/sed\n'
+            f'NCPA_PORT="{port}"\nNCPA_CONFIG="{config}"\n' + helper[start:end]
+        )
+        result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        return result, config.read_text()
+
+    def listener_port_lines(self, text):
+        found = []
+        in_listener = False
+        for line in text.splitlines():
+            if line.startswith("["):
+                in_listener = line == "[listener]"
+            elif in_listener and line.startswith("port"):
+                found.append(line)
+        return found
+
+    def test_stock_config_with_commented_port(self, app, tmp_path):
+        result, text = self.edit(app, tmp_path, STOCK_LISTENER)
+        assert result.returncode == 0, result.stderr
+        assert self.listener_port_lines(text) == ["port = 5800"]
+        assert "# ip =" in text and "community_string = old" in text
+
+    def test_existing_active_port_is_replaced(self, app, tmp_path):
+        result, text = self.edit(app, tmp_path, STOCK_LISTENER.replace("# port =", "port = 5693"))
+        assert result.returncode == 0, result.stderr
+        assert self.listener_port_lines(text) == ["port = 5800"]
+
+    def test_redeploy_is_idempotent(self, app, tmp_path):
+        _, once = self.edit(app, tmp_path, STOCK_LISTENER)
+        result, twice = self.edit(app, tmp_path, once)
+        assert result.returncode == 0, result.stderr
+        assert self.listener_port_lines(twice) == ["port = 5800"]
+
+    def test_config_without_listener_section_fails_with_a_specific_message(self, app, tmp_path):
+        result, _ = self.edit(app, tmp_path, "[api]\ncommunity_string = old\n")
+        assert result.returncode == 1
+        assert "Could not set the NCPA listener port." in result.stderr

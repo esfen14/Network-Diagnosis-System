@@ -13,6 +13,9 @@ from app.network_discovery.discovery_settings import get_discovery_setting
 # nmap names that mean "something answered but nmap does not know what".
 UNIDENTIFIED_SERVICE_NAMES = frozenset({"unknown", "tcpwrapped"})
 
+# Seconds one host may spend on UDP version detection (step 2 of the UDP scan).
+UDP_VERSION_HOST_TIMEOUT = "90s"
+
 
 def service_from_nmap(service):
     """
@@ -33,7 +36,10 @@ def service_from_nmap(service):
         name = "https"
 
     identified_by = ServiceIdentification.PORT_HINT
-    if service.attrib.get("method") == "probed" and name not in UNIDENTIFIED_SERVICE_NAMES:
+    if name in UNIDENTIFIED_SERVICE_NAMES:
+        # "tcpwrapped" means the port accepted and closed; nothing named it.
+        name = "unknown"
+    elif service.attrib.get("method") == "probed":
         identified_by = ServiceIdentification.FINGERPRINT
 
     return {"service_name": name, "identified_by": identified_by.name}
@@ -157,15 +163,43 @@ def _discover_host_udp_port(ip):
     if UDP_PORTS:
         port_string = ",".join(str(port) for port in UDP_PORTS)
         args += f" -p {port_string}"
-    
-    # -sV sends each port's protocol probe, so a matched UDP service is a
-    # fingerprint rather than a guess from its port number.
-    xmlroot = nmap.scan_command(ip,"-sU -sV",args)
+
+    # Step 1: find which ports answer. Without -sV this takes seconds, but a
+    # port's name is only a guess from its number.
+    xmlroot = nmap.scan_command(ip,"-sU",args)
 
     # for debugging nmap scans
     # _print_xml(xml_result)
 
-    return _parse_udp_ports(xmlroot)
+    confirmed, unconfirmed = _parse_udp_ports(xmlroot)
+    if not confirmed:
+        return confirmed, unconfirmed
+
+    # Step 2: -sV sends each port's protocol probe, so a matched UDP service
+    # is a fingerprint rather than a guess. Only the ports that answered are
+    # probed; version detection on every listed port is what made it slow.
+    open_ports = []
+    for portid in confirmed:
+        open_ports.append(str(portid))
+
+    try:
+        version_xml = nmap.scan_command(
+            ip,
+            "-sU -sV",
+            f"--open -p {','.join(open_ports)} --host-timeout {UDP_VERSION_HOST_TIMEOUT}",
+        )
+    except Exception:
+        current_app.logger.warning(
+            f"UDP version detection failed for {ip}; keeping the port-number names.", exc_info=True
+        )
+        return confirmed, unconfirmed
+
+    versioned, _ = _parse_udp_ports(version_xml)
+    for portid, service_data in versioned.items():
+        if portid in confirmed:
+            confirmed[portid] = service_data
+
+    return confirmed, unconfirmed
 
 
 def _parse_udp_ports(xmlroot):

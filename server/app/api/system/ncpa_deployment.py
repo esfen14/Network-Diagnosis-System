@@ -606,7 +606,7 @@ def deploy_ncpa():
     Errors:
         400 – Deployment already running, invalid body or credentials, or
               every device was rejected (``data.rejected`` lists why).
-        500 – Unexpected error.
+        500 – NCPA_PORT is not a valid port, or an unexpected error.
     """
     global deploy_ncpa_thread
 
@@ -621,6 +621,13 @@ def deploy_ncpa():
     entries, message = parse_credential_entries(data)
     if entries is None:
         return error(message, 400)
+
+    # A bad NCPA_PORT is a server setting problem; say so before any device is contacted.
+    try:
+        ncpa_port()
+    except ValueError as port_error:
+        current_app.logger.error(str(port_error))
+        return error(str(port_error), 500)
 
     try:
         validated_entries = []
