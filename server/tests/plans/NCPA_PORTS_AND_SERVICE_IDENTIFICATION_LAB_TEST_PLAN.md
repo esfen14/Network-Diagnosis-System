@@ -421,8 +421,8 @@ Setup: baseline-restore target02 (pre-NCPA, SSH on 22).
    so on, run `check_ncpa -P 5800`, and are OK. `DEVICE_IDENTIFIER` has an
    `NCPA_CERT` row read from 5800.
 7. Invalid values (optional): `NCPA_PORT = "0"`, `"70000"`, `"abc"` make the
-   deployment fail safely **before** anything runs on the target (result row
-   `FAILED`). Nothing is installed.
+   start route refuse with HTTP 500 and "NCPA_PORT must be an integer between 1
+   and 65535." **before** any run or result row exists. Nothing is installed.
 
 **After:** set `NCPA_PORT` back to `"5693"`, restart, use "Reset to Defaults".
 

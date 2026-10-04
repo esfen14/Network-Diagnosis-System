@@ -66,7 +66,8 @@ the normative behavior in the requirement specifications.
 | Per-device port service UI | Services are identified by fingerprint with port rules (see `Data_Model_and_Integrations.md`); pinning one device's port and resolving `SERVICE_CHANGED` review items are API-only because no page lists a discovered device's ports | Add a discovered-ports view with pin/state controls and the review list when the device inventory contract is approved |
 | NCPA port per device | `NCPA_PORT` is one global setting (config only) used by checks, probes and relocation; agents deployed on another port are not tracked | Store the deployed port per device and add a re-port action if the port ever becomes user-configurable |
 | NCPA deployment cleanup | A failed install leaves the deployment account, key, sudo rule and helper on the device; the error message says so | Add an explicit cleanup action if operators need it |
-| 2026-10-05 lab fixes | Code and unit tests cover D1-D9 (listener probe, metric services, `used_percent`, listener port, partitions, port validation, PORT_RULE relabel, `tcpwrapped`, two-step UDP) | Close only after the lab rerun passes NCPA-08, NCPA-04-R, S16-PROV, NCPA-10, SVC-02/03/05 and SCAN-02 |
+| SERVICE_CHANGED auto-clear | A `SERVICE_CHANGED` review item stays open after the mismatch disappears (seen when a port rule was removed); only an operator resolves it | Resolve the item automatically when the port again matches its frozen plugin |
+| NCPA token in check command | The NCPA token is a positional argument of the Nagios command, so it is visible in process listings and any transcript of the command | Review passing the token another way (for example a Nagios resource file) |
 | Installer | Developed in another repository | Keep installer work out of this repository unless scope changes |
 
 ## Test approach status
