@@ -418,10 +418,20 @@ def install_deployment_helper(client, password):
     KEY_FILE="/usr/local/ncpa/etc/pinpoint-ncpa.key"
 
     if [ ! -s "$CERT_FILE" ] || [ ! -s "$KEY_FILE" ]; then
-        "$OPENSSL" req -x509 -newkey rsa:2048 -nodes -days 3650 \\
+        "$OPENSSL" req -x509 -newkey rsa:2048 -nodes -days 3650 \
             -subj "/CN=$(/usr/bin/hostname)" -keyout "$KEY_FILE" -out "$CERT_FILE"
-        /usr/bin/chmod 600 "$KEY_FILE"
-        /usr/bin/chmod 644 "$CERT_FILE"
+    fi
+
+    # NCPA drops privileges to the nagios user, so the key must be readable by
+    # that group. Applied on every deploy so redeploys repair existing guests.
+    /usr/bin/chown root:nagios "$KEY_FILE"
+    /usr/bin/chmod 640 "$KEY_FILE"
+    /usr/bin/chown root:root "$CERT_FILE"
+    /usr/bin/chmod 644 "$CERT_FILE"
+
+    if ! /usr/sbin/runuser -u nagios -- /usr/bin/test -r "$KEY_FILE"; then
+        echo "NCPA TLS key is not readable by the nagios user." >&2
+        exit 1
     fi
 
     "$SED" -i "s|^certificate = .*|certificate = $CERT_FILE,$KEY_FILE|" "$NCPA_CONFIG"
@@ -430,13 +440,22 @@ def install_deployment_helper(client, password):
     sleep 1
     "$NCPA_INIT" start
 
-    sleep 2
+    # "init status" can report running while the listener is down, so probe
+    # the port and make an authenticated HTTPS request, retrying briefly.
+    NCPA_OK=0
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+        sleep 2
+        if /usr/bin/ss -ltn | grep -q ":$NCPA_PORT " && \
+            "$CURL" -ksf --max-time 5 -o /dev/null \
+                "https://127.0.0.1:$NCPA_PORT/api/?token=$TOKEN&check=cpu/percent"; then
+            NCPA_OK=1
+            break
+        fi
+    done
 
-    NCPA_STATUS_OUTPUT=$("$NCPA_INIT" status 2>&1 || true)
-
-    if ! echo "$NCPA_STATUS_OUTPUT" | grep -qi "running"; then
-        echo "NCPA service is not active after restart." >&2
-        echo "$NCPA_STATUS_OUTPUT" >&2
+    if [ "$NCPA_OK" -ne 1 ]; then
+        echo "NCPA is not listening or rejected an authenticated request on port $NCPA_PORT." >&2
+        "$NCPA_INIT" status >&2 || true
         exit 1
     fi
 
@@ -866,6 +885,7 @@ def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
         ncpa_deployment.Deployement_Method = DeploymentMethod.AUTOMATIC
         ncpa_deployment.Agent_Status = AgentStatus.DEPLOYED
         ncpa_deployment.Token = token
+        ncpa_deployment.Error = None
         ncpa_deployment.NCPADeploymentStatusID = (
             ncpa_deployment_status_id
         )
@@ -1001,12 +1021,14 @@ def install_process(app, user_id, device_list, stop_event):
             if not failed_deployment:
                 update_ncpa_deployment_status(
                     ncpa_deployment_status_id, DeploymentStatus.SUCCESS, 100,
-                    "Successfully deployed NCPA to all devices."
+                    "Successfully deployed NCPA to all devices.",
+                    datetime.now(timezone.utc)
                 )
             else:
                 update_ncpa_deployment_status(
                     ncpa_deployment_status_id, DeploymentStatus.PARTIAL_FAILURE, 100,
                     f"Deployment completed with {len(failed_deployment)} failure(s).",
+                    datetime.now(timezone.utc),
                     error=str(failed_deployment)
                 )
 

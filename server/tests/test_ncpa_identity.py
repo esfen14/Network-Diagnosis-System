@@ -121,6 +121,20 @@ class TestHelperScript:
         identity = script.split("IDENTITY_BEGIN")[1].split("IDENTITY_END")[0]
         assert "TOKEN" not in identity and "community_string" not in identity
 
+    def test_key_is_group_readable_by_nagios_on_every_deploy(self, script):
+        # The repair must sit outside the "create once" block.
+        create_block, _, repair = script.partition('-keyout "$KEY_FILE"')
+        assert "chown root:nagios" not in create_block
+        assert 'chown root:nagios "$KEY_FILE"' in repair
+        assert 'chmod 640 "$KEY_FILE"' in repair
+        assert 'chmod 644 "$CERT_FILE"' in repair
+        assert "runuser -u nagios" in repair
+
+    def test_start_is_verified_by_a_real_listener_probe(self, script):
+        assert 'ss -ltn' in script
+        assert "/api/?token=$TOKEN" in script
+        assert "grep -qi \"running\"" not in script
+
     @pytest.mark.skipif(shutil.which("bash") is None, reason="bash is not available")
     def test_script_is_valid_bash(self, script, tmp_path):
         path = tmp_path / "helper.sh"
@@ -202,6 +216,19 @@ class TestInstallNcpa:
         assert identifier_values(device, IdentifierKind.NCPA_CERT) == {CERT_1}
         assert identifier_values(device, IdentifierKind.MACHINE_ID) == {MACHINE_ID}
         assert device.Identity_Confidence is IdentityConfidence.VERIFIED
+
+    def test_success_clears_an_earlier_error(self, db_session, admin_user):
+        device = make_linux_device(db_session, admin_user)
+        deployment = db.session.scalar(sa.select(NCPADeployment).where(
+            NCPADeployment.NetworkDiscoveryID == device.NetDiscoveryID))
+        deployment.Error = "Privileged command failed."
+        db.session.commit()
+
+        ok, _run, _probe = self.run_install(device)
+
+        assert ok is True
+        db.session.refresh(deployment)
+        assert deployment.Error is None
 
     def test_a_new_deployment_mints_a_token(self, db_session, admin_user):
         device = make_linux_device(db_session, admin_user)
