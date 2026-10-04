@@ -116,9 +116,9 @@ def _plugin_key(service_name: str, check_command: Optional[str] = None) -> str:
     the service-name prefix before the first '-' (then before the first '_')
     is looked up by plugin name/alias in plugin_registry:
 
-        "snmp-uptime-161"            →  check_snmp
-        "ncpa_cpu_usage-5693-TCP"    →  check_ncpa
-        "http-80-TCP"                →  check_http
+        "snmp-uptime-161-udp"        →  check_snmp
+        "ncpa-cpu-5693-tcp"          →  check_ncpa
+        "http-80-tcp"                →  check_http
 
     Unknown prefixes fall back to "check_{prefix}" so they are still grouped
     sensibly rather than silently dropped.

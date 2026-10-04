@@ -143,34 +143,46 @@ def _discover_host_udp_port(ip):
     xmlroot = nmap.scan_command(ip,"-sU",args)
 
     # for debugging nmap scans
-    # _print_xml(xml_result)   
-    
-    service_dict = {}
+    # _print_xml(xml_result)
+
+    return _parse_udp_ports(xmlroot)
+
+
+def _parse_udp_ports(xmlroot):
+    """
+    Split nmap's UDP result into (confirmed, unconfirmed) {port: {"service_name"}}.
+
+    "open" ports answered a probe. "open|filtered" ports ignored it, so nmap
+    cannot tell them from a firewalled port; they are not stored as services
+    but are reported so the discovery log can show them as skipped.
+    """
+    confirmed, unconfirmed = {}, {}
 
     host = xmlroot.find("host")
     if host is None:
-        return service_dict
+        return confirmed, unconfirmed
 
     ports = host.find("ports")
     if ports is None:
-        return service_dict   
+        return confirmed, unconfirmed
 
     for port in ports.findall("port"):
-        portid = str(port.attrib.get("portid")) 
+        portid = str(port.attrib.get("portid"))
 
         state = port.find("state")
-        if state is not None and state.attrib.get("state") == "open":
-            service = port.find("service")
-            service_name = "Unknown"
+        state_name = state.attrib.get("state") if state is not None else None
+        if state_name not in ("open", "open|filtered"):
+            continue
 
-            if service is not None:
-                service_name = service.attrib.get("name")
+        service = port.find("service")
+        service_name = "Unknown"
+        if service is not None:
+            service_name = service.attrib.get("name")
 
-            service_dict[portid] = {
-                "service_name": service_name
-            }
+        target = confirmed if state_name == "open" else unconfirmed
+        target[portid] = {"service_name": service_name}
 
-    return service_dict
+    return confirmed, unconfirmed
 
 def discover_network(network_discvovery_status_id, progress_weight, stop_event):
     NETWORKS = get_discovery_setting('NETWORKS')
@@ -204,7 +216,7 @@ def discover_network(network_discvovery_status_id, progress_weight, stop_event):
             if stop_event.is_set():
                 return None
             
-            hosts[network][ip]["services"]["udp"] = _discover_host_udp_port(ip)
+            hosts[network][ip]["services"]["udp"], hosts[network][ip]["data"]["udp_unconfirmed"] =                 _discover_host_udp_port(ip)
 
 
             if total_hosts > 0:

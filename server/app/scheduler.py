@@ -20,6 +20,18 @@ def _poll_nagios_status():
         get_status()
 
 
+def _relocate_ncpa_devices():
+    """Look for NCPA devices that changed IP since the last full scan."""
+    from app.network_discovery.ncpa_relocation import relocate_ncpa_devices
+
+    with app.app_context():
+        try:
+            relocate_ncpa_devices()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Unexpected error during NCPA relocation")
+
+
 def _purge_old_data():
     with app.app_context():
         try:
@@ -128,6 +140,14 @@ def init_scheduler():
         "interval",
         minutes=app.config["AUTOMATION_CHECK_MINUTES"],
         id="settings_automation",
+        max_instances=1,
+        coalesce=True,
+    )
+    _scheduler.add_job(
+        _relocate_ncpa_devices,
+        "interval",
+        minutes=app.config["NCPA_RELOCATE_MINUTES"],
+        id="ncpa_relocation",
         max_instances=1,
         coalesce=True,
     )

@@ -1,0 +1,31 @@
+test_accepts_internal_bridge (__main__.ProvisionTests) ... ok
+test_cloud_init_failure_prevents_ready_marker (__main__.ProvisionTests) ... ok
+test_failed_daemon_probe_is_not_absent_domain (__main__.ProvisionTests) ... ok
+test_final_domain_has_only_lab_interface (__main__.ProvisionTests) ... ok
+test_foreign_guest_on_lab_is_rejected (__main__.ProvisionTests) ... ok
+test_image_checksum_rejected_before_any_mutation (__main__.ProvisionTests) ... ok
+test_install_definition_has_separate_nat (__main__.ProvisionTests) ... ok
+test_private_file_permissions (__main__.ProvisionTests) ... ok
+test_real_seed_preparation_is_private_and_idempotent (__main__.ProvisionTests) ... ok
+test_rejects_default_route_on_lab_bridge (__main__.ProvisionTests) ... ok
+test_rejects_injected_domain_name (__main__.ProvisionTests) ... ok
+test_rejects_interface_overlap_even_without_route (__main__.ProvisionTests) ... ok
+test_rejects_management_overlap (__main__.ProvisionTests) ... ok
+test_rejects_network_and_broadcast_target (__main__.ProvisionTests) ... ok
+test_rejects_public_loopback_reserved_and_broad_network (__main__.ProvisionTests) ... ok
+test_restore_preserves_old_disk (__main__.ProvisionTests) ... ok
+test_unrelated_domain_cannot_be_adopted (__main__.ProvisionTests) ... ok
+
+----------------------------------------------------------------------
+Ran 17 tests in 0.141s
+
+OK
+
+Additional verification:
+- Python 3.10 syntax compilation passed.
+- CLI previews made no files or VM changes.
+- Generated domain XML passed virt-xml-validate domain schema.
+- Read-only preflight passed against the existing pinpoint-test/default networks.
+- Existing session VMs were correctly rejected as unrelated active guests.
+
+A fresh end-to-end VM provisioning run was not performed for this new kit; the existing lab occupies the configured addresses. Real seed preparation was exercised in disposable temporary storage. The scripts incorporate the service provisioning steps verified earlier in this session.

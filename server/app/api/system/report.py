@@ -368,14 +368,16 @@ def report_hosts_by_os():
 
         # ── OS type map: hostname -> os_type (from NetworkDiscovery) ─────────
         nd_rows = db.session.execute(
-            sa.select(NetworkDiscovery.Hostname, NetworkDiscovery.OS_Type)
+            sa.select(NetworkDiscovery.Nagios_Host_Name, NetworkDiscovery.Hostname, NetworkDiscovery.OS_Type)
         ).all()
 
-        os_map = {
-            r.Hostname: (r.OS_Type or "Unknown")
-            for r in nd_rows
-            if r.Hostname
-        }
+        # Nagios (and so the snapshots) knows a device by its stable
+        # Nagios_Host_Name; Hostname is only the fallback for older rows.
+        os_map = {}
+        for r in nd_rows:
+            name = r.Nagios_Host_Name or r.Hostname
+            if name:
+                os_map[name] = r.OS_Type or "Unknown"
 
         # ── Aggregate per-host stats from snapshots ──────────────────────────
         # hostname -> { total, up, last_check, last_state_change }

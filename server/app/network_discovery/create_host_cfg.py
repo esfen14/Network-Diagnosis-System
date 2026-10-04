@@ -1,10 +1,17 @@
 from pathlib import Path
 from datetime import datetime, timezone
+import hashlib
+import re
 import subprocess
 import shutil
+import threading
 
 from app.network_discovery.network_discovery import discover_network
+from app.network_discovery.device_identity import nagios_host_name, reconcile_scan
+from app.network_discovery.identity_probes import collect_identifiers
+from app.network_discovery.port_lifecycle import CONFIG_STATES, mark_ncpa_port, process_device_ports
 from app.network_discovery.host_config_templates import *
+from app.network_discovery.service_name_migration import migrate_legacy_service_history
 from app.network_discovery.plugin_registry import (
     GENERIC_PLUGIN_FOR_TRANSPORT,
     PluginConfigurationError,
@@ -29,7 +36,9 @@ from app.system_models import \
     SSHCredentials, \
     NCPADeployment, \
     NCPADevicePartition, \
-    AgentStatus 
+    AgentStatus, \
+    DeviceState, \
+    PortState
 from app.logging import create_network_discovery_status, update_network_discovery_status, calculate_progress, create_skipped_service_logs
 from app.logging.deployment_history import update_ncpa_deployment_status
 from app.system_models import DiscoveryStatus, DeploymentStatus, NetworkDiscoveryStatus
@@ -57,6 +66,17 @@ ADD_NCPA_PORT_PROGRESS_WEIGHT = [40, 55, 70, 85, 100]
 
 def _add_space(spaces):
     return "\n" * spaces
+
+
+# Discovery, add_ncpa_port(), NCPA relocation and user edits all regenerate
+# the same hosts.cfg. Everything from "load hosts" to "apply" runs under this
+# lock so two of them can never interleave and overwrite each other's result.
+# Re-entrant so a caller that already holds it can call helpers that take it.
+config_write_lock = threading.RLock()
+
+# The first line of a generated file that differs between otherwise identical
+# runs; ignored when deciding whether the config really changed.
+GENERATED_AT_LINE = re.compile(r"^\s*#\s+generated at .*$", re.MULTILINE)
 
 
 # ==========================================================
@@ -106,8 +126,8 @@ def plan_plugin_services(plugin_name, service_label, port, transport, facts, ove
     Resolve one discovered port into the services plugin_name produces for
     it — one per metric for multi-check plugins such as SNMP and NCPA.
 
-    Returns a list of dicts with base_name ("<label>[-<metric>]-<port>"),
-    transport, check_command and plugin. Raises PluginConfigurationError if
+    Returns a list of dicts with base_name ("<label>[-<metric>]-<port>"; the
+    protocol is appended by finalize_service_names), transport, check_command and plugin. Raises PluginConfigurationError if
     the plugin cannot be configured for this host.
     """
     variables = resolve_plugin_variables(
@@ -135,30 +155,28 @@ def plan_plugin_services(plugin_name, service_label, port, transport, facts, ove
 
 def finalize_service_names(planned):
     """
-    Turn planned services into (service_name, check_command, plugin) tuples
-    whose names are unique on the host. A "-TCP"/"-UDP" suffix is added only
-    when the same base name exists on both transports (e.g. DNS on 53/TCP
-    and 53/UDP); any remaining duplicate gets a numeric suffix.
-    """
-    transports_by_name = {}
-    for service in planned:
-        transports_by_name.setdefault(service["base_name"], set()).add(service["transport"])
+    Turn planned services into (service_name, check_command, plugin) tuples.
 
+    Every service is named "{service}[-{metric}]-{port}-{protocol}" in
+    lowercase, e.g. "ssh-22-tcp", "dns-53-udp", "ncpa-cpu-5693-tcp". The port
+    and protocol are always present, so names are unique per host by
+    construction. If two services still end up with the same name (for
+    instance a metric configured twice) the later one is dropped with a
+    warning rather than renamed, since Nagios rejects duplicate services.
+    """
     services = []
     used_names = set()
     for service in planned:
-        name = service["base_name"]
-        if len(transports_by_name[name]) > 1:
-            name = f"{name}-{service['transport'].value}"
+        name = f"{service['base_name']}-{service['transport'].value}".lower()
+        if name in used_names:
+            current_app.logger.warning(
+                f"Skipping duplicate service name '{name}'; check the plugin's "
+                f"configured metrics."
+            )
+            continue
 
-        unique_name = name
-        counter = 2
-        while unique_name in used_names:
-            unique_name = f"{name}-{counter}"
-            counter += 1
-
-        used_names.add(unique_name)
-        services.append((unique_name, service["check_command"], service["plugin"]))
+        used_names.add(name)
+        services.append((name, service["check_command"], service["plugin"]))
     return services
 
 
@@ -211,7 +229,9 @@ def build_host_services(host_data, facts, app_config, skipped=None):
 
         for port, service_data in discovered_services.items():
             discovered_name = service_data.get("service_name") or "unknown"
-            plugin_name = resolve_plugin_name(discovered_name, transport)
+            # A monitored port's plugin is frozen when it starts being
+            # monitored; only ports that predate that fall back to resolving.
+            plugin_name = service_data.get("plugin_name") or resolve_plugin_name(discovered_name, transport)
             service_label = sanitize_name_part(discovered_name)
             if plugin_name != generic_plugin:
                 service_label = plugin_name
@@ -244,6 +264,32 @@ def build_host_services(host_data, facts, app_config, skipped=None):
                 skip(discovered_name, port, transport, str(e))
 
     return finalize_service_names(planned)
+
+# Service names of the most recently generated candidate, {hostname: [names]}.
+# Only read under config_write_lock, right after that candidate is applied.
+_last_generated_names = {}
+
+
+def unconfirmed_udp_skips(discovered_hosts):
+    """
+    Skipped-service entries for UDP ports nmap reported only as "open|filtered":
+    the host ignored the probe, so the port is unconfirmed and never monitored.
+    """
+    entries = []
+    for hosts in discovered_hosts.values():
+        for ip, host_data in hosts.items():
+            data = host_data.get("data", {})
+            for port, info in (data.get("udp_unconfirmed") or {}).items():
+                entries.append({
+                    "hostname": data.get("hostname") or ip,
+                    "ip_address": ip,
+                    "port": port,
+                    "protocol": "UDP",
+                    "service_name": info.get("service_name") or "unknown",
+                    "reason": "UDP port unconfirmed (open|filtered): the host did not answer nmap's probe.",
+                })
+    return entries
+
 
 def _create_host_cfg_file(discovered_hosts, skipped=None):
     """
@@ -385,14 +431,25 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
     # Plugins actually used by at least one service - each needs its own
     # `define command` object, rendered once at the end of the file.
     used_plugins = set()
+    global _last_generated_names
+    generated_names = _last_generated_names = {}
 
     for hosts in discovered_hosts.values():
         for ip, host_data in hosts.items():
+            # The dict key is the IP unless two devices share it (a device
+            # whose address is unknown); "address" always has the real one.
+            ip = host_data["data"].get("address", ip)
+            active_checks = host_data["data"].get("active_checks_enabled", True)
+            inactive_note = "Address unknown - waiting to be found"
+
             host = {}
             host["host_name"] = host_data["data"]["hostname"]
             host["alias"] = "alias"
             host["address"] = ip
             host["contact_groups"] = "system_users"
+            if not active_checks:
+                host["active_checks_enabled"] = False
+                host["notes"] = inactive_note
             host_config.append(create_host(host))
             host_config.append(_add_space(4))
 
@@ -432,6 +489,8 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
                 for entry in host_skipped:
                     skipped.append({**entry, "ip_address": ip})
 
+            generated_names[host_data["data"]["hostname"]] = [name for name, _c, _p in host_services]
+
             for service_name, command, plugin_name in host_services:
                 # Remember the plugin so its `define command` is written once
                 # in the "Define Commands" section at the end of the file.
@@ -442,6 +501,9 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
                     "service_name": service_name,
                     "contact_groups": "system_users"
                 }
+                if not active_checks:
+                    service["active_checks_enabled"] = False
+                    service["notes"] = inactive_note
 
                 host_config.append(
                     create_service(service,command)
@@ -521,218 +583,58 @@ def get_monitoring_server_ips():
     return ips
 
 def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weight):
+    """
+    Save one scan's results. The scan only reports what it saw; the
+    reconciler (device_identity.py) decides which known device each result is,
+    so a changed IP moves a device instead of duplicating it and one device's
+    record is never reused for another. Ports go through the port lifecycle
+    (port_lifecycle.py): nothing is deleted, a missed port only counts while
+    its device was seen, and new ports start as suggestions unless their
+    service is auto-monitored.
+
+    Everything is committed at once; on any error the whole save is rolled
+    back and logged. Returns {(network, ip): NetworkDiscovery} for the saved
+    observations (empty on failure).
+    """
     total_hosts = sum(len(hosts) for hosts in discovered_hosts.values())
     processed_hosts = 0
 
     monitoring_server_ips = get_monitoring_server_ips()
 
     try:
-        for network, hosts in discovered_hosts.items():
-            
-            for ip_address, host_data in hosts.items():
+        devices = reconcile_scan(discovered_hosts, network_discovery_id, monitoring_server_ips)
 
-                if ip_address in monitoring_server_ips:
-                    continue
+        for (network, ip_address), device in devices.items():
+            host_data = discovered_hosts[network][ip_address]
+            services = host_data.get("services", {})
 
-                data = host_data["data"]
-                services = host_data.get("services", {})
+            # The device was seen in this scan, so missed ports count.
+            process_device_ports(device, services, host_seen=True)
 
-                hostname = data.get("hostname")
-                mac_address = data.get("mac_address")
-                os_type = data.get("os")
+            processed_hosts += 1
 
-                if mac_address is not None:
-                    device = db.session.scalar(
-                            sa.select(NetworkDiscovery).where(
-                                NetworkDiscovery.MAC_Address == mac_address,
-                                NetworkDiscovery.Network == network
-                        )
-                    )
-                else:
-                    device = db.session.scalar(
-                        sa.select(NetworkDiscovery).where(
-                            NetworkDiscovery.IP_Address == ip_address,
-                            NetworkDiscovery.Network == network
-                        )
-                    )
-
-                NCPA_Eligible = False
-
-                if os_type == "Linux":
-                    NCPA_Eligible = True
-
-                    
-
-                # -------------------------------------------------
-                # Create device if it doesn't exist
-                # -------------------------------------------------
-
-                if device is None:
-                    device = NetworkDiscovery(
-                        Hostname = hostname,
-                        IP_Address = ip_address,
-                        Network = network,
-                        MAC_Address = mac_address,
-                        OS_Type = os_type,
-                        NCPA_Eligible = NCPA_Eligible,
-                        DiscoveryStatusID = network_discovery_id
-                    )
-
-                    db.session.add(device)
-                    db.session.flush()
-
-                    if device.NCPA_Eligible == True:
-                        ssh = SSHCredentials(
-                            SSH_Port = int(port_number) ,
-                            Key_Installed = False,
-                            Key_Fingerprint = None,
-                            Created_At = None,
-                            NetworkDiscoveryID = device.NetDiscoveryID
-                        )
-                                                                    
-                        db.session.add(ssh)
-                                                                    
-                        ncpa = NCPADeployment(
-                            Agent_Status = AgentStatus.PENDING_NCPA,
-                            NetworkDiscoveryID = device.NetDiscoveryID
-                        )
-                                                                    
-                        db.session.add(ncpa)
-                        db.session.flush()
-
-                else:
-                    NCPA_Eligible = False
-
-                    device.Hostname = hostname
-                    device.MAC_Address = mac_address
-                    device.OS_Type = os_type
-                    device.NCPA_Eligible = NCPA_Eligible
-                    device.DiscoveryStatusID = network_discovery_id
-
-                # -------------------------------------------------
-                # TCP services — add/update found ports, then
-                # remove any DB-stored port not seen in this scan
-                # -------------------------------------------------
-
-                scanned_tcp_ports = set()
-
-                for port_number, service_data in services.get("tcp", {}).items():
-                    # Model column is an int; scan data comes in as a string —
-                    # normalize here so comparisons/deletes below match correctly
-                    port_number_int = int(port_number)
-                    scanned_tcp_ports.add(port_number_int)
-
-                    existing_service = db.session.scalar(
-                        sa.select(Open_TCP_Services).join(
-                            NetworkDiscovery,
-                            Open_TCP_Services.NetDiscoveryID == NetworkDiscovery.NetDiscoveryID
-                        )
-                        .where(
-                            Open_TCP_Services.NetDiscoveryID == device.NetDiscoveryID,
-                            Open_TCP_Services.Port_Number == port_number_int,
-                            NetworkDiscovery.Include_Device_In_Scanning.is_(True)
-                        )
-                    )
-
-                    service_name = service_data.get("service_name", "Unknown")
-
-                    if existing_service is None:
-
-                        new_service = Open_TCP_Services(
-                            Port_Number=port_number_int,
-                            Service_Name=service_name,
-                            NetDiscoveryID=device.NetDiscoveryID
-                        )
-                        db.session.add(new_service)
-                        db.session.flush()
-                    else:
-                        # Service still open — keep its name in sync in case
-                        # nmap's guess changed between scans (e.g. Unknown -> ssh)
-                        existing_service.Service_Name = service_name
-
-                # Remove TCP services that were recorded before but weren't
-                # seen in this scan — they're no longer open on this host
-                stale_tcp_query = sa.select(Open_TCP_Services).where(
-                    Open_TCP_Services.NetDiscoveryID == device.NetDiscoveryID
+            progress = calculate_progress(
+                processed_hosts,
+                total_hosts,
+                progress_weight - 10,
+                progress_weight
                 )
-                if scanned_tcp_ports:
-                    stale_tcp_query = stale_tcp_query.where(
-                        Open_TCP_Services.Port_Number.not_in(scanned_tcp_ports)
-                    )
 
-                stale_tcp_services = db.session.scalars(stale_tcp_query).all()
-                for stale_service in stale_tcp_services:
-                    db.session.delete(stale_service)
-
-                # -------------------------------------------------
-                # UDP services — same add/update/remove pattern
-                # -------------------------------------------------
-
-                scanned_udp_ports = set()
-
-                for port_number, service_data in services.get("udp", {}).items():
-                    port_number_int = int(port_number)
-                    scanned_udp_ports.add(port_number_int)
-
-                    existing_service = db.session.scalar(
-                        sa.select(Open_UDP_Services).join(
-                            NetworkDiscovery,
-                            Open_UDP_Services.NetDiscoveryID == NetworkDiscovery.NetDiscoveryID
-                        )
-                        .where(
-                            Open_UDP_Services.NetDiscoveryID == device.NetDiscoveryID,
-                            Open_UDP_Services.Port_Number == port_number_int,
-                            NetworkDiscovery.Include_Device_In_Scanning.is_(True)
-                        )
-                    )
-
-                    service_name = service_data.get("service_name", "Unknown")
-
-                    if existing_service is None:
-                        new_service = Open_UDP_Services(
-                            Port_Number=port_number_int,
-                            Service_Name=service_name,
-                            NetDiscoveryID=device.NetDiscoveryID
-                        )
-                        db.session.add(new_service)
-                        db.session.flush()
-                    else:
-                        existing_service.Service_Name = service_name
-
-                stale_udp_query = sa.select(Open_UDP_Services).where(
-                    Open_UDP_Services.NetDiscoveryID == device.NetDiscoveryID
+            if processed_hosts % 10 == 0 or processed_hosts == total_hosts:
+                update_network_discovery_status(
+                    network_discovery_id,
+                    DiscoveryStatus.RUNNING,
+                    progress,
+                    "Saving hosts to database."
                 )
-                if scanned_udp_ports:
-                    stale_udp_query = stale_udp_query.where(
-                        Open_UDP_Services.Port_Number.not_in(scanned_udp_ports)
-                    )
-
-                stale_udp_services = db.session.scalars(stale_udp_query).all()
-                for stale_service in stale_udp_services:
-                    db.session.delete(stale_service)
-
-                processed_hosts += 1
-
-                progress = calculate_progress(
-                    processed_hosts,
-                    total_hosts,
-                    progress_weight - 10,
-                    progress_weight
-                    )
-
-                if processed_hosts % 10 == 0 or processed_hosts == total_hosts:
-                    update_network_discovery_status(
-                        network_discovery_id,
-                        DiscoveryStatus.RUNNING,
-                        progress,
-                        "Saving hosts to database."
-                    )
 
         # Save everything at once
         db.session.commit()
+        return devices
     except Exception as e:
         db.session.rollback()
         current_app.logger.exception(f"Failed to insert new hosts: {e}")
+        return {}
 
 def _backup_running_host_cfg():
     """
@@ -751,7 +653,7 @@ def _backup_running_host_cfg():
 
     backup_path = BACKUP_DIR / backup_name
 
-    shutil.copy2(NAGIOS_HOST_CFG, backup_path)
+    shutil.copyfile(NAGIOS_HOST_CFG, backup_path)
 
     return backup_path
 
@@ -763,12 +665,20 @@ def _load_monitored_hosts(network_discovery_id=None, progress_weight=None):
         {
             network: {
                 ip_address: {
-                    "data": {"hostname": ..., "mac_address": ..., "os": ...,
-                             "net_discovery_id": ..., "plugin_variables": {...} | None},
-                    "services": {"tcp": {port: {"service_name": ...}}, "udp": {...}}
+                    "data": {"hostname": <Nagios host_name>, "mac_address": ..., "os": ...,
+                             "net_discovery_id": ..., "plugin_variables": {...} | None,
+                             "address": <current IP>, "active_checks_enabled": bool},
+                    "services": {"tcp": {port: {"service_name": ..., "plugin_name": ...}}, "udp": {...}}
                 }
             }
         }
+
+    "hostname" is the device's stable Nagios host_name, not whatever DNS
+    reported. Devices that are ACTIVE, MISSING or ADDRESS_UNKNOWN are included
+    (the last with active checks disabled); RETIRED and MERGED are not. Only
+    MONITORED and MISSING ports produce services. If two devices share an IP
+    (a device whose address is unknown), the later one's key is
+    "<ip>#<device id>"; "address" always holds the real IP.
 
     Returns:
         dict: discovered_hosts-shaped dict sourced from the DB.
@@ -776,7 +686,12 @@ def _load_monitored_hosts(network_discovery_id=None, progress_weight=None):
     discovered_hosts = {}
 
     devices = db.session.scalars(
-        sa.select(NetworkDiscovery).where(NetworkDiscovery.Include_Device_In_Scanning.is_(True))
+        sa.select(NetworkDiscovery).where(
+            NetworkDiscovery.Include_Device_In_Scanning.is_(True),
+            NetworkDiscovery.Device_State.in_(
+                (DeviceState.ACTIVE, DeviceState.MISSING, DeviceState.ADDRESS_UNKNOWN)
+            ),
+        ).order_by(NetworkDiscovery.NetDiscoveryID)
     ).all()
 
     if not devices:
@@ -787,13 +702,15 @@ def _load_monitored_hosts(network_discovery_id=None, progress_weight=None):
     # Fetch all services in two queries instead of one query per device (N+1)
     tcp_services = db.session.scalars(
         sa.select(Open_TCP_Services).where(
-            Open_TCP_Services.NetDiscoveryID.in_(device_ids)
+            Open_TCP_Services.NetDiscoveryID.in_(device_ids),
+            Open_TCP_Services.Port_State.in_(CONFIG_STATES),
         )
     ).all()
 
     udp_services = db.session.scalars(
         sa.select(Open_UDP_Services).where(
-            Open_UDP_Services.NetDiscoveryID.in_(device_ids)
+            Open_UDP_Services.NetDiscoveryID.in_(device_ids),
+            Open_UDP_Services.Port_State.in_(CONFIG_STATES),
         )
     ).all()
 
@@ -801,30 +718,37 @@ def _load_monitored_hosts(network_discovery_id=None, progress_weight=None):
     tcp_by_device = {}
     for service in tcp_services:
         tcp_by_device.setdefault(service.NetDiscoveryID, {})[str(service.Port_Number)] = {
-            "service_name": service.Service_Name
+            "service_name": service.Service_Name,
+            "plugin_name": service.Plugin_Name,
         }
 
     udp_by_device = {}
     for service in udp_services:
         udp_by_device.setdefault(service.NetDiscoveryID, {})[str(service.Port_Number)] = {
-            "service_name": service.Service_Name
+            "service_name": service.Service_Name,
+            "plugin_name": service.Plugin_Name,
         }
 
     total_hosts = len(devices)
     processed_hosts = 0
 
     for device in devices:
-        discovered_hosts.setdefault(device.Network, {})
+        bucket = discovered_hosts.setdefault(device.Network, {})
+        key = device.IP_Address
+        if key in bucket:
+            key = f"{device.IP_Address}#{device.NetDiscoveryID}"
 
-        discovered_hosts[device.Network][device.IP_Address] = {
+        bucket[key] = {
             "data": {
-                "hostname": device.Hostname,
+                "hostname": nagios_host_name(device),
                 "mac_address": device.MAC_Address,
                 "os": device.OS_Type,
                 # Used by build_host_services() to look up this device's
                 # plugin facts and per-host plugin variable overrides.
                 "net_discovery_id": device.NetDiscoveryID,
                 "plugin_variables": device.Plugin_Variables,
+                "address": device.IP_Address,
+                "active_checks_enabled": device.Device_State is not DeviceState.ADDRESS_UNKNOWN,
             },
             "services": {
                 "tcp": tcp_by_device.get(device.NetDiscoveryID, {}),
@@ -987,7 +911,7 @@ def _apply_new_host_cfg(cfg_path):
         return False, f"Failed to back up current config, aborting apply: {e}"
 
     try:
-        shutil.copy2(cfg_path, NAGIOS_HOST_CFG)
+        shutil.copyfile(cfg_path, NAGIOS_HOST_CFG)
     except Exception as e:
         return False, f"Failed to copy new config into place: {e}"
 
@@ -1000,28 +924,77 @@ def _apply_new_host_cfg(cfg_path):
         )
 
         if result.returncode != 0:
-            current_app.logger.error(result.stdout + result.stderr)
+            raise RuntimeError(
+                f"reload exited with code {result.returncode}: "
+                f"{result.stdout}{result.stderr}".strip()
+            )
 
     except Exception as e:
-        # Reload failed — roll back to the last known-good config so Nagios
-        # never keeps running on a broken/half-applied file
-        shutil.copy2(backup_path, NAGIOS_HOST_CFG)
+        # Reload failed (nonzero exit, timeout, or could not run) — roll back
+        # to the last known-good config so Nagios never keeps running on a
+        # broken/half-applied file
+        current_app.logger.error(f"Nagios reload failed: {e}")
+        shutil.copyfile(backup_path, NAGIOS_HOST_CFG)
+        # Bring the daemon back in line with the restored file.
+        try:
+            subprocess.run(["sudo", "-n", "systemctl", "reload", "nagios"],
+                           capture_output=True, text=True, timeout=30)
+        except Exception as reload_error:
+            current_app.logger.error(f"Nagios reload after rollback failed: {reload_error}")
         return False, (
             f"Failed to reload Nagios after applying new config. "
             f"Rolled back to backup at {backup_path}. Error: {e}"
         )
 
+    try:
+        migrate_legacy_service_history(_last_generated_names)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Could not carry service history over to the new service names.")
+
     return True, f"Applied {cfg_path} successfully. Backup stored at {backup_path}"
 
-def _create_hostname(network_discovery_id, discovered_hosts, progress_weight):
-    DOMAIN = current_app.config['DOMAIN']
+def config_fingerprint(text):
+    """
+    SHA-256 of a generated hosts.cfg with its "generated at" timestamp line
+    removed, so two runs that produce the same hosts and services hash alike.
+    """
+    return hashlib.sha256(GENERATED_AT_LINE.sub("", text).encode("utf-8")).hexdigest()
+
+
+def config_unchanged(cfg_path):
+    """
+    True if the candidate config is identical (ignoring its timestamp) to the
+    hosts.cfg Nagios is running, so validating, applying and reloading can be
+    skipped. False if the live file is missing or unreadable.
+    """
+    NAGIOS_HOST_CFG = current_app.config['NAGIOS_HOST_CFG']
+    try:
+        live = Path(NAGIOS_HOST_CFG).read_text()
+        candidate = Path(cfg_path).read_text()
+    except OSError:
+        return False
+    return config_fingerprint(live) == config_fingerprint(candidate)
+
+
+def _collect_identifiers(network_discovery_id, discovered_hosts, progress_weight):
+    """
+    Probe every discovered host for identity evidence (NCPA certificate when
+    port 5693 is open, SSH host key when port 22 is) and store it in
+    host_data["data"]["identifiers"] for the reconciler. Replaces the old
+    step that invented "<ip>.<domain>" names: a host's Nagios name is now
+    chosen once, when its device is created (device_identity.py), and never
+    derives from its IP. A probe that fails is skipped.
+    """
     total_hosts = sum(len(hosts) for hosts in discovered_hosts.values())
     processed_hosts = 0
 
     for hosts in discovered_hosts.values():
         for ip, host_data in hosts.items():
-            if host_data["data"]["hostname"] == "Unknown":
-                host_data["data"]["hostname"] = f"{ip}.{DOMAIN}"
+            host_data["data"]["identifiers"] = collect_identifiers(
+                ip, host_data.get("services", {}).get("tcp", {})
+            )
 
             processed_hosts += 1
 
@@ -1037,7 +1010,7 @@ def _create_hostname(network_discovery_id, discovered_hosts, progress_weight):
                     network_discovery_id,
                     DiscoveryStatus.RUNNING,
                     progress,
-                    "Creating hostnames"
+                    "Collecting device identity"
                 )
 
     return discovered_hosts
@@ -1143,8 +1116,8 @@ def discover_network_create_hosts(app, user_id, stop_event):
                 mark_discovery_interrupted(network_discovery_id)
                 return
             
-            # Creates hostnames for hosts that don't have names
-            discovered_hosts = _create_hostname(network_discovery_id, discovered_hosts, PROGRESS_WEIGHT[1])
+            # Collects identity evidence (NCPA certificate, SSH host key)
+            discovered_hosts = _collect_identifiers(network_discovery_id, discovered_hosts, PROGRESS_WEIGHT[1])
 
             if stop_event.is_set():
                 mark_discovery_interrupted(network_discovery_id)
@@ -1165,72 +1138,88 @@ def discover_network_create_hosts(app, user_id, stop_event):
                 mark_discovery_interrupted(network_discovery_id)
                 return
             
-            system_hosts = _load_monitored_hosts(network_discovery_id, PROGRESS_WEIGHT[5])
+            # One writer at a time: load -> generate -> validate -> apply.
+            with config_write_lock:
+                system_hosts = _load_monitored_hosts(network_discovery_id, PROGRESS_WEIGHT[5])
 
-            if stop_event.is_set():
-                mark_discovery_interrupted(network_discovery_id)
-                return
+                if stop_event.is_set():
+                    mark_discovery_interrupted(network_discovery_id)
+                    return
             
-            skipped_services = []
-            new_cfg = _create_host_cfg_file(system_hosts, skipped_services)
-            print(f"Created: {new_cfg}")
-            create_skipped_service_logs(network_discovery_id, skipped_services)
-            update_network_discovery_status(
-                network_discovery_id,
-                DiscoveryStatus.RUNNING,
-                PROGRESS_WEIGHT[6],
-                "Generated new Nagios configuration"
-            )
+                skipped_services = []
+                new_cfg = _create_host_cfg_file(system_hosts, skipped_services)
+                print(f"Created: {new_cfg}")
+                skipped_services.extend(unconfirmed_udp_skips(discovered_hosts))
+                create_skipped_service_logs(network_discovery_id, skipped_services)
+                update_network_discovery_status(
+                    network_discovery_id,
+                    DiscoveryStatus.RUNNING,
+                    PROGRESS_WEIGHT[6],
+                    "Generated new Nagios configuration"
+                )
 
-            if stop_event.is_set():
-                mark_discovery_interrupted(network_discovery_id)
-                return
-            
-            update_network_discovery_status(
-                network_discovery_id,
-                DiscoveryStatus.RUNNING,
-                PROGRESS_WEIGHT[7],
-                "Validating config"
-            )
-            
-            is_valid, result = _validate_config(new_cfg)
-
-            if stop_event.is_set():
-                mark_discovery_interrupted(network_discovery_id)
-                return
-            
-            if is_valid:
-                applied, apply_message = _apply_new_host_cfg(new_cfg)
-
-                if applied:
+                # Nothing really changed (same hosts, services and contacts):
+                # leave Nagios alone instead of validating and reloading.
+                if config_unchanged(new_cfg):
+                    new_cfg.unlink(missing_ok=True)
                     update_network_discovery_status(
                         network_discovery_id,
                         DiscoveryStatus.SUCCESS,
                         PROGRESS_WEIGHT[8],
-                        "New host.cfg successfully applied",
+                        "Host configuration unchanged; Nagios was not reloaded",
                         datetime.now(timezone.utc)
-                        )
-                    print(apply_message)
+                    )
+                    return
+
+                if stop_event.is_set():
+                    mark_discovery_interrupted(network_discovery_id)
+                    return
+            
+                update_network_discovery_status(
+                    network_discovery_id,
+                    DiscoveryStatus.RUNNING,
+                    PROGRESS_WEIGHT[7],
+                    "Validating config"
+                )
+            
+                is_valid, result = _validate_config(new_cfg)
+
+                if stop_event.is_set():
+                    mark_discovery_interrupted(network_discovery_id)
+                    return
+            
+                if is_valid:
+                    applied, apply_message = _apply_new_host_cfg(new_cfg)
+
+                    if applied:
+                        update_network_discovery_status(
+                            network_discovery_id,
+                            DiscoveryStatus.SUCCESS,
+                            PROGRESS_WEIGHT[8],
+                            "New host.cfg successfully applied",
+                            datetime.now(timezone.utc)
+                            )
+                        print(apply_message)
+                    else:
+                        update_network_discovery_status(
+                            network_discovery_id,
+                            DiscoveryStatus.FAILED,
+                            PROGRESS_WEIGHT[8],
+                            "Config not applied",
+                            datetime.now(timezone.utc)
+                            )
+                        print(apply_message)
+
                 else:
                     update_network_discovery_status(
                         network_discovery_id,
                         DiscoveryStatus.FAILED,
                         PROGRESS_WEIGHT[8],
-                        "Config not applied",
-                        datetime.now(timezone.utc)
-                        )
-                    print(apply_message)
-
-            else:
-                update_network_discovery_status(
-                    network_discovery_id,
-                    DiscoveryStatus.FAILED,
-                    PROGRESS_WEIGHT[8],
-                    "Config failed to validate",
-                    datetime.now(timezone.utc),
-                    result
-                )
-                print(result)
+                        "Config failed to validate",
+                        datetime.now(timezone.utc),
+                        result
+                    )
+                    print(result)
         except Exception as e:
             app.logger.exception(
                 f"Network discovery failed."
@@ -1267,24 +1256,9 @@ def add_ncpa_port(app, successful_device, ncpa_deployment_status_id, stop_event)
                     )
                     return
 
-                existing_service = db.session.scalar(
-                    sa.select(Open_TCP_Services)
-                    .join(NetworkDiscovery, 
-                          Open_TCP_Services.NetDiscoveryID == NetworkDiscovery.NetDiscoveryID)
-                    .where(
-                        Open_TCP_Services.NetDiscoveryID == device_id,
-                        Open_TCP_Services.Port_Number == int(NCPA_PORT),
-                        NetworkDiscovery.Include_Device_In_Scanning.is_(True)
-                    )
-                )
-
-                if existing_service is None:
-                    new_service = Open_TCP_Services(
-                        Port_Number=int(NCPA_PORT),
-                        Service_Name="ncpa",
-                        NetDiscoveryID=device_id
-                    )
-                    db.session.add(new_service)
+                # Upserts the NCPA port as MONITORED with Source NCPA, which
+                # also protects it from being archived by later scans.
+                mark_ncpa_port(device_id)
 
                 processed_devices += 1
 
@@ -1316,95 +1290,97 @@ def add_ncpa_port(app, successful_device, ncpa_deployment_status_id, stop_event)
 
             # Reload the monitored hosts from the database so the newly added
             # port is reflected in the generated config
-            system_hosts = _load_monitored_hosts()
-            update_ncpa_deployment_status(
-                ncpa_deployment_status_id,
-                DeploymentStatus.RUNNING,
-                ADD_NCPA_PORT_PROGRESS_WEIGHT[1],
-                "Loaded monitored hosts from database."
-            )
-
-            if stop_event.is_set():
+            # One writer at a time: load -> generate -> validate -> apply.
+            with config_write_lock:
+                system_hosts = _load_monitored_hosts()
                 update_ncpa_deployment_status(
                     ncpa_deployment_status_id,
-                    DeploymentStatus.INTERRUPTED,
+                    DeploymentStatus.RUNNING,
                     ADD_NCPA_PORT_PROGRESS_WEIGHT[1],
-                    "Adding NCPA port was stopped by user."
+                    "Loaded monitored hosts from database."
                 )
-                return
 
-            # Generate a new Nagios host config file from the updated hosts
-            new_cfg = _create_host_cfg_file(system_hosts)
-            print(f"Created: {new_cfg}")
-            update_ncpa_deployment_status(
-                ncpa_deployment_status_id,
-                DeploymentStatus.RUNNING,
-                ADD_NCPA_PORT_PROGRESS_WEIGHT[2],
-                "Generated new Nagios configuration."
-            )
-
-            if stop_event.is_set():
-                update_ncpa_deployment_status(
-                    ncpa_deployment_status_id,
-                    DeploymentStatus.INTERRUPTED,
-                    ADD_NCPA_PORT_PROGRESS_WEIGHT[2],
-                    "Adding NCPA port was stopped by user."
-                )
-                return
-
-            # Validate the candidate config against the live nagios.cfg
-            # before touching anything live
-            is_valid, result = _validate_config(new_cfg)
-            update_ncpa_deployment_status(
-                ncpa_deployment_status_id,
-                DeploymentStatus.RUNNING,
-                ADD_NCPA_PORT_PROGRESS_WEIGHT[3],
-                "Validated new Nagios configuration."
-            )
-
-            if stop_event.is_set():
-                update_ncpa_deployment_status(
-                    ncpa_deployment_status_id,
-                    DeploymentStatus.INTERRUPTED,
-                    ADD_NCPA_PORT_PROGRESS_WEIGHT[3],
-                    "Adding NCPA port was stopped by user."
-                )
-                return
-
-            # If valid, apply it as the new live config: backs up the running
-            # hosts.cfg, copies the new one into place, reloads Nagios, and
-            # rolls back automatically if the reload fails
-            if is_valid:
-                applied, apply_message = _apply_new_host_cfg(new_cfg)
-
-                if applied:
+                if stop_event.is_set():
                     update_ncpa_deployment_status(
                         ncpa_deployment_status_id,
-                        DeploymentStatus.SUCCESS,
-                        ADD_NCPA_PORT_PROGRESS_WEIGHT[4],
-                        "New host.cfg successfully applied.",
-                        datetime.now(timezone.utc)
+                        DeploymentStatus.INTERRUPTED,
+                        ADD_NCPA_PORT_PROGRESS_WEIGHT[1],
+                        "Adding NCPA port was stopped by user."
                     )
+                    return
+
+                # Generate a new Nagios host config file from the updated hosts
+                new_cfg = _create_host_cfg_file(system_hosts)
+                print(f"Created: {new_cfg}")
+                update_ncpa_deployment_status(
+                    ncpa_deployment_status_id,
+                    DeploymentStatus.RUNNING,
+                    ADD_NCPA_PORT_PROGRESS_WEIGHT[2],
+                    "Generated new Nagios configuration."
+                )
+
+                if stop_event.is_set():
+                    update_ncpa_deployment_status(
+                        ncpa_deployment_status_id,
+                        DeploymentStatus.INTERRUPTED,
+                        ADD_NCPA_PORT_PROGRESS_WEIGHT[2],
+                        "Adding NCPA port was stopped by user."
+                    )
+                    return
+
+                # Validate the candidate config against the live nagios.cfg
+                # before touching anything live
+                is_valid, result = _validate_config(new_cfg)
+                update_ncpa_deployment_status(
+                    ncpa_deployment_status_id,
+                    DeploymentStatus.RUNNING,
+                    ADD_NCPA_PORT_PROGRESS_WEIGHT[3],
+                    "Validated new Nagios configuration."
+                )
+
+                if stop_event.is_set():
+                    update_ncpa_deployment_status(
+                        ncpa_deployment_status_id,
+                        DeploymentStatus.INTERRUPTED,
+                        ADD_NCPA_PORT_PROGRESS_WEIGHT[3],
+                        "Adding NCPA port was stopped by user."
+                    )
+                    return
+
+                # If valid, apply it as the new live config: backs up the running
+                # hosts.cfg, copies the new one into place, reloads Nagios, and
+                # rolls back automatically if the reload fails
+                if is_valid:
+                    applied, apply_message = _apply_new_host_cfg(new_cfg)
+
+                    if applied:
+                        update_ncpa_deployment_status(
+                            ncpa_deployment_status_id,
+                            DeploymentStatus.SUCCESS,
+                            ADD_NCPA_PORT_PROGRESS_WEIGHT[4],
+                            "New host.cfg successfully applied.",
+                            datetime.now(timezone.utc)
+                        )
+                    else:
+                        update_ncpa_deployment_status(
+                            ncpa_deployment_status_id,
+                            DeploymentStatus.FAILED,
+                            ADD_NCPA_PORT_PROGRESS_WEIGHT[4],
+                            "Config not applied.",
+                            datetime.now(timezone.utc),
+                            apply_message
+                        )
+                    print(apply_message)
                 else:
                     update_ncpa_deployment_status(
                         ncpa_deployment_status_id,
                         DeploymentStatus.FAILED,
                         ADD_NCPA_PORT_PROGRESS_WEIGHT[4],
-                        "Config not applied.",
+                        "Config failed to validate.",
                         datetime.now(timezone.utc),
-                        apply_message
+                        result
                     )
-                print(apply_message)
-            else:
-                update_ncpa_deployment_status(
-                    ncpa_deployment_status_id,
-                    DeploymentStatus.FAILED,
-                    ADD_NCPA_PORT_PROGRESS_WEIGHT[4],
-                    "Config failed to validate.",
-                    datetime.now(timezone.utc),
-                    result
-                )
-                print(result)
+                    print(result)
 
         except Exception as e:
             db.session.rollback()
@@ -1417,3 +1393,29 @@ def add_ncpa_port(app, successful_device, ncpa_deployment_status_id, stop_event)
                 datetime.now(timezone.utc),
                 str(e)
             )
+
+def regenerate_and_apply_config():
+    """
+    Rebuild hosts.cfg from the database and, if it really changed, validate
+    and apply it. The single entry point for everything that is not a full
+    scan: NCPA relocation and user edits (merge, retire, port changes).
+
+    Runs under config_write_lock so it cannot interleave with discovery or
+    add_ncpa_port(). Returns (changed, message): changed is True only when a
+    new config was applied; when nothing changed or the config could not be
+    applied the message says why. Does not touch the database session beyond
+    reading.
+    """
+    with config_write_lock:
+        new_cfg = _create_host_cfg_file(_load_monitored_hosts())
+
+        if config_unchanged(new_cfg):
+            new_cfg.unlink(missing_ok=True)
+            return False, "Host configuration unchanged; Nagios was not reloaded."
+
+        is_valid, result = _validate_config(new_cfg)
+        if not is_valid:
+            return False, f"Config failed to validate: {result}"
+
+        applied, message = _apply_new_host_cfg(new_cfg)
+        return applied, message

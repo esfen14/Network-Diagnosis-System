@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "lab_network": "10.0.2.0/28",
+  "lab_network_name": "pinpoint-test",
+  "lab_bridge": "virbr-pinpoint",
+  "install_network_name": "default",
+  "domain_prefix": "pinpoint-lab",
+  "pinpoint_address": "10.0.2.1",
+  "target01_address": "10.0.2.2",
+  "target02_address": "10.0.2.3",
+  "target01_memory_mib": 2048,
+  "target02_memory_mib": 1536,
+  "vcpu": 2,
+  "disk_gib": 12,
+  "timeout_seconds": 1800,
+  "pinpoint_base_url": "http://127.0.0.1:5000"
+}

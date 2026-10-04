@@ -24,6 +24,7 @@ from app.plugin_models import (
     PluginHistory, PluginHistoryAction, PluginActionResult,
 )
 from app.system_models import ActivityLog, User, NetworkDiscovery
+from app.network_discovery.device_identity import nagios_host_name
 from app.api.plugin.nagios_validator import validate_nagios_configuration
 from app.api.plugin.command_validator import validate_command_definition
 from app.api.plugin.plugin_validator import (
@@ -217,6 +218,7 @@ def get_running_checks(page, per_page, search):
                 Plugin.Display_Name.ilike(f"%{search}%"),
                 PluginConfiguration.Service_Description.ilike(f"%{search}%"),
                 NetworkDiscovery.Hostname.ilike(f"%{search}%"),
+                NetworkDiscovery.Nagios_Host_Name.ilike(f"%{search}%"),
                 NetworkDiscovery.IP_Address.ilike(f"%{search}%"),
             )
         )
@@ -243,7 +245,7 @@ def get_running_checks(page, per_page, search):
             },
             "target": {
                 "id": target.NetDiscoveryID,
-                "hostname": target.Hostname,
+                "hostname": nagios_host_name(target),
                 "ip_address": target.IP_Address,
             } if target else None,
             "service_description": config.Service_Description,
@@ -1363,7 +1365,7 @@ def build_configuration_tuples(configurations):
             continue
 
         tuples.append((
-            target.Hostname or target.IP_Address,
+            nagios_host_name(target),
             config.Service_Description,
             generate_command_name(plugin.Name),
             command_line,
@@ -1407,7 +1409,7 @@ def get_plugin_configurations(plugin_id):
             "id": config.PluginConfigurationID,
             "target": {
                 "id": target.NetDiscoveryID,
-                "hostname": target.Hostname,
+                "hostname": nagios_host_name(target),
                 "ip_address": target.IP_Address,
             } if target else None,
             "service_description": config.Service_Description,
@@ -1551,7 +1553,7 @@ def apply_plugin_configuration(plugin_id, net_discovery_id, service_description,
         record_plugin_action(
             plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.SUCCESS, user_id,
             new_value=service_description,
-            message=f"Applied to {target.Hostname or target.IP_Address}: {service_description}.",
+            message=f"Applied to {nagios_host_name(target)}: {service_description}.",
         )
         db.session.commit()
 

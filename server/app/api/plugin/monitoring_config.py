@@ -277,10 +277,24 @@ def apply_plugin_services_config(candidate_path):
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode != 0:
-            current_app.logger.error(result.stdout + result.stderr)
+            raise RuntimeError(
+                f"reload exited with code {result.returncode}: "
+                f"{result.stdout}{result.stderr}".strip()
+            )
     except Exception as e:
-        if backup_path.exists():
-            shutil.copy2(backup_path, PLUGIN_SERVICE_CFG)
+        # Reload failed (nonzero exit, timeout, or could not run): restore the
+        # last known-good file so Nagios never keeps a broken config.
+        current_app.logger.error(f"Nagios reload failed: {e}")
+        try:
+            if backup_path.exists():
+                shutil.copy2(backup_path, PLUGIN_SERVICE_CFG)
+            else:
+                PLUGIN_SERVICE_CFG.unlink(missing_ok=True)
+        except Exception as restore_error:
+            return False, (
+                f"Failed to reload Nagios and could not restore the previous "
+                f"config: {restore_error}. Reload error: {e}"
+            )
         return False, (
             f"Failed to reload Nagios after applying new config. "
             f"Rolled back to backup at {backup_path}. Error: {e}"

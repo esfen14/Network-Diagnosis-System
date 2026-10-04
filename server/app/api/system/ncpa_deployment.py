@@ -29,6 +29,7 @@ Routes
 GET    /system/deployment/ncpa/devices            – List NCPA-eligible devices
 GET    /system/deployment/ncpa/<id>/fingerprint    – Fetch live SSH host-key fingerprint
 POST   /system/deployment/ncpa/<id>/confirm-trust  – Save/confirm device fingerprint
+POST   /system/deployment/ncpa/<id>/refresh-disks  – Re-read the agent's disks and regenerate config
 POST   /system/deployment/ncpa/start               – Start background deployment
 POST   /system/deployment/ncpa/stop                – Request running deployment to stop
 GET    /system/deployment/ncpa/status              – Latest deployment job status
@@ -44,7 +45,8 @@ from app.api.system import system_bp
 from app.api.helper import success, error
 from app.api.helper.database_access.permissions import require_permission
 from app.logging.deployment_history import get_deployment_ncpa_status
-from app.system_models import NetworkDiscovery, SSHCredentials, NCPADeployment, AgentStatus
+from app.system_models import NetworkDiscovery, SSHCredentials, NCPADeployment, AgentStatus, IdentifierKind
+from app.network_discovery.device_identity import Evidence, record_device_evidence
 from app.ncpa_deployment.ncpa_deployment import *
 
 deploy_ncpa_thread = None
@@ -177,6 +179,10 @@ def confirm_device_trust(device_id):
             return error("That device has no credentials entry.", 404)
 
         creds.Key_Fingerprint = fingerprint
+
+        # The trusted host key also identifies the device across IP changes.
+        if fingerprint:
+            record_device_evidence(device, [Evidence(IdentifierKind.SSH_HOST_KEY, fingerprint)])
         db.session.commit()
 
         return success(message="Device fingerprint saved.")
@@ -431,5 +437,54 @@ def get_trusted_devices():
         })
 
     except Exception:
+        current_app.logger.exception("An unexpected error occurred.")
+        return error("An unexpected error occurred.", 500)
+
+
+@system_bp.post('/deployment/ncpa/<int:device_id>/refresh-disks')
+@login_required
+@require_permission('system.deploy.ncpa')
+def refresh_ncpa_disks(device_id):
+    """
+    Re-read the logical disks a deployed NCPA agent serves (after a disk was
+    added or removed), store them, and regenerate the Nagios config so the
+    disk services match.
+
+    Response (200):
+        { "success": true, "data": { "device_id": int, "disks": [str],
+                                      "config_applied": bool, "message": str } }
+
+    Errors:
+        404 – Device not found or NCPA not deployed on it.
+        502 – The agent returned no disks (unreachable or none mounted).
+        500 – Unexpected error.
+    """
+    try:
+        device = db.session.get(NetworkDiscovery, device_id)
+        deployment = db.session.scalar(
+            sa.select(NCPADeployment).where(
+                NCPADeployment.NetworkDiscoveryID == device_id,
+                NCPADeployment.Agent_Status == AgentStatus.DEPLOYED,
+                NCPADeployment.Token.is_not(None),
+            )
+        )
+        if device is None or deployment is None:
+            return error("NCPA is not deployed on this device.", 404)
+
+        disks = refresh_ncpa_partitions(deployment, device.IP_Address)
+        if not disks:
+            return error("The NCPA agent reported no monitorable disks.", 502)
+
+        from app.network_discovery.create_host_cfg import regenerate_and_apply_config
+        applied, message = regenerate_and_apply_config()
+        return success({
+            "device_id": device_id,
+            "disks": disks,
+            "config_applied": applied,
+            "message": message,
+        })
+
+    except Exception:
+        db.session.rollback()
         current_app.logger.exception("An unexpected error occurred.")
         return error("An unexpected error occurred.", 500)
