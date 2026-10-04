@@ -144,7 +144,7 @@ Backend tests:
 ```bash
 cd server
 source .venv/bin/activate
-pytest
+pytest tests/unit/
 ```
 
 Frontend tests and build:
@@ -154,6 +154,13 @@ cd client
 npm run test
 npm run build
 ```
+
+`server/pytest.ini` defaults to isolated tests in `tests/unit/` and excludes
+recursive discovery of `tests/integration/` and `tests/e2e/`. Live integration
+tests require an explicit target and may probe Nagios during collection. The
+end-to-end harness remains opt-in and must not run during installation/startup.
+Shared builders live in `tests/support/`; test approach documents live in
+`tests/plans/`. See `server/tests/README.md` for commands and coverage boundaries.
 
 Use the smallest relevant test target during iteration, then broaden verification
 in proportion to the change's risk.

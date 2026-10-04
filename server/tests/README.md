@@ -1,8 +1,8 @@
 # Backend Test Suite
 
-**Last verified against the repository:** 2026-10-03
+**Last verified against the repository:** 2026-10-04
 
-**Current collection:** 1,168 collected tests
+**Current isolated collection:** 1,382 collected tests
 
 This directory contains the pytest suite for the Flask backend. It covers API
 authorization and contracts, database models, Nagios parsing and aggregation,
@@ -10,15 +10,33 @@ network discovery, NCPA deployment, scheduled automation, and Plugin Manager
 workflows.
 
 The draft live-lab plan is in
-[`NETWORK_DISCOVERY_EXTENDED_TEST_PLAN.md`](NETWORK_DISCOVERY_EXTENDED_TEST_PLAN.md).
-Its future opt-in automation belongs under
-[`live_network_discovery/`](live_network_discovery/). That harness is separate
+[`plans/NETWORK_DISCOVERY_EXTENDED_TEST_PLAN.md`](plans/NETWORK_DISCOVERY_EXTENDED_TEST_PLAN.md).
+Its opt-in automation lives under
+[`e2e/network_discovery/`](e2e/network_discovery/). That harness is separate
 from normal pytest collection and must never run during installation or
 application startup.
 
 The exact number of collected tests will change as parametrized cases and new
 features are added. Use `pytest --collect-only` when an exact current count is
 needed.
+
+## Directory boundaries
+
+| Directory | Purpose |
+|---|---|
+| `unit/` | Isolated regression suite, including unit tests and mocked Flask API/database integration tests; these are not all pure unit tests |
+| `integration/` | Explicitly selected live Nagios CGI tests; not full end-to-end acceptance |
+| `e2e/network_discovery/` | Opt-in live harness, fixtures, recovery scripts and self-tests; the complete deterministic browser runner remains proposed |
+| `support/` | Shared isolated builders and migration subprocess helper |
+| `plans/` | Proposed test approach, live test plan and historical findings |
+
+`server/pytest.ini` defaults to `unit/` and prevents recursive collection of
+`integration/` and `e2e/`, even with `pytest tests/`. Explicitly targeting
+`tests/integration/` still works and may contact Nagios during collection.
+`server/conftest.py` remains the shared fixture entry point.
+
+See [test plans](plans/README.md) and the
+[proposed approach adjustment](plans/TEST_APPROACH_ADJUSTMENT_PLAN.md).
 
 ## Quick start
 
@@ -30,7 +48,7 @@ Install the backend and test dependencies into the existing virtual environment:
 .venv/bin/pip install -r requirements.txt -r requirements-test.txt
 ```
 
-Run the complete suite:
+Run the default isolated suite (live tests are excluded):
 
 ```bash
 .venv/bin/python -m pytest tests/ -v
@@ -39,15 +57,15 @@ Run the complete suite:
 Run the normal isolated suite without probing a live Nagios server:
 
 ```bash
-.venv/bin/python -m pytest tests/ --ignore=tests/test_live_nagios.py
+.venv/bin/python -m pytest tests/unit/
 ```
 
 Run one module, class, test, or keyword selection:
 
 ```bash
-.venv/bin/python -m pytest tests/test_notifications.py -v
-.venv/bin/python -m pytest tests/test_notifications.py::TestGetNotifications -v
-.venv/bin/python -m pytest tests/test_notifications.py::TestGetNotifications::test_requires_login -v
+.venv/bin/python -m pytest tests/unit/test_notifications.py -v
+.venv/bin/python -m pytest tests/unit/test_notifications.py::TestGetNotifications -v
+.venv/bin/python -m pytest tests/unit/test_notifications.py::TestGetNotifications::test_requires_login -v
 .venv/bin/python -m pytest tests/ -k "login" -v
 ```
 
@@ -58,6 +76,8 @@ List tests without executing them:
 ```
 
 ## Test-suite map
+
+Basenames below live under `unit/`, except `integration/test_live_nagios.py`.
 
 ### Authentication, users, roles, settings, and shared helpers
 
@@ -84,7 +104,7 @@ List tests without executing them:
 | `test_notifications.py` | Notification feed, unread count, per-user cursor, and mark-read behavior |
 | `test_report_notifications_alerts.py` | Nagios-backed alert and notification report periods, filters, response shapes, and upstream failures |
 | `test_status.py` | Nagios status/object CGI parsing, state mapping, performance data, max attempts, and safe check-command storage |
-| `test_live_nagios.py` | Optional real-Nagios CGI and Flask-route integration checks |
+| `integration/test_live_nagios.py` | Optional real-Nagios CGI and Flask-route integration checks |
 
 ### Network discovery, generated monitoring, NCPA, and scheduling
 
@@ -151,7 +171,7 @@ routes should request it directly or indirectly through another fixture.
 
 ### Realistic monitoring seed helpers
 
-`tests/seed_helpers.py` creates realistic host, service, performance, and
+`tests/support/seed_helpers.py` creates realistic host, service, performance, and
 program snapshots for dashboard/network-health tests. Prefer these helpers when
 the behavior depends on relationships across several history models.
 
@@ -191,7 +211,7 @@ Configure and run it explicitly:
 NAGIOS_URL=http://nagios-host/nagios \
 NAGIOS_USER=nagiosadmin \
 NAGIOS_PASSWORD=secret \
-.venv/bin/python -m pytest tests/test_live_nagios.py -v
+.venv/bin/python -m pytest tests/integration/test_live_nagios.py -v
 ```
 
 The module uses bounded CGI time windows and request timeouts. Some assertions
@@ -203,18 +223,18 @@ Do not put real credentials in source, test output, or documentation.
 
 ## Live Network Discovery lab
 
-`NETWORK_DISCOVERY_EXTENDED_TEST_PLAN.md` defines the resource-constrained
+`plans/NETWORK_DISCOVERY_EXTENDED_TEST_PLAN.md` defines the resource-constrained
 VirtualBox test of real Network Discovery mappings and selected additional
-Nagios checks. `live_network_discovery/` is reserved for its explicitly invoked
+Nagios checks. `e2e/network_discovery/` is reserved for its explicitly invoked
 provisioning, service-control, polling, evidence, reporting, and cleanup tools.
-Its [README](live_network_discovery/README.md) documents configuration,
+Its [README](e2e/network_discovery/README.md) documents configuration,
 self-tests, isolated/offline test-dependency setup, guarded execution, recovery,
 report generation, and SCP retrieval. The harness self-tests use `unittest` and
 do not require pytest; the application regression gate still uses the pinned
 packages in `requirements-test.txt`.
 
 The disposable nested-VM provisioner is under
-[`live_network_discovery/vm_scripts/`](live_network_discovery/vm_scripts/README.md).
+[`e2e/network_discovery/vm_scripts/`](e2e/network_discovery/vm_scripts/README.md).
 Its own README documents the libvirt networks, cloud image, previews,
 verification, baselines, and generated SSH/harness artifacts.
 
@@ -222,7 +242,7 @@ Before handing a live run to the AI, the tester can preview and apply the
 consolidated privileged host preparation:
 
 ```bash
-cd /opt/pinpoint/Network-Diagnosis-System/server/tests/live_network_discovery
+cd /opt/pinpoint/Network-Diagnosis-System/server/tests/e2e/network_discovery
 bash provision/prepare_test_host.sh
 sudo bash provision/prepare_test_host.sh --apply
 ```
@@ -238,7 +258,7 @@ the harness configuration before running it.
 
 ## Adding or updating tests
 
-1. Name new modules `test_<feature>.py` under `server/tests/`.
+1. Name new isolated modules `test_<feature>.py` under `server/tests/unit/`.
 2. Add a new route permission to `PERMISSION_NAMES` in `server/conftest.py`
    when the administrator fixture must receive it.
 3. Cover authentication, authorization, validation, success, empty-data, and
@@ -272,7 +292,17 @@ class TestMyRoute:
 ## Related files
 
 - `server/requirements-test.txt` pins pytest and pytest-flask.
-- `server/tests/TEST_FAILURES.md` is a historical remediation log. Its counts
+- `server/tests/plans/historical/TEST_FAILURES.md` is a historical remediation log. Its counts
   are not the current suite inventory.
 - `spec files/Engineering_Standards.md` contains repository-wide testing rules.
 - `spec files/Backend_Modules_and_Routes.md` is the current API route catalog.
+
+### Live-report regression coverage (2026-10-03)
+
+The live harness now requires plugin enabling through actual Plugin Manager APIs
+before discovery. Its manifest includes an enable/apply/running case and separate
+NCPA CPU, memory and disk acceptance. Harness self-tests cover enable gating, exact
+inventory lookup, pending/stale checks, titlecase states and baseline inventory.
+The extended plan tracks reload rollback, NCPA deployment/path failures, missing
+installed permissions and lifecycle thresholds from the previous live report.
+No live outcome is implied by passing these isolated self-tests.

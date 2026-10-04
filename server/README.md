@@ -28,7 +28,7 @@ Useful commands:
 
 ```bash
 pytest                                      # run the backend suite
-pytest tests/test_dashboard.py -v           # run one test module
+pytest tests/unit/test_dashboard.py -v        # run one test module
 flask seed                                  # add missing seed data
 ```
 
@@ -95,7 +95,7 @@ server/
 |   |-- history_models.py      history-bind Nagios snapshot models
 |   |-- scheduler.py           recurring jobs
 |   `-- automation.py          settings-driven scheduled tasks
-|-- tests/                     pytest suite and test documentation
+|-- tests/                     unit, integration, e2e, support and plans
 |-- config.py                  runtime configuration
 |-- conftest.py                shared pytest environment and fixtures
 |-- server.py                  Flask entry point and shell context
