@@ -622,7 +622,7 @@ def _backup_running_host_cfg():
 
     backup_path = BACKUP_DIR / backup_name
 
-    shutil.copy2(NAGIOS_HOST_CFG, backup_path)
+    shutil.copyfile(NAGIOS_HOST_CFG, backup_path)
 
     return backup_path
 
@@ -880,7 +880,7 @@ def _apply_new_host_cfg(cfg_path):
         return False, f"Failed to back up current config, aborting apply: {e}"
 
     try:
-        shutil.copy2(cfg_path, NAGIOS_HOST_CFG)
+        shutil.copyfile(cfg_path, NAGIOS_HOST_CFG)
     except Exception as e:
         return False, f"Failed to copy new config into place: {e}"
 
@@ -903,7 +903,13 @@ def _apply_new_host_cfg(cfg_path):
         # to the last known-good config so Nagios never keeps running on a
         # broken/half-applied file
         current_app.logger.error(f"Nagios reload failed: {e}")
-        shutil.copy2(backup_path, NAGIOS_HOST_CFG)
+        shutil.copyfile(backup_path, NAGIOS_HOST_CFG)
+        # Bring the daemon back in line with the restored file.
+        try:
+            subprocess.run(["sudo", "-n", "systemctl", "reload", "nagios"],
+                           capture_output=True, text=True, timeout=30)
+        except Exception as reload_error:
+            current_app.logger.error(f"Nagios reload after rollback failed: {reload_error}")
         return False, (
             f"Failed to reload Nagios after applying new config. "
             f"Rolled back to backup at {backup_path}. Error: {e}"

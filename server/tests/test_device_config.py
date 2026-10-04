@@ -392,3 +392,35 @@ class TestApplyReloadFailure:
 
         assert ok is True
         assert live.read_text() == "NEW"
+
+
+class TestApplyHardening:
+
+    def test_apply_does_not_copy_file_metadata(self, app, tmp_path):
+        """copy2's copystat raises EPERM on root-owned live files; only contents may be copied."""
+        live = tmp_path / "hosts.cfg"
+        live.write_text("OLD")
+        candidate = tmp_path / "candidate.cfg"
+        candidate.write_text("NEW")
+        with patched_config(app, NAGIOS_HOST_CFG=live, BACKUP_DIR=tmp_path / "backups"), \
+             patch.object(create_host_cfg.shutil, "copystat", side_effect=PermissionError(1, "EPERM")), \
+             patch.object(create_host_cfg.subprocess, "run",
+                          return_value=MagicMock(returncode=0, stdout="", stderr="")):
+            ok, _message = create_host_cfg._apply_new_host_cfg(candidate)
+
+        assert ok is True
+        assert live.read_text() == "NEW"
+
+    def test_rollback_reloads_the_daemon_again(self, app, tmp_path):
+        live = tmp_path / "hosts.cfg"
+        live.write_text("OLD")
+        candidate = tmp_path / "candidate.cfg"
+        candidate.write_text("NEW")
+        with patched_config(app, NAGIOS_HOST_CFG=live, BACKUP_DIR=tmp_path / "backups"), \
+             patch.object(create_host_cfg.subprocess, "run",
+                          return_value=MagicMock(returncode=42, stdout="", stderr="boom")) as run:
+            ok, _message = create_host_cfg._apply_new_host_cfg(candidate)
+
+        assert ok is False
+        assert live.read_text() == "OLD"
+        assert run.call_count == 2
