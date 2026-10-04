@@ -6,6 +6,8 @@ import { useSystemSettings } from '../../contexts/SystemSettingsContext'
 import { useCurrentUser } from '../../contexts/CurrentUserContext'
 import { fromRawNotification, formatRelativeTime as formatNotificationTime, type NotificationItem, type NotificationsResponse } from '../../types/notification'
 import { useDiscoveryStatus, type DiscoveryStatus } from '../../hooks/useDiscoveryStatus'
+import { useNcpaDeploymentStatus } from '../../hooks/useNcpaDeploymentStatus'
+import { DeploymentStatusItem } from '../ncpa-deployment/DeploymentStatusItem'
 
 const pageTitles: Record<string, { section: string; page: string }> = {
   '/dashboard': { section: 'Dashboards', page: 'Overview' },
@@ -13,6 +15,7 @@ const pageTitles: Record<string, { section: string; page: string }> = {
   '/device-inventory': { section: 'Host Inventory', page: 'Overview' },
   '/topology': { section: 'System Status', page: 'All Hosts' },
   '/plugins': { section: 'Plugins', page: 'System Plugins' },
+  '/ncpa-deployment': { section: 'Plugins', page: 'NCPA Deployment' },
   '/reports': { section: 'Reports', page: 'System Reports' },
   '/system-logs': { section: 'System Logs', page: 'All' },
   '/accounts': { section: 'Management', page: 'Manage Accounts' },
@@ -163,7 +166,11 @@ export function Header() {
   const canDiscover = hasPermission('system.discover')
   const discovery = useDiscoveryStatus(canDiscover)
   const isScanning = discovery.scan?.status === 'Running'
-  const showBell = notificationsEnabled || canDiscover
+  const canDeployNcpa = hasPermission('system.deploy.ncpa')
+  const deployment = useNcpaDeploymentStatus(canDeployNcpa)
+  const isDeploying = deployment.run?.status === 'Running'
+  const showBell = notificationsEnabled || canDiscover || canDeployNcpa
+  const showActivityDot = isScanning || discovery.hasUnseenResult || isDeploying || deployment.hasUnseenResult
 
   const { section, page } = pageTitles[pathname] ?? {
     section: 'Dashboards',
@@ -300,7 +307,10 @@ export function Header() {
   }
 
   const toggleMenu = (menu: 'notifications' | 'history' | 'account') => {
-  if (menu === 'notifications') discovery.markSeen()
+  if (menu === 'notifications') {
+    discovery.markSeen()
+    deployment.markSeen()
+  }
   setOpenMenu((prev) => (prev === menu ? null : menu))
 }
   return (
@@ -357,10 +367,18 @@ export function Header() {
                 <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-medium text-white">
                   {unreadCount}
                 </span>
-              ) : (isScanning || discovery.hasUnseenResult) && (
+              ) : showActivityDot && (
                 <span
-                  className={`absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#ffb100] ${isScanning ? 'animate-pulse' : ''}`}
-                  aria-label={isScanning ? 'Network scan in progress' : 'Network scan finished'}
+                  className={`absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#ffb100] ${isScanning || isDeploying ? 'animate-pulse' : ''}`}
+                  aria-label={
+                    isScanning
+                      ? 'Network scan in progress'
+                      : isDeploying
+                        ? 'NCPA deployment in progress'
+                        : discovery.hasUnseenResult
+                          ? 'Network scan finished'
+                          : 'NCPA deployment finished'
+                  }
                 />
               )}
             </button>
@@ -385,6 +403,19 @@ export function Header() {
                     isCancelling={discovery.isCancelling}
                     cancelError={discovery.cancelError}
                     onCancel={discovery.cancel}
+                  />
+                )}
+
+                {canDeployNcpa && deployment.run && (
+                  <DeploymentStatusItem
+                    run={deployment.run}
+                    isCancelling={deployment.isCancelling}
+                    cancelError={deployment.cancelError}
+                    onCancel={deployment.cancel}
+                    onReview={(runId) => {
+                      setOpenMenu(null)
+                      navigate(`/ncpa-deployment?tab=history&run=${runId}`)
+                    }}
                   />
                 )}
 

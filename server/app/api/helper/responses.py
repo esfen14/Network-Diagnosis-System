@@ -21,16 +21,23 @@ def success(data=None, message=None, status=200):
     return jsonify(body), status
 
 
-def error(message, status=400):
+def error(message, status=400, data=None):
     """
-    Return a standardized error response.
+    Return a standardized error response. ``data`` is optional detail the
+    client needs to act on the error (e.g. which devices were rejected).
 
     Usage:
         return error("Invalid email.", 400)
         return error("Not found.", 404)
         return error("Unauthorized.", 401)
+        return error("No devices could be deployed.", 400, {"rejected": [...]})
     """
-    return jsonify({
+    body = {
         "success": False,
         "message": message
-    }), status
+    }
+
+    if data is not None:
+        body["data"] = data
+
+    return jsonify(body), status

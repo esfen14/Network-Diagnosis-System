@@ -172,14 +172,22 @@ this is a documented implementation mismatch, not a recommended convention.
 
 | Method and path | Permission | Purpose |
 |---|---|---|
-| `GET /api/system/deployment/ncpa/devices` | `system.deploy.ncpa` | List NCPA-eligible devices |
-| `GET /api/system/deployment/ncpa/<device_id>/fingerprint` | `system.deploy.ncpa` | Fetch live SSH host-key fingerprint |
-| `POST /api/system/deployment/ncpa/<device_id>/confirm-trust` | `system.deploy.ncpa` | Store the confirmed fingerprint |
+| `GET /api/system/deployment/ncpa/devices` | `system.deploy.ncpa` | NCPA-eligible devices (and devices with a deployment record) with IP, trust state, saved fingerprint, agent status, last error, last outcome, last run and `deployable` |
+| `GET /api/system/deployment/ncpa/<device_id>/fingerprint` | `system.deploy.ncpa` | Fetch live SSH host-key fingerprint; 502 when the device does not answer |
+| `POST /api/system/deployment/ncpa/<device_id>/confirm-trust` | `system.deploy.ncpa` | Body `{"fingerprint"}`: save the key only if the live key still equals the one the user approved; 409 with `data.fingerprint` when it changed, 502 when unreachable |
+| `POST /api/system/deployment/ncpa/check-credentials` | `system.deploy.ncpa` | Test each device's login and sudo without deploying; per-device result `ok`, `auth_failed`, `no_sudo`, `unreachable`, `host_key_changed`, `not_trusted`, `not_found` or `rate_limited` (one check per device per 3 s) |
 | `POST /api/system/deployment/ncpa/<device_id>/refresh-disks` | `system.deploy.ncpa` | Re-read the agent's logical disks, store them, regenerate the Nagios config |
-| `POST /api/system/deployment/ncpa/start` | `system.deploy.ncpa` | Start deployment to one or more devices |
-| `POST /api/system/deployment/ncpa/stop` | `system.deploy.ncpa` | Request deployment cancellation |
-| `GET /api/system/deployment/ncpa/status` | `system.deploy.ncpa` | Current or most recent deployment status |
-| `GET /api/system/deployment/ncpa/devices/trusted` | `system.deploy.ncpa` | List trusted devices ready for deployment |
+| `POST /api/system/deployment/ncpa/start` | `system.deploy.ncpa` | Validate credentials and devices, create the run with a Rejected or Pending result per device, and start the worker; 400 with `data.rejected` when no device can be deployed |
+| `POST /api/system/deployment/ncpa/stop` | `system.deploy.ncpa` | Request deployment cancellation; devices not started become Skipped |
+| `GET /api/system/deployment/ncpa/status` | `system.deploy.ncpa` | Latest run with per-device results, outcome counts, starter and review state |
+| `GET /api/system/deployment/ncpa/runs` | `system.deploy.ncpa` | Paginated run history (`status`, `needs_review`, `start_date`, `end_date`) plus the count of runs awaiting review |
+| `GET /api/system/deployment/ncpa/runs/<run_id>` | `system.deploy.ncpa` | One run with per-device results |
+| `POST /api/system/deployment/ncpa/runs/<run_id>/review` | `system.deploy.ncpa` | Mark a finished run reviewed (idempotent; 409 while running); writes an activity-log entry |
+| `GET /api/system/deployment/ncpa/devices/trusted` | `system.deploy.ncpa` | List trusted devices whose agent is Pending NCPA or Deployment Failed |
+
+Credentials are accepted only in request bodies, used for one SSH session, and
+never stored, logged or returned. `error()` in `app/api/helper/responses.py`
+accepts an optional `data` argument for errors the client must act on.
 
 ### `app/api/system/log.py`
 
