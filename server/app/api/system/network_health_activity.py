@@ -51,6 +51,8 @@ from app.api.helper.responses import success, error
 from app.api.system import system_bp
 from app.api.system.network_health import utc_isoformat
 from app.api.system.statistics import (
+    VALID_TREND_HOURS,
+    trend_hours,
     get_latest_hosts,
     get_latest_services,
     avg_ping_metrics,
@@ -71,7 +73,7 @@ from app.nagios.notifications import request_host_availability_range
 from app.plugin_models import Plugin
 
 # Valid trend windows (hours) — same presets as /network-health/trends.
-VALID_HOURS = {1, 6, 24, 168}
+VALID_HOURS = VALID_TREND_HOURS
 
 # Longest availability window, in days. Each day is one archivejson call.
 MAX_AVAILABILITY_DAYS = 30
@@ -474,7 +476,7 @@ def network_health_cpu():
 
     Query params:
         hostname — host to show (optional)
-        hours    — 1, 6, 24 (default) or 168
+        hours    — 5/60 (5 minutes), 1, 6, 24 (default) or 168
         buckets  — number of points, 1 to 168 (default 24)
 
     Response shape:
@@ -489,7 +491,7 @@ def network_health_cpu():
         "points": [ { "bucket_start": iso, "avg_value": float | null, "unit": str | null } ]
     }
     """
-    hours = request.args.get("hours", default=24, type=int)
+    hours = request.args.get("hours", default=24, type=trend_hours)
     buckets = request.args.get("buckets", default=24, type=int)
     hostname = request.args.get("hostname")
 
@@ -726,7 +728,7 @@ def network_health_plugin_trends():
     only have per-service values.
 
     Query params:
-        hours   — 1, 6, 24 (default) or 168
+        hours   — 5/60 (5 minutes), 1, 6, 24 (default) or 168
         buckets — number of points, 1 to 168 (default 24)
 
     Response shape:
@@ -753,7 +755,7 @@ def network_health_plugin_trends():
         ]
     }
     """
-    hours = request.args.get("hours", default=24, type=int)
+    hours = request.args.get("hours", default=24, type=trend_hours)
     buckets = request.args.get("buckets", default=24, type=int)
 
     if hours not in VALID_HOURS:

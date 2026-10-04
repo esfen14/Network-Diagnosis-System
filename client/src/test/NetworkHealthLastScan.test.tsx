@@ -92,12 +92,12 @@ describe('NetworkHealthPage last scan', () => {
     expect(screen.queryByText('1 Hour Ago')).not.toBeInTheDocument()
   })
 
-  it('says Never before the first scan', async () => {
+  it('reports no scan recorded before the first scan', async () => {
     lastScan = { completed_at: null, is_running: false }
     renderPage()
     await flush()
 
-    expect(screen.getByRole('button', { name: /last scan: never/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /last scan: no scan recorded/i })).toBeInTheDocument()
   })
 
   it('shows a scan another user started, and updates when it finishes', async () => {

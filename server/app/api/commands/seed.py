@@ -39,6 +39,7 @@ PERMISSIONS = [
     "system.network_health",
     "system.acknowledge_alerts",
     "system.dashboard",
+    "system.history",
     "plugin.scan",
     "plugin.view",
     "plugin.enable",

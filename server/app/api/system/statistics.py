@@ -588,11 +588,26 @@ def service_health_by_plugin(services: list[ServiceStatus]) -> list[dict]:
     return result
 
 
+FIVE_MINUTES_HOURS = 5 / 60
+VALID_TREND_HOURS = {FIVE_MINUTES_HOURS, 1, 6, 24, 168}
+
+
+def trend_hours(value):
+    """
+    Parse the `hours` query parameter of the trend endpoints. Whole numbers
+    stay ints (6, 24, 168); the 5-minute window arrives as 5/60. Raises
+    ValueError for anything that is not a number, which Flask's request.args.get
+    turns into the default.
+    """
+    number = float(value)
+    return int(number) if number.is_integer() else number
+
+
 def perf_trends(
     hostname: Optional[str],
     service_name: Optional[str],
     metric_names: list[str],
-    hours: int = 24,
+    hours: float = 24,
     buckets: int = 24,
 ) -> list[dict]:
     """

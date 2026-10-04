@@ -3,14 +3,16 @@ import { AlertTriangle, Gauge, Server, Wifi } from 'lucide-react'
 import { NetworkPerformanceSection } from '../components/dashboard/NetworkPerformanceSection'
 import { NetworkStatusOverview } from '../components/dashboard/NetworkStatusOverview'
 import { RecentOutageTable } from '../components/dashboard/RecentOutageTable'
+import { RecentNotifications, type DashboardNotification } from '../components/dashboard/RecentNotifications'
 import { RescanButton } from '../components/dashboard/RescanButton'
 import { ResourceUtilizationSection, type TrendHours } from '../components/dashboard/ResourceUtilizationSection'
 import { ServiceOverview } from '../components/dashboard/ServiceOverview'
 import { SummaryStatCard } from '../components/shared/SummaryStatCard'
 import { useSystemSettings } from '../contexts/SystemSettingsContext'
 import { formatDateTime } from '../utils/formatDateTime'
+import { trendBuckets } from '../utils/trendHours'
 import { fromPluginsResponse, type PluginGroup, type PluginsApiResponse } from '../types/networkHealth'
-import { apiGet, apiPost, errorMessage } from '../lib/api'
+import { apiDelete, apiGet, apiPost, errorMessage } from '../lib/api'
 import {
   fromAlertRecord,
   fromDashboardStatusResponse,
@@ -40,6 +42,8 @@ export function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [ackTarget, setAckTarget] = useState<AlertRow | null>(null)
+  const [ackAllOpen, setAckAllOpen] = useState(false)
+  const [notifications, setNotifications] = useState<DashboardNotification[] | null>(null)
 
   async function loadAll() {
     setLoadError(null)
@@ -50,12 +54,16 @@ export function DashboardPage() {
       .then((data) => setPluginGroups(fromPluginsResponse(data)))
       .catch(() => setPluginGroups(null))
 
+    apiGet<{ notifications: DashboardNotification[] }>('/api/system/dashboard/notifications')
+      .then((data) => setNotifications(data.notifications))
+      .catch(() => setNotifications(null))
+
     try {
       const [statusData, summaryData, alertsData, trendsData, servicesData] = await Promise.all([
         apiGet<Parameters<typeof fromDashboardStatusResponse>[0]>('/api/system/dashboard/status'),
         apiGet<Parameters<typeof fromDashboardSummaryResponse>[0]>('/api/system/dashboard/summary'),
         apiGet<{ alerts: Parameters<typeof fromAlertRecord>[0][] }>('/api/system/dashboard/alerts?limit=10'),
-        apiGet<Parameters<typeof fromTrendsResponse>[0]>(`/api/system/network-health/trends?hours=${trendHours}&buckets=24`),
+        apiGet<Parameters<typeof fromTrendsResponse>[0]>(`/api/system/network-health/trends?hours=${trendHours}&buckets=${trendBuckets(trendHours)}`),
         apiGet<ServiceListResponse>('/api/system/network-health/services?per_page=100'),
       ])
 
@@ -108,6 +116,33 @@ export function DashboardPage() {
       await loadAll()
     } catch (err) {
       setLoadError(errorMessage(err, 'Unable to acknowledge alert.'))
+    }
+  }
+
+  async function acknowledgeAllAlerts(comment: string) {
+    try {
+      await apiPost('/api/system/dashboard/alerts/acknowledge-all', {
+        comment,
+        alerts: alerts
+          .filter((alert) => !alert.ack)
+          .map((alert) => ({ hostname: alert.hostname, service_name: alert.serviceName })),
+      })
+      setAckAllOpen(false)
+      await loadAll()
+    } catch (err) {
+      setLoadError(errorMessage(err, 'Unable to acknowledge alerts.'))
+    }
+  }
+
+  async function unacknowledgeAlert(alert: AlertRow) {
+    try {
+      await apiDelete('/api/system/dashboard/alerts/acknowledge', {
+        hostname: alert.hostname,
+        service_name: alert.serviceName,
+      })
+      await loadAll()
+    } catch (err) {
+      setLoadError(errorMessage(err, 'Unable to remove acknowledgement.'))
     }
   }
 
@@ -211,7 +246,11 @@ export function DashboardPage() {
             alerts={alerts}
             isLoading={isLoading}
             onAcknowledge={(alert) => setAckTarget(alert)}
+            onAcknowledgeAll={() => setAckAllOpen(true)}
+            onUnacknowledge={unacknowledgeAlert}
           />
+
+          <RecentNotifications notifications={notifications} isLoading={isLoading} />
 
         </div>
 
@@ -231,16 +270,26 @@ export function DashboardPage() {
           onConfirm={(comment) => acknowledgeAlert(ackTarget, comment)}
         />
       )}
+
+      {ackAllOpen && (
+        <AcknowledgeModal
+          title={`Acknowledge ${alerts.filter((alert) => !alert.ack).length} active alerts`}
+          onCancel={() => setAckAllOpen(false)}
+          onConfirm={acknowledgeAllAlerts}
+        />
+      )}
     </main>
   )
 }
 
 function AcknowledgeModal({
   alert,
+  title,
   onCancel,
   onConfirm,
 }: {
-  alert: AlertRow
+  alert?: AlertRow
+  title?: string
   onCancel: () => void
   onConfirm: (comment: string) => void
 }) {
@@ -261,7 +310,7 @@ function AcknowledgeModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-[#171B20]">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-          Acknowledge {alert.hostname}{alert.serviceName ? ` / ${alert.serviceName}` : ''}
+          {title ?? `Acknowledge ${alert?.hostname}${alert?.serviceName ? ` / ${alert.serviceName}` : ''}`}
         </h2>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
           Add a comment explaining the acknowledgement.

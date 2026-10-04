@@ -360,28 +360,28 @@ function AddRoleModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="relative w-full max-w-xl rounded-3xl bg-white p-8 shadow-xl">
+      <div className="relative w-full max-w-xl rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-xl">
         <button
           onClick={onCancel}
-          className="absolute right-5 top-5 text-gray-400 hover:text-gray-600"
+          className="absolute right-5 top-5 text-[var(--text-faint)] hover:text-[var(--text)]"
         >
           <X className="h-5 w-5" />
         </button>
 
-        <h2 className="text-center text-xl font-semibold text-gray-900">
+        <h2 className="text-center text-xl font-semibold text-[var(--text)]">
           Role Info
         </h2>
 
         <div className="mt-6 grid grid-cols-2 gap-4">
           <div>
-            <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-500">
+            <label className="mb-1.5 block text-xs font-medium tracking-wide text-[var(--text-muted)]">
               ROLE NAME
             </label>
             <input
               value={form.roleName}
               onChange={(e) => setForm({ ...form, roleName: e.target.value })}
               placeholder="e.g. Supervisor"
-              className="w-full rounded-full border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-500 placeholder:text-gray-400"
+              className="w-full rounded-full border border-[var(--border)] bg-[var(--input-bg)] px-4 py-2.5 text-sm text-[var(--text)] outline-none focus:border-gray-500 placeholder:text-[var(--text-faint)]"
             />
           </div>
 
@@ -389,11 +389,11 @@ function AddRoleModal({
             label="STATUS"
             isActive={form.isActive}
             onChange={(isActive) => setForm({ ...form, isActive })}
-            labelClassName="mb-1.5 block text-xs font-medium tracking-wide text-gray-500"
+            labelClassName="mb-1.5 block text-xs font-medium tracking-wide text-[var(--text-muted)]"
           />
 
           <div className="col-span-2">
-            <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-500">
+            <label className="mb-1.5 block text-xs font-medium tracking-wide text-[var(--text-muted)]">
               DESCRIPTION
             </label>
             <textarea
@@ -401,26 +401,26 @@ function AddRoleModal({
               onChange={(e) => setForm({ ...form, description: e.target.value })}
               placeholder="Short description of this role"
               rows={2}
-              className="w-full rounded-2xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-500 placeholder:text-gray-400"
+              className="w-full rounded-2xl border border-[var(--border)] bg-[var(--input-bg)] px-4 py-2.5 text-sm text-[var(--text)] outline-none focus:border-gray-500 placeholder:text-[var(--text-faint)]"
             />
           </div>
         </div>
 
-        <div className="my-6 border-t border-gray-200" />
+        <div className="my-6 border-t border-[var(--border)]" />
 
-        <h2 className="text-center text-xl font-semibold text-gray-900">
+        <h2 className="text-center text-xl font-semibold text-[var(--text)]">
           Permission
         </h2>
 
-        <div className="mt-4 max-h-56 overflow-y-auto rounded-2xl border border-gray-200">
+        <div className="mt-4 max-h-56 overflow-y-auto rounded-2xl border border-[var(--border)]">
           {permissionOptions.length === 0 && (
-            <p className="px-4 py-3 text-sm text-gray-500">No permissions available.</p>
+            <p className="px-4 py-3 text-sm text-[var(--text-muted)]">No permissions available.</p>
           )}
           {permissionOptions.map((perm, i) => (
             <label
               key={perm.id}
-              className={`flex cursor-pointer items-center justify-between px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 ${
-                i !== permissionOptions.length - 1 ? 'border-b border-gray-200' : ''
+              className={`flex cursor-pointer items-center justify-between px-4 py-3 text-sm text-[var(--text)] hover:bg-[var(--hover)] ${
+                i !== permissionOptions.length - 1 ? 'border-b border-[var(--border)]' : ''
               }`}
             >
               <span>{perm.name}</span>
@@ -428,7 +428,7 @@ function AddRoleModal({
                 type="checkbox"
                 checked={form.permissions.includes(perm.id)}
                 onChange={() => togglePermission(perm.id)}
-                className="h-4 w-4 rounded border-gray-300 accent-[#ffb100]"
+                className="h-4 w-4 rounded border-[var(--border)] accent-[#ffb100]"
               />
             </label>
           ))}
@@ -513,39 +513,39 @@ function EditRoleModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="relative w-full max-w-2xl rounded-3xl bg-white p-8 shadow-xl">
+      <div className="relative w-full max-w-2xl rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-xl">
         <button
           onClick={onCancel}
-          className="absolute right-5 top-5 text-gray-400 hover:text-gray-600"
+          className="absolute right-5 top-5 text-[var(--text-faint)] hover:text-[var(--text)]"
         >
           <X className="h-5 w-5" />
         </button>
 
-        <h2 className="text-xl font-semibold text-gray-900">Edit Role</h2>
-        <p className="mt-1 text-sm text-gray-500">
+        <h2 className="text-xl font-semibold text-[var(--text)]">Edit Role</h2>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
           Update role information and assigned permissions.
         </p>
 
         {isLoadingDetail ? (
-          <p className="mt-6 text-sm text-gray-500">Loading role details…</p>
+          <p className="mt-6 text-sm text-[var(--text-muted)]">Loading role details…</p>
         ) : (
           <>
             <div className="mt-6 grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1.5 block text-sm text-gray-600">Role Name</label>
+                <label className="mb-1.5 block text-sm text-[var(--text-muted)]">Role Name</label>
                 <input
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full rounded-full border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-500"
+                  className="w-full rounded-full border border-[var(--border)] bg-[var(--input-bg)] px-4 py-2.5 text-sm text-[var(--text)] outline-none focus:border-gray-500"
                 />
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm text-gray-600">Description</label>
+                <label className="mb-1.5 block text-sm text-[var(--text-muted)]">Description</label>
                 <input
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  className="w-full rounded-full border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-500"
+                  className="w-full rounded-full border border-[var(--border)] bg-[var(--input-bg)] px-4 py-2.5 text-sm text-[var(--text)] outline-none focus:border-gray-500"
                 />
               </div>
 
@@ -553,17 +553,17 @@ function EditRoleModal({
                 label="Status"
                 isActive={form.isActive}
                 onChange={(isActive) => setForm({ ...form, isActive })}
-                labelClassName="mb-1.5 block text-sm text-gray-600"
+                labelClassName="mb-1.5 block text-sm text-[var(--text-muted)]"
               />
             </div>
 
-            <h3 className="mt-6 text-sm font-medium text-gray-700">Permissions</h3>
-            <div className="mt-2 max-h-56 overflow-y-auto rounded-2xl border border-gray-200">
+            <h3 className="mt-6 text-sm font-medium text-[var(--text)]">Permissions</h3>
+            <div className="mt-2 max-h-56 overflow-y-auto rounded-2xl border border-[var(--border)]">
               {permissionOptions.map((perm, i) => (
                 <label
                   key={perm.id}
-                  className={`flex cursor-pointer items-center justify-between px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 ${
-                    i !== permissionOptions.length - 1 ? 'border-b border-gray-200' : ''
+                  className={`flex cursor-pointer items-center justify-between px-4 py-3 text-sm text-[var(--text)] hover:bg-[var(--hover)] ${
+                    i !== permissionOptions.length - 1 ? 'border-b border-[var(--border)]' : ''
                   }`}
                 >
                   <span>{perm.name}</span>
@@ -571,7 +571,7 @@ function EditRoleModal({
                     type="checkbox"
                     checked={permissions.includes(perm.id)}
                     onChange={() => togglePermission(perm.id)}
-                    className="h-4 w-4 rounded border-gray-300 accent-[#ffb100]"
+                    className="h-4 w-4 rounded border-[var(--border)] accent-[#ffb100]"
                   />
                 </label>
               ))}

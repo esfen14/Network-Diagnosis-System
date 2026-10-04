@@ -10,6 +10,7 @@ export const PAGE_PERMISSIONS: Record<string, string | null> = {
   '/device-inventory': 'system.network_health',
   '/topology': 'system.network_health',
   '/plugins': 'plugin.view',
+  '/history': 'system.history',
   '/reports': 'system.report',
   '/system-logs': 'system.logs',
   '/accounts': 'account.view',

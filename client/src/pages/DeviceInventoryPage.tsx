@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Activity, CheckCircle2, XCircle } from 'lucide-react'
 import { HostTable } from '../components/device-inventory/HostTable'
+import { StatusDetailDrawer } from '../components/device-inventory/StatusDetailDrawer'
 import { PageHeader } from '../components/shared/PageHeader'
 import { SummaryStatCard } from '../components/shared/SummaryStatCard'
 import { useSystemSettings } from '../contexts/SystemSettingsContext'
@@ -36,6 +37,7 @@ export function DeviceInventoryPage() {
   const [counts, setCounts] = useState({ total: 0, up: 0 })
 
   const [ackTarget, setAckTarget] = useState<Host | null>(null)
+  const [detailHostname, setDetailHostname] = useState<string | null>(null)
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -184,6 +186,7 @@ export function DeviceInventoryPage() {
           onPageChange={setPage}
           onAcknowledge={(host) => setAckTarget(host)}
           onUnacknowledge={unacknowledgeHost}
+          onViewDetails={(host) => setDetailHostname(host.hostname)}
         />
       </div>
 
@@ -193,6 +196,10 @@ export function DeviceInventoryPage() {
           onCancel={() => setAckTarget(null)}
           onConfirm={(comment) => acknowledgeHost(ackTarget, comment)}
         />
+      )}
+
+      {detailHostname && (
+        <StatusDetailDrawer hostname={detailHostname} onClose={() => setDetailHostname(null)} />
       )}
     </main>
   )

@@ -26,6 +26,8 @@ from app.api.helper.database_access.permissions import require_permission
 from app.api.helper.responses import success, error
 from app.api.system import system_bp
 from app.api.system.statistics import (
+    VALID_TREND_HOURS,
+    trend_hours,
     get_latest_hosts,
     get_latest_services,
     host_counts,
@@ -129,7 +131,7 @@ def network_health_summary():
 # ---------------------------------------------------------------------------
 
 # Valid time window presets (hours).
-_VALID_HOURS = {1, 6, 24, 168}  # 168 = 7 days
+_VALID_HOURS = VALID_TREND_HOURS
 
 @system_bp.get("/network-health/trends")
 @login_required
@@ -146,7 +148,7 @@ def network_health_trends():
       - Nagios server disk if check_disk is configured
 
     Query params:
-        hours   — time window: 1, 6, 24 (default), or 168 (7 days)
+        hours   — time window: 5/60 (5 minutes), 1, 6, 24 (default), or 168 (7 days)
         buckets — number of data points in the chart (default 24, max 168)
 
     Response shape:
@@ -185,7 +187,7 @@ def network_health_trends():
     }
     """
     try:
-        hours   = request.args.get("hours", default=24, type=int)
+        hours   = request.args.get("hours", default=24, type=trend_hours)
         buckets = min(request.args.get("buckets", default=24, type=int), 168)
 
         if hours not in _VALID_HOURS:

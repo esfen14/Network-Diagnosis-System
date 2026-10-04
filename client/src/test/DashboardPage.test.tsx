@@ -24,6 +24,14 @@ vi.mock('../contexts/SystemSettingsContext', () => ({
   }),
 }))
 
+vi.mock('../contexts/CurrentUserContext', () => ({
+  useCurrentUser: () => ({
+    user: null,
+    isLoading: false,
+    hasPermission: () => true,
+  }),
+}))
+
 const apiGet = vi.fn()
 const apiPost = vi.fn()
 
@@ -118,6 +126,19 @@ describe('DashboardPage', () => {
       '/api/system/dashboard/status': statusResponse(),
       '/api/system/dashboard/summary': summaryResponse(),
       '/api/system/dashboard/alerts': { alerts: [ALERT] },
+      '/api/system/dashboard/notifications': {
+        notifications: [
+          {
+            timestamp: 1790416800,
+            type: 'HOST',
+            hostname: 'router-01',
+            service_name: null,
+            state: 'DOWN',
+            contact: 'admin',
+            message: 'Host is down',
+          },
+        ],
+      },
       '/api/system/network-health/trends': EMPTY_TRENDS,
       '/api/system/network-health/services': { items: [], page: 1, per_page: 100, pages: 1, total: 0 },
     }
@@ -145,9 +166,25 @@ describe('DashboardPage', () => {
       '/api/system/dashboard/status',
       '/api/system/dashboard/summary',
       '/api/system/dashboard/alerts?limit=10',
+      '/api/system/dashboard/notifications',
       '/api/system/network-health/trends?hours=24&buckets=24',
       '/api/system/network-health/services?per_page=100',
     ]))
+  })
+
+  it('lists recent notifications with a link to the history page', async () => {
+    await renderLoaded()
+    expect(screen.getByText('Recent Notifications')).toBeInTheDocument()
+    expect(screen.getByText('router-01')).toBeInTheDocument()
+    expect(screen.getByText('Host is down')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'View full history' })).toHaveAttribute('href', '/history')
+  })
+
+  it('shows Unavailable when notifications fail to load', async () => {
+    responses['/api/system/dashboard/notifications'] = new Error('boom')
+    await renderLoaded()
+    const card = screen.getByText('Recent Notifications').closest('.rounded-2xl') as HTMLElement
+    expect(within(card).getByText('Unavailable')).toBeInTheDocument()
   })
 
   it('shows Online when Nagios is running', async () => {

@@ -21,6 +21,7 @@ type HostTableProps = {
   onPageChange: (page: number) => void
   onAcknowledge: (host: Host) => void
   onUnacknowledge: (host: Host) => void
+  onViewDetails?: (host: Host) => void
 }
 
 function StateBadge({ state }: { state: HostState }) {
@@ -69,6 +70,7 @@ export function HostTable({
   onPageChange,
   onAcknowledge,
   onUnacknowledge,
+  onViewDetails,
 }: HostTableProps) {
   const states: ('All' | HostState)[] = ['All', 'UP', 'DOWN', 'UNREACHABLE']
 
@@ -170,7 +172,20 @@ export function HostTable({
                   key={host.hostname}
                   className="border-b border-gray-100 transition hover:bg-gray-50 dark:border-white/5 dark:hover:bg-white/5"
                 >
-                  <td className="px-4 py-3 text-gray-900 dark:text-white">{host.hostname}</td>
+                  <td className="px-4 py-3 text-gray-900 dark:text-white">
+                    {onViewDetails ? (
+                      <button
+                        type="button"
+                        onClick={() => onViewDetails(host)}
+                        className="text-left underline-offset-2 hover:underline"
+                        title="View host details"
+                      >
+                        {host.hostname}
+                      </button>
+                    ) : (
+                      host.hostname
+                    )}
+                  </td>
                   <td className="px-4 py-3"><StateBadge state={host.state} /></td>
                   <td className="px-4 py-3 text-gray-900 dark:text-white">{host.checkLatency.toFixed(3)}s</td>
                   <td className="px-4 py-3 text-gray-900 dark:text-white">{formatDateTime(host.lastCheck)}</td>

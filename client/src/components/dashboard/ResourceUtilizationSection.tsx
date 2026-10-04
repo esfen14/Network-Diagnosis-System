@@ -2,15 +2,11 @@ import { useState } from 'react'
 import { ChevronDown, MoreHorizontal } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { TrendPoint } from '../../types/dashboard'
+import { TREND_HOURS_OPTIONS, type TrendHours } from '../../utils/trendHours'
 
-export type TrendHours = 1 | 6 | 24 | 168
+export type { TrendHours }
 
-const HOURS_OPTIONS: { value: TrendHours; label: string }[] = [
-  { value: 1, label: 'Last hour' },
-  { value: 6, label: 'Last 6 hours' },
-  { value: 24, label: 'Last 24 hours' },
-  { value: 168, label: 'Last 7 days' },
-]
+const HOURS_OPTIONS = TREND_HOURS_OPTIONS
 
 type ResourceUtilizationSectionProps = {
   cpuTrend: TrendPoint[]

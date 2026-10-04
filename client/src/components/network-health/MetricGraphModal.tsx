@@ -3,6 +3,7 @@ import { ChevronDown, X } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { TrendPoint } from '../../types/dashboard'
 import { formatBucketLabel } from '../../utils/formatBucketLabel'
+import { TREND_HOURS_OPTIONS, type TrendHours } from '../../utils/trendHours'
 
 export type GraphSeriesConfig = {
   key: string
@@ -11,14 +12,9 @@ export type GraphSeriesConfig = {
   precision?: number
 }
 
-export type TrendHours = 1 | 6 | 24 | 168
+export type { TrendHours }
 
-const HOURS_OPTIONS: { value: TrendHours; label: string }[] = [
-  { value: 1, label: 'Last hour' },
-  { value: 6, label: 'Last 6 hours' },
-  { value: 24, label: 'Last 24 hours' },
-  { value: 168, label: 'Last 7 days' },
-]
+const HOURS_OPTIONS = TREND_HOURS_OPTIONS
 
 export type MetricGraphModalProps = {
   title: string

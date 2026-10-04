@@ -101,6 +101,11 @@ class TestNetworkHealthTrends:
         resp = logged_in_client.get(f"/api/system/network-health/trends?hours={hours}")
         assert resp.status_code == 200
 
+    def test_five_minute_window(self, logged_in_client, db_session):
+        resp = logged_in_client.get(f"/api/system/network-health/trends?hours={5 / 60}")
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["hours"] == pytest.approx(5 / 60)
+
     def test_invalid_hours_returns_400(self, logged_in_client, db_session):
         resp = logged_in_client.get("/api/system/network-health/trends?hours=12")
         assert resp.status_code == 400

@@ -7,6 +7,7 @@ import { NetworkHealthPage } from './pages/NetworkHealthPage'
 import { DeviceInventoryPage } from './pages/DeviceInventoryPage'
 import { TopologyPage } from './pages/TopologyPage' 
 import { ReportsPage } from './pages/ReportsPage'
+import { HistoryPage } from './pages/HistoryPage'
 import { SystemLogsPage } from './pages/SystemLogsPage'
 import { ManageAccountsPage } from './pages/ManageAccountsPage'
 import { PluginsPage } from './pages/PluginsPage'
@@ -53,6 +54,10 @@ export default function App() {
         /> }
         
 
+        <Route
+          path="history"
+          element={<HistoryPage />}
+        />
         <Route
           path="reports"
           element={<ReportsPage />}

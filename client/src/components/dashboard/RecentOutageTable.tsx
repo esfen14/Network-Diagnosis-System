@@ -7,6 +7,8 @@ type RecentOutageTableProps = {
   alerts: AlertRow[]
   isLoading: boolean
   onAcknowledge: (alert: AlertRow) => void
+  onAcknowledgeAll?: () => void
+  onUnacknowledge?: (alert: AlertRow) => void
 }
 
 const stateStyles: Record<string, string> = {
@@ -17,16 +19,28 @@ const stateStyles: Record<string, string> = {
   UNKNOWN: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
 }
 
-export function RecentOutageTable({ alerts, isLoading, onAcknowledge }: RecentOutageTableProps) {
+export function RecentOutageTable({ alerts, isLoading, onAcknowledge, onAcknowledgeAll, onUnacknowledge }: RecentOutageTableProps) {
   const { settings } = useSystemSettings()
+  const unacknowledgedCount = alerts.filter((alert) => !alert.ack).length
 
   return (
     <div className="rounded-2xl bg-[var(--card)] border border-[var(--border)] p-6 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-[var(--text)]">Active Alerts</h2>
+        <div className="flex items-center gap-2">
+        {onAcknowledgeAll && unacknowledgedCount > 0 && (
+          <button
+            type="button"
+            onClick={onAcknowledgeAll}
+            className="rounded-lg bg-[#ffb100] px-3 py-1.5 text-xs font-semibold text-black hover:brightness-105"
+          >
+            Acknowledge all ({unacknowledgedCount})
+          </button>
+        )}
         <button type="button" className="rounded-xl bg-[var(--card-alt)] p-2 text-[var(--text-muted)] hover:bg-[var(--hover)]" aria-label="More options">
           <MoreHorizontal className="h-4 w-4" />
         </button>
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
@@ -61,8 +75,17 @@ export function RecentOutageTable({ alerts, isLoading, onAcknowledge }: RecentOu
                   </td>
                   <td className="py-3">
                     {alert.ack ? (
-                      <span className="text-xs text-[var(--text-muted)]" title={alert.ack.comment}>
+                      <span className="flex items-center gap-2 text-xs text-[var(--text-muted)]" title={alert.ack.comment}>
                         Acked by {alert.ack.acknowledgedBy}
+                        {onUnacknowledge && (
+                          <button
+                            type="button"
+                            onClick={() => onUnacknowledge(alert)}
+                            className="underline hover:text-[var(--text)]"
+                          >
+                            Unacknowledge
+                          </button>
+                        )}
                       </span>
                     ) : (
                       <button

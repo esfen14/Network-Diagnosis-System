@@ -512,8 +512,8 @@ manually unless you know exactly what you are doing.
   like `cpu/percent`. Use `<path:service_name>` in Flask URL rules for any
   route that accepts a service name as a URL segment.
 - **`perf_trends()` time windows** — valid `hours` values for the trends
-  endpoint are `1, 6, 24, 168` (1 hour, 6 hours, 24 hours, 7 days). The
-  front-end time range selector must match these values.
+  endpoints are `5/60, 1, 6, 24, 168` (5 minutes, 1 hour, 6 hours, 24 hours,
+  7 days). The front-end time range selector must match these values.
 - **Averaging requires at least 2 data points** — per the spec (§3.5 of
   `Display_Requirements.md`), do not display a network-wide average if fewer
   than 2 hosts have reported data. Return `null` and let the front-end show

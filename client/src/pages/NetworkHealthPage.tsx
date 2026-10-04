@@ -38,6 +38,7 @@ import {
   type SystemActivity,
 } from '../types/networkHealth'
 import { formatDate, formatTime, formatTimeAgo } from '../utils/formatDateTime'
+import { trendBuckets } from '../utils/trendHours'
 
 type MetricKey = 'latency' | 'bandwidth' | 'packetLoss' | 'avgResponseTime' | 'avgResource'
 
@@ -88,6 +89,10 @@ export function NetworkHealthPage() {
   const [openMetric, setOpenMetric] = useState<MetricKey | null>(null)
 
   const [trendHours, setTrendHours] = useState<TrendHours>(24)
+  const [cpuHours, setCpuHours] = useState<TrendHours>(24)
+  const [loadHours, setLoadHours] = useState<TrendHours>(24)
+  const [cpuLoad, setCpuLoad] = useState<TrendsResponse['nagiosCpuLoad'] | null>(null)
+  const [isLoadLoading, setIsLoadLoading] = useState(true)
   const [summary, setSummary] = useState<NetworkHealthSummary | null>(null)
   const [trends, setTrends] = useState<TrendsResponse | null>(null)
   const [supportedChecks, setSupportedChecks] = useState<string[] | null>(null)
@@ -134,7 +139,7 @@ export function NetworkHealthPage() {
       'Unable to load insights.',
     )
     loadWidget(
-      apiGet<Parameters<typeof fromPluginTrendsResponse>[0]>(`/api/system/network-health/plugin-trends?hours=${trendHours}&buckets=24`)
+      apiGet<Parameters<typeof fromPluginTrendsResponse>[0]>(`/api/system/network-health/plugin-trends?hours=${trendHours}&buckets=${trendBuckets(trendHours)}`)
         .then(fromPluginTrendsResponse),
       setAddedPlugins,
       'Unable to load added plugins.',
@@ -143,7 +148,7 @@ export function NetworkHealthPage() {
     try {
       const [summaryData, trendsData, pluginsData] = await Promise.all([
         apiGet<Parameters<typeof fromNetworkHealthSummaryResponse>[0]>('/api/system/network-health/summary'),
-        apiGet<Parameters<typeof fromTrendsResponse>[0]>(`/api/system/network-health/trends?hours=${trendHours}&buckets=24`),
+        apiGet<Parameters<typeof fromTrendsResponse>[0]>(`/api/system/network-health/trends?hours=${trendHours}&buckets=${trendBuckets(trendHours)}`),
         apiGet<PluginsApiResponse | null>('/api/system/network-health/plugins'),
       ])
       setSummary(fromNetworkHealthSummaryResponse(summaryData))
@@ -160,10 +165,9 @@ export function NetworkHealthPage() {
     loadData()
   }, [loadData])
 
-  // CPU chart follows the page's time range and its own host picker.
   useEffect(() => {
     let cancelled = false
-    const params = new URLSearchParams({ hours: String(trendHours), buckets: '24' })
+    const params = new URLSearchParams({ hours: String(cpuHours), buckets: String(trendBuckets(cpuHours)) })
     if (cpuHost) params.set('hostname', cpuHost)
     apiGet<Parameters<typeof fromHostCpuResponse>[0]>(`/api/system/network-health/cpu?${params}`)
       .then((data) => {
@@ -175,7 +179,25 @@ export function NetworkHealthPage() {
     return () => {
       cancelled = true
     }
-  }, [trendHours, cpuHost])
+  }, [cpuHours, cpuHost])
+
+  useEffect(() => {
+    let cancelled = false
+    setIsLoadLoading(true)
+    apiGet<Parameters<typeof fromTrendsResponse>[0]>(`/api/system/network-health/trends?hours=${loadHours}&buckets=${trendBuckets(loadHours)}`)
+      .then((data) => {
+        if (!cancelled) setCpuLoad(fromTrendsResponse(data).nagiosCpuLoad)
+      })
+      .catch(() => {
+        if (!cancelled) setCpuLoad(null)
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loadHours])
 
   // "Last Scan" comes from the server (the latest successful network
   // discovery), so every user sees the same time. Running a scan needs the
@@ -212,8 +234,8 @@ export function NetworkHealthPage() {
   const startScan = canRescan && !isScanning ? rescan.start : undefined
   const lastScanText = isScanning
     ? 'Scanning…'
-    : lastScanAt ? formatTimeAgo(lastScanAt, now) : summary ? 'Never' : '—'
-  const lastScanDate = lastScanAt ? formatDate(lastScanAt, savedSettings.dateTimeFormat, savedSettings.timeZone) : 'Never'
+    : lastScanAt ? formatTimeAgo(lastScanAt, now) : summary ? 'No scan recorded' : '—'
+  const lastScanDate = lastScanAt ? formatDate(lastScanAt, savedSettings.dateTimeFormat, savedSettings.timeZone) : 'No scan recorded'
   const lastScanTime = lastScanAt ? formatTime(lastScanAt, savedSettings.timeZone) : '—'
 
   const rta = latestAndChange(trends?.ping.rta)
@@ -369,13 +391,15 @@ export function NetworkHealthPage() {
               <CpuUtilizationChart
                 data={hostCpu.data}
                 error={hostCpu.error}
-                hours={trendHours}
+                hours={cpuHours}
+                onHoursChange={setCpuHours}
                 onHostChange={setCpuHost}
               />
               <CpuLoadChart
-                load={trends?.nagiosCpuLoad ?? { configured: false, load1: [], load5: [], load15: [] }}
-                hours={trendHours}
-                isLoading={isLoading}
+                load={cpuLoad ?? { configured: false, load1: [], load5: [], load15: [] }}
+                hours={loadHours}
+                onHoursChange={setLoadHours}
+                isLoading={isLoadLoading}
               />
               <AddedPluginsSection
                 plugins={addedPlugins.data}

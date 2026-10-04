@@ -18,9 +18,13 @@ import {
   getPluginDetails,
   overrideCommand,
   restoreDefaultCommand,
+  rollbackPluginUpdate,
+  updatePlugin,
   validatePlugin,
+  type PluginUpdateResult,
 } from '../../lib/pluginApi'
 import { errorMessage } from '../../lib/api'
+import { useCurrentUser } from '../../contexts/CurrentUserContext'
 import { PluginTargetsSection } from './PluginTargetsSection'
 import type { PluginCommand, PluginDependency, PluginDetails, PluginValidationResult } from '../../types/plugin'
 
@@ -54,6 +58,11 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
   const [validation, setValidation] = useState<PluginValidationResult | null>(null)
   const [editingCommandId, setEditingCommandId] = useState<number | null>(null)
   const [overrideValue, setOverrideValue] = useState('')
+  const { hasPermission } = useCurrentUser()
+  const [updateFile, setUpdateFile] = useState<File | null>(null)
+  const [updateUrl, setUpdateUrl] = useState('')
+  const [updateResult, setUpdateResult] = useState<PluginUpdateResult | null>(null)
+  const [rollbackNotice, setRollbackNotice] = useState<string | null>(null)
 
   async function load(showSpinner = true) {
     if (showSpinner) setIsLoading(true)
@@ -99,6 +108,27 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
   const handleValidate = () =>
     runAction(async () => {
       setValidation(await validatePlugin(pluginId))
+    })
+
+  const handleUpdate = () =>
+    runAction(async () => {
+      setRollbackNotice(null)
+      const result = await updatePlugin(
+        pluginId,
+        updateFile ? { file: updateFile } : { url: updateUrl.trim() }
+      )
+      setUpdateResult(result)
+      setUpdateFile(null)
+      setUpdateUrl('')
+    })
+
+  const handleRollback = () =>
+    runAction(async () => {
+      const result = await rollbackPluginUpdate(pluginId)
+      setUpdateResult(null)
+      setRollbackNotice(
+        result.restored_version ? `Rolled back to version ${result.restored_version}.` : 'Update rolled back.'
+      )
     })
 
   const startOverride = (command: PluginCommand) => {
@@ -247,6 +277,89 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
                   </div>
                 )}
               </section>
+
+              {(hasPermission('plugin.update') || hasPermission('plugin.update_rollback')) && (
+                <section>
+                  <h4 className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">Update</h4>
+
+                  {hasPermission('plugin.update') && (
+                    <div className="space-y-2 rounded-xl border border-gray-200 p-3 dark:border-white/10">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Provide an update archive (.tar.gz, .tgz or .zip) or a URL to download one from. The update is
+                        validated afterwards; a failed update can be rolled back.
+                      </p>
+                      <input
+                        type="file"
+                        accept=".tar.gz,.tgz,.zip"
+                        aria-label="Update archive"
+                        disabled={isBusy || !!updateUrl.trim()}
+                        onChange={(e) => setUpdateFile(e.target.files?.[0] ?? null)}
+                        className="block w-full text-xs text-gray-700 dark:text-gray-300"
+                      />
+                      <input
+                        type="url"
+                        placeholder="https://… (instead of a file)"
+                        aria-label="Update URL"
+                        value={updateUrl}
+                        disabled={isBusy || !!updateFile}
+                        onChange={(e) => setUpdateUrl(e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-900 outline-none focus:border-gray-500 dark:border-white/20 dark:bg-[#0D1117] dark:text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleUpdate}
+                        disabled={isBusy || (!updateFile && !updateUrl.trim())}
+                        className="rounded-lg bg-[#ffb100] px-4 py-2 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Update plugin
+                      </button>
+                    </div>
+                  )}
+
+                  {updateResult && (
+                    <div
+                      className={`mt-3 space-y-1 rounded-lg px-3 py-2 text-sm ${
+                        updateResult.success
+                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+                          : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'
+                      }`}
+                    >
+                      {updateResult.success ? (
+                        <p>
+                          Updated{updateResult.previous_version ? ` from ${updateResult.previous_version}` : ''} to{' '}
+                          {updateResult.current_version ?? 'the new version'}.
+                        </p>
+                      ) : (
+                        <>
+                          <p className="font-medium">
+                            Update failed{updateResult.failed_step ? ` at ${updateResult.failed_step}` : ''}.
+                          </p>
+                          {updateResult.nagios_check && !updateResult.nagios_check.passed && (
+                            <p className="font-mono text-xs">{updateResult.nagios_check.output}</p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {rollbackNotice && (
+                    <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+                      {rollbackNotice}
+                    </p>
+                  )}
+
+                  {details.status === 'Rollback' && hasPermission('plugin.update_rollback') && (
+                    <button
+                      type="button"
+                      onClick={handleRollback}
+                      disabled={isBusy}
+                      className="mt-3 flex items-center gap-2 rounded-lg border border-red-500/40 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-500/10 disabled:opacity-50 dark:text-red-400"
+                    >
+                      <RotateCcw className="h-4 w-4" /> Roll back update
+                    </button>
+                  )}
+                </section>
+              )}
 
               <PluginTargetsSection
                 key={pluginId}

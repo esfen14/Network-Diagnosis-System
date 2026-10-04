@@ -2,12 +2,14 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import type { HostCpu } from '../../types/networkHealth'
 import { formatBucketLabel } from '../../utils/formatBucketLabel'
 import type { TrendHours } from './MetricGraphModal'
+import { TimeRangeSelect } from './TimeRangeSelect'
 
 type CpuUtilizationChartProps = {
   // GET /network-health/cpu — null while loading or on error.
   data: HostCpu | null
   error: string | null
   hours: TrendHours
+  onHoursChange: (hours: TrendHours) => void
   onHostChange: (hostname: string) => void
 }
 
@@ -15,7 +17,7 @@ function formatPct(value: number | null) {
   return value != null ? `${value.toFixed(1)}%` : '—'
 }
 
-export function CpuUtilizationChart({ data, error, hours, onHostChange }: CpuUtilizationChartProps) {
+export function CpuUtilizationChart({ data, error, hours, onHoursChange, onHostChange }: CpuUtilizationChartProps) {
   const chartData = (data?.points ?? []).map((p) => ({
     time: formatBucketLabel(p.bucketStart, hours),
     cpu: p.avgValue,
@@ -36,6 +38,8 @@ export function CpuUtilizationChart({ data, error, hours, onHostChange }: CpuUti
           </h3>
           <p className="text-sm text-[var(--text-muted)]">Datasource: NCPA cpu/percent</p>
         </div>
+        <div className="flex items-center gap-2">
+        <TimeRangeSelect hours={hours} onChange={onHoursChange} />
         {data && data.hosts.length > 1 && (
           <select
             aria-label="Host"
@@ -48,6 +52,7 @@ export function CpuUtilizationChart({ data, error, hours, onHostChange }: CpuUti
             ))}
           </select>
         )}
+        </div>
       </div>
       <p className="mb-4 text-sm text-[var(--text-muted)]">CPU Utilization (%)</p>
       <div className="h-56 w-full">

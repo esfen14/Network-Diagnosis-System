@@ -2,6 +2,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import type { TrendPoint } from '../../types/dashboard'
 import { formatBucketLabel } from '../../utils/formatBucketLabel'
 import type { TrendHours } from './MetricGraphModal'
+import { TimeRangeSelect } from './TimeRangeSelect'
 
 const SERIES = [
   { key: 'load1', period: '1 min', color: '#0ea5e9' },
@@ -15,6 +16,7 @@ type CpuLoadChartProps = {
   // Nagios server's check_load trend (GET /network-health/trends → nagios_server.cpu_load).
   load: { configured: boolean } & Record<LoadKey, TrendPoint[]>
   hours: TrendHours
+  onHoursChange: (hours: TrendHours) => void
   isLoading: boolean
 }
 
@@ -28,7 +30,7 @@ function loadStats(points: TrendPoint[]) {
   }
 }
 
-export function CpuLoadChart({ load, hours, isLoading }: CpuLoadChartProps) {
+export function CpuLoadChart({ load, hours, onHoursChange, isLoading }: CpuLoadChartProps) {
   const length = Math.max(...SERIES.map((s) => load[s.key].length))
   const data = Array.from({ length }, (_, i) => {
     const bucketStart = SERIES.map((s) => load[s.key][i]?.bucketStart).find(Boolean)
@@ -49,6 +51,7 @@ export function CpuLoadChart({ load, hours, isLoading }: CpuLoadChartProps) {
           <h3 className="text-lg font-semibold text-[var(--text)]">CPU Load for Nagios server</h3>
           <p className="text-sm text-[var(--text-muted)]">Datasource: check_load (load1, load5, load15)</p>
         </div>
+        <TimeRangeSelect hours={hours} onChange={onHoursChange} />
       </div>
       <div className="h-56 w-full">
         {!hasData ? (

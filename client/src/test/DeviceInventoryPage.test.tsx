@@ -139,7 +139,7 @@ describe('DeviceInventoryPage', () => {
 
   it('offers Acknowledge only for unacknowledged hosts that are not up', async () => {
     await renderLoaded()
-    expect(within(row('gateway')).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(row('gateway')).queryByRole('button', { name: /acknowledge/i })).not.toBeInTheDocument()
     expect(within(row('switch-1')).getByRole('button', { name: 'Acknowledge' })).toBeInTheDocument()
     expect(within(row('printer')).getByRole('button', { name: 'Unacknowledge' })).toBeInTheDocument()
     expect(within(row('printer')).getByText('By Admin User')).toBeInTheDocument()

@@ -26,7 +26,7 @@ function isPasswordValid(password: string, strongPolicy: boolean) {
 }
 
 const SELECT_CLASS =
-  'h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white outline-none transition duration-200 focus:border-[#ffb100]'
+  'h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--input-bg)] px-3 text-sm text-[var(--text)] outline-none transition duration-200 focus:border-[#ffb100]'
 
 type StatusFilter = 'all' | UserStatus
 
@@ -274,46 +274,46 @@ function AddAccountModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="relative w-full max-w-xl rounded-3xl bg-[#0D1117] p-8 shadow-xl">
+      <div className="relative w-full max-w-xl rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-xl">
 
         <button
           onClick={onCancel}
-          className="absolute right-5 top-5 text-gray-500 hover:text-gray-300"
+          className="absolute right-5 top-5 text-[var(--text-muted)] hover:text-[var(--text)]"
         >
           <X className="h-5 w-5" />
         </button>
 
-        <h2 className="text-center text-xl font-semibold text-white">
+        <h2 className="text-center text-xl font-semibold text-[var(--text)]">
           Profile Info
         </h2>
 
         <div className="mt-6 grid grid-cols-2 gap-4">
           <div>
-            <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-400">
+            <label className="mb-1.5 block text-xs font-medium tracking-wide text-[var(--text-muted)]">
               FIRST NAME
             </label>
             <input
               value={form.firstName}
               onChange={(e) => setForm({ ...form, firstName: e.target.value })}
               placeholder="e.g. JUAN"
-              className="w-full rounded-full bg-white px-4 py-2.5 text-sm text-gray-900 outline-none placeholder:text-gray-400"
+              className="w-full rounded-full border border-[var(--border)] bg-[var(--input-bg)] px-4 py-2.5 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
             />
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-400">
+            <label className="mb-1.5 block text-xs font-medium tracking-wide text-[var(--text-muted)]">
               LAST NAME
             </label>
             <input
               value={form.lastName}
               onChange={(e) => setForm({ ...form, lastName: e.target.value })}
               placeholder="e.g. CRUZ"
-              className="w-full rounded-full bg-white px-4 py-2.5 text-sm text-gray-900 outline-none placeholder:text-gray-400"
+              className="w-full rounded-full border border-[var(--border)] bg-[var(--input-bg)] px-4 py-2.5 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
             />
           </div>
 
           <div className="col-span-2">
-            <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-400">
+            <label className="mb-1.5 block text-xs font-medium tracking-wide text-[var(--text-muted)]">
               EMAIL
             </label>
             <input
@@ -321,12 +321,12 @@ function AddAccountModal({
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               placeholder="e.g. juan.cruz@email.com"
-              className="w-full rounded-full bg-white px-4 py-2.5 text-sm text-gray-900 outline-none placeholder:text-gray-400"
+              className="w-full rounded-full border border-[var(--border)] bg-[var(--input-bg)] px-4 py-2.5 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
             />
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-400">
+            <label className="mb-1.5 block text-xs font-medium tracking-wide text-[var(--text-muted)]">
               ROLE
             </label>
             <select
@@ -334,15 +334,15 @@ function AddAccountModal({
               onChange={(e) => setForm({ ...form, roleId: Number(e.target.value) })}
               className={SELECT_CLASS}
             >
-              {roleOptions.length === 0 && <option value={0} className="bg-[#0D1117]">No roles available</option>}
+              {roleOptions.length === 0 && <option value={0} className="bg-[var(--card)]">No roles available</option>}
               {roleOptions.map((role) => (
-                <option key={role.id} value={role.id} className="bg-[#0D1117]">{role.name}</option>
+                <option key={role.id} value={role.id} className="bg-[var(--card)]">{role.name}</option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-400">
+            <label className="mb-1.5 block text-xs font-medium tracking-wide text-[var(--text-muted)]">
               STATUS
             </label>
             <select
@@ -351,7 +351,7 @@ function AddAccountModal({
               className={SELECT_CLASS}
             >
               {STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status} className="bg-[#0D1117]">
+                <option key={status} value={status} className="bg-[var(--card)]">
                   {status.charAt(0).toUpperCase() + status.slice(1)}
                 </option>
               ))}
@@ -359,39 +359,39 @@ function AddAccountModal({
           </div>
         </div>
 
-        <div className="my-6 border-t border-white/10" />
+        <div className="my-6 border-t border-[var(--border)]" />
 
-        <h2 className="text-center text-xl font-semibold text-white">
+        <h2 className="text-center text-xl font-semibold text-[var(--text)]">
           Create Password
         </h2>
 
         <div className="mt-6 grid grid-cols-2 gap-4">
           <div>
-            <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-400">
+            <label className="mb-1.5 block text-xs font-medium tracking-wide text-[var(--text-muted)]">
               NEW PASSWORD
             </label>
             <input
               type="password"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
-              className="w-full rounded-full bg-white px-4 py-2.5 text-sm text-gray-900 outline-none"
+              className="w-full rounded-full border border-[var(--border)] bg-[var(--input-bg)] px-4 py-2.5 text-sm text-[var(--text)] outline-none"
             />
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-400">
+            <label className="mb-1.5 block text-xs font-medium tracking-wide text-[var(--text-muted)]">
               CONFIRM PASSWORD
             </label>
             <input
               type="password"
               value={form.confirmPassword}
               onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
-              className="w-full rounded-full bg-white px-4 py-2.5 text-sm text-gray-900 outline-none"
+              className="w-full rounded-full border border-[var(--border)] bg-[var(--input-bg)] px-4 py-2.5 text-sm text-[var(--text)] outline-none"
             />
           </div>
         </div>
 
-        <p className="mt-2 text-center text-xs text-gray-500">
+        <p className="mt-2 text-center text-xs text-[var(--text-muted)]">
           {strongPasswordPolicy
             ? 'Passwords need 12+ characters with upper, lower, a number, and a symbol.'
             : 'Passwords need at least 8 characters.'}
@@ -400,13 +400,13 @@ function AddAccountModal({
         {form.password &&
           form.confirmPassword &&
           form.password !== form.confirmPassword && (
-            <p className="mt-2 text-center text-xs text-red-400">
+            <p className="mt-2 text-center text-xs text-red-500 dark:text-red-400">
               Passwords do not match.
             </p>
           )}
 
         {error && (
-          <p className="mt-3 text-center text-sm text-red-400">{error}</p>
+          <p className="mt-3 text-center text-sm text-red-500 dark:text-red-400">{error}</p>
         )}
 
         <button
@@ -479,60 +479,60 @@ function EditAccountModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="relative w-full max-w-2xl rounded-3xl bg-[#0D1117] p-8 shadow-xl">
+      <div className="relative w-full max-w-2xl rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-xl">
 
         <button
           onClick={onCancel}
-          className="absolute right-5 top-5 text-gray-500 hover:text-gray-300"
+          className="absolute right-5 top-5 text-[var(--text-muted)] hover:text-[var(--text)]"
         >
           <X className="h-5 w-5" />
         </button>
 
-        <h2 className="text-xl font-semibold text-white">Edit Account</h2>
-        <p className="mt-1 text-sm text-gray-400">
+        <h2 className="text-xl font-semibold text-[var(--text)]">Edit Account</h2>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
           Update personal information of users and reset password securely.
         </p>
 
         <div className="mt-6 grid grid-cols-2 gap-4">
           <div>
-            <label className="mb-1.5 block text-sm text-gray-300">First Name</label>
+            <label className="mb-1.5 block text-sm text-[var(--text)]">First Name</label>
             <input
               value={form.firstName}
               onChange={(e) => setForm({ ...form, firstName: e.target.value })}
-              className="w-full rounded-full border border-white/20 bg-transparent px-4 py-2.5 text-sm text-white outline-none focus:border-white/40"
+              className="w-full rounded-full border border-[var(--border)] bg-transparent px-4 py-2.5 text-sm text-[var(--text)] outline-none focus:border-[var(--text-muted)]"
             />
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm text-gray-300">Last Name</label>
+            <label className="mb-1.5 block text-sm text-[var(--text)]">Last Name</label>
             <input
               value={form.lastName}
               onChange={(e) => setForm({ ...form, lastName: e.target.value })}
-              className="w-full rounded-full border border-white/20 bg-transparent px-4 py-2.5 text-sm text-white outline-none focus:border-white/40"
+              className="w-full rounded-full border border-[var(--border)] bg-transparent px-4 py-2.5 text-sm text-[var(--text)] outline-none focus:border-[var(--text-muted)]"
             />
           </div>
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-4">
           <div>
-            <label className="mb-1.5 block text-sm text-gray-300">Email</label>
+            <label className="mb-1.5 block text-sm text-[var(--text)]">Email</label>
             <input
               type="email"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
-              className="w-full rounded-full border border-white/20 bg-transparent px-4 py-2.5 text-sm text-white outline-none focus:border-white/40"
+              className="w-full rounded-full border border-[var(--border)] bg-transparent px-4 py-2.5 text-sm text-[var(--text)] outline-none focus:border-[var(--text-muted)]"
             />
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm text-gray-300">Role</label>
+            <label className="mb-1.5 block text-sm text-[var(--text)]">Role</label>
             <select
               value={form.roleId}
               onChange={(e) => setForm({ ...form, roleId: Number(e.target.value) })}
               className={SELECT_CLASS}
             >
               {roleOptions.map((role) => (
-                <option key={role.id} value={role.id} className="bg-[#0D1117]">{role.name}</option>
+                <option key={role.id} value={role.id} className="bg-[var(--card)]">{role.name}</option>
               ))}
             </select>
           </div>
@@ -540,14 +540,14 @@ function EditAccountModal({
 
         <div className="mt-4 grid grid-cols-2 gap-4">
           <div>
-            <label className="mb-1.5 block text-sm text-gray-300">Status</label>
+            <label className="mb-1.5 block text-sm text-[var(--text)]">Status</label>
             <select
               value={form.status}
               onChange={(e) => setForm({ ...form, status: e.target.value as UserStatus })}
               className={SELECT_CLASS}
             >
               {STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status} className="bg-[#0D1117]">
+                <option key={status} value={status} className="bg-[var(--card)]">
                   {status.charAt(0).toUpperCase() + status.slice(1)}
                 </option>
               ))}
@@ -556,41 +556,41 @@ function EditAccountModal({
 
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-4 rounded-xl border border-white/10 p-4">
-          <div className="col-span-2 text-xs text-gray-500">
+        <div className="mt-4 grid grid-cols-2 gap-4 rounded-xl border border-[var(--border)] p-4">
+          <div className="col-span-2 text-xs text-[var(--text-muted)]">
             {strongPasswordPolicy
               ? 'Saving requires setting a new password (12+ characters, upper, lower, number, symbol).'
               : 'Saving requires setting a new password (at least 8 characters).'}
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-400">
+            <label className="mb-1.5 block text-xs font-medium tracking-wide text-[var(--text-muted)]">
               NEW PASSWORD
             </label>
             <input
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full rounded-full bg-white px-4 py-2.5 text-sm text-gray-900 outline-none"
+              className="w-full rounded-full border border-[var(--border)] bg-[var(--input-bg)] px-4 py-2.5 text-sm text-[var(--text)] outline-none"
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium tracking-wide text-gray-400">
+            <label className="mb-1.5 block text-xs font-medium tracking-wide text-[var(--text-muted)]">
               CONFIRM PASSWORD
             </label>
             <input
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full rounded-full bg-white px-4 py-2.5 text-sm text-gray-900 outline-none"
+              className="w-full rounded-full border border-[var(--border)] bg-[var(--input-bg)] px-4 py-2.5 text-sm text-[var(--text)] outline-none"
             />
           </div>
           {newPassword && confirmPassword && newPassword !== confirmPassword && (
-            <p className="col-span-2 text-xs text-red-400">Passwords do not match.</p>
+            <p className="col-span-2 text-xs text-red-500 dark:text-red-400">Passwords do not match.</p>
           )}
         </div>
 
         {error && (
-          <p className="mt-4 text-center text-sm text-red-400">{error}</p>
+          <p className="mt-4 text-center text-sm text-red-500 dark:text-red-400">{error}</p>
         )}
 
         <div className="mt-6 flex justify-center gap-3">
@@ -610,7 +610,7 @@ function EditAccountModal({
           </button>
         </div>
 
-        <p className="mt-4 text-center text-xs text-gray-500">
+        <p className="mt-4 text-center text-xs text-[var(--text-muted)]">
           The user will be signed out after changes are applied.
         </p>
 

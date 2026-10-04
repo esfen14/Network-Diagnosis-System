@@ -155,3 +155,47 @@ export async function addCustomPlugin(input: AddCustomPluginInput): Promise<Cust
   }
   return (body.data ?? body) as CustomPluginUploadResult
 }
+
+export type PluginUpdateResult = {
+  success: boolean
+  plugin_id?: number
+  status: string
+  previous_version?: string | null
+  current_version?: string | null
+  rollback_available: boolean
+  failed_step?: string
+  nagios_check?: { passed: boolean; output: string }
+}
+
+export async function updatePlugin(
+  id: number,
+  source: { file: File } | { url: string }
+): Promise<PluginUpdateResult> {
+  const formData = new FormData()
+  if ('file' in source) formData.append('file', source.file)
+  else formData.append('url', source.url)
+
+  const res = await fetch(`/api/plugin/${id}/update`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  })
+
+  const text = await res.text()
+  let body: { message?: string; data?: PluginUpdateResult } = {}
+  try {
+    body = text ? JSON.parse(text) : {}
+  } catch {
+    body = {}
+  }
+  if (!res.ok) {
+    throw new Error(body.message ?? `Request failed (${res.status})`)
+  }
+  return (body.data ?? body) as PluginUpdateResult
+}
+
+export function rollbackPluginUpdate(id: number) {
+  return apiPost<{ success: boolean; plugin_id: number; status: string; restored_version: string | null }>(
+    `/api/plugin/${id}/update/rollback`
+  )
+}

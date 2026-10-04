@@ -13,6 +13,7 @@ const pageTitles: Record<string, { section: string; page: string }> = {
   '/device-inventory': { section: 'Host Inventory', page: 'Overview' },
   '/topology': { section: 'System Status', page: 'All Hosts' },
   '/plugins': { section: 'Plugins', page: 'System Plugins' },
+  '/history': { section: 'History', page: 'Alerts & Notifications' },
   '/reports': { section: 'Reports', page: 'System Reports' },
   '/system-logs': { section: 'System Logs', page: 'All' },
   '/accounts': { section: 'Management', page: 'Manage Accounts' },
@@ -515,16 +516,16 @@ export function Header() {
 
       {showLogoutModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-3xl bg-white p-8 text-center shadow-xl">
+          <div className="w-full max-w-md rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 text-center shadow-xl">
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#F4A90B]">
               <HelpCircle className="h-7 w-7 text-white" />
             </div>
 
-            <h2 className="text-lg font-semibold text-gray-900">
+            <h2 className="text-lg font-semibold text-[var(--text)]">
               Sign out of PinPoint?
             </h2>
 
-            <p className="mt-2 text-sm text-gray-500">
+            <p className="mt-2 text-sm text-[var(--text-muted)]">
               Are you sure you want to sign out? You will need to log in again
               to access the system.
             </p>
@@ -532,7 +533,7 @@ export function Header() {
             <div className="mt-6 flex justify-center gap-3">
               <button
                 onClick={() => setShowLogoutModal(false)}
-                className="rounded-2xl border border-gray-300 px-5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="rounded-2xl border border-[var(--border)] px-5 py-2 text-sm font-medium text-[var(--text)] hover:bg-[var(--hover)]"
               >
                 Cancel
               </button>

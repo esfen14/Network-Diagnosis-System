@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Activity, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 
 import { PageHeader } from '../components/shared/PageHeader'
 import { SummaryStatCard } from '../components/shared/SummaryStatCard'
 import { HostAvailabilityReportTable } from '../components/reports/HostAvailabilityReportTable'
 import { NetworkServicesReportTable } from '../components/reports/NetworkServicesReportTable'
+import { ExtraReports, type ExtraReportCard, type ExtraReportView } from '../components/reports/ExtraReports'
 import { apiGet, errorMessage } from '../lib/api'
 import {
   fromHostAvailabilityResponse,
@@ -14,7 +15,16 @@ import {
   type ReportPeriod,
 } from '../types/report'
 
-type ReportView = 'availability' | 'network-services'
+type ReportView = 'availability' | 'network-services' | ExtraReportView
+
+const VIEW_TABS: { value: ReportView; label: string; description: string }[] = [
+  { value: 'availability', label: 'Host Availability', description: 'Host uptime and availability computed from live Nagios polling snapshots.' },
+  { value: 'network-services', label: 'Network Services', description: 'Service health across every monitored host, aggregated by service name.' },
+  { value: 'hosts-by-os', label: 'Hosts by OS', description: 'Host availability grouped by operating system.' },
+  { value: 'device-services', label: 'Device Services', description: 'Service health for each monitored device.' },
+  { value: 'alerts', label: 'Alerts', description: 'Alert state changes recorded by Nagios during the period.' },
+  { value: 'notifications', label: 'Notifications', description: 'Notifications Nagios sent during the period.' },
+]
 
 const PERIOD_OPTIONS: { value: ReportPeriod; label: string }[] = [
   { value: 'last_24h', label: 'Last 24 hours' },
@@ -34,6 +44,8 @@ export function ReportsPage() {
   const [availability, setAvailability] = useState<HostAvailabilityReport | null>(null)
   const [networkServices, setNetworkServices] = useState<NetworkServicesReport | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [runKey, setRunKey] = useState(0)
+  const [extraCards, setExtraCards] = useState<ExtraReportCard[]>([])
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   function buildPeriodQuery() {
@@ -48,6 +60,12 @@ export function ReportsPage() {
   async function loadReport(showStatus = false) {
     if (period === 'custom' && (!customStart || !customEnd)) {
       setStatusMessage({ type: 'error', text: 'Pick a start and end date for a custom range.' })
+      return
+    }
+
+    if (view !== 'availability' && view !== 'network-services') {
+      setStatusMessage(null)
+      setRunKey((k) => k + 1)
       return
     }
 
@@ -74,7 +92,11 @@ export function ReportsPage() {
     }
   }
 
+  const previousView = useRef(view)
   useEffect(() => {
+    const viewChanged = previousView.current !== view
+    previousView.current = view
+    if (viewChanged && view !== 'availability' && view !== 'network-services') return
     loadReport()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, period])
@@ -85,27 +107,22 @@ export function ReportsPage() {
 
         <PageHeader
           title="Reports"
-          highlight={view === 'availability' ? 'Host Availability' : 'Network Services'}
-          description={
-            view === 'availability'
-              ? 'Host uptime and availability computed from live Nagios polling snapshots.'
-              : 'Service health across every monitored host, aggregated by service name.'
-          }
+          highlight={VIEW_TABS.find((t) => t.value === view)?.label}
+          description={VIEW_TABS.find((t) => t.value === view)?.description ?? ''}
         />
 
         {/* Tabs */}
-        <div className="flex gap-6 border-b border-gray-200 dark:border-white/10">
-          <button type="button" onClick={() => setView('availability')}
-            className={`pb-3 text-sm transition ${view === 'availability' ? 'border-b-2 border-gray-900 font-medium text-gray-900 dark:border-white dark:text-white' : 'text-gray-500 hover:text-gray-900 dark:text-white/60 dark:hover:text-white'}`}>
-            Host Availability
-          </button>
-          <button type="button" onClick={() => setView('network-services')}
-            className={`pb-3 text-sm transition ${view === 'network-services' ? 'border-b-2 border-gray-900 font-medium text-gray-900 dark:border-white dark:text-white' : 'text-gray-500 hover:text-gray-900 dark:text-white/60 dark:hover:text-white'}`}>
-            Network Services
-          </button>
+        <div className="flex flex-wrap gap-x-6 gap-y-2 border-b border-gray-200 dark:border-white/10">
+          {VIEW_TABS.map((tab) => (
+            <button key={tab.value} type="button" onClick={() => setView(tab.value)}
+              className={`pb-3 text-sm transition ${view === tab.value ? 'border-b-2 border-gray-900 font-medium text-gray-900 dark:border-white dark:text-white' : 'text-gray-500 hover:text-gray-900 dark:text-white/60 dark:hover:text-white'}`}>
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         {/* Summary Cards */}
+        {(view === 'availability' || view === 'network-services') && (
         <div className="grid grid-cols-1 gap-5 md:grid-cols-4">
           {view === 'availability' ? (
             <>
@@ -171,6 +188,15 @@ export function ReportsPage() {
             </>
           )}
         </div>
+        )}
+
+        {view !== 'availability' && view !== 'network-services' && extraCards.length > 0 && (
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-4">
+            {extraCards.map((card) => (
+              <SummaryStatCard key={card.title} {...card} />
+            ))}
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -232,8 +258,10 @@ export function ReportsPage() {
 
         {view === 'availability' ? (
           <HostAvailabilityReportTable hosts={availability?.hosts ?? []} isLoading={isLoading} />
-        ) : (
+        ) : view === 'network-services' ? (
           <NetworkServicesReportTable services={networkServices?.services ?? []} isLoading={isLoading} />
+        ) : (
+          <ExtraReports view={view} query={buildPeriodQuery()} runKey={runKey} onStatus={setStatusMessage} onCards={setExtraCards} />
         )}
 
       </div>

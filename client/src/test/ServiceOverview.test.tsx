@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ServiceOverview } from '../components/dashboard/ServiceOverview'
 import type { DashboardStatus, DashboardSummary } from '../types/dashboard'
@@ -66,6 +66,15 @@ describe('ServiceOverview', () => {
   })
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('expands a short description when a row is clicked', () => {
+    renderPanel()
+    expect(screen.queryByText(/most recently|How recently Pinpoint/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Data Updated/ }))
+    expect(screen.getByText(/How recently Pinpoint last read status/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /SSH/ }))
+    expect(screen.getByText(/All SSH checks across your hosts \(2 in total\)/)).toBeInTheDocument()
   })
 
   it('shows the Nagios version and how fresh the data is', () => {

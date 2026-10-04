@@ -203,6 +203,10 @@ class TestCpu:
         resp = logged_in_client.get("/api/system/network-health/cpu?hostname=nope")
         assert resp.status_code == 404
 
+    def test_five_minute_window(self, logged_in_client, db_session):
+        resp = logged_in_client.get(f"/api/system/network-health/cpu?hostname=nope&hours={5 / 60}")
+        assert resp.status_code == 404
+
     @pytest.mark.parametrize("query", ["hours=12", "buckets=0", "buckets=500"])
     def test_invalid_params(self, logged_in_client, db_session, query):
         assert logged_in_client.get(f"/api/system/network-health/cpu?{query}").status_code == 400
