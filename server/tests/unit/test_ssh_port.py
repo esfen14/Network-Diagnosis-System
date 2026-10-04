@@ -18,7 +18,14 @@ from app.api.system import ncpa_deployment as ncpa_routes
 from app.ncpa_deployment import ncpa_deployment as ncpa
 from app.network_discovery import identity_probes
 from app.network_discovery.port_lifecycle import add_user_port, device_ssh_port
-from app.system_models import IdentifierKind, Open_TCP_Services, PortState, SSHCredentials
+from app.system_models import (
+    DeploymentOutcome,
+    IdentifierKind,
+    NCPADeploymentResult,
+    Open_TCP_Services,
+    PortState,
+    SSHCredentials,
+)
 from tests.support.identity_helpers import MAC_1, NET, SSH_1, make_status, patched_config, run_scan, scan
 
 
@@ -113,13 +120,45 @@ class TestRoutesUseTheDevicePort:
         assert ssh_credentials(device).SSH_Port == 22
 
         with patch.object(ncpa_routes, "get_host_key_fingerprint", return_value="fp:2222") as probe:
-            resp = logged_in_client.post(f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/confirm-trust")
+            resp = logged_in_client.post(
+                f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/confirm-trust",
+                json={"fingerprint": "fp:2222"},
+            )
 
         assert resp.status_code == 200
         probe.assert_called_once_with("10.0.0.5", 2222)
         creds = ssh_credentials(device)
         db.session.refresh(creds)
         assert (creds.Key_Fingerprint, creds.SSH_Port) == ("fp:2222", 2222)
+
+    def test_a_key_that_changed_on_the_device_port_is_not_trusted(self, logged_in_client, db_session, admin_user):
+        device = make_device(db_session, admin_user, {2222: "ssh"})
+
+        with patch.object(ncpa_routes, "get_host_key_fingerprint", return_value="fp:NEW") as probe:
+            resp = logged_in_client.post(
+                f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/confirm-trust",
+                json={"fingerprint": "fp:2222"},
+            )
+
+        assert resp.status_code == 409
+        assert resp.get_json()["data"]["fingerprint"] == "fp:NEW"
+        probe.assert_called_once_with("10.0.0.5", 2222)
+        creds = ssh_credentials(device)
+        db.session.refresh(creds)
+        # Nothing is trusted, and the port is only pinned together with a trusted key.
+        assert (creds.Key_Fingerprint, creds.SSH_Port) == (None, 22)
+
+    def test_unreachable_device_port_is_502_and_saves_nothing(self, logged_in_client, db_session, admin_user):
+        device = make_device(db_session, admin_user, {2222: "ssh"})
+
+        with patch.object(ncpa_routes, "get_host_key_fingerprint", return_value=None):
+            resp = logged_in_client.post(
+                f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/confirm-trust",
+                json={"fingerprint": "fp:2222"},
+            )
+
+        assert resp.status_code == 502
+        assert ssh_credentials(device).Key_Fingerprint is None
 
     def test_deploy_checks_the_host_key_on_the_pinned_port(self, logged_in_client, db_session, admin_user):
         device = make_device(db_session, admin_user, {2222: "ssh"})
@@ -135,8 +174,33 @@ class TestRoutesUseTheDevicePort:
             })
 
         assert resp.status_code == 202
-        assert resp.get_json()["data"]["started"] == 1
+        data = resp.get_json()["data"]
+        assert data["started"] == 1
         probe.assert_called_once_with("10.0.0.5", 2222)
+        # The run records the accepted device as Pending.
+        outcomes = db.session.scalars(
+            sa.select(NCPADeploymentResult.Outcome).where(
+                NCPADeploymentResult.NCPADeploymentStatusID == data["run_id"])
+        ).all()
+        assert outcomes == [DeploymentOutcome.PENDING]
+
+    def test_deploy_rejects_a_changed_key_on_the_pinned_port(self, logged_in_client, db_session, admin_user):
+        device = make_device(db_session, admin_user, {2222: "ssh"})
+        creds = ssh_credentials(device)
+        creds.Key_Fingerprint, creds.SSH_Port = "fp:2222", 2222
+        db.session.commit()
+
+        with patch.object(ncpa_routes, "deploy_ncpa_thread", None), \
+             patch.object(ncpa_routes.threading, "Thread") as thread_cls, \
+             patch.object(ncpa_routes, "get_host_key_fingerprint", return_value="fp:NEW"):
+            resp = logged_in_client.post("/api/system/deployment/ncpa/start", json={
+                "devices": [{"device_id": device.NetDiscoveryID, "username": "u", "password": "p"}],
+            })
+
+        assert resp.status_code == 400
+        assert resp.get_json()["data"]["rejected"] == [
+            {"device_id": device.NetDiscoveryID, "reason": "Host key mismatch."}]
+        thread_cls.assert_not_called()
 
 
 # ==========================================================

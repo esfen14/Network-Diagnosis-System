@@ -184,13 +184,29 @@ nodes (`GET /api/disk/logical`, filesystems whose `percent` node answers) into
 `NCPADevicePartition.Name` (an NCPA node name such as `|` or `|boot|efi`, not an
 lsblk partition).
 
+Each run records one `NCPADeploymentResult` per device. Its `Outcome`
+(`DeploymentOutcome`) moves Pending → Running → Success, Failed, Down
+(`UNREACHABLE`: no answer on SSH), or Incompatible; pre-flight rejections are
+Rejected and devices not started after a stop are Skipped. A rejected login is
+Failed ("SSH authentication failed."), never Down. Hostname and IP are copied
+into the row so history survives renames and moves. The run is Success when no
+device failed, Failed when none succeeded, otherwise Partial Failure; a stop or
+a Nagios config that could not be applied by `add_ncpa_port` keeps that status.
+
+Trust confirmation saves a host key only when the live key equals the
+fingerprint the user approved. A device can be deployed to when its agent is
+Pending NCPA or Deployment Failed (retry); Deployed and Incompatible devices
+are rejected.
+
 SSH is not assumed to be on port 22. `port_lifecycle.device_ssh_port()` picks
 the device's SSH port from its recorded TCP ports (a port whose frozen plugin or
 service name is `ssh`; hand-added first, then monitored, then `SSH_PORT`, then
 lowest; MISSING/ARCHIVED ports are skipped) and falls back to `SSH_PORT`.
-Trust confirmation stores that port in `SSHCredentials.SSH_Port` with the
-fingerprint, because a fingerprint only vouches for the port it was read from;
-every later deployment connection uses the pinned port, and paramiko host keys
+Trust confirmation reads the key from that port and stores the port in
+`SSHCredentials.SSH_Port` with the approved fingerprint, because a fingerprint
+only vouches for the port it was read from; every later connection (the
+pre-flight key check at start, the credential check, bootstrap and install)
+uses the pinned port, and paramiko host keys
 for non-22 ports are registered as `[address]:port`. If SSH moves, the device
 must be trust-confirmed again. The remote helper configures the agent's
 `[listener]` port to `Config.NCPA_PORT`, and Pinpoint reaches the agent on that

@@ -601,13 +601,13 @@ HOST_KEY_CHANGED_MESSAGE = "Host key changed. Verify the device's host key again
 AUTH_FAILED_MESSAGE = "SSH authentication failed."
 
 
-def check_host_key(ip_address, expected_fingerprint):
+def check_host_key(ip_address, ssh_port, expected_fingerprint):
     """
-    Compare the device's live SSH host key with the trusted one. Returns
-    "ok", "unreachable" (no answer on SSH) or "mismatch". Opens and closes
-    one SSH transport; sends no credentials.
+    Compare the device's live SSH host key on ssh_port with the trusted one.
+    Returns "ok", "unreachable" (no answer on SSH) or "mismatch". Opens and
+    closes one SSH transport; sends no credentials.
     """
-    actual_fingerprint = get_host_key_fingerprint(ip_address)
+    actual_fingerprint = get_host_key_fingerprint(ip_address, ssh_port)
     if actual_fingerprint is None:
         return "unreachable"
     if not hmac.compare_digest(actual_fingerprint, expected_fingerprint):
@@ -639,13 +639,22 @@ def give_program_permissions( device_id, ncpa_deployment_status_id, ip_address, 
     - does not store the user's password
     - does not log credentials
     - operations are idempotent
-    """ 
-    client = None 
-    try: 
-        fingerprint, ssh_port = query_trusted_host(device_id) 
-        if not fingerprint: 
-            update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="Device has not been trust-confirmed." ) 
-            return False 
+
+    Returns (DeploymentOutcome, error): SUCCESS with error None when the
+    deployment account and key are in place; otherwise FAILED, UNREACHABLE
+    or INCOMPATIBLE with a user-facing reason.
+    """
+    client = None
+    try:
+        fingerprint, ssh_port = query_trusted_host(device_id)
+        if not fingerprint:
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, "Device has not been trust-confirmed.")
+
+        host_key = check_host_key(ip_address, ssh_port, fingerprint)
+        if host_key == "unreachable":
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.UNREACHABLE, UNREACHABLE_MESSAGE)
+        if host_key == "mismatch":
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, HOST_KEY_CHANGED_MESSAGE)
 
         client = connect_with_fingerprint_check( ip_address, ssh_port, username, fingerprint, password=password, )
 
@@ -708,7 +717,7 @@ def give_program_permissions( device_id, ncpa_deployment_status_id, ip_address, 
             except Exception: pass
 
 
-def check_device_credentials(ip_address, fingerprint, username, password):
+def check_device_credentials(ip_address, ssh_port, fingerprint, username, password):
     """
     Test one device's login without changing anything on it: verify the
     trusted host key, log in with the password, and check the account can
@@ -717,13 +726,13 @@ def check_device_credentials(ip_address, fingerprint, username, password):
     """
     client = None
     try:
-        host_key = check_host_key(ip_address, fingerprint)
+        host_key = check_host_key(ip_address, ssh_port, fingerprint)
         if host_key == "unreachable":
             return "unreachable"
         if host_key == "mismatch":
             return "host_key_changed"
 
-        client = connect_with_fingerprint_check(ip_address, username, fingerprint, password=password)
+        client = connect_with_fingerprint_check(ip_address, ssh_port, username, fingerprint, password=password)
         if client is None:
             return "unreachable"
 

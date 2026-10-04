@@ -244,11 +244,14 @@ def parse_date_arg(name):
 def check_one_device(job):
     """
     Thread-pool worker for check-credentials: test one device's login in
-    its own app context. ``job`` holds the device ID, IP, trusted
-    fingerprint and credentials; returns (device_id, result code).
+    its own app context. ``job`` holds the device ID, IP, the trusted
+    fingerprint with the SSH port it was read from, and credentials;
+    returns (device_id, result code).
     """
     with app.app_context():
-        result = check_device_credentials(job["ip_address"], job["fingerprint"], job["username"], job["password"])
+        result = check_device_credentials(
+            job["ip_address"], job["ssh_port"], job["fingerprint"], job["username"], job["password"]
+        )
     job["password"] = None
     return job["device_id"], result
 
@@ -387,11 +390,12 @@ def confirm_device_trust(device_id):
     """
     Save the SSH host-key fingerprint the user approved.
 
-    Re-fetches the live fingerprint server-side (does not trust the
-    client) and stores it in the SSH_CREDENTIALS table together with the
-    SSH port it was read from; every later deployment connection uses that
-    port. This is the "trust confirmation" step — once saved, the device
-    can be deployed to.
+    Re-fetches the live fingerprint server-side, from the port discovery
+    found SSH on, and saves it only if it still equals the one the user was
+    shown, so a key that changed between viewing and confirming is never
+    trusted unseen. The key is stored together with the SSH port it was read
+    from; every later deployment connection uses that port. This is the
+    "trust confirmation" step — once saved, the device can be deployed to.
 
     Args:
         device_id: Primary key of the NetworkDiscovery record.
@@ -429,10 +433,6 @@ def confirm_device_trust(device_id):
         if not device.Include_Device_In_Scanning:
             return error("Device not included in scanning.", 404)
 
-        # Recreate the fingerprint server-side rather than trusting the client
-        ssh_port = device_ssh_port(device_id)
-        fingerprint = get_host_key_fingerprint(device.IP_Address, ssh_port)
-
         creds = db.session.scalar(
             sa.select(SSHCredentials).where(
                 SSHCredentials.NetworkDiscoveryID == device_id
@@ -441,6 +441,19 @@ def confirm_device_trust(device_id):
 
         if creds is None:
             return error("That device has no credentials entry.", 404)
+
+        # Recreate the fingerprint server-side rather than trusting the client
+        ssh_port = device_ssh_port(device_id)
+        try:
+            fingerprint = get_host_key_fingerprint(device.IP_Address, ssh_port)
+        except Exception:
+            fingerprint = None
+
+        if fingerprint is None:
+            return error("Could not reach device.", 502)
+
+        if not hmac.compare_digest(fingerprint, approved.strip()):
+            return error("Host key changed; verify again.", 409, {"fingerprint": fingerprint})
 
         # A fingerprint only vouches for the port it was read from.
         creds.Key_Fingerprint = fingerprint
@@ -527,6 +540,7 @@ def check_ncpa_credentials():
                 jobs.append({
                     "device_id": device_id,
                     "ip_address": device.IP_Address,
+                    "ssh_port": creds.SSH_Port,
                     "fingerprint": creds.Key_Fingerprint,
                     "username": entry["username"],
                     "password": entry["password"],
@@ -620,7 +634,8 @@ def deploy_ncpa():
 
             reason = deploy_rejection(device, creds, deployment)
             if reason is None:
-                current_fingerprint = get_host_key_fingerprint(device.IP_Address)
+                # The trusted key only vouches for the port it was read from.
+                current_fingerprint = get_host_key_fingerprint(device.IP_Address, creds.SSH_Port)
                 if current_fingerprint is None:
                     reason = "Device unreachable."
                 elif not hmac.compare_digest(current_fingerprint, creds.Key_Fingerprint):
@@ -647,20 +662,11 @@ def deploy_ncpa():
         if run is None:
             return error("Could not start the deployment.", 500)
 
-        current_fingerprint = get_host_key_fingerprint(device.IP_Address, creds.SSH_Port)
-        if current_fingerprint != creds.Key_Fingerprint:
-            rejected_entries.append({
-                "device_id": device_id,
-                "reason": "Host key mismatch."
-            })
-            continue
-
-        validated_entries.append({
-            "device_id": device_id,
-            "ip_address": device.IP_Address,
-            "username": entry["username"],
-            "password": entry["password"],
-        })
+        for device, reason in rejected_devices:
+            add_deployment_result(run.NCPADeployStatusID, device, DeploymentOutcome.REJECTED, reason)
+        for entry in validated_entries:
+            add_deployment_result(run.NCPADeployStatusID, entry.pop("device"), DeploymentOutcome.PENDING)
+        db.session.commit()
 
         deploy_ncpa_thread_stop_event.clear()
         deploy_ncpa_thread = threading.Thread(
