@@ -2,13 +2,42 @@ import nmap3
 import xml.etree.ElementTree as ET
 from flask import current_app
 from app.logging import update_network_discovery_status, calculate_progress
-from app.system_models import DiscoveryStatus
+from app.system_models import DiscoveryStatus, ServiceIdentification
 from app.network_discovery.discovery_settings import get_discovery_setting
 
 # NETWORKS, TCP_PORTS, UDP_PORTS default to server/config.py's Config
 # class but can be edited from the Settings page (DiscoverySettings row).
 # Each function that needs one reads the effective value through
 # get_discovery_setting() into a same-named local at the top.
+
+# nmap names that mean "something answered but nmap does not know what".
+UNIDENTIFIED_SERVICE_NAMES = frozenset({"unknown", "tcpwrapped"})
+
+
+def service_from_nmap(service):
+    """
+    Turn one nmap <service> element into {"service_name", "identified_by"}.
+
+    nmap reports method="probed" when a protocol probe matched (an SSH banner,
+    an HTTP reply...) and method="table" when it only looked the port number
+    up in nmap-services, so only a probed, named service counts as a
+    FINGERPRINT; everything else is a PORT_HINT that discovery may replace
+    with a configured fallback name. HTTP inside a TLS tunnel is reported as
+    "https" so it gets a TLS check.
+    """
+    if service is None:
+        return {"service_name": "unknown", "identified_by": ServiceIdentification.PORT_HINT.name}
+
+    name = (service.attrib.get("name") or "unknown").strip().lower()
+    if service.attrib.get("tunnel") == "ssl" and name == "http":
+        name = "https"
+
+    identified_by = ServiceIdentification.PORT_HINT
+    if service.attrib.get("method") == "probed" and name not in UNIDENTIFIED_SERVICE_NAMES:
+        identified_by = ServiceIdentification.FINGERPRINT
+
+    return {"service_name": name, "identified_by": identified_by.name}
+
 
 def _print_xml(xml):
     # print the XML file from the NMAP scan
@@ -115,19 +144,8 @@ def _discover_host_tcp_port(ip):
 
         state = port.find("state")
         if state is not None and state.attrib.get("state") == "open":
-            service = port.find("service")
-            service_name = "Unknown"
+            service_dict[portid] = service_from_nmap(port.find("service"))
 
-            if service is not None:
-                service_name = service.attrib.get("name")
-
-            service_dict[portid] = {
-                "service_name": service_name
-            }
-
-    
-            # Remember to get the OS too, then output that too
-    
     return service_dict, os_name
 
 def _discover_host_udp_port(ip):
@@ -140,7 +158,9 @@ def _discover_host_udp_port(ip):
         port_string = ",".join(str(port) for port in UDP_PORTS)
         args += f" -p {port_string}"
     
-    xmlroot = nmap.scan_command(ip,"-sU",args)
+    # -sV sends each port's protocol probe, so a matched UDP service is a
+    # fingerprint rather than a guess from its port number.
+    xmlroot = nmap.scan_command(ip,"-sU -sV",args)
 
     # for debugging nmap scans
     # _print_xml(xml_result)
@@ -150,7 +170,8 @@ def _discover_host_udp_port(ip):
 
 def _parse_udp_ports(xmlroot):
     """
-    Split nmap's UDP result into (confirmed, unconfirmed) {port: {"service_name"}}.
+    Split nmap's UDP result into (confirmed, unconfirmed)
+    {port: {"service_name", "identified_by"}}.
 
     "open" ports answered a probe. "open|filtered" ports ignored it, so nmap
     cannot tell them from a firewalled port; they are not stored as services
@@ -174,13 +195,8 @@ def _parse_udp_ports(xmlroot):
         if state_name not in ("open", "open|filtered"):
             continue
 
-        service = port.find("service")
-        service_name = "Unknown"
-        if service is not None:
-            service_name = service.attrib.get("name")
-
         target = confirmed if state_name == "open" else unconfirmed
-        target[portid] = {"service_name": service_name}
+        target[portid] = service_from_nmap(port.find("service"))
 
     return confirmed, unconfirmed
 

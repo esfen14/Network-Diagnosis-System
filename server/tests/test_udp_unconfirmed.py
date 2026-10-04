@@ -6,7 +6,7 @@ from app.network_discovery.create_host_cfg import unconfirmed_udp_skips
 from app.network_discovery.network_discovery import _parse_udp_ports
 
 NMAP_XML = """<nmaprun><host><ports>
-<port protocol="udp" portid="161"><state state="open"/><service name="snmp"/></port>
+<port protocol="udp" portid="161"><state state="open"/><service name="snmp" method="probed" conf="10"/></port>
 <port protocol="udp" portid="69"><state state="open|filtered"/><service name="tftp"/></port>
 <port protocol="udp" portid="123"><state state="closed"/></port>
 </ports></host></nmaprun>"""
@@ -15,8 +15,8 @@ NMAP_XML = """<nmaprun><host><ports>
 def test_open_and_unconfirmed_ports_are_split():
     confirmed, unconfirmed = _parse_udp_ports(ET.fromstring(NMAP_XML))
 
-    assert confirmed == {"161": {"service_name": "snmp"}}
-    assert unconfirmed == {"69": {"service_name": "tftp"}}
+    assert confirmed == {"161": {"service_name": "snmp", "identified_by": "FINGERPRINT"}}
+    assert unconfirmed == {"69": {"service_name": "tftp", "identified_by": "PORT_HINT"}}
 
 
 def test_no_host_yields_nothing():

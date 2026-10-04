@@ -139,9 +139,39 @@ backs up the running configuration, and applies only a valid candidate.
 services to supported plugins and variables. Unmonitorable discovered services
 are recorded as `SkippedService` entries rather than silently discarded.
 
-Network targets, ports, service overrides, NCPA metrics, SNMP defaults, and
+Network targets, ports, service rules, NCPA metrics, SNMP defaults, and
 Nagios filesystem paths live in `server/config.py` and may be environment
-overridden where defined.
+overridden where defined. Networks, ports and service rules can also be saved
+from the Settings page (`DiscoverySettings`), which then takes precedence.
+
+### Service identification
+
+A port number is a hint, not proof of the service. The default TCP scan range
+is `1-10000` (alternate ports such as 8080, 8443 and 9443 included). TCP scans
+use `-sV -O --version-all`; UDP scans use `-sU -sV`. `service_from_nmap()`
+keeps nmap's evidence: `method="probed"` with a real name is a `FINGERPRINT`;
+`method="table"` (a lookup by port number), `unknown` and `tcpwrapped` are a
+`PORT_HINT`; HTTP inside `tunnel="ssl"` is reported as `https`. Discovery then
+decides each port's service name, strongest first:
+
+1. `USER`: a service an operator pinned on that device's port through
+   `PUT /system/hosts/<id>/ports/<proto>/<port>`. Scans never rename it.
+2. `PORT_RULE`: `TCP_FORCED_SERVICES` / `UDP_FORCED_SERVICES` ("always treat
+   port X as Y" on every device). The default forces `NCPA_PORT` to `ncpa`,
+   because deployment configures the agent there and nmap fingerprints it as
+   https.
+3. `FINGERPRINT`: nmap's probed name, e.g. `ssh` on 2222.
+4. `PORT_HINT`: `TCP_SERVICE_OVERRIDES` / `UDP_SERVICE_OVERRIDES` are fallback
+   names applied only to a hint; otherwise nmap's guess stands.
+
+The result is stored in `Identified_By` on `Open_TCP_Services` /
+`Open_UDP_Services` (NULL for ports recorded before it existed). A new port
+is auto-monitored only when its service is in `AUTO_MONITOR_SERVICES` and it
+is not a `PORT_HINT`; a suggested hint that later fingerprints as such a
+service starts being monitored. A monitored, unpinned port that fingerprints
+(or is ruled) as a service its frozen plugin does not match keeps its service
+and raises a `SERVICE_CHANGED` `DeviceReviewItem`; hints never raise one, and
+the NCPA port of a deployed agent is exempt.
 
 ## NCPA deployment
 
@@ -154,19 +184,18 @@ nodes (`GET /api/disk/logical`, filesystems whose `percent` node answers) into
 `NCPADevicePartition.Name` (an NCPA node name such as `|` or `|boot|efi`, not an
 lsblk partition).
 
-Each run records one `NCPADeploymentResult` per device. Its `Outcome`
-(`DeploymentOutcome`) moves Pending → Running → Success, Failed, Down
-(`UNREACHABLE`: no answer on SSH), or Incompatible; pre-flight rejections are
-Rejected and devices not started after a stop are Skipped. A rejected login is
-Failed ("SSH authentication failed."), never Down. Hostname and IP are copied
-into the row so history survives renames and moves. The run is Success when no
-device failed, Failed when none succeeded, otherwise Partial Failure; a stop or
-a Nagios config that could not be applied by `add_ncpa_port` keeps that status.
-
-Trust confirmation saves a host key only when the live key equals the
-fingerprint the user approved. A device can be deployed to when its agent is
-Pending NCPA or Deployment Failed (retry); Deployed and Incompatible devices
-are rejected.
+SSH is not assumed to be on port 22. `port_lifecycle.device_ssh_port()` picks
+the device's SSH port from its recorded TCP ports (a port whose frozen plugin or
+service name is `ssh`; hand-added first, then monitored, then `SSH_PORT`, then
+lowest; MISSING/ARCHIVED ports are skipped) and falls back to `SSH_PORT`.
+Trust confirmation stores that port in `SSHCredentials.SSH_Port` with the
+fingerprint, because a fingerprint only vouches for the port it was read from;
+every later deployment connection uses the pinned port, and paramiko host keys
+for non-22 ports are registered as `[address]:port`. If SSH moves, the device
+must be trust-confirmed again. The remote helper configures the agent's
+`[listener]` port to `Config.NCPA_PORT`, and Pinpoint reaches the agent on that
+port; deployment has no per-device NCPA port. Discovery's identity probes read
+the SSH host key on `SSH_PORT` and on every port nmap identified as `ssh`.
 
 Credentials, tokens, passwords, and secret-bearing command arguments must never
 appear in logs, API responses, or persisted Nagios snapshot check commands.

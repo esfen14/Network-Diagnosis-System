@@ -63,6 +63,7 @@ the normative behavior in the requirement specifications.
 | Network Health plugin section | Backend endpoint exists; current page does not call `/network-health/plugins` | Connect it when implementing the corresponding `Display_Requirements.md` section |
 | Device discovery inventory | Historical docs described `/system/hosts` and port endpoints, but those routes do not exist; current Device Inventory uses latest Nagios host status | Treat the current host-status API as implemented behavior unless a separate discovery inventory contract is approved |
 | Plugin lifecycle and discovery | Discovery generates its own commands without checking Plugin Manager status; disable changes database status without stopping existing Nagios checks. The live harness now enables required plugins through APIs before discovery | Unify product lifecycle enforcement in a separate behavior change; enable setup alone does not close this integration gap |
+| Per-device port service UI | Services are identified by fingerprint with port rules (see `Data_Model_and_Integrations.md`); pinning one device's port and resolving `SERVICE_CHANGED` review items are API-only because no page lists a discovered device's ports | Add a discovered-ports view with pin/state controls and the review list when the device inventory contract is approved |
 | Installer | Developed in another repository | Keep installer work out of this repository unless scope changes |
 
 ## Test approach status

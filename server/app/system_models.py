@@ -312,6 +312,7 @@ class ReviewKind(Enum):
     IP_REUSE = "IP Reused"
     DUPLICATE_IDENTITY = "Duplicate Identity"
     STATIC_MOVED = "Static Device Moved"
+    SERVICE_CHANGED = "Service Changed"
 
 """
 Port lifecycle enums for Open_TCP_Services / Open_UDP_Services.
@@ -328,6 +329,18 @@ class PortSource(Enum):
     SCAN = "Scan"
     NCPA = "NCPA"
     USER = "User"
+
+class ServiceIdentification(Enum):
+    """
+    How a port's Service_Name was decided, strongest first. USER is pinned by
+    an operator and never changed by a scan; PORT_RULE comes from an "always
+    treat port X as Y" setting; FINGERPRINT means nmap identified the service
+    by probing it; PORT_HINT is only a guess from the port number.
+    """
+    USER = "User"
+    PORT_RULE = "Port Rule"
+    FINGERPRINT = "Fingerprint"
+    PORT_HINT = "Port Hint"
 
 """
 ScanStatus Enum so that Scan_Status is consistent
@@ -472,6 +485,8 @@ class Open_TCP_Services(db.Model):
     # Latest nmap guess, kept apart from Service_Name once the port is
     # monitored so a changed guess becomes a suggestion, not a rename.
     Observed_Service_Name: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
+    # How Service_Name was decided; NULL for ports recorded before this existed.
+    Identified_By: so.Mapped[Optional[ServiceIdentification]] = so.mapped_column(sa.Enum(ServiceIdentification))
     First_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Last_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Closed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
@@ -497,6 +512,8 @@ class Open_UDP_Services(db.Model):
     # Latest nmap guess, kept apart from Service_Name once the port is
     # monitored so a changed guess becomes a suggestion, not a rename.
     Observed_Service_Name: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
+    # How Service_Name was decided; NULL for ports recorded before this existed.
+    Identified_By: so.Mapped[Optional[ServiceIdentification]] = so.mapped_column(sa.Enum(ServiceIdentification))
     First_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Last_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Closed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
@@ -752,6 +769,8 @@ class DiscoverySettings(db.Model):
     UDP_Ports: so.Mapped[Optional[list]] = so.mapped_column(sa.JSON())
     TCP_Service_Overrides: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
     UDP_Service_Overrides: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
+    TCP_Forced_Services: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
+    UDP_Forced_Services: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
 
     # Concurrency + audit trail
     Version: so.Mapped[int] = so.mapped_column(sa.Integer(), default=1)

@@ -18,6 +18,8 @@ function toValues(data: DiscoverySettingsValues): DiscoverySettingsValues {
     udpPorts: data.udpPorts,
     tcpServiceOverrides: data.tcpServiceOverrides,
     udpServiceOverrides: data.udpServiceOverrides,
+    tcpForcedServices: data.tcpForcedServices,
+    udpForcedServices: data.udpForcedServices,
   }
 }
 
@@ -111,12 +113,15 @@ function ListEditor({ label, description, placeholder, items, isValid, invalidMe
 
 interface OverridesEditorProps {
   label: string
+  // Distinguishes the controls of editors that share a label ("TCP").
+  ariaPrefix?: string
+  description: string
   overrides: Record<string, string>
   onChange: (overrides: Record<string, string>) => void
 }
 
 // Port -> service name table with an add row.
-function OverridesEditor({ label, overrides, onChange }: OverridesEditorProps) {
+function OverridesEditor({ label, ariaPrefix = label, description, overrides, onChange }: OverridesEditorProps) {
   const [port, setPort] = useState('')
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -150,9 +155,7 @@ function OverridesEditor({ label, overrides, onChange }: OverridesEditorProps) {
   return (
     <div>
       <p className="text-sm font-medium text-[var(--text)]">{label}</p>
-      <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-        Name given to a service found on this port, replacing what nmap reports.
-      </p>
+      <p className="mt-0.5 text-xs text-[var(--text-muted)]">{description}</p>
 
       <div className="mt-3 overflow-hidden rounded-xl border border-[var(--border)]">
         <table className="w-full text-sm">
@@ -176,7 +179,7 @@ function OverridesEditor({ label, overrides, onChange }: OverridesEditorProps) {
                 <td className="px-2 py-2 text-right">
                   <button
                     type="button"
-                    aria-label={`Remove ${label} override for port ${key}`}
+                    aria-label={`Remove ${ariaPrefix} override for port ${key}`}
                     onClick={() => remove(key)}
                     className="text-[var(--text-muted)] hover:text-red-500"
                   >
@@ -191,7 +194,7 @@ function OverridesEditor({ label, overrides, onChange }: OverridesEditorProps) {
 
       <div className="mt-3 flex gap-2">
         <input
-          aria-label={`${label} port`}
+          aria-label={`${ariaPrefix} port`}
           value={port}
           placeholder="Port"
           inputMode="numeric"
@@ -199,7 +202,7 @@ function OverridesEditor({ label, overrides, onChange }: OverridesEditorProps) {
           className={`${inputClass} max-w-[110px]`}
         />
         <input
-          aria-label={`${label} service name`}
+          aria-label={`${ariaPrefix} service name`}
           value={name}
           placeholder="Service name, e.g. ssh"
           onChange={(e) => { setName(e.target.value); setError(null) }}
@@ -213,7 +216,7 @@ function OverridesEditor({ label, overrides, onChange }: OverridesEditorProps) {
         />
         <button
           type="button"
-          aria-label={`Add ${label} override`}
+          aria-label={`Add ${ariaPrefix} override`}
           onClick={add}
           className="flex items-center rounded-xl border border-[var(--border)] px-3 text-[var(--text-muted)] transition hover:bg-[var(--hover)]"
         >
@@ -340,17 +343,41 @@ export function DiscoverySettings() {
       </SettingsCard>
 
       <SettingsCard
-        title="Service Name Overrides"
-        description="Well-known ports whose detected service should be renamed before Nagios checks are generated."
+        title="Always Treat Port As"
+        description="Ports whose service is fixed on every device, whatever nmap detects. Use only for ports that mean the same thing everywhere, such as NCPA's port. To fix one device's port, pin it on that device instead."
       >
         <div className="grid gap-8 lg:grid-cols-2">
           <OverridesEditor
             label="TCP"
+            ariaPrefix="TCP always"
+            description="Service used for this port on every device."
+            overrides={draft.tcpForcedServices}
+            onChange={(overrides) => update({ tcpForcedServices: overrides })}
+          />
+          <OverridesEditor
+            label="UDP"
+            ariaPrefix="UDP always"
+            description="Service used for this port on every device."
+            overrides={draft.udpForcedServices}
+            onChange={(overrides) => update({ udpForcedServices: overrides })}
+          />
+        </div>
+      </SettingsCard>
+
+      <SettingsCard
+        title="Fallback Service Names"
+        description="Names used only when nmap cannot identify the service and guesses from the port number. A service nmap identifies by probing keeps its own name, so SSH on port 2222 or a web server on 8443 is still recognized."
+      >
+        <div className="grid gap-8 lg:grid-cols-2">
+          <OverridesEditor
+            label="TCP"
+            description="Name used for this port when nmap could not identify the service."
             overrides={draft.tcpServiceOverrides}
             onChange={(overrides) => update({ tcpServiceOverrides: overrides })}
           />
           <OverridesEditor
             label="UDP"
+            description="Name used for this port when nmap could not identify the service."
             overrides={draft.udpServiceOverrides}
             onChange={(overrides) => update({ udpServiceOverrides: overrides })}
           />

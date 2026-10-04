@@ -590,7 +590,8 @@ def ensure_ncpa_records(device):
     Give a Linux device the SSH credential and NCPA deployment placeholders
     used by the deployment flow, once. Does nothing for a device that already
     has a deployment record, so a rescan never resets NCPA state. The SSH port
-    is the standard one, never the port of a previously scanned host. Does not
+    starts as the standard one, never the port of a previously scanned host;
+    trust confirmation replaces it with the port SSH was found on. Does not
     commit.
     """
     has_deployment = db.session.scalar(
@@ -603,7 +604,7 @@ def ensure_ncpa_records(device):
 
     device.NCPA_Eligible = True
     db.session.add(SSHCredentials(
-        SSH_Port=int(current_app.config.get("SSH_PORT", 22)),
+        SSH_Port=int(current_app.config["SSH_PORT"]),
         Key_Installed=False, Key_Fingerprint=None, Created_At=None,
         NetworkDiscoveryID=device.NetDiscoveryID,
     ))
