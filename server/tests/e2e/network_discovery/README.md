@@ -317,6 +317,24 @@ Complete this gate before the AI initializes a run or conducts discovery.
      --config config/lab.json preflight
    ```
 
+Preflight runs the tools it reports on: `nmap_sudo` executes
+`/usr/local/bin/nmap-sudo --version` as the current account (a wrapper that exists
+but is not executable by this user fails), and `ssh` logs in to every target with
+the key named by `ssh_key_env`, using strict host-key checking against the
+`known_hosts` file stored next to that key. A rejected key therefore fails
+preflight instead of surfacing later.
+
+Before preflight, check that `config/lab.json` matches this installation: the
+`pinpoint.base_url` of the running backend (a `flask run` session listens on
+port 5000, not necessarily the example value), the real `databases.system` path,
+and an `output_root` under the account that runs the harness.
+
+`vm_scripts/provision_lab.py verify` talks to libvirt (`qemu:///system`). Run it
+as an account in the `libvirt` group, or use passwordless sudo for that one
+command; it cannot answer a sudo password prompt. After restoring baseline
+overlays, re-authorize the dedicated test key on the guests if it is not baked
+into the baseline images, then rerun `verify`.
+
 Every preflight value except the informational network and empty
 `missing_environment` list must indicate success. On failure, stop and report
 the sanitized check output. When all checks pass, tell the tester the lab is
