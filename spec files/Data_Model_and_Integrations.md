@@ -173,7 +173,12 @@ the virtual environment active:
 ```bash
 flask db migrate --multidb -m "short description"
 flask db upgrade --multidb
+flask sync-permissions   # after any upgrade: adds new seed permissions, grants them to Administrator
 ```
+
+`flask sync-permissions` is idempotent and never changes users, other roles or
+existing grants. The serving process logs an error at startup if the installed
+database lacks any permission in the seed list.
 
 If migrations have never been initialized:
 

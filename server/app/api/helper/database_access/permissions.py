@@ -1,5 +1,5 @@
 import sqlalchemy as sa
-from flask import jsonify
+from flask import current_app, jsonify
 from app import db
 from flask_login import current_user
 from app.system_models import Permission, RolePermission, Role
@@ -15,6 +15,10 @@ def _has_permission(permission_name):
 
     # Check if the input is a valid permission
     if permission_id is None:
+        current_app.logger.error(
+            "Permission '%s' is not in the database. The installed permission "
+            "list is out of date; run 'flask sync-permissions'.", permission_name
+        )
         return jsonify({"success": False, "message": "Permission does not exist."}), 400
 
     query = (
