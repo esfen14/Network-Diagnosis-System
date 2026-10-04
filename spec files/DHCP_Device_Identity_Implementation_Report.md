@@ -117,7 +117,7 @@ Every change writes an activity-log entry. Merge, retire and port changes regene
 
 ### 3.6 Settings (`config.py`)
 
-`DEVICE_MISSING_AFTER_SCANS=2`, `DEVICE_RETIRE_AFTER_DAYS=30`, `PORT_MISSING_AFTER_SCANS=3`, `PORT_ARCHIVE_AFTER_DAYS=30`, `AUTO_MONITOR_SERVICES=["ssh","http","https","snmp","ncpa"]`, `EPHEMERAL_PORT_RANGES=[(32768,60999),(49152,65535)]`, `NCPA_RELOCATE_MINUTES=5`. Defaults are the plan's.
+`DEVICE_MISSING_AFTER_SCANS=5`, `DEVICE_RETIRE_AFTER_DAYS=30`, `PORT_MISSING_AFTER_SCANS=5`, `PORT_ARCHIVE_AFTER_DAYS=30`, `AUTO_MONITOR_SERVICES=["ssh","http","https","snmp","ncpa"]`, `EPHEMERAL_PORT_RANGES=[(32768,60999),(49152,65535)]`, `NCPA_RELOCATE_MINUTES=5`. Defaults are the plan's.
 
 ## 4. Decisions where the plan was silent or ambiguous
 

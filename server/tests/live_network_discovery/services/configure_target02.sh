@@ -3,7 +3,7 @@
 set -euo pipefail
 
 if [[ "${1:-}" != "--apply" ]]; then
-  echo "Preview: install SSH, DNS, NTP, SNMP, socat, and a UDP/69 echo listener."
+  echo "Preview: install SSH, DNS, NTP, SNMP, socat, and and a UDP/69 TFTP responder."
   echo "Run as root with --apply only inside the disposable target02 guest."
   exit 0
 fi
@@ -20,7 +20,7 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y openssh-server bind9 bind9-utils chrony snmpd socat
+apt-get install -y openssh-server bind9 bind9-utils chrony snmpd python3
 
 install -m 0644 /dev/stdin /etc/bind/named.conf.options <<'EOF'
 options {
@@ -46,13 +46,26 @@ sysContact test-only
 rocommunity public 192.168.130.1/32
 EOF
 
+# nmap reports open|filtered for UDP ports that ignore its empty probe, so the
+# listener must answer a real protocol probe. Any TFTP request gets a TFTP
+# ERROR packet, which nmap's service probe recognises as an open tftp port.
+install -m 0755 /dev/stdin /usr/local/sbin/pinpoint-test-tftp.py <<'PY'
+#!/usr/bin/python3
+import socket
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind(("0.0.0.0", 69))
+while True:
+    _data, addr = sock.recvfrom(1024)
+    sock.sendto(b"\x00\x05\x00\x01File not found\x00", addr)
+PY
+
 install -m 0644 /dev/stdin /etc/systemd/system/pinpoint-test-udp.service <<'EOF'
 [Unit]
-Description=Pinpoint disposable UDP echo service on port 69
+Description=Pinpoint disposable TFTP responder on UDP port 69
 After=network-online.target
 
 [Service]
-ExecStart=/usr/bin/socat UDP4-RECVFROM:69,reuseaddr,fork EXEC:/bin/cat
+ExecStart=/usr/bin/python3 /usr/local/sbin/pinpoint-test-tftp.py
 Restart=on-failure
 
 [Install]

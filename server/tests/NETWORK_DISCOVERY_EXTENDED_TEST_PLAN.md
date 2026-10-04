@@ -109,6 +109,10 @@ The preferred isolated network is `192.168.130.0/28`:
 | `192.168.130.2` | `target01` |
 | `192.168.130.3` | `target02` |
 
+`10.0.2.0/28` has been used as a substitute for testing only; it is not a
+permanent lab range. The subnet is a per-run setting. `192.168.130.0/28` is
+avoided when it overlaps the management network, and the report records why.
+
 A management/NAT interface may be used to install packages. Network Discovery
 must be configured only for the isolated subnet and must never scan the
 management or production network.
@@ -338,17 +342,17 @@ Markdown report, then prepare it for SCP retrieval.
 | DS-03 | Edit settings during discovery | Update is rejected while the scan is active |
 | ND-01 | Start discovery | Scan starts and reports progress |
 | ND-02 | Start a concurrent scan | Second request is rejected |
-| ND-03 | Discover both targets | Exact expected host set is stored |
+| ND-03 | Discover both targets | Both target hosts are stored with the expected addresses; the monitoring bridge host may also appear. Scope the assertion to the run's subnet prefix instead of assuming exactly two hosts |
 | ND-04 | Verify TCP services | Ports belong only to their owning host |
 | ND-05 | Verify UDP services | DNS, NTP, and SNMP are detected correctly |
 | ND-06 | Discover DNS over TCP and UDP | Unique service descriptions are generated |
-| ND-07 | Discover TCP 9000 | Generic TCP monitoring is generated |
-| ND-08 | Discover unsupported UDP | A skipped-service record is created |
+| ND-07 | Discover TCP 9000 | The port is stored as `SUGGESTED` and produces no service until promoted (`system.hosts.edit`); after promotion the generic TCP check `tcp-9000-tcp` is generated |
+| ND-08 | Discover unsupported UDP | UDP/69 answers nmap's TFTP probe, is detected open, has no plugin, and a skipped-service record is created. A UDP port that only reports `open\|filtered` is recorded as skipped with the reason "unconfirmed" |
 | ND-09 | Repeat an unchanged scan | No duplicate hosts or services are created |
 | ND-10 | Cancel a scan | Status becomes `Interrupted` and keeps progress |
-| ND-11 | Close a port and rescan | The stale service is removed for that host |
+| ND-11 | Close a port and rescan | A monitored port is retained: after 1 miss `Missed_Scans` is 1 and the state stays `MONITORED`; after 4 misses it is 4; on the 5th consecutive miss it becomes `MISSING` (still in Nagios, CRITICAL). Any sighting resets the count to 0. After 30 days `MISSING` it is `ARCHIVED` and removed from Nagios |
 | ND-12 | Open a new port and rescan | The new service is added |
-| ND-13 | Shut down a complete target | Result matches the approved retention policy |
+| ND-13 | Shut down a complete target | The host stays `ACTIVE` through 4 missed scans, becomes `MISSING` on the 5th, and is `RETIRED` after 30 days missing. Retirement can be exercised by backdating `Last_Seen_At` rather than waiting 30 days |
 | CFG-01 | Validate the candidate | `nagios -v` returns success |
 | CFG-02 | Apply the candidate | Backup exists, reload succeeds, Nagios stays active |
 | CFG-03 | Supply an invalid candidate | Live configuration remains unchanged |
