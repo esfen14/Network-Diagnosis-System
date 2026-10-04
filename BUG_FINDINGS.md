@@ -1,7 +1,7 @@
 # Bug Findings — Network Discovery & Plugin Monitoring Config
 **Date:** 2026-09-26  
 **Branch:** `plugin-manager-final-phase`  
-**Test run:** `pytest tests/test_network_discovery.py tests/test_create_host_cfg.py tests/test_plugin_registry.py tests/test_plugin_scanner.py tests/test_plugin_monitoring_config.py tests/test_plugin_service.py`  
+**Test run:** `pytest tests/unit/test_network_discovery.py tests/unit/test_create_host_cfg.py tests/unit/test_plugin_registry.py tests/unit/test_plugin_scanner.py tests/unit/test_plugin_monitoring_config.py tests/unit/test_plugin_service.py`
 **Result:** 144 passed, **8 failed**
 
 ---
@@ -11,8 +11,8 @@
 | # | File | Class | Failing Tests | Root Cause |
 |---|------|-------|---------------|------------|
 | 1 | `app/network_discovery/create_host_cfg.py` | `TestCreateHostCfgFile` | 2 | `build_host_services()` never called in host loop — no `define service` or `define command` blocks written |
-| 2 | `tests/test_create_host_cfg.py` | `TestServiceStatusCheckCommand` | 2 | Test calls `insert_service_status_data(service, data)` but the function signature requires `(hostname, service, data)` |
-| 3 | `tests/test_plugin_monitoring_config.py` | `TestEnsureCfgFileDirective` | 4 | `ensure_cfg_file_directive()` called outside a Flask app context — `current_app` is unbound |
+| 2 | `tests/unit/test_create_host_cfg.py` | `TestServiceStatusCheckCommand` | 2 | Test calls `insert_service_status_data(service, data)` but the function signature requires `(hostname, service, data)` |
+| 3 | `tests/unit/test_plugin_monitoring_config.py` | `TestEnsureCfgFileDirective` | 4 | `ensure_cfg_file_directive()` called outside a Flask app context — `current_app` is unbound |
 
 ---
 
@@ -61,7 +61,7 @@ In `_create_host_cfg_file`, inside the inner `for ip, host_data in hosts.items()
 
 ## Bug 2 — `insert_service_status_data` called with wrong number of arguments
 
-**File:** `server/tests/test_create_host_cfg.py`  
+**File:** `server/tests/unit/test_create_host_cfg.py`
 **Class:** `TestServiceStatusCheckCommand`  
 **Failing tests:**
 - `TestServiceStatusCheckCommand::test_only_command_name_is_stored`
@@ -114,7 +114,7 @@ insert_service_status_data(
 
 ## Bug 3 — `ensure_cfg_file_directive()` called outside a Flask app context
 
-**File:** `server/tests/test_plugin_monitoring_config.py`  
+**File:** `server/tests/unit/test_plugin_monitoring_config.py`
 **Class:** `TestEnsureCfgFileDirective`  
 **Failing tests:**
 - `TestEnsureCfgFileDirective::test_adds_directive_when_missing`

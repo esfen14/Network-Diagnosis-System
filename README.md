@@ -54,7 +54,7 @@ Run the isolated backend suite without probing a live Nagios installation:
 
 ```bash
 cd server
-.venv/bin/python -m pytest tests/ --ignore=tests/test_live_nagios.py
+.venv/bin/python -m pytest tests/unit/
 ```
 
 Run frontend tests and a production build:
@@ -75,15 +75,16 @@ suite. It uses disposable nested VMs, scans only an approved isolated subnet,
 controls real services, and may apply test-specific Nagios configuration. Read
 and approve these documents before starting:
 
-- [Extended test plan](server/tests/NETWORK_DISCOVERY_EXTENDED_TEST_PLAN.md)
-- [Live harness guide](server/tests/live_network_discovery/README.md)
-- [Disposable VM-kit guide](server/tests/live_network_discovery/vm_scripts/README.md)
+- [Proposed test approach adjustment](server/tests/plans/TEST_APPROACH_ADJUSTMENT_PLAN.md)
+- [Extended test plan](server/tests/plans/NETWORK_DISCOVERY_EXTENDED_TEST_PLAN.md)
+- [Live harness guide](server/tests/e2e/network_discovery/README.md)
+- [Disposable VM-kit guide](server/tests/e2e/network_discovery/vm_scripts/README.md)
 
 For the retained lab, the tester first previews and applies the consolidated
 privileged host preparation:
 
 ```bash
-cd /opt/pinpoint/Network-Diagnosis-System/server/tests/live_network_discovery
+cd /opt/pinpoint/Network-Diagnosis-System/server/tests/e2e/network_discovery
 bash provision/prepare_test_host.sh
 sudo bash provision/prepare_test_host.sh --apply
 ```

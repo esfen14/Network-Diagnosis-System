@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "PLG-FTP",
+      "plugin": "check_ftp",
+      "target": "target01",
+      "service": "ftp-21",
+      "remote_unit": "vsftpd",
+      "required": true,
+      "expected_check_command": "pinpoint_nd_ftp"
+    },
+    {
+      "id": "PLG-SMTP",
+      "plugin": "check_smtp",
+      "target": "target01",
+      "service": "smtp-25",
+      "remote_unit": "postfix",
+      "required": true,
+      "expected_check_command": "pinpoint_nd_smtp"
+    },
+    {
+      "id": "PLG-HTTP",
+      "plugin": "check_http",
+      "target": "target01",
+      "service": "http-80",
+      "remote_unit": "nginx",
+      "required": true,
+      "expected_check_command": "pinpoint_nd_http"
+    },
+    {
+      "id": "PLG-HTTPS",
+      "plugin": "check_http",
+      "target": "target01",
+      "service": "https-443",
+      "remote_unit": "nginx",
+      "required": true,
+      "expected_check_command": "pinpoint_nd_https"
+    },
+    {
+      "id": "PLG-MYSQL",
+      "plugin": "check_mysql",
+      "target": "target01",
+      "service": "mysql-3306",
+      "remote_unit": "mariadb",
+      "required": true,
+      "expected_check_command": "pinpoint_nd_mysql"
+    },
+    {
+      "id": "PLG-TCP",
+      "plugin": "check_tcp",
+      "target": "target01",
+      "service": "testtcp-9000",
+      "remote_unit": "pinpoint-test-tcp",
+      "required": true,
+      "expected_check_command": "pinpoint_nd_tcp"
+    },
+    {
+      "id": "PLG-DNS-TCP",
+      "plugin": "check_dns",
+      "target": "target02",
+      "service": "dns-53-TCP",
+      "remote_unit": "bind9",
+      "required": true,
+      "expected_check_command": "pinpoint_nd_dns"
+    },
+    {
+      "id": "PLG-DNS-UDP",
+      "plugin": "check_dns",
+      "target": "target02",
+      "service": "dns-53-UDP",
+      "remote_unit": "bind9",
+      "required": true,
+      "expected_check_command": "pinpoint_nd_dns"
+    },
+    {
+      "id": "PLG-NTP",
+      "plugin": "check_ntp_time",
+      "target": "target02",
+      "service": "ntp-123",
+      "remote_unit": "chrony",
+      "required": true,
+      "expected_check_command": "pinpoint_nd_ntp"
+    },
+    {
+      "id": "PLG-SNMP",
+      "plugin": "check_snmp",
+      "target": "target02",
+      "service_prefix": "snmp-",
+      "remote_unit": "snmpd",
+      "required": true,
+      "expected_check_command": "pinpoint_nd_snmp"
+    },
+    {
+      "id": "PLG-SSH",
+      "plugin": "check_ssh",
+      "target": "target01",
+      "service": "ssh-22",
+      "required": true,
+      "visibility_only": true,
+      "note": "Stopping SSH would prevent the key-based recovery action.",
+      "expected_check_command": "pinpoint_nd_ssh"
+    },
+    {
+      "id": "PLG-NCPA-CPU",
+      "plugin": "check_ncpa",
+      "target": "target01",
+      "service_prefix": "ncpa-cpu",
+      "required": true,
+      "visibility_only": true,
+      "note": "Separate executed healthy metric acceptance; NCPA deployment and stop/recovery remain mandatory workflow cases.",
+      "expected_check_command": "pinpoint_nd_ncpa"
+    },
+    {
+      "id": "PLG-NCPA-MEMORY",
+      "plugin": "check_ncpa",
+      "target": "target01",
+      "service_prefix": "ncpa-memory",
+      "required": true,
+      "visibility_only": true,
+      "note": "Separate executed healthy metric acceptance; NCPA deployment and stop/recovery remain mandatory workflow cases.",
+      "expected_check_command": "pinpoint_nd_ncpa"
+    },
+    {
+      "id": "PLG-NCPA-DISK",
+      "plugin": "check_ncpa",
+      "target": "target01",
+      "service_prefix": "ncpa-disk",
+      "required": true,
+      "visibility_only": true,
+      "note": "Separate executed healthy metric acceptance; NCPA deployment and stop/recovery remain mandatory workflow cases.",
+      "expected_check_command": "pinpoint_nd_ncpa"
+    },
+    {
+      "id": "PM-ENABLE-APPLY",
+      "plugin": "check_dummy",
+      "target": "target01",
+      "service": "e2e-dummy",
+      "apply_monitoring": true,
+      "required": true,
+      "visibility_only": true,
+      "note": "Use the existing approved default command. Verify enable, apply, running configuration, and an executed OK check. Full state matrix is a separate required case.",
+      "expected_check_command": "pinpoint_check_dummy"
+    }
+  ]
+}
