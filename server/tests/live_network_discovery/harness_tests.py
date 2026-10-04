@@ -98,5 +98,26 @@ class HarnessSelfTests(unittest.TestCase):
         )
 
 
+class Env01AcceleratorTests(unittest.TestCase):
+    def test_domain_type_is_read_from_xml(self):
+        from provision.detect_backend import domain_type
+        self.assertEqual(domain_type("<domain type='kvm'><name>a</name></domain>"), "kvm")
+        self.assertEqual(domain_type("<domain type='qemu'/>"), "qemu")
+        self.assertIsNone(domain_type("not xml"))
+
+    def test_software_emulated_guest_fails(self):
+        from provision.detect_backend import env01_failures
+        failures = env01_failures(True, {"target01": "kvm", "target02": "qemu"})
+        self.assertEqual(failures, ["guest target02 uses 'qemu' instead of 'kvm'"])
+
+    def test_missing_kvm_device_fails(self):
+        from provision.detect_backend import env01_failures
+        self.assertEqual(env01_failures(False, {"t": "kvm"}), ["/dev/kvm is missing"])
+
+    def test_all_kvm_passes(self):
+        from provision.detect_backend import env01_failures
+        self.assertEqual(env01_failures(True, {"t": "kvm"}), [])
+
+
 if __name__ == "__main__":
     unittest.main()

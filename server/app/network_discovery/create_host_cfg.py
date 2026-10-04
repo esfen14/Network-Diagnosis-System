@@ -11,6 +11,7 @@ from app.network_discovery.device_identity import nagios_host_name, reconcile_sc
 from app.network_discovery.identity_probes import collect_identifiers
 from app.network_discovery.port_lifecycle import CONFIG_STATES, mark_ncpa_port, process_device_ports
 from app.network_discovery.host_config_templates import *
+from app.network_discovery.service_name_migration import migrate_legacy_service_history
 from app.network_discovery.plugin_registry import (
     GENERIC_PLUGIN_FOR_TRANSPORT,
     PluginConfigurationError,
@@ -264,6 +265,32 @@ def build_host_services(host_data, facts, app_config, skipped=None):
 
     return finalize_service_names(planned)
 
+# Service names of the most recently generated candidate, {hostname: [names]}.
+# Only read under config_write_lock, right after that candidate is applied.
+_last_generated_names = {}
+
+
+def unconfirmed_udp_skips(discovered_hosts):
+    """
+    Skipped-service entries for UDP ports nmap reported only as "open|filtered":
+    the host ignored the probe, so the port is unconfirmed and never monitored.
+    """
+    entries = []
+    for hosts in discovered_hosts.values():
+        for ip, host_data in hosts.items():
+            data = host_data.get("data", {})
+            for port, info in (data.get("udp_unconfirmed") or {}).items():
+                entries.append({
+                    "hostname": data.get("hostname") or ip,
+                    "ip_address": ip,
+                    "port": port,
+                    "protocol": "UDP",
+                    "service_name": info.get("service_name") or "unknown",
+                    "reason": "UDP port unconfirmed (open|filtered): the host did not answer nmap's probe.",
+                })
+    return entries
+
+
 def _create_host_cfg_file(discovered_hosts, skipped=None):
     """
     Creates a new host configuration file.
@@ -404,6 +431,8 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
     # Plugins actually used by at least one service - each needs its own
     # `define command` object, rendered once at the end of the file.
     used_plugins = set()
+    global _last_generated_names
+    generated_names = _last_generated_names = {}
 
     for hosts in discovered_hosts.values():
         for ip, host_data in hosts.items():
@@ -459,6 +488,8 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
             if skipped is not None:
                 for entry in host_skipped:
                     skipped.append({**entry, "ip_address": ip})
+
+            generated_names[host_data["data"]["hostname"]] = [name for name, _c, _p in host_services]
 
             for service_name, command, plugin_name in host_services:
                 # Remember the plugin so its `define command` is written once
@@ -915,6 +946,13 @@ def _apply_new_host_cfg(cfg_path):
             f"Rolled back to backup at {backup_path}. Error: {e}"
         )
 
+    try:
+        migrate_legacy_service_history(_last_generated_names)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Could not carry service history over to the new service names.")
+
     return True, f"Applied {cfg_path} successfully. Backup stored at {backup_path}"
 
 def config_fingerprint(text):
@@ -1111,6 +1149,7 @@ def discover_network_create_hosts(app, user_id, stop_event):
                 skipped_services = []
                 new_cfg = _create_host_cfg_file(system_hosts, skipped_services)
                 print(f"Created: {new_cfg}")
+                skipped_services.extend(unconfirmed_udp_skips(discovered_hosts))
                 create_skipped_service_logs(network_discovery_id, skipped_services)
                 update_network_discovery_status(
                     network_discovery_id,

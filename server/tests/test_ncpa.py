@@ -268,3 +268,37 @@ class TestTrustedDevices:
         assert resp.status_code == 200
         data = resp.get_json()["data"]
         assert data["devices"] == []
+
+
+# ─── POST /api/system/deployment/ncpa/<device_id>/refresh-disks ───────────────
+
+class TestRefreshDisks:
+    def deploy(self, db_session, device):
+        db_session.session.add(NCPADeployment(
+            NetworkDiscoveryID=device.NetDiscoveryID, Token="t" * 32, Agent_Status=AgentStatus.DEPLOYED))
+        db_session.session.commit()
+
+    def test_not_deployed_is_404(self, logged_in_client, db_session, admin_user):
+        device, _ = _make_ncpa_device(db_session, admin_user)
+        resp = logged_in_client.post(f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/refresh-disks")
+        assert resp.status_code == 404
+
+    def test_requires_permission(self, limited_client, db_session, admin_user):
+        resp = limited_client.post("/api/system/deployment/ncpa/1/refresh-disks")
+        assert resp.status_code == 403
+
+    def test_stores_disks_and_regenerates(self, logged_in_client, db_session, admin_user):
+        device, _ = _make_ncpa_device(db_session, admin_user)
+        self.deploy(db_session, device)
+        with patch("app.api.system.ncpa_deployment.refresh_ncpa_partitions", return_value=["|", "|boot|efi"]),              patch("app.network_discovery.create_host_cfg.regenerate_and_apply_config", return_value=(True, "ok")):
+            resp = logged_in_client.post(f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/refresh-disks")
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        assert data["disks"] == ["|", "|boot|efi"] and data["config_applied"] is True
+
+    def test_no_disks_is_502(self, logged_in_client, db_session, admin_user):
+        device, _ = _make_ncpa_device(db_session, admin_user)
+        self.deploy(db_session, device)
+        with patch("app.api.system.ncpa_deployment.refresh_ncpa_partitions", return_value=[]):
+            resp = logged_in_client.post(f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/refresh-disks")
+        assert resp.status_code == 502
