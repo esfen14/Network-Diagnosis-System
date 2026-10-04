@@ -41,7 +41,7 @@ from app.system_models import \
     PortState
 from app.logging import create_network_discovery_status, update_network_discovery_status, calculate_progress, create_skipped_service_logs
 from app.logging.deployment_history import update_ncpa_deployment_status
-from app.system_models import DiscoveryStatus, DeploymentStatus, NetworkDiscoveryStatus
+from app.system_models import DiscoveryStatus, DeploymentStatus, NetworkDiscoveryStatus, ServiceIdentification
 from app.network_discovery.discovery_settings import get_discovery_setting
 import socket
 import ipaddress
@@ -52,7 +52,8 @@ import tempfile
 # (NAGIOS_HOST_CFG, NAGIOS_BIN, NAGIOS_MAIN_CFG) live in server/config.py's
 # Config class. Each function below that needs one reads it from
 # current_app.config into a same-named local at the top of the function.
-# TCP_SERVICE_OVERRIDES and UDP_SERVICE_OVERRIDES are editable from the
+# The forced service lists and fallback service overrides
+# (TCP_/UDP_FORCED_SERVICES, TCP_/UDP_SERVICE_OVERRIDES) are editable from the
 # Settings page, so they are read through get_discovery_setting() instead,
 # which falls back to config.py when nothing has been saved.
 
@@ -1015,7 +1016,32 @@ def _collect_identifiers(network_discovery_id, discovered_hosts, progress_weight
 
     return discovered_hosts
 
-def _override_service_names(network_discovery_id, discovered_hosts, protocol, service_overrides,progress_weight):
+def apply_service_rules(service_data, port_id, forced_services, fallback_services):
+    """
+    Decide one scanned port's service name from nmap's result
+    ({"service_name", "identified_by"}, see network_discovery.service_from_nmap)
+    and the configured port rules, in place. An "always treat port as" rule
+    wins over everything nmap reported (PORT_RULE). A fallback name only
+    replaces a guess nmap made from the port number; a fingerprinted service
+    keeps nmap's name. A port pinned by an operator is handled later by the
+    port lifecycle, which never renames it.
+    """
+    identified_by = service_data.get("identified_by") or ServiceIdentification.PORT_HINT.name
+    service_data["identified_by"] = identified_by
+
+    if port_id in forced_services:
+        service_data["service_name"] = forced_services[port_id]
+        service_data["identified_by"] = ServiceIdentification.PORT_RULE.name
+    elif identified_by == ServiceIdentification.PORT_HINT.name and port_id in fallback_services:
+        service_data["service_name"] = fallback_services[port_id]
+    return service_data
+
+
+def _apply_service_rules(network_discovery_id, discovered_hosts, protocol, forced_services, fallback_services, progress_weight):
+    """
+    Apply apply_service_rules() to every scanned port of one protocol and
+    report progress. Returns discovered_hosts, changed in place.
+    """
     total_services = sum(
         len(host_data["services"].get(protocol, {}))
         for hosts in discovered_hosts.values()
@@ -1027,7 +1053,7 @@ def _override_service_names(network_discovery_id, discovered_hosts, protocol, se
             network_discovery_id,
             DiscoveryStatus.RUNNING,
             progress_weight,
-            f"No {protocol.upper()} services to override"
+            f"No {protocol.upper()} services to identify"
         )
         return discovered_hosts
 
@@ -1041,35 +1067,26 @@ def _override_service_names(network_discovery_id, discovered_hosts, protocol, se
 
             for port_id, service_data in services.items():
 
-                service_name = service_data.get(
-                    "service_name",
-                    "Unknown"
-                )
-
-                # Override Nmap's service name if configured
-                service_data["service_name"] = service_overrides.get(
-                    port_id,
-                    service_name
-                )
+                apply_service_rules(service_data, port_id, forced_services, fallback_services)
 
                 processed_services += 1
-                    
+
                 progress = calculate_progress(
                                 processed_services,
                                 total_services,
                                 progress_weight - 5,
                                 progress_weight
                             )
-                    
+
                 if processed_services % 10 == 0 or processed_services == total_services:
                     update_network_discovery_status(
                         network_discovery_id,
                         DiscoveryStatus.RUNNING,
                         progress,
-                        f"Overriding {protocol} service names"
+                        f"Identifying {protocol} services"
                     )
 
-    return discovered_hosts   
+    return discovered_hosts
 
 def mark_discovery_interrupted(network_discovery_id):
     """
@@ -1096,6 +1113,8 @@ def discover_network_create_hosts(app, user_id, stop_event):
         try:
             TCP_SERVICE_OVERRIDES = get_discovery_setting('TCP_SERVICE_OVERRIDES')
             UDP_SERVICE_OVERRIDES = get_discovery_setting('UDP_SERVICE_OVERRIDES')
+            TCP_FORCED_SERVICES = get_discovery_setting('TCP_FORCED_SERVICES')
+            UDP_FORCED_SERVICES = get_discovery_setting('UDP_FORCED_SERVICES')
 
             print("Created Log")
             network_discovery_id = create_network_discovery_status(user_id).DiscoveryStatusID
@@ -1123,9 +1142,10 @@ def discover_network_create_hosts(app, user_id, stop_event):
                 mark_discovery_interrupted(network_discovery_id)
                 return
             
-            # Overrides services names due to NMAP not always being right
-            discovered_hosts = _override_service_names(network_discovery_id, discovered_hosts,"tcp", TCP_SERVICE_OVERRIDES, PROGRESS_WEIGHT[2])
-            discovered_hosts = _override_service_names(network_discovery_id, discovered_hosts,"udp", UDP_SERVICE_OVERRIDES, PROGRESS_WEIGHT[3])
+            # Port rules: "always treat port as" wins; fallback names only
+            # replace a service nmap guessed from the port number.
+            discovered_hosts = _apply_service_rules(network_discovery_id, discovered_hosts, "tcp", TCP_FORCED_SERVICES, TCP_SERVICE_OVERRIDES, PROGRESS_WEIGHT[2])
+            discovered_hosts = _apply_service_rules(network_discovery_id, discovered_hosts, "udp", UDP_FORCED_SERVICES, UDP_SERVICE_OVERRIDES, PROGRESS_WEIGHT[3])
 
             if stop_event.is_set():
                 mark_discovery_interrupted(network_discovery_id)

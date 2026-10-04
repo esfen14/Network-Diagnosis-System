@@ -168,6 +168,26 @@ in the seed permission list. This is tracked in `Implementation_Status.md`.
 The stop-route permission differs from the seeded `system.discover` permission;
 this is a documented implementation mismatch, not a recommended convention.
 
+### `app/api/system/discovery_settings.py`
+
+| Method and path | Permission | Purpose |
+|---|---|---|
+| `GET /api/system/discovery-settings` | `settings.discovery` | Effective discovery settings, their `config.py` defaults, and whether a scan is running |
+| `PUT /api/system/discovery-settings` | `settings.discovery` | Save networks, TCP/UDP ports, "always treat port as" rules (`tcpForcedServices`, `udpForcedServices`) and fallback service names (`tcpServiceOverrides`, `udpServiceOverrides`); every field is required, the version must match |
+
+### `app/api/system/device_identity.py`
+
+| Method and path | Permission | Purpose |
+|---|---|---|
+| `GET /api/system/hosts/<id>/addresses` | `system.hosts` | Address history of a device |
+| `GET /api/system/hosts/<id>/identifiers` | `system.hosts` | Identity evidence and confidence |
+| `PUT /api/system/hosts/<id>` | `system.hosts.edit` | Change display name and/or addressing mode |
+| `POST /api/system/hosts/<id>/merge` | `system.hosts.edit` | Merge the device into another |
+| `POST /api/system/hosts/<id>/retire` | `system.hosts.edit` | Retire the device |
+| `PUT /api/system/hosts/<id>/ports/<proto>/<port>` | `system.hosts.edit` | Body `{"state"?, "service_name"?}`: change a port's state, pin its service on this device (never renamed by a scan; a monitored port's plugin is re-frozen), or add a port by hand (`state` MONITORED plus `service_name`); response includes `identified_by` |
+| `GET /api/system/discover/review` | `system.discover` | Unresolved review items, including `SERVICE_CHANGED` |
+| `POST /api/system/discover/review/<id>/resolve` | `system.hosts.edit` | Mark a review item as dealt with |
+
 ### `app/api/system/ncpa_deployment.py`
 
 | Method and path | Permission | Purpose |

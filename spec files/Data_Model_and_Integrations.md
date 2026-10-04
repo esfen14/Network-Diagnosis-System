@@ -137,9 +137,39 @@ backs up the running configuration, and applies only a valid candidate.
 services to supported plugins and variables. Unmonitorable discovered services
 are recorded as `SkippedService` entries rather than silently discarded.
 
-Network targets, ports, service overrides, NCPA metrics, SNMP defaults, and
+Network targets, ports, service rules, NCPA metrics, SNMP defaults, and
 Nagios filesystem paths live in `server/config.py` and may be environment
-overridden where defined.
+overridden where defined. Networks, ports and service rules can also be saved
+from the Settings page (`DiscoverySettings`), which then takes precedence.
+
+### Service identification
+
+A port number is a hint, not proof of the service. The default TCP scan range
+is `1-10000` (alternate ports such as 8080, 8443 and 9443 included). TCP scans
+use `-sV -O --version-all`; UDP scans use `-sU -sV`. `service_from_nmap()`
+keeps nmap's evidence: `method="probed"` with a real name is a `FINGERPRINT`;
+`method="table"` (a lookup by port number), `unknown` and `tcpwrapped` are a
+`PORT_HINT`; HTTP inside `tunnel="ssl"` is reported as `https`. Discovery then
+decides each port's service name, strongest first:
+
+1. `USER`: a service an operator pinned on that device's port through
+   `PUT /system/hosts/<id>/ports/<proto>/<port>`. Scans never rename it.
+2. `PORT_RULE`: `TCP_FORCED_SERVICES` / `UDP_FORCED_SERVICES` ("always treat
+   port X as Y" on every device). The default forces `NCPA_PORT` to `ncpa`,
+   because deployment configures the agent there and nmap fingerprints it as
+   https.
+3. `FINGERPRINT`: nmap's probed name, e.g. `ssh` on 2222.
+4. `PORT_HINT`: `TCP_SERVICE_OVERRIDES` / `UDP_SERVICE_OVERRIDES` are fallback
+   names applied only to a hint; otherwise nmap's guess stands.
+
+The result is stored in `Identified_By` on `Open_TCP_Services` /
+`Open_UDP_Services` (NULL for ports recorded before it existed). A new port
+is auto-monitored only when its service is in `AUTO_MONITOR_SERVICES` and it
+is not a `PORT_HINT`; a suggested hint that later fingerprints as such a
+service starts being monitored. A monitored, unpinned port that fingerprints
+(or is ruled) as a service its frozen plugin does not match keeps its service
+and raises a `SERVICE_CHANGED` `DeviceReviewItem`; hints never raise one, and
+the NCPA port of a deployed agent is exempt.
 
 ## NCPA deployment
 

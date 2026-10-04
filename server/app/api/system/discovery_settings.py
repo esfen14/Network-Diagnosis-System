@@ -91,7 +91,10 @@ def update_discovery_settings_route():
     409, as is any save while a discovery scan is running. Networks must
     be IPv4 addresses or CIDR ranges no larger than a /16 (loopback is
     rejected); ports are numbers 1-65535 or "start-end" ranges; service
-    names are lowercase letters, digits, "-" or "_". Changes take effect
+    names are lowercase letters, digits, "-" or "_". Forced services
+    ("always treat port as") apply on every device whatever nmap reports;
+    service overrides are fallbacks used only when nmap could not
+    fingerprint a port. Changes take effect
     on the next scan and are recorded in the Configuration Change log
     when audit logging is on.
 
@@ -101,8 +104,10 @@ def update_discovery_settings_route():
         "networks": ["192.168.130.0/24"],
         "tcpPorts": ["1-6000"],
         "udpPorts": [53, 161],
-        "tcpServiceOverrides": {"5693": "ncpa", "22": "ssh"},
-        "udpServiceOverrides": {"161": "snmp"}
+        "tcpServiceOverrides": {"22": "ssh"},
+        "udpServiceOverrides": {"161": "snmp"},
+        "tcpForcedServices": {"5693": "ncpa"},
+        "udpForcedServices": {}
     }
     """
     data = request.get_json(silent=True)

@@ -78,6 +78,10 @@ report["tcp"] = c.execute(
     "select NetDiscoveryID, Port_Number, Port_State, Source, Missed_Scans, Observed_Service_Name "
     "from OPEN_TCP_Services order by 1, 2").fetchall()
 report["udp"] = c.execute("select NetDiscoveryID, Port_Number, Port_State from OPEN_UDP_Services").fetchall()
+# Service identification (e5a9c3d7f210): existing ports are left unclassified.
+report["tcp_identified_by"] = c.execute("select Identified_By from OPEN_TCP_Services").fetchall()
+report["udp_columns"] = [r[1] for r in c.execute("pragma table_info(OPEN_UDP_Services)")]
+report["settings_columns"] = [r[1] for r in c.execute("pragma table_info(DISCOVERY_SETTINGS)")]
 
 # The constraints really are enforced.
 errors = {}

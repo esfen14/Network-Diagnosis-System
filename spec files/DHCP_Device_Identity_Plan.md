@@ -405,7 +405,7 @@ All routes follow the existing conventions (module docstring, `success`/`error`,
 | `PUT /system/hosts/<id>` | Display name, addressing mode | `system.hosts.edit` *(new)* |
 | `POST /system/hosts/<id>/merge` | Merge this device into another (`{"target_id": 12}`) | `system.hosts.edit` |
 | `POST /system/hosts/<id>/retire` | Retire a device | `system.hosts.edit` |
-| `PUT /system/hosts/<id>/ports/<proto>/<int:port>` | Change port state (`{"state": "MONITORED"}`) | `system.hosts.edit` |
+| `PUT /system/hosts/<id>/ports/<proto>/<int:port>` | Change port state (`{"state": "MONITORED"}`) and/or pin the port's service (`{"service_name": "ssh"}`, see "Service identification" in `Data_Model_and_Integrations.md`) | `system.hosts.edit` |
 | `GET /system/discover/review` | Conflicts and possible duplicates from the last scan | `system.discover` |
 
 ### UI (Device Inventory and scan results)

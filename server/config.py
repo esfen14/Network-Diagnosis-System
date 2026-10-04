@@ -41,12 +41,30 @@ class Config:
     # or hang the discovery process.
     # Override with PINPOINT_NETWORKS, e.g. "192.168.50.0/24,10.0.0.0/24".
     NETWORKS = env_list('PINPOINT_NETWORKS', ["192.168.130.0/24"])
-    TCP_PORTS = ["1-6000"]
+    # 1-10000 covers the usual alternate ports (8000, 8080, 8443, 8888,
+    # 9090, 9443, 10000). "1-65535" can be set from the Settings page for a
+    # full sweep; nmap only fingerprints the ports it finds open.
+    TCP_PORTS = ["1-10000"]
     UDP_PORTS = [53, 67, 68, 69, 123, 161, 162, 514]
 
-    # What service names to assign to well-known ports from nmap results.
+    # Port NCPA deployment configures the agent to listen on, and the port
+    # Pinpoint uses to reach it.
+    NCPA_PORT = "5693"
+
+    # How a discovered port's service name is decided, strongest first:
+    #   1. a name an operator pinned on that device's port (never rescanned)
+    #   2. *_FORCED_SERVICES: "always treat port X as Y" on every device
+    #   3. the service nmap identified by probing the port (fingerprint)
+    #   4. *_SERVICE_OVERRIDES: fallback names, used only when nmap could not
+    #      fingerprint the port and only guessed from its number
+    # Force only ports whose meaning holds on every device. NCPA's port is
+    # forced because deployment configures the agent there, and nmap would
+    # otherwise fingerprint it as plain https.
+    TCP_FORCED_SERVICES = {
+        NCPA_PORT: "ncpa",
+    }
+    UDP_FORCED_SERVICES = {}
     TCP_SERVICE_OVERRIDES = {
-        "5693": "ncpa",
         "5666": "nrpe",
         "22": "ssh",
         "80": "http",
@@ -63,9 +81,6 @@ class Config:
     # Default hostname suffix given to discovered hosts: <ip>.<DOMAIN>
     # e.g. 192.168.130.10.test.local
     DOMAIN = os.environ.get('PINPOINT_DOMAIN') or "test.local"
-    # Port NCPA deployment configures the agent to listen on, and the port
-    # Pinpoint uses to reach it.
-    NCPA_PORT = "5693"
     # Standard SSH port. Used only when a device has no SSH port on record;
     # otherwise NCPA deployment connects to the port discovery found SSH on
     # (port_lifecycle.device_ssh_port).

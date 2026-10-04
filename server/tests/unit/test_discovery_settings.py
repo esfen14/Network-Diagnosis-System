@@ -25,8 +25,10 @@ VALID_PAYLOAD = {
     "networks": ["10.0.5.0/24"],
     "tcpPorts": [22, "80-443"],
     "udpPorts": [161],
-    "tcpServiceOverrides": {"5693": "ncpa"},
+    "tcpServiceOverrides": {"22": "ssh"},
     "udpServiceOverrides": {"161": "snmp"},
+    "tcpForcedServices": {"5693": "ncpa"},
+    "udpForcedServices": {},
 }
 
 
@@ -177,7 +179,8 @@ class TestUpdateDiscoverySettings:
 
         row = db_session.session.get(DiscoverySettings, 1)
         assert row.Networks == ["10.0.5.0/24"]
-        assert row.TCP_Service_Overrides == {"5693": "ncpa"}
+        assert row.TCP_Service_Overrides == {"22": "ssh"}
+        assert row.TCP_Forced_Services == {"5693": "ncpa"}
 
     def test_invalid_value_rejected_and_nothing_saved(self, logged_in_client, db_session):
         resp = save(logged_in_client, networks=["127.0.0.1"])

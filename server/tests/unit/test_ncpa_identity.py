@@ -409,7 +409,7 @@ class TestCollectIdentifiers:
             create_host_cfg._collect_identifiers(status, discovered, 60)
 
         assert discovered[NET]["10.0.0.5"]["data"]["identifiers"] == [(IdentifierKind.SSH_HOST_KEY, SSH_1)]
-        probe.assert_called_once_with("10.0.0.5", {"22": {"service_name": "ssh"}})
+        probe.assert_called_once_with("10.0.0.5", {"22": {"service_name": "ssh", "identified_by": "FINGERPRINT"}})
 
     def test_identifiers_collected_in_a_scan_are_what_recognises_the_device_later(self, db_session, admin_user):
         status = make_status(db_session, admin_user)
