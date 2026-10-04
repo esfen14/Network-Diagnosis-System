@@ -255,6 +255,15 @@ def build_host_services(host_data, facts, app_config, skipped=None):
                     f"{hostname} {discovered_name} {port}/{transport.value}: {e} "
                     f"Falling back to the generic {generic_plugin} check."
                 )
+                # Show the downgrade to the user too, not only in the log.
+                if skipped is not None:
+                    skipped.append({
+                        "hostname": hostname,
+                        "port": port,
+                        "protocol": transport.value,
+                        "service_name": discovered_name,
+                        "reason": f"{e} Using the generic {generic_plugin} check instead.",
+                    })
 
             try:
                 planned.extend(plan_plugin_services(

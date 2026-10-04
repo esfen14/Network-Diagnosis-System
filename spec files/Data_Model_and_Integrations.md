@@ -148,9 +148,12 @@ from the Settings page (`DiscoverySettings`), which then takes precedence.
 
 A port number is a hint, not proof of the service. The default TCP scan range
 is `1-10000` (alternate ports such as 8080, 8443 and 9443 included). TCP scans
-use `-sV -O --version-all`; UDP scans use `-sU -sV`. `service_from_nmap()`
+use `-sV -O --version-all`. UDP scans run in two steps: `-sU --open` finds the
+ports that answer, then `-sU -sV` (with a per-host timeout) probes only those
+ports; if the second step fails the port-number names are kept. `service_from_nmap()`
 keeps nmap's evidence: `method="probed"` with a real name is a `FINGERPRINT`;
-`method="table"` (a lookup by port number), `unknown` and `tcpwrapped` are a
+`method="table"` (a lookup by port number) is a `PORT_HINT`; `unknown` and
+`tcpwrapped` (the port accepted and closed) are stored as `unknown` with a
 `PORT_HINT`; HTTP inside `tunnel="ssl"` is reported as `https`. Discovery then
 decides each port's service name, strongest first:
 
@@ -180,21 +183,55 @@ requires explicit SSH host-key fingerprint retrieval/confirmation, uses the
 stored fingerprint for subsequent verification, records progress and per-device
 results, makes the TLS key readable by the `nagios` user on every deploy, verifies
 the listener with an authenticated request, and reads the agent's own logical disk
-nodes (`GET /api/disk/logical`, filesystems whose `percent` node answers) into
-`NCPADevicePartition.Name` (an NCPA node name such as `|` or `|boot|efi`, not an
-lsblk partition).
+nodes (`GET /api/disk/logical`, real filesystems whose `used_percent` node
+answers) into `NCPADevicePartition.Name` (an NCPA node name such as `|` or
+`|data`, not an lsblk partition). Pseudo filesystems (`bpf`, `tmpfs`, ...) and
+the `|sys`, `|proc`, `|run`, `|dev` and `|boot|efi` trees are never recorded.
+The disk metric path is `disk/logical/{partition}/used_percent`; the path is
+stored raw and quoted once by the Nagios command template. If a metric cannot
+be planned, the port falls back to the generic TCP check and the fallback is
+listed in the run's skipped services.
+
+The deploy helper restarts the agent through systemd, so `ncpa.service` stays
+active. Pinpoint's certificate probe ends the TLS session cleanly (NCPA 3.5.0
+stops listening if a client drops it), and a deployment fails with "NCPA
+stopped listening after the identity check." if the port stops accepting
+connections afterwards. A failed install after the bootstrap step reports that
+the deployment account, its key, sudo rule and helper remain on the device;
+nothing removes them automatically.
+
+Each run records one `NCPADeploymentResult` per device. Its `Outcome`
+(`DeploymentOutcome`) moves Pending → Running → Success, Failed, Down
+(`UNREACHABLE`: no answer on SSH), or Incompatible; pre-flight rejections are
+Rejected and devices not started after a stop are Skipped. A rejected login is
+Failed ("SSH authentication failed."), never Down. Hostname and IP are copied
+into the row so history survives renames and moves. The run is Success when no
+device failed, Failed when none succeeded, otherwise Partial Failure; a stop or
+a Nagios config that could not be applied by `add_ncpa_port` keeps that status.
+
+Trust confirmation saves a host key only when the live key equals the
+fingerprint the user approved. A device can be deployed to when its agent is
+Pending NCPA or Deployment Failed (retry); Deployed and Incompatible devices
+are rejected.
 
 SSH is not assumed to be on port 22. `port_lifecycle.device_ssh_port()` picks
 the device's SSH port from its recorded TCP ports (a port whose frozen plugin or
 service name is `ssh`; hand-added first, then monitored, then `SSH_PORT`, then
 lowest; MISSING/ARCHIVED ports are skipped) and falls back to `SSH_PORT`.
-Trust confirmation stores that port in `SSHCredentials.SSH_Port` with the
-fingerprint, because a fingerprint only vouches for the port it was read from;
-every later deployment connection uses the pinned port, and paramiko host keys
+Trust confirmation reads the key from that port and stores the port in
+`SSHCredentials.SSH_Port` with the approved fingerprint, because a fingerprint
+only vouches for the port it was read from; every later connection (the
+pre-flight key check at start, the credential check, bootstrap and install)
+uses the pinned port, and paramiko host keys
 for non-22 ports are registered as `[address]:port`. If SSH moves, the device
 must be trust-confirmed again. The remote helper configures the agent's
 `[listener]` port to `Config.NCPA_PORT`, and Pinpoint reaches the agent on that
-port; deployment has no per-device NCPA port. Discovery's identity probes read
+port; deployment has no per-device NCPA port. The helper replaces any
+active or commented `port` line in `[listener]` with exactly one, and fails with
+"Could not set the NCPA listener port." otherwise. `NCPA_PORT` is a
+deployment-time setting (not editable in the UI): changing it after agents are
+deployed requires redeploying them. An invalid value is reported as "NCPA_PORT
+must be an integer between 1 and 65535." (HTTP 500 from the start route). Discovery's identity probes read
 the SSH host key on `SSH_PORT` and on every port nmap identified as `ssh`.
 
 Credentials, tokens, passwords, and secret-bearing command arguments must never

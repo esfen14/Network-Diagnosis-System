@@ -188,6 +188,10 @@ cleared.
 
 ## 5. Item C: NCPA disk checks use invalid partition paths
 
+> **Update 2026-10-05:** node discovery was implemented, and the metric leaf is now
+> `used_percent` (NCPA 3.5.0 has no `percent` node). See
+> `Data_Model_and_Integrations.md` (NCPA deployment).
+
 **Cause:** the deploy script records `lsblk` `TYPE=part` names (`vda1`, `vda14`,
 `vda15`) and `ncpa_checks()` substitutes them into `disk/logical/{partition}/...`.
 NCPA's logical disk nodes are keyed by **mount point / device as NCPA reports

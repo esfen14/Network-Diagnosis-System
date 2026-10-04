@@ -14,7 +14,7 @@ from runner.common import CaseResult, HarnessError, append_result, validate_lab_
 from runner.discovery import compare_inventory, compare_skipped_services
 from runner.report import write_report
 from runner.pinpoint import PinpointClient, executed_check
-from runner.run_tests import cmd_discover
+from runner.run_tests import _nmap_sudo_works, _ssh_keys_work, cmd_discover
 from runner.nagios import verify_services
 
 
@@ -226,6 +226,39 @@ class HarnessSelfTests(unittest.TestCase):
         self.assertIn("Preview only", result.stdout)
         self.assertIn("no files, permissions, services", result.stdout)
         self.assertIn("Plugin installation", result.stdout)
+
+    def test_nmap_check_runs_the_wrapper_not_just_finds_it(self):
+        with patch("runner.run_tests.Path.is_file", return_value=True), \
+             patch("runner.run_tests._probe", return_value=False) as probe:
+            self.assertFalse(_nmap_sudo_works())
+        self.assertEqual(probe.call_args.args[0], ["/usr/local/bin/nmap-sudo", "--version"])
+
+    def test_ssh_check_logs_in_with_strict_pinned_host_keys(self):
+        with tempfile.TemporaryDirectory() as directory:
+            key = Path(directory) / "test_key"
+            key.write_text("key")
+            (Path(directory) / "known_hosts").write_text("hosts")
+            config = {"targets": {"target01": {
+                "address": "192.168.130.2", "ssh_user": "pinpoint-test", "ssh_key_env": "SELFTEST_KEY"}}}
+            with patch.dict("os.environ", {"SELFTEST_KEY": str(key)}):
+                with patch("runner.run_tests._probe", return_value=True) as probe:
+                    self.assertTrue(_ssh_keys_work(config))
+                argv = probe.call_args.args[0]
+                self.assertIn("StrictHostKeyChecking=yes", argv)
+                self.assertIn("pinpoint-test@192.168.130.2", argv)
+                with patch("runner.run_tests._probe", return_value=False):
+                    self.assertFalse(_ssh_keys_work(config))
+
+    def test_ssh_check_fails_without_pinned_known_hosts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            key = Path(directory) / "test_key"
+            key.write_text("key")
+            config = {"targets": {"target01": {
+                "address": "192.168.130.2", "ssh_user": "pinpoint-test", "ssh_key_env": "SELFTEST_KEY"}}}
+            with patch.dict("os.environ", {"SELFTEST_KEY": str(key)}), \
+                 patch("runner.run_tests._probe", return_value=True) as probe:
+                self.assertFalse(_ssh_keys_work(config))
+            probe.assert_not_called()
 
 
 if __name__ == "__main__":

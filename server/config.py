@@ -125,16 +125,17 @@ class Config:
     # NCPA metrics checked on every host with a deployed NCPA agent. Each
     # entry becomes its own Nagios service ("ncpa-<metric>-<port>-<protocol>",
     # e.g. ncpa-cpu-5693-tcp). A path containing {partition} expands to one
-    # service per partition recorded at install time (NCPADevicePartition), falling back to fallback_path
-    # when none were recorded. Overridable per host via
+    # service per partition recorded at install time (NCPADevicePartition); an
+    # entry may add a fallback_path used when none were recorded (none is set
+    # for disk: NCPA 3.5.0 has no aggregate disk node). NCPA names the disk
+    # node used_percent. Overridable per host via
     # NetworkDiscovery.Plugin_Variables["ncpa"].
     NCPA_METRICS = [
         {"metric": "cpu", "path": "cpu/percent", "warning": "50", "critical": "80", "queryargs": "aggregate=avg"},
         {"metric": "memory", "path": "memory/virtual/percent", "warning": "50", "critical": "80", "units": "Gi"},
         {
             "metric": "disk",
-            "path": "disk/logical/{partition}/percent",
-            "fallback_path": "disk/logical/percent",
+            "path": "disk/logical/{partition}/used_percent",
             "warning": "70",
             "critical": "95",
         },

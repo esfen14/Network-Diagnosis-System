@@ -192,9 +192,10 @@ this is a documented implementation mismatch, not a recommended convention.
 
 | Method and path | Permission | Purpose |
 |---|---|---|
-| `GET /api/system/deployment/ncpa/devices` | `system.deploy.ncpa` | List NCPA-eligible devices |
-| `GET /api/system/deployment/ncpa/<device_id>/fingerprint` | `system.deploy.ncpa` | Fetch live SSH host-key fingerprint from the device's SSH port (`data.ssh_port`) |
-| `POST /api/system/deployment/ncpa/<device_id>/confirm-trust` | `system.deploy.ncpa` | Store the confirmed fingerprint together with the SSH port it was read from |
+| `GET /api/system/deployment/ncpa/devices` | `system.deploy.ncpa` | NCPA-eligible devices (and devices with a deployment record) with IP, trust state, saved fingerprint, agent status, last error, last outcome, last run and `deployable` |
+| `GET /api/system/deployment/ncpa/<device_id>/fingerprint` | `system.deploy.ncpa` | Fetch live SSH host-key fingerprint from the device's SSH port (`data.ssh_port`); 502 when the device does not answer |
+| `POST /api/system/deployment/ncpa/<device_id>/confirm-trust` | `system.deploy.ncpa` | Body `{"fingerprint"}`: save the key only if the live key on the device's SSH port still equals the one the user approved, pinning that port in `SSH_Port`; 409 with `data.fingerprint` when it changed, 502 when unreachable |
+| `POST /api/system/deployment/ncpa/check-credentials` | `system.deploy.ncpa` | Test each device's login and sudo on its pinned SSH port without deploying; per-device result `ok`, `auth_failed`, `no_sudo`, `unreachable`, `host_key_changed`, `not_trusted`, `not_found` or `rate_limited` (one check per device per 3 s) |
 | `POST /api/system/deployment/ncpa/<device_id>/refresh-disks` | `system.deploy.ncpa` | Re-read the agent's logical disks, store them, regenerate the Nagios config |
 | `POST /api/system/deployment/ncpa/start` | `system.deploy.ncpa` | Validate credentials and devices, create the run with a Rejected or Pending result per device, and start the worker; 400 with `data.rejected` when no device can be deployed |
 | `POST /api/system/deployment/ncpa/stop` | `system.deploy.ncpa` | Request deployment cancellation; devices not started become Skipped |

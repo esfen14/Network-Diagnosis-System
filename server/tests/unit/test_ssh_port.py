@@ -8,6 +8,8 @@ every later deployment connection uses. Discovery probes the SSH host key on
 every port nmap identified as ssh. The NCPA helper configures the agent's
 listener on Config.NCPA_PORT.
 """
+import shutil
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -18,7 +20,14 @@ from app.api.system import ncpa_deployment as ncpa_routes
 from app.ncpa_deployment import ncpa_deployment as ncpa
 from app.network_discovery import identity_probes
 from app.network_discovery.port_lifecycle import add_user_port, device_ssh_port
-from app.system_models import IdentifierKind, Open_TCP_Services, PortState, SSHCredentials
+from app.system_models import (
+    DeploymentOutcome,
+    IdentifierKind,
+    NCPADeploymentResult,
+    Open_TCP_Services,
+    PortState,
+    SSHCredentials,
+)
 from tests.support.identity_helpers import MAC_1, NET, SSH_1, make_status, patched_config, run_scan, scan
 
 
@@ -113,13 +122,45 @@ class TestRoutesUseTheDevicePort:
         assert ssh_credentials(device).SSH_Port == 22
 
         with patch.object(ncpa_routes, "get_host_key_fingerprint", return_value="fp:2222") as probe:
-            resp = logged_in_client.post(f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/confirm-trust")
+            resp = logged_in_client.post(
+                f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/confirm-trust",
+                json={"fingerprint": "fp:2222"},
+            )
 
         assert resp.status_code == 200
         probe.assert_called_once_with("10.0.0.5", 2222)
         creds = ssh_credentials(device)
         db.session.refresh(creds)
         assert (creds.Key_Fingerprint, creds.SSH_Port) == ("fp:2222", 2222)
+
+    def test_a_key_that_changed_on_the_device_port_is_not_trusted(self, logged_in_client, db_session, admin_user):
+        device = make_device(db_session, admin_user, {2222: "ssh"})
+
+        with patch.object(ncpa_routes, "get_host_key_fingerprint", return_value="fp:NEW") as probe:
+            resp = logged_in_client.post(
+                f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/confirm-trust",
+                json={"fingerprint": "fp:2222"},
+            )
+
+        assert resp.status_code == 409
+        assert resp.get_json()["data"]["fingerprint"] == "fp:NEW"
+        probe.assert_called_once_with("10.0.0.5", 2222)
+        creds = ssh_credentials(device)
+        db.session.refresh(creds)
+        # Nothing is trusted, and the port is only pinned together with a trusted key.
+        assert (creds.Key_Fingerprint, creds.SSH_Port) == (None, 22)
+
+    def test_unreachable_device_port_is_502_and_saves_nothing(self, logged_in_client, db_session, admin_user):
+        device = make_device(db_session, admin_user, {2222: "ssh"})
+
+        with patch.object(ncpa_routes, "get_host_key_fingerprint", return_value=None):
+            resp = logged_in_client.post(
+                f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/confirm-trust",
+                json={"fingerprint": "fp:2222"},
+            )
+
+        assert resp.status_code == 502
+        assert ssh_credentials(device).Key_Fingerprint is None
 
     def test_deploy_checks_the_host_key_on_the_pinned_port(self, logged_in_client, db_session, admin_user):
         device = make_device(db_session, admin_user, {2222: "ssh"})
@@ -135,8 +176,33 @@ class TestRoutesUseTheDevicePort:
             })
 
         assert resp.status_code == 202
-        assert resp.get_json()["data"]["started"] == 1
+        data = resp.get_json()["data"]
+        assert data["started"] == 1
         probe.assert_called_once_with("10.0.0.5", 2222)
+        # The run records the accepted device as Pending.
+        outcomes = db.session.scalars(
+            sa.select(NCPADeploymentResult.Outcome).where(
+                NCPADeploymentResult.NCPADeploymentStatusID == data["run_id"])
+        ).all()
+        assert outcomes == [DeploymentOutcome.PENDING]
+
+    def test_deploy_rejects_a_changed_key_on_the_pinned_port(self, logged_in_client, db_session, admin_user):
+        device = make_device(db_session, admin_user, {2222: "ssh"})
+        creds = ssh_credentials(device)
+        creds.Key_Fingerprint, creds.SSH_Port = "fp:2222", 2222
+        db.session.commit()
+
+        with patch.object(ncpa_routes, "deploy_ncpa_thread", None), \
+             patch.object(ncpa_routes.threading, "Thread") as thread_cls, \
+             patch.object(ncpa_routes, "get_host_key_fingerprint", return_value="fp:NEW"):
+            resp = logged_in_client.post("/api/system/deployment/ncpa/start", json={
+                "devices": [{"device_id": device.NetDiscoveryID, "username": "u", "password": "p"}],
+            })
+
+        assert resp.status_code == 400
+        assert resp.get_json()["data"]["rejected"] == [
+            {"device_id": device.NetDiscoveryID, "reason": "Host key mismatch."}]
+        thread_cls.assert_not_called()
 
 
 # ==========================================================
@@ -236,7 +302,7 @@ class TestHelperUsesConfiguredNcpaPort:
             helper = self.install_helper()
         assert 'NCPA_PORT="5693"' in helper
         assert "__NCPA_PORT__" not in helper
-        assert "/^\\[listener\\]/,/^\\[/ s/^port = .*/port = $NCPA_PORT/" in helper
+        assert "/^\\[listener\\]/a port = $NCPA_PORT" in helper
 
     def test_configured_port(self, app):
         with app.app_context(), patched_config(app, NCPA_PORT="5800"):
@@ -253,8 +319,75 @@ class TestHelperUsesConfiguredNcpaPort:
         urls = [call.args[0] for call in get.call_args_list]
         assert urls == ["https://10.0.0.5:5800/api", "https://10.0.0.5:5800/api/disk/logical"]
 
-    @pytest.mark.parametrize("bad", ["0", "70000", "56a"])
+    @pytest.mark.parametrize("bad", ["0", "70000", "56a", "abc", None])
     def test_an_invalid_port_is_never_written_into_the_helper(self, app, bad):
         with app.app_context(), patched_config(app, NCPA_PORT=bad), \
-             pytest.raises(ValueError):
+             pytest.raises(ValueError, match="NCPA_PORT must be an integer between 1 and 65535."):
             ncpa.ncpa_port()
+
+    def test_agent_restarts_through_systemd(self, app):
+        with app.app_context():
+            helper = self.install_helper()
+        assert '"$SYSTEMCTL" restart ncpa' in helper
+        assert "/etc/init.d/ncpa" not in helper
+
+
+STOCK_LISTENER = """[listener]
+# ip =
+# port =
+uuid = abc
+
+[api]
+community_string = old
+"""
+
+
+@pytest.mark.skipif(shutil.which("bash") is None or shutil.which("sed") is None, reason="needs bash and sed")
+class TestHelperListenerPortEdit:
+    """Run the helper's real [listener] port edit against sample ncpa.cfg files."""
+
+    def edit(self, app, tmp_path, config_text, port="5800"):
+        with app.app_context(), patched_config(app, NCPA_PORT=port):
+            helper = TestHelperUsesConfiguredNcpaPort().install_helper()
+        start = helper.index("# Listen on PinPoint's configured NCPA port.")
+        end = helper.index("# Use a persistent self-signed certificate")
+        config = tmp_path / "ncpa.cfg"
+        config.write_text(config_text)
+        script = (
+            'set -euo pipefail\nSED=/usr/bin/sed\n'
+            f'NCPA_PORT="{port}"\nNCPA_CONFIG="{config}"\n' + helper[start:end]
+        )
+        result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        return result, config.read_text()
+
+    def listener_port_lines(self, text):
+        found = []
+        in_listener = False
+        for line in text.splitlines():
+            if line.startswith("["):
+                in_listener = line == "[listener]"
+            elif in_listener and line.startswith("port"):
+                found.append(line)
+        return found
+
+    def test_stock_config_with_commented_port(self, app, tmp_path):
+        result, text = self.edit(app, tmp_path, STOCK_LISTENER)
+        assert result.returncode == 0, result.stderr
+        assert self.listener_port_lines(text) == ["port = 5800"]
+        assert "# ip =" in text and "community_string = old" in text
+
+    def test_existing_active_port_is_replaced(self, app, tmp_path):
+        result, text = self.edit(app, tmp_path, STOCK_LISTENER.replace("# port =", "port = 5693"))
+        assert result.returncode == 0, result.stderr
+        assert self.listener_port_lines(text) == ["port = 5800"]
+
+    def test_redeploy_is_idempotent(self, app, tmp_path):
+        _, once = self.edit(app, tmp_path, STOCK_LISTENER)
+        result, twice = self.edit(app, tmp_path, once)
+        assert result.returncode == 0, result.stderr
+        assert self.listener_port_lines(twice) == ["port = 5800"]
+
+    def test_config_without_listener_section_fails_with_a_specific_message(self, app, tmp_path):
+        result, _ = self.edit(app, tmp_path, "[api]\ncommunity_string = old\n")
+        assert result.returncode == 1
+        assert "Could not set the NCPA listener port." in result.stderr

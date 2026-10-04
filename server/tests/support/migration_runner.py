@@ -80,10 +80,6 @@ report["tcp"] = c.execute(
     "select NetDiscoveryID, Port_Number, Port_State, Source, Missed_Scans, Observed_Service_Name "
     "from OPEN_TCP_Services order by 1, 2").fetchall()
 report["udp"] = c.execute("select NetDiscoveryID, Port_Number, Port_State from OPEN_UDP_Services").fetchall()
-# Service identification (e5a9c3d7f210): existing ports are left unclassified.
-report["tcp_identified_by"] = c.execute("select Identified_By from OPEN_TCP_Services").fetchall()
-report["udp_columns"] = [r[1] for r in c.execute("pragma table_info(OPEN_UDP_Services)")]
-report["settings_columns"] = [r[1] for r in c.execute("pragma table_info(DISCOVERY_SETTINGS)")]
 
 # The constraints really are enforced.
 errors = {}
@@ -125,6 +121,19 @@ with app.app_context():
     flask_migrate.upgrade(directory="migrations", revision=TARGET)
 c = sqlite3.connect(sysdb)
 report["version_after_reupgrade"] = c.execute("select version_num from alembic_version").fetchall()
+c.close()
+
+# The rest of the chain must reach a single head (two branches each added a
+# migration on d41f7a2b9e10; f3b7d2e8a614 joins them). Service identification
+# (e5a9c3d7f210) leaves the existing ports unclassified.
+with app.app_context():
+    flask_migrate.upgrade(directory="migrations", revision="head")
+c = sqlite3.connect(sysdb)
+report["version_at_head"] = c.execute("select version_num from alembic_version").fetchall()
+report["tcp_identified_by"] = c.execute("select Identified_By from OPEN_TCP_Services").fetchall()
+report["udp_columns"] = [r[1] for r in c.execute("pragma table_info(OPEN_UDP_Services)")]
+report["settings_columns"] = [r[1] for r in c.execute("pragma table_info(DISCOVERY_SETTINGS)")]
+report["tables_at_head"] = sorted(r[0] for r in c.execute("select name from sqlite_master where type='table'"))
 c.close()
 
 print("REPORT_BEGIN")

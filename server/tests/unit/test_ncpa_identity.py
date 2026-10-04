@@ -188,7 +188,7 @@ class TestStoreDeploymentIdentity:
 class TestInstallNcpa:
     """install_ncpa() with SSH, the helper and NCPA reachability mocked."""
 
-    def run_install(self, device, existing_token=None):
+    def run_install(self, device, existing_token=None, listening=True):
         if existing_token is not None:
             deployment = db.session.scalar(sa.select(NCPADeployment).where(
                 NCPADeployment.NetworkDiscoveryID == device.NetDiscoveryID))
@@ -201,10 +201,21 @@ class TestInstallNcpa:
              patch.object(ncpa, "connect_with_fingerprint_check", return_value=client), \
              patch.object(ncpa, "run_command", run), \
              patch.object(ncpa, "verify_ncpa_reachable", return_value={"success": True, "message": ""}), \
+             patch.object(ncpa, "port_accepts_connections", return_value=listening), \
              patch.object(ncpa, "tls_certificate_fingerprint", return_value=CERT_1) as probe:
             # install_ncpa returns (outcome, error); success is (SUCCESS, None).
             ok = ncpa.install_ncpa(device.NetDiscoveryID, None, device.IP_Address) == (DeploymentOutcome.SUCCESS, None)
         return ok, run, probe
+
+    def test_listener_that_stops_after_the_identity_probe_fails_the_deployment(self, db_session, admin_user):
+        device = make_linux_device(db_session, admin_user)
+
+        ok, _run, _probe = self.run_install(device, listening=False)
+
+        assert ok is False
+        deployment = db.session.scalar(sa.select(NCPADeployment).where(
+            NCPADeployment.NetworkDiscoveryID == device.NetDiscoveryID))
+        assert deployment.Error == ncpa.NCPA_STOPPED_MESSAGE
 
     def test_deployment_stores_identity_evidence(self, db_session, admin_user):
         device = make_linux_device(db_session, admin_user, mac=None)
@@ -670,12 +681,12 @@ class TestDiscoverDiskNodes:
             if path == "disk/logical":
                 return self.LISTING
             node = path.split("/")[2]
-            return None if node in missing else {"percent": 1}
+            return None if node in missing else {"used_percent": 1}
         return get
 
     def test_keeps_mounted_real_filesystems_that_answer(self, app):
         with app.app_context(), patch.object(ncpa, "_ncpa_get", self.fake_get(missing={"|mnt|gone"})):
-            assert ncpa.discover_disk_nodes("10.0.0.5", "tok") == ["|", "|boot|efi"]
+            assert ncpa.discover_disk_nodes("10.0.0.5", "tok") == ["|"]
 
     def test_unreachable_agent_yields_nothing(self, app):
         with app.app_context(), patch.object(ncpa, "_ncpa_get", return_value=None):
@@ -694,4 +705,4 @@ class TestDiscoverDiskNodes:
 
         stored = db.session.scalars(sa.select(NCPADevicePartition.Name).where(
             NCPADevicePartition.NCPADeployID == deployment.NCPADeployID)).all()
-        assert names == stored == ["|", "|boot|efi"]
+        assert names == stored == ["|"]

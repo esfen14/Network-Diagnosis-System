@@ -29,6 +29,8 @@ def tls_certificate_fingerprint(ip_address, port, timeout=PROBE_TIMEOUT):
     service on ip_address:port presents, or None if it cannot be read.
     Certificate validity is deliberately not checked (NCPA uses a self-signed
     certificate); the fingerprint is the identity. Sends no application data.
+    The TLS session is shut down cleanly (close_notify): NCPA 3.5.0 stops
+    listening when a client drops the connection mid-session.
     """
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.check_hostname = False
@@ -38,12 +40,26 @@ def tls_certificate_fingerprint(ip_address, port, timeout=PROBE_TIMEOUT):
         with socket.create_connection((ip_address, int(port)), timeout=timeout) as raw:
             with context.wrap_socket(raw) as tls:
                 der = tls.getpeercert(binary_form=True)
+                try:
+                    tls.unwrap()
+                except (OSError, ssl.SSLError):
+                    # The certificate is already read; a failed shutdown must not lose it.
+                    pass
     except (OSError, ssl.SSLError, ValueError):
         return None
 
     if not der:
         return None
     return hashlib.sha256(der).hexdigest()
+
+
+def port_accepts_connections(ip_address, port, timeout=PROBE_TIMEOUT):
+    """True if a TCP connection to ip_address:port succeeds. Sends no data."""
+    try:
+        with socket.create_connection((ip_address, int(port)), timeout=timeout):
+            return True
+    except (OSError, ValueError):
+        return False
 
 
 def ssh_host_key_fingerprint(ip_address, port=22, timeout=PROBE_TIMEOUT):

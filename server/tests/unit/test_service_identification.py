@@ -61,6 +61,11 @@ class TestServiceFromNmap:
     def test_unidentified_answers_are_hints(self, name):
         assert service_from_nmap(service(name=name, method="probed"))["identified_by"] == PORT_HINT
 
+    @pytest.mark.parametrize("method", ["probed", "table"])
+    def test_tcpwrapped_is_not_stored_as_a_service_name(self, method):
+        assert service_from_nmap(service(name="tcpwrapped", method=method)) == {
+            "service_name": "unknown", "identified_by": PORT_HINT}
+
     def test_no_service_element(self):
         assert service_from_nmap(None) == {"service_name": "unknown", "identified_by": PORT_HINT}
 
@@ -182,6 +187,22 @@ class TestLifecycleIdentification:
         port = tcp_port(device, 22)
         assert port.Port_State is PortState.MONITORED
         assert port.Identified_By is ServiceIdentification.FINGERPRINT
+
+    def test_removed_port_rule_refreshes_the_label_but_not_the_name(self, device):
+        scan_port(device, 8444, "http", PORT_RULE)
+        port = tcp_port(device, 8444)
+        plugin = port.Plugin_Name
+
+        scan_port(device, 8444, "http", FINGERPRINT)
+        port = tcp_port(device, 8444)
+        assert port.Identified_By is ServiceIdentification.FINGERPRINT
+        assert port.Service_Name == "http" and port.Plugin_Name == plugin
+        assert review_items() == []
+
+    def test_a_port_rule_that_still_applies_keeps_its_label(self, device):
+        scan_port(device, 8444, "http", PORT_RULE)
+        scan_port(device, 8444, "http", PORT_RULE)
+        assert tcp_port(device, 8444).Identified_By is ServiceIdentification.PORT_RULE
 
     def test_a_user_suggestion_is_not_promoted_again(self, device):
         scan_port(device, 22, "ssh", FINGERPRINT)

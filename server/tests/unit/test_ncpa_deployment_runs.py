@@ -63,7 +63,7 @@ def reset_module_state():
 
 
 def make_device(db_session, admin_user, hostname="web-01", ip="10.0.20.11", trusted=True,
-                agent_status=AgentStatus.PENDING_NCPA, eligible=True, include=True):
+                agent_status=AgentStatus.PENDING_NCPA, eligible=True, include=True, ssh_port=22):
     """A discovered device with SSH_CREDENTIALS and an NCPA_DEPLOYMENT row."""
     log = ActivityLog(Action_Type="test", UserID=admin_user.UserID)
     db_session.session.add(log)
@@ -80,7 +80,7 @@ def make_device(db_session, admin_user, hostname="web-01", ip="10.0.20.11", trus
     db_session.session.add(device)
     db_session.session.flush()
     db_session.session.add(SSHCredentials(
-        SSH_Port=22, Key_Installed=False, Key_Fingerprint=FINGERPRINT if trusted else None,
+        SSH_Port=ssh_port, Key_Installed=False, Key_Fingerprint=FINGERPRINT if trusted else None,
         NetworkDiscoveryID=device.NetDiscoveryID,
     ))
     if agent_status is not None:
@@ -354,14 +354,25 @@ class TestInstallProcess:
 # ─── give_program_permissions: outcome classification (plan §5) ───────────────
 
 class TestBootstrapOutcomes:
-    def bootstrap(self, host_key="ok", connect=None):
+    def bootstrap(self, host_key="ok", connect=None, trusted=(FINGERPRINT, 2222)):
         info = MagicMock()
-        with patch.object(worker, "query_key_fingerprint", return_value=FINGERPRINT), \
-             patch.object(worker, "check_host_key", return_value=host_key), \
-             patch.object(worker, "connect_with_fingerprint_check", side_effect=connect), \
+        with patch.object(worker, "query_trusted_host", return_value=trusted), \
+             patch.object(worker, "check_host_key", return_value=host_key) as check, \
+             patch.object(worker, "connect_with_fingerprint_check", side_effect=connect) as connect_mock, \
              patch.object(worker, "update_ncpa_deployment_info", info):
             result = worker.give_program_permissions(1, 7, "10.0.20.11", "admin", PASSWORD)
+        self.check, self.connect = check, connect_mock
         return result, info
+
+    def test_host_key_and_login_use_the_pinned_ssh_port(self, app, db_session):
+        self.bootstrap(connect=paramiko.AuthenticationException("no"))
+        self.check.assert_called_once_with("10.0.20.11", 2222, FINGERPRINT)
+        assert self.connect.call_args.args[:4] == ("10.0.20.11", 2222, "admin", FINGERPRINT)
+
+    def test_untrusted_device_fails_instead_of_crashing(self, app, db_session):
+        result, info = self.bootstrap(trusted=(None, None))
+        assert result == (DeploymentOutcome.FAILED, "Device has not been trust-confirmed.")
+        self.check.assert_not_called()
 
     def test_no_answer_on_ssh_is_down(self, app, db_session):
         result, info = self.bootstrap(host_key="unreachable")
@@ -388,11 +399,18 @@ class TestCheckDeviceCredentials:
     def check(self, host_key="ok", connect=None, sudo_ok=True):
         client = MagicMock()
         sudo = MagicMock(return_value={"success": sudo_ok, "message": "", "output": "", "error": ""})
-        with patch.object(worker, "check_host_key", return_value=host_key), \
-             patch.object(worker, "connect_with_fingerprint_check", side_effect=connect, return_value=client), \
+        with patch.object(worker, "check_host_key", return_value=host_key) as check, \
+             patch.object(worker, "connect_with_fingerprint_check", side_effect=connect, return_value=client) as connect_mock, \
              patch.object(worker, "run_sudo_command", sudo):
-            result = worker.check_device_credentials("10.0.20.11", FINGERPRINT, "admin", PASSWORD)
+            result = worker.check_device_credentials("10.0.20.11", 2222, FINGERPRINT, "admin", PASSWORD)
+        self.check_host, self.connect = check, connect_mock
         return result, sudo, client
+
+    def test_uses_the_pinned_ssh_port(self, app):
+        with app.app_context():
+            self.check()
+        self.check_host.assert_called_once_with("10.0.20.11", 2222, FINGERPRINT)
+        assert self.connect.call_args.args[:4] == ("10.0.20.11", 2222, "admin", FINGERPRINT)
 
     def test_login_and_sudo_work(self, app):
         with app.app_context():
@@ -420,7 +438,7 @@ class TestCheckCredentialsRoute:
     URL = f"{BASE}/check-credentials"
 
     def test_reports_each_device(self, logged_in_client, db_session, admin_user):
-        good = make_device(db_session, admin_user, hostname="good")
+        good = make_device(db_session, admin_user, hostname="good", ssh_port=2222)
         untrusted = make_device(db_session, admin_user, hostname="untrusted", trusted=False)
 
         with patch.object(routes, "check_device_credentials", return_value="auth_failed") as check:
@@ -432,7 +450,7 @@ class TestCheckCredentialsRoute:
             {"device_id": untrusted.NetDiscoveryID, "result": "not_trusted"},
             {"device_id": 99999, "result": "not_found"},
         ]
-        check.assert_called_once_with(good.IP_Address, FINGERPRINT, "admin", PASSWORD)
+        check.assert_called_once_with(good.IP_Address, 2222, FINGERPRINT, "admin", PASSWORD)
         assert PASSWORD not in resp.get_data(as_text=True)
 
     def test_a_device_checked_moments_ago_is_rate_limited(self, logged_in_client, db_session, admin_user):

@@ -33,8 +33,14 @@ def report():
 
 
 def test_upgrade_reaches_the_new_revision(report):
-    assert report["version"] == [["e5a9c3d7f210"]]
-    assert report["version_after_reupgrade"] == [["e5a9c3d7f210"]]
+    assert report["version"] == [["d41f7a2b9e10"]]
+    assert report["version_after_reupgrade"] == [["d41f7a2b9e10"]]
+
+
+def test_the_chain_reaches_one_head_with_both_branches_applied(report):
+    # Service identification and the NCPA run-history migration are both applied.
+    assert report["version_at_head"] == [["f3b7d2e8a614"]]
+    assert "NCPA_DEPLOYMENT_RESULT" in report["tables_at_head"]
 
 
 def test_service_identification_columns_are_added(report):
