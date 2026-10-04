@@ -173,8 +173,8 @@ this is a documented implementation mismatch, not a recommended convention.
 | Method and path | Permission | Purpose |
 |---|---|---|
 | `GET /api/system/deployment/ncpa/devices` | `system.deploy.ncpa` | List NCPA-eligible devices |
-| `GET /api/system/deployment/ncpa/<device_id>/fingerprint` | `system.deploy.ncpa` | Fetch live SSH host-key fingerprint |
-| `POST /api/system/deployment/ncpa/<device_id>/confirm-trust` | `system.deploy.ncpa` | Store the confirmed fingerprint |
+| `GET /api/system/deployment/ncpa/<device_id>/fingerprint` | `system.deploy.ncpa` | Fetch live SSH host-key fingerprint from the device's SSH port (`data.ssh_port`) |
+| `POST /api/system/deployment/ncpa/<device_id>/confirm-trust` | `system.deploy.ncpa` | Store the confirmed fingerprint together with the SSH port it was read from |
 | `POST /api/system/deployment/ncpa/<device_id>/refresh-disks` | `system.deploy.ncpa` | Re-read the agent's logical disks, store them, regenerate the Nagios config |
 | `POST /api/system/deployment/ncpa/start` | `system.deploy.ncpa` | Start deployment to one or more devices |
 | `POST /api/system/deployment/ncpa/stop` | `system.deploy.ncpa` | Request deployment cancellation |

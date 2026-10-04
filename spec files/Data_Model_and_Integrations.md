@@ -152,6 +152,19 @@ nodes (`GET /api/disk/logical`, filesystems whose `percent` node answers) into
 `NCPADevicePartition.Name` (an NCPA node name such as `|` or `|boot|efi`, not an
 lsblk partition).
 
+SSH is not assumed to be on port 22. `port_lifecycle.device_ssh_port()` picks
+the device's SSH port from its recorded TCP ports (a port whose frozen plugin or
+service name is `ssh`; hand-added first, then monitored, then `SSH_PORT`, then
+lowest; MISSING/ARCHIVED ports are skipped) and falls back to `SSH_PORT`.
+Trust confirmation stores that port in `SSHCredentials.SSH_Port` with the
+fingerprint, because a fingerprint only vouches for the port it was read from;
+every later deployment connection uses the pinned port, and paramiko host keys
+for non-22 ports are registered as `[address]:port`. If SSH moves, the device
+must be trust-confirmed again. The remote helper configures the agent's
+`[listener]` port to `Config.NCPA_PORT`, and Pinpoint reaches the agent on that
+port; deployment has no per-device NCPA port. Discovery's identity probes read
+the SSH host key on `SSH_PORT` and on every port nmap identified as `ssh`.
+
 Credentials, tokens, passwords, and secret-bearing command arguments must never
 appear in logs, API responses, or persisted Nagios snapshot check commands.
 

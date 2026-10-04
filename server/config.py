@@ -63,7 +63,13 @@ class Config:
     # Default hostname suffix given to discovered hosts: <ip>.<DOMAIN>
     # e.g. 192.168.130.10.test.local
     DOMAIN = os.environ.get('PINPOINT_DOMAIN') or "test.local"
+    # Port NCPA deployment configures the agent to listen on, and the port
+    # Pinpoint uses to reach it.
     NCPA_PORT = "5693"
+    # Standard SSH port. Used only when a device has no SSH port on record;
+    # otherwise NCPA deployment connects to the port discovery found SSH on
+    # (port_lifecycle.device_ssh_port).
+    SSH_PORT = 22
 
     # Device identity and port lifecycle (see "spec files/DHCP_Device_Identity_Plan.md").
     # Scans a device may go unseen before ACTIVE -> MISSING, and days it may

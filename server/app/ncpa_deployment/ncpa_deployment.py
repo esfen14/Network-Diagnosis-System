@@ -22,8 +22,6 @@ home = str(os.getenv("HOME"))
 PUBLIC_KEY_PATH = os.path.join(home,".ssh","pinpoint_ncpa_deploy.pub")
 PRIVATE_KEY_PATH = os.path.join(home,".ssh","pinpoint_ncpa_deploy")
 
-SSH_PORT = 22
-NCPA_PORT = "5693"
 DEPLOYMENT_USER = "pinpoint-deployment"
 SSH_TIMEOUT = 10
 REMOTE_SSH_DIR = f"/home/{DEPLOYMENT_USER}/.ssh" 
@@ -31,6 +29,27 @@ REMOTE_AUTHORIZED_KEYS = f"{REMOTE_SSH_DIR}/authorized_keys"
 
 REMOTE_HELPER = "/usr/local/sbin/pinpoint-ncpa-deploy" 
 REMOTE_SUDOERS = "/etc/sudoers.d/pinpoint-ncpa-deploy"
+
+def ncpa_port():
+    """
+    NCPA's listener port from Config.NCPA_PORT as an int. Raises ValueError if
+    it is not a valid TCP port, since it is written into the remote helper.
+    """
+    port = int(current_app.config["NCPA_PORT"])
+    if not 1 <= port <= 65535:
+        raise ValueError("NCPA_PORT must be between 1 and 65535.")
+    return port
+
+
+def ssh_host_key_name(ip_address, ssh_port):
+    """
+    The name paramiko looks a host key up by: the bare address on port 22,
+    "[address]:port" on any other port (the known_hosts convention).
+    """
+    if int(ssh_port) == 22:
+        return ip_address
+    return f"[{ip_address}]:{int(ssh_port)}"
+
 
 def mark_device_incompatible(device_id):
     device = db.session.get(NetworkDiscovery, device_id)
@@ -140,10 +159,14 @@ def run_sudo_command(client, command, password, log_command=None):
             "error": errors
             }
 
-def get_host_key_fingerprint(ip_address):
+def get_host_key_fingerprint(ip_address, ssh_port):
+    """
+    Fetch the live SSH host-key fingerprint (SHA-256, base64) of
+    ip_address:ssh_port. Returns None if the host cannot be reached.
+    """
     transport = None
     try:
-        transport = paramiko.Transport((ip_address, SSH_PORT))
+        transport = paramiko.Transport((ip_address, int(ssh_port)))
         transport.start_client(timeout=SSH_TIMEOUT)
         key = transport.get_remote_server_key()
 
@@ -162,27 +185,34 @@ def get_host_key_fingerprint(ip_address):
         if transport is not None:
             transport.close()
 
-def query_key_fingerprint(device_id):
-
-    try :
+def query_trusted_host(device_id):
+    """
+    Return (fingerprint, ssh_port) trusted for a device at trust confirmation.
+    The fingerprint only vouches for the port it was read from, so the two are
+    always used together. Returns (None, None) if the device has no record.
+    """
+    try:
         creds = db.session.scalar(
-            sa.select(SSHCredentials.Key_Fingerprint).where(SSHCredentials.NetworkDiscoveryID == device_id)
+            sa.select(SSHCredentials).where(SSHCredentials.NetworkDiscoveryID == device_id)
         )
-    except Exception as e:
+    except Exception:
         current_app.logger.exception(f"Device {device_id} does not exist.")
         creds = None
 
-    return creds
+    if creds is None:
+        return None, None
+    return creds.Key_Fingerprint, creds.SSH_Port or int(current_app.config["SSH_PORT"])
 
-def verify_host_fingerprint(ip_address, expected_fingerprint): 
+def verify_host_fingerprint(ip_address, ssh_port, expected_fingerprint): 
     """ 
-    Verify that the live SSH host key matches the trusted fingerprint. 
+    Verify that the live SSH host key on ip_address:ssh_port matches the
+    trusted fingerprint. 
     """ 
     if not expected_fingerprint: 
         current_app.logger.error("No trusted host fingerprint exists.")
         return False
     
-    actual_fingerprint = get_host_key_fingerprint(ip_address)
+    actual_fingerprint = get_host_key_fingerprint(ip_address, ssh_port)
 
     if actual_fingerprint is None:
         current_app.logger.error(f"Cannot reach host {ip_address}.")
@@ -196,6 +226,7 @@ def verify_host_fingerprint(ip_address, expected_fingerprint):
 
 def connect_with_fingerprint_check( 
         ip_address, 
+        ssh_port,
         username, 
         expected_fingerprint, 
         password=None,
@@ -204,6 +235,7 @@ def connect_with_fingerprint_check(
 
     result = verify_host_fingerprint( 
         ip_address,
+        ssh_port,
         expected_fingerprint
     ) 
 
@@ -215,14 +247,16 @@ def connect_with_fingerprint_check(
     client.set_missing_host_key_policy( paramiko.RejectPolicy() ) 
     
     transport = paramiko.Transport( 
-        (ip_address, SSH_PORT) 
+        (ip_address, int(ssh_port)) 
     ) 
 
     try: 
         transport.start_client(timeout=SSH_TIMEOUT) 
         host_key = transport.get_remote_server_key() 
+        # Stored under the name connect() looks it up by, or a non-22
+        # port is rejected by RejectPolicy.
         client.get_host_keys().add( 
-            ip_address, host_key.get_name(), 
+            ssh_host_key_name(ip_address, ssh_port), host_key.get_name(), 
             host_key
             )
     except paramiko.SSHException as e:
@@ -236,7 +270,7 @@ def connect_with_fingerprint_check(
 
     client.connect( 
             hostname=ip_address, 
-            port=SSH_PORT, 
+            port=int(ssh_port), 
             username=username, 
             password=password,
             key_filename=private_key,
@@ -380,7 +414,7 @@ def install_deployment_helper(client, password):
     NCPA_SOURCE="/etc/apt/sources.list.d/nagios.sources"
     NCPA_CONFIG="/usr/local/ncpa/etc/ncpa.cfg"
 
-    NCPA_PORT="5693"
+    NCPA_PORT="__NCPA_PORT__"
 
     "$APT" update
 
@@ -408,6 +442,9 @@ def install_deployment_helper(client, password):
     DEBIAN_FRONTEND=noninteractive "$APT" install -y ncpa
 
     "$SED" -i "s/^community_string = .*/community_string = $TOKEN/" "$NCPA_CONFIG"
+
+    # Listen on PinPoint's configured NCPA port (only the [listener] section).
+    "$SED" -i "/^\\[listener\\]/,/^\\[/ s/^port = .*/port = $NCPA_PORT/" "$NCPA_CONFIG"
 
     # Use a persistent self-signed certificate instead of NCPA's "adhoc" one,
     # which may be regenerated on restart. PinPoint identifies the device by
@@ -472,7 +509,7 @@ def install_deployment_helper(client, password):
     done
     echo "hostname=$(/usr/bin/hostname)"
     echo "IDENTITY_END"
-    ''').lstrip('\n')
+    ''').lstrip('\n').replace("__NCPA_PORT__", str(ncpa_port()))
 
     try:
 
@@ -569,12 +606,12 @@ def give_program_permissions( device_id, ncpa_deployment_status_id, ip_address, 
     """ 
     client = None 
     try: 
-        fingerprint = query_key_fingerprint(device_id) 
+        fingerprint, ssh_port = query_trusted_host(device_id) 
         if not fingerprint: 
             update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="Device has not been trust-confirmed." ) 
             return False 
 
-        client = connect_with_fingerprint_check( ip_address, username, fingerprint, password=password, )
+        client = connect_with_fingerprint_check( ip_address, ssh_port, username, fingerprint, password=password, )
 
         if client is None:
             update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="Cannot reach host.") 
@@ -646,7 +683,8 @@ def verify_ncpa_reachable(ip_address, token, timeout=5):
     that NCPA accepts the generated authentication token.
     """
 
-    url = f"https://{ip_address}:{NCPA_PORT}/api"
+    port = ncpa_port()
+    url = f"https://{ip_address}:{port}/api"
 
     try:
         response = requests.get(
@@ -682,7 +720,7 @@ def verify_ncpa_reachable(ip_address, token, timeout=5):
     except requests.exceptions.ConnectionError:
         return {
             "success": False,
-            "message": f"Unable to connect to NCPA on port {NCPA_PORT}."
+            "message": f"Unable to connect to NCPA on port {port}."
         }
 
     except requests.RequestException as e:
@@ -709,7 +747,7 @@ def _ncpa_get(ip_address, token, path, timeout=5):
     """GET an NCPA API node (e.g. "disk/logical"); the decoded JSON, or None."""
     try:
         response = requests.get(
-            f"https://{ip_address}:{NCPA_PORT}/api/{path}",
+            f"https://{ip_address}:{ncpa_port()}/api/{path}",
             params={"token": token},
             verify=False,
             timeout=timeout,
@@ -848,7 +886,7 @@ def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
     client = None
 
     try:
-        fingerprint = query_key_fingerprint(device_id)
+        fingerprint, ssh_port = query_trusted_host(device_id)
 
         if fingerprint is None:
             update_ncpa_deployment_info(
@@ -861,6 +899,7 @@ def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
 
         client = connect_with_fingerprint_check(
             ip_address,
+            ssh_port,
             DEPLOYMENT_USER,
             fingerprint,
             private_key=PRIVATE_KEY_PATH
@@ -952,7 +991,7 @@ def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
         # a failure here must not mark the deployment as failed.
         try:
             identity = _parse_identity(stdout_text)
-            cert_fingerprint = tls_certificate_fingerprint(ip_address, NCPA_PORT)
+            cert_fingerprint = tls_certificate_fingerprint(ip_address, ncpa_port())
             store_deployment_identity(device_id, identity, cert_fingerprint)
         except Exception:
             db.session.rollback()

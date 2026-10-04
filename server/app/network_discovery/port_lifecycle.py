@@ -228,6 +228,49 @@ def mark_ncpa_port(device_id):
     return port
 
 
+def is_ssh_port(port):
+    """True if a port row is SSH by its frozen plugin or its service name."""
+    for name in (port.Plugin_Name, port.Service_Name):
+        if name and name.strip().lower() == "ssh":
+            return True
+    return False
+
+
+def device_ssh_port(device_id):
+    """
+    The TCP port a device answers SSH on, read from its recorded ports, so a
+    device running SSH on e.g. 2222 is reached there. MISSING and ARCHIVED
+    ports are not answering and are passed over. When several ports are SSH,
+    a hand-added port wins, then a monitored one, then the standard SSH_PORT,
+    then the lowest number. Returns SSH_PORT when the device has no SSH port
+    on record.
+    """
+    default_port = int(current_app.config["SSH_PORT"])
+    ports = db.session.scalars(
+        sa.select(Open_TCP_Services).where(
+            Open_TCP_Services.NetDiscoveryID == device_id,
+            Open_TCP_Services.Port_State.not_in((PortState.MISSING, PortState.ARCHIVED)),
+        )
+    ).all()
+
+    candidates = []
+    for port in ports:
+        if not is_ssh_port(port):
+            continue
+        rank = (
+            port.Source is not PortSource.USER,
+            port.Port_State is not PortState.MONITORED,
+            port.Port_Number != default_port,
+            port.Port_Number,
+        )
+        candidates.append((rank, port.Port_Number))
+
+    if not candidates:
+        return default_port
+    candidates.sort()
+    return candidates[0][1]
+
+
 def add_user_port(device_id, protocol, port_number, service_name):
     """
     Add a port by hand and monitor it (Source USER), whatever range it is in.

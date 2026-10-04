@@ -86,7 +86,7 @@ Flow: `discover_network()` → `_create_hostname()` → `_override_service_names
 |---|---|---|---|
 | **NCPA TLS certificate fingerprint** | At NCPA deployment; checked on every scan with a TLS handshake to port 5693 | Strong | No secret sent. Requires a persistent per-device certificate (see §7). |
 | **`/etc/machine-id`** | At NCPA deployment (SSH helper) | Strong | Stable per OS install. Cloned VMs can share it. Only available over SSH/NCPA. |
-| **SSH host key fingerprint** | Already stored in `SSH_CREDENTIALS.Key_Fingerprint` at trust confirmation; collected in scans when port 22 is open | Strong | Uses existing `get_host_key_fingerprint()`. Changes on OS reinstall; cloned VMs can share. |
+| **SSH host key fingerprint** | Already stored in `SSH_CREDENTIALS.Key_Fingerprint` at trust confirmation; collected in scans on `SSH_PORT` and on every port nmap identified as ssh | Strong | Uses existing `get_host_key_fingerprint()`. Changes on OS reinstall; cloned VMs can share. |
 | **Hardware MAC** (universally administered) | nmap on the same L2 segment; `ip -o link` at deployment | Medium–strong | Absent across routers. Multi-NIC devices have several. |
 | **Randomized MAC** (locally administered bit set) | nmap | Weak | Phones and some laptops. Treat like no MAC. |
 | **Reverse DNS / NetBIOS / NCPA node name** | nmap `-R`, NCPA `/api/system` | Weak | Tiebreaker only. |

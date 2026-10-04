@@ -47,6 +47,7 @@ from app.api.helper.database_access.permissions import require_permission
 from app.logging.deployment_history import get_deployment_ncpa_status
 from app.system_models import NetworkDiscovery, SSHCredentials, NCPADeployment, AgentStatus, IdentifierKind
 from app.network_discovery.device_identity import Evidence, record_device_evidence
+from app.network_discovery.port_lifecycle import device_ssh_port
 from app.ncpa_deployment.ncpa_deployment import *
 
 deploy_ncpa_thread = None
@@ -95,15 +96,16 @@ def get_device_fingerprint(device_id):
     """
     Fetch the live SSH host-key fingerprint for a device.
 
-    Connects to the device's IP address and retrieves its current
-    SSH host-key (SHA-256, base64-encoded). Used during the trust-
+    Connects to the device's IP address on the port discovery found SSH
+    on (the standard SSH port if none is recorded) and retrieves its
+    current SSH host-key (SHA-256, base64-encoded). Used during the trust-
     confirmation flow so the admin can verify before approving.
 
     Args:
         device_id: Primary key of the NetworkDiscovery record.
 
     Response (200):
-        { "success": true, "data": { "device_id": int, "ip_address": str, "fingerprint": str } }
+        { "success": true, "data": { "device_id": int, "ip_address": str, "ssh_port": int, "fingerprint": str } }
 
     Errors:
         404 – Device not found.
@@ -119,8 +121,9 @@ def get_device_fingerprint(device_id):
         if not device.Include_Device_In_Scanning:
             return error("Device not included in scanning.", 404)
 
+        ssh_port = device_ssh_port(device_id)
         try:
-            fingerprint = get_host_key_fingerprint(device.IP_Address)
+            fingerprint = get_host_key_fingerprint(device.IP_Address, ssh_port)
         except Exception:
             current_app.logger.error("Could not reach device at %s.", device.IP_Address)
             return error("Could not reach device.", 502)
@@ -128,6 +131,7 @@ def get_device_fingerprint(device_id):
         return success({
             "device_id": device_id,
             "ip_address": device.IP_Address,
+            "ssh_port": ssh_port,
             "fingerprint": fingerprint,
         })
 
@@ -144,8 +148,10 @@ def confirm_device_trust(device_id):
     Save the device's current SSH host-key fingerprint.
 
     Re-fetches the live fingerprint server-side (does not trust the
-    client) and stores it in the SSH_CREDENTIALS table. This is the
-    "trust confirmation" step — once saved, the device can be deployed to.
+    client) and stores it in the SSH_CREDENTIALS table together with the
+    SSH port it was read from; every later deployment connection uses that
+    port. This is the "trust confirmation" step — once saved, the device
+    can be deployed to.
 
     Args:
         device_id: Primary key of the NetworkDiscovery record.
@@ -167,7 +173,8 @@ def confirm_device_trust(device_id):
             return error("Device not included in scanning.", 404)
 
         # Recreate the fingerprint server-side rather than trusting the client
-        fingerprint = get_host_key_fingerprint(device.IP_Address)
+        ssh_port = device_ssh_port(device_id)
+        fingerprint = get_host_key_fingerprint(device.IP_Address, ssh_port)
 
         creds = db.session.scalar(
             sa.select(SSHCredentials).where(
@@ -178,7 +185,9 @@ def confirm_device_trust(device_id):
         if creds is None:
             return error("That device has no credentials entry.", 404)
 
+        # A fingerprint only vouches for the port it was read from.
         creds.Key_Fingerprint = fingerprint
+        creds.SSH_Port = ssh_port
 
         # The trusted host key also identifies the device across IP changes.
         if fingerprint:
@@ -272,7 +281,7 @@ def deploy_ncpa():
             })
             continue
 
-        current_fingerprint = get_host_key_fingerprint(device.IP_Address)
+        current_fingerprint = get_host_key_fingerprint(device.IP_Address, creds.SSH_Port)
         if current_fingerprint != creds.Key_Fingerprint:
             rejected_entries.append({
                 "device_id": device_id,
