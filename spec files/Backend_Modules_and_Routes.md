@@ -175,6 +175,7 @@ this is a documented implementation mismatch, not a recommended convention.
 | `GET /api/system/deployment/ncpa/devices` | `system.deploy.ncpa` | List NCPA-eligible devices |
 | `GET /api/system/deployment/ncpa/<device_id>/fingerprint` | `system.deploy.ncpa` | Fetch live SSH host-key fingerprint |
 | `POST /api/system/deployment/ncpa/<device_id>/confirm-trust` | `system.deploy.ncpa` | Store the confirmed fingerprint |
+| `POST /api/system/deployment/ncpa/<device_id>/refresh-disks` | `system.deploy.ncpa` | Re-read the agent's logical disks, store them, regenerate the Nagios config |
 | `POST /api/system/deployment/ncpa/start` | `system.deploy.ncpa` | Start deployment to one or more devices |
 | `POST /api/system/deployment/ncpa/stop` | `system.deploy.ncpa` | Request deployment cancellation |
 | `GET /api/system/deployment/ncpa/status` | `system.deploy.ncpa` | Current or most recent deployment status |

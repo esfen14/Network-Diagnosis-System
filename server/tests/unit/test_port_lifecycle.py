@@ -141,10 +141,10 @@ class TestMissedScans:
         assert port.Port_State is PortState.MONITORED
         assert port.Missed_Scans == 1
 
-    def test_three_misses_mark_a_monitored_port_missing_but_keep_it(self, device):
+    def test_five_misses_mark_a_monitored_port_missing_but_keep_it(self, device):
         scan_ports(device, tcp={22: "ssh"})
 
-        miss(device, 2)
+        miss(device, 4)
         assert tcp_port(device, 22).Port_State is PortState.MONITORED
         miss(device, 1)
 
@@ -173,7 +173,7 @@ class TestMissedScans:
 
     def test_missing_port_returns_to_monitored_when_seen_again(self, device):
         scan_ports(device, tcp={22: "ssh"})
-        miss(device, 3)
+        miss(device, 5)
         assert tcp_port(device, 22).Port_State is PortState.MISSING
 
         scan_ports(device, tcp={22: "ssh"})
@@ -195,13 +195,13 @@ class TestMissedScans:
     def test_unseen_suggestion_is_archived_after_the_threshold(self, device):
         scan_ports(device, tcp={8080: "http-proxy"})
 
-        miss(device, 3)
+        miss(device, 5)
 
         assert tcp_port(device, 8080).Port_State is PortState.ARCHIVED
 
     def test_missing_port_is_archived_after_the_timeout(self, app, device):
         scan_ports(device, tcp={22: "ssh"})
-        miss(device, 3)
+        miss(device, 5)
         port = tcp_port(device, 22)
         port.Closed_At = datetime.now(timezone.utc) - timedelta(days=31)
         db.session.commit()
@@ -213,7 +213,7 @@ class TestMissedScans:
 
     def test_missing_port_inside_the_timeout_stays_missing(self, app, device):
         scan_ports(device, tcp={22: "ssh"})
-        miss(device, 3)
+        miss(device, 5)
 
         with patched_config(app, PORT_ARCHIVE_AFTER_DAYS=30):
             miss(device, 5)
@@ -222,7 +222,7 @@ class TestMissedScans:
 
     def test_archived_port_seen_again_is_only_suggested(self, device):
         scan_ports(device, tcp={8080: "http-proxy"})
-        miss(device, 3)
+        miss(device, 5)
         assert tcp_port(device, 8080).Port_State is PortState.ARCHIVED
 
         scan_ports(device, tcp={8080: "http-proxy"})
@@ -243,7 +243,7 @@ class TestMissedScans:
         scan_ports(device, udp={161: "snmp"})
 
         process = lambda: process_device_ports(device, services(), host_seen=True)
-        for _ in range(3):
+        for _ in range(5):
             process()
         db.session.commit()
 
@@ -278,7 +278,7 @@ class TestNcpaPort:
         mark_ncpa_port(device.NetDiscoveryID)
         db.session.commit()
 
-        miss(device, 3)
+        miss(device, 5)
 
         assert tcp_port(device, 5693).Port_State is PortState.MISSING
 
@@ -380,7 +380,7 @@ class TestUserActions:
 
     def test_restoring_a_missing_port_keeps_its_plugin(self, device):
         scan_ports(device, tcp={22: "ssh"})
-        miss(device, 3)
+        miss(device, 5)
 
         port = set_port_state(device.NetDiscoveryID, "tcp", 22, PortState.MONITORED)
 

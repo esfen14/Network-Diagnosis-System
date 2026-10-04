@@ -169,7 +169,9 @@ flask db upgrade
   `printf '%s' "$PASSWORD" | flask init-production --admin-email admin@pinpoint.lan --password-stdin`.
   It seeds permissions, roles and settings, creates no test users, and refuses
   to run if any user already exists.
-- Existing install: back up both databases, then `flask db upgrade`.
+- Existing install: back up both databases, then `flask db upgrade`, then
+  `flask sync-permissions` (adds any permission introduced since the install and
+  grants it to Administrator; idempotent, never touches users or other roles).
 - Server built earlier with `db.create_all()`: run `flask db stamp head` once,
   then upgrade normally.
 - Development: `server/reset_db.sh` rebuilds both databases and runs

@@ -7,10 +7,16 @@ import sqlalchemy as sa
 from app.api.commands.seed import (
     PERMISSIONS,
     init_production_command,
+    missing_permissions,
     seed_command,
     seed_system_settings,
+    sync_permissions,
+    sync_permissions_command,
+    warn_if_permissions_missing,
 )
-from app.system_models import Permission, SystemSettings, User, UserStatus
+from app.system_models import (
+    Permission, Role, RolePermission, SystemSettings, User, UserStatus,
+)
 
 
 class TestSeedSystemSettings:
@@ -104,3 +110,70 @@ class TestInitProductionCommand:
 
         assert result.exit_code != 0
         assert db_session.session.scalar(sa.select(sa.func.count()).select_from(User)) == 0
+
+
+class TestSyncPermissions:
+
+    def _seed_old_install(self, db_session):
+        """An install whose permission list predates system.hosts.edit."""
+        from app.api.commands.seed import seed_permissions, seed_roles
+        seed_permissions()
+        seed_roles()
+        perm = db_session.session.scalar(
+            sa.select(Permission).where(Permission.Name == "system.hosts.edit")
+        )
+        db_session.session.execute(
+            sa.delete(RolePermission).where(RolePermission.PermissionID == perm.PermissionID)
+        )
+        db_session.session.execute(
+            sa.delete(Permission).where(Permission.PermissionID == perm.PermissionID)
+        )
+        db_session.session.commit()
+
+    def test_adds_missing_permission_and_grants_administrator(self, app, db_session):
+        self._seed_old_install(db_session)
+        assert missing_permissions() == ["system.hosts.edit"]
+
+        added, granted = sync_permissions()
+
+        assert added == ["system.hosts.edit"]
+        assert granted == ["system.hosts.edit"]
+        assert missing_permissions() == []
+
+    def test_second_run_changes_nothing(self, app, db_session):
+        self._seed_old_install(db_session)
+        sync_permissions()
+
+        assert sync_permissions() == ([], [])
+
+    def test_does_not_grant_other_roles(self, app, db_session):
+        self._seed_old_install(db_session)
+        sync_permissions()
+
+        holders = db_session.session.scalars(
+            sa.select(Role.Name)
+            .join(RolePermission, RolePermission.RoleID == Role.RoleID)
+            .join(Permission, Permission.PermissionID == RolePermission.PermissionID)
+            .where(Permission.Name == "system.hosts.edit")
+        ).all()
+        assert holders == ["Administrator"]
+
+    def test_cli_command_reports_changes(self, app, db_session):
+        self._seed_old_install(db_session)
+
+        result = app.test_cli_runner().invoke(sync_permissions_command)
+
+        assert result.exit_code == 0, result.output
+        assert "Permissions added: system.hosts.edit" in result.output
+
+    def test_startup_warning_names_missing_permission(self, app, db_session):
+        self._seed_old_install(db_session)
+        messages = []
+
+        class Log:
+            def error(self, msg, *args): messages.append(msg % args)
+            def warning(self, msg, *args): messages.append(msg % args)
+
+        warn_if_permissions_missing(Log())
+
+        assert any("system.hosts.edit" in m and "sync-permissions" in m for m in messages)

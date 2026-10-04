@@ -30,6 +30,7 @@ from app.system_models import (
     IdentifierKind,
     IdentityConfidence,
     NCPADeployment,
+    NCPADevicePartition,
     NetworkDiscovery,
     ReviewKind,
 )
@@ -87,9 +88,6 @@ class TestParseIdentity:
 
         assert ncpa._parse_identity(text) == {"machine_id": None, "macs": [], "hostname": None}
 
-    def test_partitions_still_parse_alongside_identity(self):
-        assert ncpa._parse_partitions(HELPER_OUTPUT) == ["sda1"]
-
 
 class TestHelperScript:
 
@@ -106,7 +104,7 @@ class TestHelperScript:
     def test_prints_the_identity_block(self, script):
         assert "IDENTITY_BEGIN" in script and "IDENTITY_END" in script
         assert "/etc/machine-id" in script
-        assert "PARTITIONS_BEGIN" in script  # the old block is untouched
+        assert "PARTITIONS_BEGIN" not in script and "lsblk" not in script
 
     def test_uses_a_persistent_certificate_instead_of_adhoc(self, script):
         assert "pinpoint-ncpa.crt" in script and "pinpoint-ncpa.key" in script
@@ -120,6 +118,20 @@ class TestHelperScript:
                 assert "TOKEN" not in line
         identity = script.split("IDENTITY_BEGIN")[1].split("IDENTITY_END")[0]
         assert "TOKEN" not in identity and "community_string" not in identity
+
+    def test_key_is_group_readable_by_nagios_on_every_deploy(self, script):
+        # The repair must sit outside the "create once" block.
+        create_block, _, repair = script.partition('-keyout "$KEY_FILE"')
+        assert "chown root:nagios" not in create_block
+        assert 'chown root:nagios "$KEY_FILE"' in repair
+        assert 'chmod 640 "$KEY_FILE"' in repair
+        assert 'chmod 644 "$CERT_FILE"' in repair
+        assert "runuser -u nagios" in repair
+
+    def test_start_is_verified_by_a_real_listener_probe(self, script):
+        assert 'ss -ltn' in script
+        assert "/api/?token=$TOKEN" in script
+        assert "grep -qi \"running\"" not in script
 
     @pytest.mark.skipif(shutil.which("bash") is None, reason="bash is not available")
     def test_script_is_valid_bash(self, script, tmp_path):
@@ -202,6 +214,19 @@ class TestInstallNcpa:
         assert identifier_values(device, IdentifierKind.NCPA_CERT) == {CERT_1}
         assert identifier_values(device, IdentifierKind.MACHINE_ID) == {MACHINE_ID}
         assert device.Identity_Confidence is IdentityConfidence.VERIFIED
+
+    def test_success_clears_an_earlier_error(self, db_session, admin_user):
+        device = make_linux_device(db_session, admin_user)
+        deployment = db.session.scalar(sa.select(NCPADeployment).where(
+            NCPADeployment.NetworkDiscoveryID == device.NetDiscoveryID))
+        deployment.Error = "Privileged command failed."
+        db.session.commit()
+
+        ok, _run, _probe = self.run_install(device)
+
+        assert ok is True
+        db.session.refresh(deployment)
+        assert deployment.Error is None
 
     def test_a_new_deployment_mints_a_token(self, db_session, admin_user):
         device = make_linux_device(db_session, admin_user)
@@ -623,3 +648,48 @@ class TestSchedulerJob:
             scheduler._relocate_ncpa_devices()
 
         run.assert_called_once()
+
+
+# ==========================================================
+# DISK NODE DISCOVERY (item C)
+# ==========================================================
+
+class TestDiscoverDiskNodes:
+
+    LISTING = {"logical": {
+        "|": {"fstype": "ext4"},
+        "|boot|efi": {"fstype": "vfat"},
+        "|run": {"fstype": "tmpfs"},
+        "|mnt|gone": {"fstype": "ext4"},
+    }}
+
+    def fake_get(self, missing=()):
+        def get(ip, token, path, timeout=5):
+            if path == "disk/logical":
+                return self.LISTING
+            node = path.split("/")[2]
+            return None if node in missing else {"percent": 1}
+        return get
+
+    def test_keeps_mounted_real_filesystems_that_answer(self, app):
+        with app.app_context(), patch.object(ncpa, "_ncpa_get", self.fake_get(missing={"|mnt|gone"})):
+            assert ncpa.discover_disk_nodes("10.0.0.5", "tok") == ["|", "|boot|efi"]
+
+    def test_unreachable_agent_yields_nothing(self, app):
+        with app.app_context(), patch.object(ncpa, "_ncpa_get", return_value=None):
+            assert ncpa.discover_disk_nodes("10.0.0.5", "tok") == []
+
+    def test_refresh_replaces_stored_nodes(self, app, db_session, admin_user):
+        device = make_linux_device(db_session, admin_user)
+        deployment = db.session.scalar(sa.select(NCPADeployment).where(
+            NCPADeployment.NetworkDiscoveryID == device.NetDiscoveryID))
+        deployment.Token = "t" * 32
+        db.session.add(NCPADevicePartition(Name="vda1", NCPADeployID=deployment.NCPADeployID))
+        db.session.commit()
+
+        with patch.object(ncpa, "_ncpa_get", self.fake_get(missing={"|mnt|gone"})):
+            names = ncpa.refresh_ncpa_partitions(deployment, device.IP_Address)
+
+        stored = db.session.scalars(sa.select(NCPADevicePartition.Name).where(
+            NCPADevicePartition.NCPADeployID == deployment.NCPADeployID)).all()
+        assert names == stored == ["|", "|boot|efi"]

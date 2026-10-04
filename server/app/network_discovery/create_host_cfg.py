@@ -11,6 +11,7 @@ from app.network_discovery.device_identity import nagios_host_name, reconcile_sc
 from app.network_discovery.identity_probes import collect_identifiers
 from app.network_discovery.port_lifecycle import CONFIG_STATES, mark_ncpa_port, process_device_ports
 from app.network_discovery.host_config_templates import *
+from app.network_discovery.service_name_migration import migrate_legacy_service_history
 from app.network_discovery.plugin_registry import (
     GENERIC_PLUGIN_FOR_TRANSPORT,
     PluginConfigurationError,
@@ -125,8 +126,8 @@ def plan_plugin_services(plugin_name, service_label, port, transport, facts, ove
     Resolve one discovered port into the services plugin_name produces for
     it — one per metric for multi-check plugins such as SNMP and NCPA.
 
-    Returns a list of dicts with base_name ("<label>[-<metric>]-<port>"),
-    transport, check_command and plugin. Raises PluginConfigurationError if
+    Returns a list of dicts with base_name ("<label>[-<metric>]-<port>"; the
+    protocol is appended by finalize_service_names), transport, check_command and plugin. Raises PluginConfigurationError if
     the plugin cannot be configured for this host.
     """
     variables = resolve_plugin_variables(
@@ -154,30 +155,28 @@ def plan_plugin_services(plugin_name, service_label, port, transport, facts, ove
 
 def finalize_service_names(planned):
     """
-    Turn planned services into (service_name, check_command, plugin) tuples
-    whose names are unique on the host. A "-TCP"/"-UDP" suffix is added only
-    when the same base name exists on both transports (e.g. DNS on 53/TCP
-    and 53/UDP); any remaining duplicate gets a numeric suffix.
-    """
-    transports_by_name = {}
-    for service in planned:
-        transports_by_name.setdefault(service["base_name"], set()).add(service["transport"])
+    Turn planned services into (service_name, check_command, plugin) tuples.
 
+    Every service is named "{service}[-{metric}]-{port}-{protocol}" in
+    lowercase, e.g. "ssh-22-tcp", "dns-53-udp", "ncpa-cpu-5693-tcp". The port
+    and protocol are always present, so names are unique per host by
+    construction. If two services still end up with the same name (for
+    instance a metric configured twice) the later one is dropped with a
+    warning rather than renamed, since Nagios rejects duplicate services.
+    """
     services = []
     used_names = set()
     for service in planned:
-        name = service["base_name"]
-        if len(transports_by_name[name]) > 1:
-            name = f"{name}-{service['transport'].value}"
+        name = f"{service['base_name']}-{service['transport'].value}".lower()
+        if name in used_names:
+            current_app.logger.warning(
+                f"Skipping duplicate service name '{name}'; check the plugin's "
+                f"configured metrics."
+            )
+            continue
 
-        unique_name = name
-        counter = 2
-        while unique_name in used_names:
-            unique_name = f"{name}-{counter}"
-            counter += 1
-
-        used_names.add(unique_name)
-        services.append((unique_name, service["check_command"], service["plugin"]))
+        used_names.add(name)
+        services.append((name, service["check_command"], service["plugin"]))
     return services
 
 
@@ -265,6 +264,32 @@ def build_host_services(host_data, facts, app_config, skipped=None):
                 skip(discovered_name, port, transport, str(e))
 
     return finalize_service_names(planned)
+
+# Service names of the most recently generated candidate, {hostname: [names]}.
+# Only read under config_write_lock, right after that candidate is applied.
+_last_generated_names = {}
+
+
+def unconfirmed_udp_skips(discovered_hosts):
+    """
+    Skipped-service entries for UDP ports nmap reported only as "open|filtered":
+    the host ignored the probe, so the port is unconfirmed and never monitored.
+    """
+    entries = []
+    for hosts in discovered_hosts.values():
+        for ip, host_data in hosts.items():
+            data = host_data.get("data", {})
+            for port, info in (data.get("udp_unconfirmed") or {}).items():
+                entries.append({
+                    "hostname": data.get("hostname") or ip,
+                    "ip_address": ip,
+                    "port": port,
+                    "protocol": "UDP",
+                    "service_name": info.get("service_name") or "unknown",
+                    "reason": "UDP port unconfirmed (open|filtered): the host did not answer nmap's probe.",
+                })
+    return entries
+
 
 def _create_host_cfg_file(discovered_hosts, skipped=None):
     """
@@ -406,6 +431,8 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
     # Plugins actually used by at least one service - each needs its own
     # `define command` object, rendered once at the end of the file.
     used_plugins = set()
+    global _last_generated_names
+    generated_names = _last_generated_names = {}
 
     for hosts in discovered_hosts.values():
         for ip, host_data in hosts.items():
@@ -461,6 +488,8 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
             if skipped is not None:
                 for entry in host_skipped:
                     skipped.append({**entry, "ip_address": ip})
+
+            generated_names[host_data["data"]["hostname"]] = [name for name, _c, _p in host_services]
 
             for service_name, command, plugin_name in host_services:
                 # Remember the plugin so its `define command` is written once
@@ -624,7 +653,7 @@ def _backup_running_host_cfg():
 
     backup_path = BACKUP_DIR / backup_name
 
-    shutil.copy2(NAGIOS_HOST_CFG, backup_path)
+    shutil.copyfile(NAGIOS_HOST_CFG, backup_path)
 
     return backup_path
 
@@ -882,7 +911,7 @@ def _apply_new_host_cfg(cfg_path):
         return False, f"Failed to back up current config, aborting apply: {e}"
 
     try:
-        shutil.copy2(cfg_path, NAGIOS_HOST_CFG)
+        shutil.copyfile(cfg_path, NAGIOS_HOST_CFG)
     except Exception as e:
         return False, f"Failed to copy new config into place: {e}"
 
@@ -905,11 +934,24 @@ def _apply_new_host_cfg(cfg_path):
         # to the last known-good config so Nagios never keeps running on a
         # broken/half-applied file
         current_app.logger.error(f"Nagios reload failed: {e}")
-        shutil.copy2(backup_path, NAGIOS_HOST_CFG)
+        shutil.copyfile(backup_path, NAGIOS_HOST_CFG)
+        # Bring the daemon back in line with the restored file.
+        try:
+            subprocess.run(["sudo", "-n", "systemctl", "reload", "nagios"],
+                           capture_output=True, text=True, timeout=30)
+        except Exception as reload_error:
+            current_app.logger.error(f"Nagios reload after rollback failed: {reload_error}")
         return False, (
             f"Failed to reload Nagios after applying new config. "
             f"Rolled back to backup at {backup_path}. Error: {e}"
         )
+
+    try:
+        migrate_legacy_service_history(_last_generated_names)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Could not carry service history over to the new service names.")
 
     return True, f"Applied {cfg_path} successfully. Backup stored at {backup_path}"
 
@@ -1107,6 +1149,7 @@ def discover_network_create_hosts(app, user_id, stop_event):
                 skipped_services = []
                 new_cfg = _create_host_cfg_file(system_hosts, skipped_services)
                 print(f"Created: {new_cfg}")
+                skipped_services.extend(unconfirmed_udp_skips(discovered_hosts))
                 create_skipped_service_logs(network_discovery_id, skipped_services)
                 update_network_discovery_status(
                     network_discovery_id,

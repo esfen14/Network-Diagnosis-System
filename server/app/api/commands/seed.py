@@ -137,6 +137,58 @@ def seed_permissions():
     db.session.commit()
 
 
+def missing_permissions():
+    """Names in PERMISSIONS that have no row in the database."""
+    existing = set(db.session.scalars(sa.select(Permission.Name)))
+    return [name for name in PERMISSIONS if name not in existing]
+
+
+def sync_permissions():
+    """
+    Bring an existing database up to date with PERMISSIONS without touching
+    users, other roles or existing grants: insert any missing permission and
+    grant every permission to the Administrator role (the seed's policy).
+    Safe to run repeatedly.
+
+    Returns (permissions_added, grants_added) as lists of names.
+    """
+    added = missing_permissions()
+    seed_permissions()
+
+    granted = []
+    admin = get_role("Administrator")
+    if admin is not None:
+        held = set(db.session.scalars(
+            sa.select(Permission.Name)
+            .join(RolePermission, RolePermission.PermissionID == Permission.PermissionID)
+            .where(RolePermission.RoleID == admin.RoleID)
+        ))
+        for name in PERMISSIONS:
+            if name in held:
+                continue
+            db.session.add(RolePermission(
+                RoleID=admin.RoleID,
+                PermissionID=get_permission(name).PermissionID,
+            ))
+            granted.append(name)
+        db.session.commit()
+    return added, granted
+
+
+def warn_if_permissions_missing(logger):
+    """Log an error at startup if the installed permissions are out of date."""
+    try:
+        missing = missing_permissions()
+    except Exception as e:  # database not migrated yet, etc.
+        logger.warning("Could not check installed permissions: %s", e)
+        return
+    if missing:
+        logger.error(
+            "Installed database is missing permissions %s; run 'flask sync-permissions'.",
+            ", ".join(missing),
+        )
+
+
 # =========================
 # SEED: ROLES + ROLE PERMISSIONS
 # =========================
@@ -271,6 +323,20 @@ def seed_command(remove, permissions_only, reset):
         click.echo(f"Seed failed: {e}")
 
     seed_system_settings()
+
+
+@click.command("sync-permissions")
+@with_appcontext
+def sync_permissions_command():
+    """Add missing permissions and grant them to Administrator (upgrade step)."""
+    try:
+        added, granted = sync_permissions()
+    except Exception as e:
+        db.session.rollback()
+        raise click.ClickException(f"Permission sync failed: {e}")
+
+    click.echo(f"Permissions added: {', '.join(added) or 'none'}")
+    click.echo(f"Granted to Administrator: {', '.join(granted) or 'none'}")
 
 
 # =========================

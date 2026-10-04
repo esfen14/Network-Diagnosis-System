@@ -44,6 +44,7 @@ rejected. Error messages name the offending variable, never its value, so
 secrets such as the NCPA token are not leaked into logs.
 """
 import re
+import shlex
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Optional
@@ -146,9 +147,11 @@ def ncpa_checks(variables):
             checks.append(ServiceCheck(metric=metric, variables={**per_service, "metric_path": path}))
         elif partitions:
             for partition in partitions:
+                # NCPA writes "/" as "|": "|" is the root mount, "|boot|efi" is /boot/efi.
+                label = str(partition).strip("|").replace("|", "_") or "root"
                 checks.append(ServiceCheck(
-                    metric=f"{metric}_{partition}",
-                    variables={**per_service, "metric_path": path.replace("{partition}", str(partition))},
+                    metric=f"{metric}_{label}",
+                    variables={**per_service, "metric_path": shlex.quote(path.replace("{partition}", str(partition)))},
                 ))
         elif fallback_path:
             checks.append(ServiceCheck(metric=metric, variables={**per_service, "metric_path": fallback_path}))

@@ -418,10 +418,20 @@ def install_deployment_helper(client, password):
     KEY_FILE="/usr/local/ncpa/etc/pinpoint-ncpa.key"
 
     if [ ! -s "$CERT_FILE" ] || [ ! -s "$KEY_FILE" ]; then
-        "$OPENSSL" req -x509 -newkey rsa:2048 -nodes -days 3650 \\
+        "$OPENSSL" req -x509 -newkey rsa:2048 -nodes -days 3650 \
             -subj "/CN=$(/usr/bin/hostname)" -keyout "$KEY_FILE" -out "$CERT_FILE"
-        /usr/bin/chmod 600 "$KEY_FILE"
-        /usr/bin/chmod 644 "$CERT_FILE"
+    fi
+
+    # NCPA drops privileges to the nagios user, so the key must be readable by
+    # that group. Applied on every deploy so redeploys repair existing guests.
+    /usr/bin/chown root:nagios "$KEY_FILE"
+    /usr/bin/chmod 640 "$KEY_FILE"
+    /usr/bin/chown root:root "$CERT_FILE"
+    /usr/bin/chmod 644 "$CERT_FILE"
+
+    if ! /usr/sbin/runuser -u nagios -- /usr/bin/test -r "$KEY_FILE"; then
+        echo "NCPA TLS key is not readable by the nagios user." >&2
+        exit 1
     fi
 
     "$SED" -i "s|^certificate = .*|certificate = $CERT_FILE,$KEY_FILE|" "$NCPA_CONFIG"
@@ -430,23 +440,24 @@ def install_deployment_helper(client, password):
     sleep 1
     "$NCPA_INIT" start
 
-    sleep 2
+    # "init status" can report running while the listener is down, so probe
+    # the port and make an authenticated HTTPS request, retrying briefly.
+    NCPA_OK=0
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+        sleep 2
+        if /usr/bin/ss -ltn | grep -q ":$NCPA_PORT " && \
+            "$CURL" -ksf --max-time 5 -o /dev/null \
+                "https://127.0.0.1:$NCPA_PORT/api/?token=$TOKEN&check=cpu/percent"; then
+            NCPA_OK=1
+            break
+        fi
+    done
 
-    NCPA_STATUS_OUTPUT=$("$NCPA_INIT" status 2>&1 || true)
-
-    if ! echo "$NCPA_STATUS_OUTPUT" | grep -qi "running"; then
-        echo "NCPA service is not active after restart." >&2
-        echo "$NCPA_STATUS_OUTPUT" >&2
+    if [ "$NCPA_OK" -ne 1 ]; then
+        echo "NCPA is not listening or rejected an authenticated request on port $NCPA_PORT." >&2
+        "$NCPA_INIT" status >&2 || true
         exit 1
     fi
-
-    # Output logical partition names to stdout so the calling process can
-    # capture and store them.  Only TYPE=part rows are printed — one name
-    # per line — prefixed with a sentinel so the caller can reliably locate
-    # the block even if NCPA writes other text above it.
-    echo "PARTITIONS_BEGIN"
-    lsblk -ln -o NAME,TYPE | awk '$2=="part"{print $1}'
-    echo "PARTITIONS_END"
 
     # Identity evidence for PinPoint's device reconciler: the machine-id, the
     # hardware MACs of physical interfaces (no loopback, bridges or virtual
@@ -686,32 +697,87 @@ def verify_ncpa_reachable(ip_address, token, timeout=5):
             "message": "NCPA reachability check failed."
         }
 
-def _parse_partitions(stdout_text: str) -> list[str]:
-    """
-    Extract partition names from the helper script's stdout.
+# Filesystem types and node names that never carry a monitorable disk.
+PSEUDO_FILESYSTEMS = frozenset({
+    "tmpfs", "devtmpfs", "squashfs", "overlay", "proc", "sysfs", "cgroup",
+    "cgroup2", "devpts", "efivarfs", "ramfs", "swap", "iso9660",
+})
+DISK_PERCENT_LEAF = "percent"
 
-    The script wraps the lsblk block with sentinels:
-        PARTITIONS_BEGIN
-        sda1
-        sda2
-        PARTITIONS_END
 
-    Returns a list of stripped, non-empty partition name strings.
-    Any text outside the sentinels is ignored so incidental apt/dpkg
-    output doesn't pollute the result.
+def _ncpa_get(ip_address, token, path, timeout=5):
+    """GET an NCPA API node (e.g. "disk/logical"); the decoded JSON, or None."""
+    try:
+        response = requests.get(
+            f"https://{ip_address}:{NCPA_PORT}/api/{path}",
+            params={"token": token},
+            verify=False,
+            timeout=timeout,
+        )
+    except requests.RequestException:
+        return None
+    if response.status_code != 200:
+        return None
+    try:
+        return response.json()
+    except ValueError:
+        return None
+
+
+def _is_monitorable_disk_node(name, info):
+    """Mounted, real filesystems only; no swap, boot-only or pseudo nodes."""
+    if not name or any(char in name for char in ("!", ";", "'", '"', " ", "\n")):
+        return False
+    if isinstance(info, dict):
+        fstype = info.get("fstype")
+        if isinstance(fstype, list):
+            fstype = fstype[0] if fstype else None
+        if isinstance(fstype, str) and fstype.lower() in PSEUDO_FILESYSTEMS:
+            return False
+    return True
+
+
+def discover_disk_nodes(ip_address, token):
     """
-    names: list[str] = []
-    inside = False
-    for raw_line in stdout_text.splitlines():
-        line = raw_line.strip()
-        if line == "PARTITIONS_BEGIN":
-            inside = True
+    Ask the agent itself which logical disk nodes it serves (GET
+    /api/disk/logical) and keep those that are real filesystems and whose
+    percent node answers. NCPA names nodes after mount points (with "|" for
+    "/"), not after lsblk partitions, so this is the only reliable source.
+    Returns the node names in the agent's order.
+    """
+    listing = _ncpa_get(ip_address, token, "disk/logical")
+    nodes = listing.get("logical") if isinstance(listing, dict) else None
+    if not isinstance(nodes, dict):
+        return []
+
+    names = []
+    for name, info in nodes.items():
+        if not _is_monitorable_disk_node(name, info):
             continue
-        if line == "PARTITIONS_END":
-            break
-        if inside and line:
-            names.append(line)
+        if _ncpa_get(ip_address, token, f"disk/logical/{name}/{DISK_PERCENT_LEAF}") is None:
+            current_app.logger.info("NCPA disk node %r has no %s value; skipped.", name, DISK_PERCENT_LEAF)
+            continue
+        names.append(name)
     return names
+
+
+def refresh_ncpa_partitions(ncpa_deployment, ip_address):
+    """
+    Re-read the agent's logical disks and replace the stored
+    NCPADevicePartition rows (whose Name is the NCPA node name). Used after
+    install and whenever disks change. Commits. Returns the stored names.
+    """
+    names = discover_disk_nodes(ip_address, ncpa_deployment.Token)
+    db.session.execute(
+        sa.delete(NCPADevicePartition).where(
+            NCPADevicePartition.NCPADeployID == ncpa_deployment.NCPADeployID
+        )
+    )
+    for name in names:
+        db.session.add(NCPADevicePartition(Name=name, NCPADeployID=ncpa_deployment.NCPADeployID))
+    db.session.commit()
+    return names
+
 
 def _parse_identity(stdout_text: str) -> dict:
     """
@@ -866,26 +932,21 @@ def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
         ncpa_deployment.Deployement_Method = DeploymentMethod.AUTOMATIC
         ncpa_deployment.Agent_Status = AgentStatus.DEPLOYED
         ncpa_deployment.Token = token
+        ncpa_deployment.Error = None
         ncpa_deployment.NCPADeploymentStatusID = (
             ncpa_deployment_status_id
         )
 
-        # --- Parse partition names from the helper script's stdout ----------
-        # The helper wraps lsblk output with PARTITIONS_BEGIN / PARTITIONS_END
-        # sentinels.  Extract every non-empty line between those markers and
-        # store one NCPADevicePartition row per name.
         stdout_text = result.get("output", "")
-        partition_names = _parse_partitions(stdout_text)
-
-        for name in partition_names:
-            db.session.add(
-                NCPADevicePartition(
-                    Name=name,
-                    NCPADeployID=ncpa_deployment.NCPADeployID
-                )
-            )
-
         db.session.commit()
+
+        # Disk nodes come from the agent's own API, not from lsblk. Best
+        # effort: without them the config falls back to the aggregate path.
+        try:
+            refresh_ncpa_partitions(ncpa_deployment, ip_address)
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Could not read NCPA disk nodes after deployment.")
 
         # Identity evidence is best effort: the agent is already deployed, so
         # a failure here must not mark the deployment as failed.
@@ -1001,12 +1062,14 @@ def install_process(app, user_id, device_list, stop_event):
             if not failed_deployment:
                 update_ncpa_deployment_status(
                     ncpa_deployment_status_id, DeploymentStatus.SUCCESS, 100,
-                    "Successfully deployed NCPA to all devices."
+                    "Successfully deployed NCPA to all devices.",
+                    datetime.now(timezone.utc)
                 )
             else:
                 update_ncpa_deployment_status(
                     ncpa_deployment_status_id, DeploymentStatus.PARTIAL_FAILURE, 100,
                     f"Deployment completed with {len(failed_deployment)} failure(s).",
+                    datetime.now(timezone.utc),
                     error=str(failed_deployment)
                 )
 

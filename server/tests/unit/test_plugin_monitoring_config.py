@@ -26,7 +26,7 @@ from app.plugin_models import (
 from app.system_models import NetworkDiscovery, NetworkDiscoveryStatus, DiscoveryStatus, ActivityLog
 from app.api.plugin.monitoring_config import (
     generate_command_name, render_command_object, generate_plugin_services_cfg,
-    ensure_cfg_file_directive,
+    ensure_cfg_file_directive, apply_plugin_services_config,
 )
 
 
@@ -503,3 +503,53 @@ class TestMonitoringTargetsRoute:
         assert resp.status_code == 200
         data = resp.get_json()["data"]
         assert data == [{"id": included.NetDiscoveryID, "hostname": "router-01", "ip_address": "192.168.130.10"}]
+
+
+# ─── apply_plugin_services_config: reload failure rollback ──────────────────
+
+class TestApplyReloadFailure:
+
+    @staticmethod
+    def apply(app, nagios_paths, tmp_path, *, live_before, reload_result=None, reload_error=None):
+        """Apply a candidate with a mocked reload; returns (ok, message)."""
+        live = nagios_paths["PLUGIN_SERVICE_CFG"]
+        live.parent.mkdir(parents=True, exist_ok=True)
+        if live_before is not None:
+            live.write_text(live_before)
+        candidate = tmp_path / "candidate.cfg"
+        candidate.write_text("NEW")
+        with patch("app.api.plugin.monitoring_config.subprocess.run",
+                   return_value=reload_result, side_effect=reload_error):
+            return apply_plugin_services_config(candidate)
+
+    def test_nonzero_reload_exit_fails_and_restores_prior_file(self, app, nagios_paths, tmp_path):
+        result = MagicMock(returncode=42, stdout="", stderr="reload failed")
+
+        ok, message = self.apply(app, nagios_paths, tmp_path, live_before="OLD", reload_result=result)
+
+        assert ok is False
+        assert "Rolled back" in message
+        assert "42" in message
+        assert nagios_paths["PLUGIN_SERVICE_CFG"].read_text() == "OLD"
+
+    def test_reload_exception_fails_and_restores_prior_file(self, app, nagios_paths, tmp_path):
+        ok, _message = self.apply(app, nagios_paths, tmp_path, live_before="OLD",
+                                  reload_error=OSError("no sudo"))
+
+        assert ok is False
+        assert nagios_paths["PLUGIN_SERVICE_CFG"].read_text() == "OLD"
+
+    def test_failed_first_apply_removes_the_candidate(self, app, nagios_paths, tmp_path):
+        result = MagicMock(returncode=1, stdout="", stderr="boom")
+
+        ok, _message = self.apply(app, nagios_paths, tmp_path, live_before=None, reload_result=result)
+
+        assert ok is False
+        assert not nagios_paths["PLUGIN_SERVICE_CFG"].exists()
+
+    def test_clean_reload_keeps_new_file(self, app, nagios_paths, tmp_path):
+        ok, _message = self.apply(app, nagios_paths, tmp_path, live_before="OLD",
+                                  reload_result=MagicMock(returncode=0, stdout="", stderr=""))
+
+        assert ok is True
+        assert nagios_paths["PLUGIN_SERVICE_CFG"].read_text() == "NEW"
