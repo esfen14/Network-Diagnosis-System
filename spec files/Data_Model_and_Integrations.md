@@ -23,7 +23,9 @@ acknowledgements belong in `system.db` even though they relate to Nagios alerts.
 - Audit/logging: `ActivityLog`, `ConfigurationChanges`, `ExportLog`.
 - Discovery: `NetworkDiscoveryStatus`, `SkippedService`, `NetworkDiscovery`,
   `Open_TCP_Services`, `Open_UDP_Services`.
-- NCPA deployment: `SSHCredentials`, `NCPADeploymentStatus`, `NCPADeployment`,
+- NCPA deployment: `SSHCredentials`, `NCPADeploymentStatus` (one row per run,
+  with `Reviewed_At`/`Reviewed_By`), `NCPADeploymentResult` (one row per device
+  per run), `NCPADeployment` (each device's latest agent state),
   `NCPADevicePartition`.
 - Settings: singleton `SystemSettings`, one-per-user `UserPreferences`.
 - Notifications/alerts: `NotificationCursor`, `AlertAcknowledgement`,
@@ -151,6 +153,20 @@ the listener with an authenticated request, and reads the agent's own logical di
 nodes (`GET /api/disk/logical`, filesystems whose `percent` node answers) into
 `NCPADevicePartition.Name` (an NCPA node name such as `|` or `|boot|efi`, not an
 lsblk partition).
+
+Each run records one `NCPADeploymentResult` per device. Its `Outcome`
+(`DeploymentOutcome`) moves Pending → Running → Success, Failed, Down
+(`UNREACHABLE`: no answer on SSH), or Incompatible; pre-flight rejections are
+Rejected and devices not started after a stop are Skipped. A rejected login is
+Failed ("SSH authentication failed."), never Down. Hostname and IP are copied
+into the row so history survives renames and moves. The run is Success when no
+device failed, Failed when none succeeded, otherwise Partial Failure; a stop or
+a Nagios config that could not be applied by `add_ncpa_port` keeps that status.
+
+Trust confirmation saves a host key only when the live key equals the
+fingerprint the user approved. A device can be deployed to when its agent is
+Pending NCPA or Deployment Failed (retry); Deployed and Incompatible devices
+are rejected.
 
 Credentials, tokens, passwords, and secret-bearing command arguments must never
 appear in logs, API responses, or persisted Nagios snapshot check commands.

@@ -1,6 +1,8 @@
 # Plan: NCPA Deployment UI
 
-Status: **draft; Q1 and Q2 decided (2026-10-04), Q3–Q5 use the recommendations unless changed.**
+Status: **implemented on branch `feature/ncpa-deployment-ui` (2026-10-04).**
+Q1 and Q2 decided; Q3–Q5 use the recommendations. Differences from this plan
+are listed in §11.
 
 Goal: one page where an administrator can deploy NCPA from start to finish
 (select devices, verify SSH host keys, enter credentials, deploy, watch
@@ -376,3 +378,19 @@ Frontend (`client/src/test/`):
 | Q3 | Should "Down" also be checked before deploying (fingerprint fetch in step 2 already detects it), or only reported after a run? | Both: step 2 marks it early, and the run records it if the device drops mid-run |
 | Q4 | Allow redeploying to devices already `Deployed NCPA` (e.g. to repair an agent)? | Not in this version; keep the deployable set to Pending + Failed |
 | Q5 | Sidebar placement and name | "NCPA Deployment" under Plugins |
+
+---
+
+## 11. As built
+
+- `check-credentials` also returns `not_found` and `rate_limited`; the rate
+  limit is one check per device per 3 seconds, and a request holds at most
+  50 devices (the same limit applies to `/start`).
+- `/start` rejects a body with a missing or malformed username or password,
+  or a device sent twice, with one 400 for the whole request.
+- Successful devices in the run drawer link to Network Health instead of
+  listing each NCPA service name; the API does not return the service list.
+- A stopped run does not add the NCPA port for devices that finished before
+  the stop (unchanged `add_ncpa_port` behavior); those devices have the agent
+  but no Nagios service until the next config regeneration.
+
