@@ -276,7 +276,7 @@ metrics represent the devices being monitored.
 
 **Notes:**
 - NCPA services are registered in Nagios as `ncpa-{metric}-5693-tcp`:
-  `ncpa-cpu-5693-tcp`, `ncpa-memory-5693-tcp`, `ncpa-disk_{partition}-5693-tcp`.
+  `ncpa-cpu-5693-tcp`, `ncpa-memory-5693-tcp`, `ncpa-disk_{mount}-5693-tcp` (e.g. `ncpa-disk_root-5693-tcp`).
   All of these variants resolve to the `check_ncpa` plugin key via the
   command map lookup in `statistics.py` (see §2.5 for full derivation logic).
   The backend is responsible for this normalisation — the front-end always

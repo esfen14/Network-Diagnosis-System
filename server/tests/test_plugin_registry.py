@@ -269,6 +269,15 @@ class TestNcpaChecks:
         assert resolve_plugin_command("ncpa", memory_vars, Transport.TCP) == \
             "pinpoint_nd_ncpa!5693!tok!memory/virtual/percent!-u 'Gi'"
 
+    def test_ncpa_mount_nodes_become_quoted_paths_and_readable_names(self):
+        variables = resolve_plugin_variables(
+            "ncpa", NCPA_CONFIG, discovered={"token": "tok", "partitions": ["|", "|boot|efi"]}
+        )
+        disks = build_service_checks("ncpa", variables)[2:]
+
+        assert [check.metric for check, _ in disks] == ["disk_root", "disk_boot_efi"]
+        assert [v["metric_path"] for _, v in disks] == ["'disk/logical/|/percent'", "'disk/logical/|boot|efi/percent'"]
+
     def test_no_partitions_uses_fallback_path(self):
         variables = resolve_plugin_variables("ncpa", NCPA_CONFIG, discovered={"token": "tok"})
         disk_check, disk_vars = build_service_checks("ncpa", variables)[2]

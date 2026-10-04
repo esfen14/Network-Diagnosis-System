@@ -146,7 +146,11 @@ overridden where defined.
 `app/ncpa_deployment/ncpa_deployment.py` installs NCPA over SSH. The workflow
 requires explicit SSH host-key fingerprint retrieval/confirmation, uses the
 stored fingerprint for subsequent verification, records progress and per-device
-results, discovers partitions, and verifies NCPA reachability.
+results, makes the TLS key readable by the `nagios` user on every deploy, verifies
+the listener with an authenticated request, and reads the agent's own logical disk
+nodes (`GET /api/disk/logical`, filesystems whose `percent` node answers) into
+`NCPADevicePartition.Name` (an NCPA node name such as `|` or `|boot|efi`, not an
+lsblk partition).
 
 Credentials, tokens, passwords, and secret-bearing command arguments must never
 appear in logs, API responses, or persisted Nagios snapshot check commands.
