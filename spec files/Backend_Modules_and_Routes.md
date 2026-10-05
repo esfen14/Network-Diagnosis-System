@@ -26,7 +26,7 @@ system.report, system.notifications, system.services, system.network_health
 system.acknowledge_alerts, system.dashboard
 plugin.scan, plugin.view, plugin.enable, plugin.disable
 plugin.command_override, plugin.command_restore, plugin.validate
-plugin.custom_add, plugin.update, plugin.update_rollback, plugin.configure
+plugin.custom_add, plugin.update, plugin.update_rollback
 settings.security, settings.system
 ```
 
@@ -235,7 +235,7 @@ accepts an optional `data` argument for errors the client must act on.
 ## Plugin API
 
 All routes are implemented in `app/api/plugin/manager.py`; supporting logic is
-split across `scanner.py`, `service.py`, `monitoring_config.py`, validators,
+split across `scanner.py`, `service.py`, `reconcile.py` (the plugin reconciler), validators,
 command defaults, `plugin_descriptions.py` (description/category/documentation
 lookups, backed by the generated `plugin_catalog_data.py`), and
 update/custom-plugin modules.
@@ -245,14 +245,17 @@ update/custom-plugin modules.
 | `POST /api/plugin/scan` | `plugin.scan` | Start plugin-directory scan |
 | `GET /api/plugin/scan/status` | `plugin.scan` | Read latest scan status |
 | `GET /api/plugin` | `plugin.view` | Paginated plugin inventory |
-| `GET /api/plugin/running` | `plugin.view` | Checks currently configured in Nagios |
 | `GET /api/plugin/summary` | `plugin.view` | Plugin-manager summary counts |
 | `GET /api/plugin/history` | `plugin.view` | Plugin audit/history records |
 | `GET /api/plugin/<plugin_id>` | `plugin.view` | Plugin detail, including `description`, `category` and `documentation_url` (null for plugins outside the bundled catalog) |
 | `GET /api/plugin/<plugin_id>/commands` | `plugin.view` | Commands and active overrides |
 | `GET /api/plugin/<plugin_id>/dependencies` | `plugin.view` | Dependency status |
-| `POST /api/plugin/<plugin_id>/enable` | `plugin.enable` | Enable a plugin, then run the plugin reconciler (`reconcile_plugin_monitoring`): identified ports whose plugin is now enabled are promoted and attached, hosts.cfg is regenerated once through the shared writer, and the plugin becomes Active if anything is attached. No device is picked by hand. The same reconcile runs after every network discovery, port edit, merge or retire, NCPA deployment and NCPA disk refresh. A failed attach does not undo the enable; the response carries `auto_apply` (`success`, `changed`, `applied`, `removed`, `promoted`, `message`) |
-| `POST /api/plugin/<plugin_id>/disable` | `plugin.disable` | Disable a plugin, then reconcile: its services leave Nagios, its ports keep their state and frozen plugin so enabling restores them. The response carries `auto_apply` |
+| `GET /api/plugin/<plugin_id>/enable-preview` | `plugin.view` | What enabling would monitor, without changing anything: `matched_services`, `matched_devices`, `service_driven`, `already_enabled`, `message`. Counts monitored ports plus identified suggestions the plugin would promote |
+| `GET /api/plugin/<plugin_id>/services` | `plugin.view` | What the plugin monitors, one row per Nagios service (`page`, `per_page`, `search`): `service`, `device`, `port`, `protocol`, `metric`, `monitored`, `running_since`, and `status` read from the latest `ServiceStatus` in history.db (`kind` is ok, warning, critical, unknown, waiting for the first check, stale after three check intervals, or stopped). Ports an admin stopped are listed with `monitored` false |
+| `POST /api/plugin/<plugin_id>/services/stop` | `plugin.disable` | Body `{device_id, protocol, port}`: stop monitoring one port on one device. The port becomes Ignored, the service leaves Nagios, a history row is written; 409 if Nagios rejects it (the port goes back) or the port is protected (NCPA port of a deployed agent) |
+| `POST /api/plugin/<plugin_id>/services/resume` | `plugin.enable` | Same body: resume a stopped port; its frozen plugin is kept |
+| `POST /api/plugin/<plugin_id>/enable` | `plugin.enable` | Enable a plugin, then run the plugin reconciler (`reconcile_plugin_monitoring`): identified ports whose plugin is now enabled are promoted and attached, hosts.cfg is regenerated once through the shared writer, and the plugin becomes Active if anything is attached. No device is picked by hand. The same reconcile runs after every network discovery, port edit, merge or retire, NCPA deployment and NCPA disk refresh. Only service-driven plugins (those a registry definition uses: `check_ssh`, `check_http`, `check_snmp`, `check_ncpa`, `check_tcp`, ...) can be enabled; any other returns 409. A failed attach does not undo the enable; the response carries `auto_apply` (`success`, `changed`, `applied`, `removed`, `promoted`, `message`) |
+| `POST /api/plugin/<plugin_id>/disable` | `plugin.disable` | Disable a plugin, then reconcile: its services leave Nagios, its ports keep their state and frozen plugin so enabling restores them. If Nagios rejects the change the plugin goes back to its previous state, a failed history row is written and the route returns 409. A plugin enabled before the service-driven rule can still be disabled. The response carries `auto_apply` |
 | `POST /api/plugin/<plugin_id>/commands/<command_id>/override` | `plugin.command_override` | Save a command override |
 | `POST /api/plugin/<plugin_id>/commands/<command_id>/restore-default` | `plugin.command_restore` | Disable the active override |
 | `GET /api/system/network-profile` | `system.network_health` | Editable network name, reference tag and detail rows for the Network Health card (defaults until saved) |
@@ -261,8 +264,6 @@ update/custom-plugin modules.
 | ~~`POST /api/plugin/custom`~~ | `plugin.custom_add` | **Disabled** — route commented out in `manager.py` (and the client call in `pluginApi.ts`); not part of the current release |
 | `POST /api/plugin/<plugin_id>/update` | `plugin.update` | Update from an archive |
 | `POST /api/plugin/<plugin_id>/update/rollback` | `plugin.update_rollback` | Restore the backed-up version |
-| `GET /api/plugin/<plugin_id>/configurations` | `plugin.view` | List monitoring targets/configurations |
-| `POST /api/plugin/<plugin_id>/configurations` | `plugin.configure` | Validate and apply a target configuration to Nagios |
 
 ## Non-route backend modules
 

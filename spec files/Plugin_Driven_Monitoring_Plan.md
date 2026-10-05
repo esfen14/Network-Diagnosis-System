@@ -2,8 +2,10 @@
 
 Status: **in progress.** Decisions Q1–Q7 are answered (§10). Phase 0 is done
 (results in §7.1). Phase 1 (descriptions) is committed on the feature branch.
-Phases 2 (data model), 2b (Port → Service map) and 3 (reconciler and gating) are
-implemented; Phases 4–6 are not started. The port → service → plugin map (§2.7) is fully decided
+Phases 2 (data model), 2b (Port → Service map), 3 (reconciler and gating) and 4
+(enable/disable and API) are implemented; Phases 5–6 are not started. Do not
+merge to `main` between 4 and 5: the Plugin Manager page still calls the routes
+Phase 4 removed (G18). The port → service → plugin map (§2.7) is fully decided
 (Q8 in §10). No questions are open.
 Branch: `feature/plugin-driven-monitoring` (cut from `main`; see §9). `main` was
 merged in on 2026-10-05 (commit a19620b2). Open gaps are tracked in §13.
@@ -401,7 +403,7 @@ Each phase is one or more commits on the feature branch and must leave
 | 2. Data model | **Implemented.** §3 `PLUGIN_CONFIGURATION` migration and models, upgrade data step | `flask db upgrade` and `downgrade` both clean on a copy of a real DB |
 | 2b. Port → Service map | **Implemented**, see §7.2. §2.7: merge the two Settings tables (migration incl. the mismatch columns, settings API and validation, one Settings section with the resolved-plugin column, "Not used as intended" flag and Acknowledge action), retire `AUTO_MONITOR_SERVICES`, derive the `NCPA_PORT` entry; widen the monitoring-server exclusion to all local interface addresses (§2.6). Implements the D2 promotion rule | `test_discovery_settings.py`, `test_port_lifecycle.py`, `test_service_identification.py` updated; migration round-trips with both old tables populated; the NCPA entry follows `NCPA_PORT` |
 | 3. Reconciler and gating | **Implemented**, see §7.3. §2.1–2.3, §4 discovery changes | Unit tests: plugin off → port keeps its state but is not in generated cfg and is recorded as skipped; on → service generated; multi-metric expansion; nothing generated for the monitoring server; idempotent |
-| 4. Enable/disable and API | §2.4, §2.5, new routes, remove manual and running routes | Enable preview counts correct; disable removes services and rolls back on reload failure; exclude/include works; non-service-driven plugins reject enable/disable |
+| 4. Enable/disable and API | **Implemented**, see §7.4. §2.4, §2.5, new routes, remove manual and running routes | Enable preview counts correct; disable removes services and rolls back on reload failure; exclude/include works; non-service-driven plugins reject enable/disable |
 | 5. Frontend | Remove the Currently Running tab (`RunningChecksTable`, `getRunningChecks`, running count, tab state); §5 services list in the drawer; Monitoring column and "Not service-driven" state; remove `PluginTargetsSection`; enable-preview confirm | Component tests updated (`PluginsTabs` loses the running tab; replace `PluginTargetsSection` tests); manual check in browser |
 | 6. Specs and verification | Update the four specs and `Implementation_Status.md`; live lab re-run (§8) | Lab report attached to the PR |
 
@@ -460,6 +462,38 @@ What shipped, and where it differs from the rows above:
   history rows.
 - Behavior change to tell the team: plugins that check no port (`check_ping`,
   `check_load`, ...) no longer attach to any host. See G13.
+
+### 7.4 Phase 4 notes
+
+What shipped, and where it differs from the rows above:
+
+- **New routes** (all in `api/plugin/manager.py`, logic in `service.py`):
+  `GET /api/plugin/<id>/enable-preview`, `GET /api/plugin/<id>/services`,
+  `POST /api/plugin/<id>/services/stop` and `/resume`. Stop uses `plugin.disable`
+  and resume uses `plugin.enable`, so no new permission is needed.
+- **Preview** is read-only: `reconcile.preview_enable()` plans the services with the
+  plugin added to the enabled set and counts the ones it would own, including
+  identified suggestions it would promote (`port_lifecycle.promotable_ports`).
+- **Services list** merges two sources in Python: the applied Auto rows and ports
+  an admin stopped that this plugin used to check. Live status is a second query
+  against `history.db`, matched on Nagios host name and service name; "stale" is
+  more than three check intervals (read from the result, default 5 minutes).
+- **Stop/resume** reuses the `Ignored` port state, writes a history row first, then
+  reconciles; if Nagios rejects it the port goes back and the route returns 409.
+- **Disable** now rolls back: if the reconcile after a disable fails, the plugin returns
+  to its previous state (its services are still running) and a failed history row is
+  written. Enable keeps its earlier behaviour: the plugin stays Enabled and the
+  response says the attach failed.
+- **Service-driven only.** `plugin_registry.service_driven_plugin_names()` is every
+  check plugin a registry definition uses. Other plugins return 409 on enable. A plugin
+  that was enabled before this rule can still be disabled so it is not stuck.
+- **Removed:** `GET /api/plugin/running`, `GET /api/plugin/targets`,
+  `GET`/`POST /api/plugin/<id>/configurations`, `monitoring_config.py`,
+  `apply_plugin_configuration`, `get_running_checks`, the `PLUGIN_SERVICE_*` settings and
+  the `plugin.configure` permission (migration `d2f6a1c8e507` deletes the permission and
+  its role grants).
+- Inventory rows and plugin details carry `service_driven` and applied
+  `monitoring_usage` (`services`, `devices`).
 
 ### 7.1 Phase 0 results
 
@@ -631,7 +665,11 @@ the phase can close, re-point what it cannot, and add anything new. Status is
 | G12 | The live-lab config still uses the old `*_service_overrides` key names (the runner accepts both) | 2b | 6 | Open |
 | G13 | **Product decision for the team.** Plugins that check no port (`check_ping`, `check_load`, `check_disk`, ...) used to be applied to every host by the team's commit and now attach to nothing, because attachment is port-driven. If host-level checks are wanted, they need their own mechanism (e.g. a per-plugin "applies to every host" flag or a host-check template); the plan only lists them as "Not service-driven" | 3 | decide before 4; build in 4 or 5 | Open |
 | G14 | The reconciler plans every host on every run (also after each port edit), so a large network pays for a full plan even when one port changed. Not measured | 3 | 6 (measure in the lab; narrow to one device if slow) | Open |
-| G15 | Enabling `check_ncpa` is not required to deploy NCPA, but without it the agent's checks are silently skipped. The skipped-services log shows the reason after a discovery, yet the NCPA deployment page says nothing | 3 | 4 (message on enable preview and deployment result) | Open |
-| G16 | `GET /api/plugin/running` ("Currently Running" tab) now lists Auto rows too, with the Nagios service name as the service; the manual fields look the same. The tab itself is removed in Phase 5 | 3 | 5 | Open |
-| G17 | The manual apply route and `plugin-services.cfg` still exist, so two writers can coexist until Phase 4 removes the manual one | 3 | 4 | Open |
+| G15 | Enabling `check_ncpa` is not required to deploy NCPA, but without it the agent's checks are silently skipped. The skipped-services log shows the reason after a discovery, yet the NCPA deployment page says nothing. The enable preview now counts NCPA services once `check_ncpa` is considered, but the deployment result still has no message | 3 | 5 (NCPA deployment page message) | Open |
+| G16 | `GET /api/plugin/running` ("Currently Running" tab) listed Auto rows too | 3 | 4 | Closed (4): the route is removed; the tab goes in Phase 5 (G18) |
+| G17 | The manual apply route and `plugin-services.cfg` still exist, so two writers can coexist until Phase 4 removes the manual one | 3 | 4 | Closed (4) |
+| G18 | **The Plugin Manager page still calls the routes Phase 4 removed** (`/running`, `/targets`, `/configurations`) and shows no `service_driven` state, so the Currently Running tab and Apply to Device fail until Phase 5. Do not merge to `main` before Phase 5 | 4 | 5 | Open |
+| G19 | Upgraded installs may still have `plugin-services.cfg` (and its `cfg_file=` line in `nagios.cfg`) from the removed manual path. Nagios keeps running those services, they appear as Manual rows with no way to remove them in the UI, and the Dashboard still recognises their `pinpoint_` commands. One-time cleanup: delete the entries from `plugin-services.cfg` (or the file and its `cfg_file=` line), reload Nagios, then delete the Manual rows | 4 | 6 (rehearse the cleanup in the upgrade test and write the steps in the PR) | Open |
+| G20 | `GET /api/plugin/<id>/services` builds every row for a plugin in Python before slicing the page (fine for hundreds, e.g. `check_tcp` on a /24; not measured on thousands) | 4 | 6 (measure in the lab) | Open |
+| G21 | A plugin that checks no port and was enabled before Phase 4 can only be disabled, and `check_ping`-style plugins cannot be enabled at all until G13 is decided | 4 | decide with G13 | Open |
 

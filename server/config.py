@@ -182,15 +182,6 @@ class Config:
     # Override via env to point at a local folder on a dev machine.
     NAGIOS_PLUGIN_DIR = os.environ.get('NAGIOS_PLUGIN_DIR') or "/usr/local/nagios/libexec/"
 
-    # Nagios config file holding Plugin Manager's generated command and
-    # service objects. Kept separate from NAGIOS_HOST_CFG because
-    # Network Discovery fully regenerates hosts.cfg on every scan.
-    PLUGIN_SERVICE_CFG = Path(os.environ.get('PLUGIN_SERVICE_CFG') or "/usr/local/nagios/etc/objects/plugin-services.cfg")
-
-    # Folders where candidate/backed-up plugin service configs are stored.
-    PLUGIN_SERVICE_STAGING_DIR = Path(basedir) / "plugin-service-config-files"
-    PLUGIN_SERVICE_BACKUP_DIR = Path(basedir) / "running-plugin-service-config-backup"
-
     """
     |------------------------------------------------------------------
     | Scheduled automation (app/automation.py)

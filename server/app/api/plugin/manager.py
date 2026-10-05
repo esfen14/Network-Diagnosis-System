@@ -7,12 +7,16 @@ POST /plugin/scan            - Start a background filesystem scan (Phase 2)
 GET  /plugin/scan/status     - Latest scan status (Phase 2)
 GET  /plugin                 - Paginated plugin inventory (Phase 3)
 GET  /plugin/summary         - Landing page summary counts (Phase 3)
-GET  /plugin/running         - Monitoring checks currently live in Nagios
 GET  /plugin/<id>            - Single plugin's full details (Phase 3)
 GET  /plugin/history         - Global plugin history, optional ?plugin_id= (Phase 3)
 GET  /plugin/<id>/commands   - A plugin's commands + active overrides (Phase 3)
 GET  /plugin/<id>/dependencies - A plugin's dependencies (Phase 3)
-GET  /plugin/targets         - Devices a plugin can be applied to
+GET  /plugin/<id>/enable-preview - What enabling would monitor (counts)
+GET  /plugin/<id>/services   - What a plugin monitors, with live status
+POST /plugin/<id>/services/stop   - Stop monitoring one port on one device
+POST /plugin/<id>/services/resume - Resume a stopped port
+POST /plugin/<id>/enable     - Enable and attach discovered ports
+POST /plugin/<id>/disable    - Disable and remove its services
 (POST /plugin/custom is disabled — its route is commented out below.)
 
 The scan routes (Phase 2) match app/api/system/network_discovery.py's
@@ -29,7 +33,6 @@ import json
 
 from app.api.plugin import plugin_bp
 from app.api.plugin import service
-from app.api.plugin.reconcile import reconcile_plugin_monitoring
 from app.api.helper import success, error, validate_json_data, validate_json_fields
 from app.api.helper.database_access.permissions import require_permission
 from app.api.plugin.scanner import scan_plugin_directory, sync_plugin_inventory, get_plugin_dir
@@ -293,68 +296,6 @@ def plugin_inventory():
     except Exception:
         current_app.logger.exception(
             "An unexpected error occurred while retrieving the plugin inventory."
-        )
-        return error("An unexpected error occurred.", 500)
-
-
-# ==========================================================
-# RUNNING CHECKS
-# ==========================================================
-
-@plugin_bp.get('/running')
-@login_required
-@require_permission('plugin.view')
-def running_checks():
-    """
-    Retrieve the monitoring checks currently running in Nagios: each
-    plugin applied to a target device, for the Plugin Manager's
-    "Currently Running" tab. Only applied configurations are listed.
-
-    **Query Parameters**
-
-    page (int, default 1)
-    per_page (int, default 10, max 100)
-    search (str, optional): matched against plugin name, service
-        description, device hostname and IP address
-
-    **Returns (JSON via success())**
-
-    .. code-block:: json
-
-        {
-            "success": true,
-            "data": {
-                "items": [
-                    {
-                        "id": 4,
-                        "plugin": {"id": 2, "name": "check_snmp", "display_name": null, "status": "Active"},
-                        "target": {"id": 7, "hostname": "core-switch", "ip_address": "192.168.130.2"},
-                        "service_description": "Uptime",
-                        "applied_at": "2026-09-26T09:30:00+00:00"
-                    }
-                ],
-                "page": 1, "per_page": 10, "pages": 1, "total": 1,
-                "has_next": false, "has_prev": false
-            }
-        }
-
-    **Errors**
-
-    * ``400`` - invalid page or per_page.
-    * ``500`` - unexpected internal error (logged with traceback).
-    """
-    try:
-        page = request.args.get("page", default=1, type=int)
-        per_page = request.args.get("per_page", default=10, type=int)
-        search = request.args.get("search", default="", type=str)
-
-        return success(service.get_running_checks(page=page, per_page=per_page, search=search))
-
-    except service.InvalidQueryError as e:
-        return error(str(e), 400)
-    except Exception:
-        current_app.logger.exception(
-            "An unexpected error occurred while retrieving running plugin checks."
         )
         return error("An unexpected error occurred.", 500)
 
@@ -657,22 +598,10 @@ def enable_plugin_route(plugin_id):
     * ``500`` - unexpected internal error (logged with traceback).
     """
     try:
-        data = service.enable_plugin(plugin_id, current_user.UserID)
-        try:
-            auto = reconcile_plugin_monitoring(current_user.UserID)
-            data["auto_apply"] = auto
-            data["status"] = service.db.session.get(service.Plugin, plugin_id).Status.value
-        except Exception:
-            service.db.session.rollback()
-            current_app.logger.exception("Attaching services after enabling a plugin failed.")
-            data["auto_apply"] = {
-                "success": False, "applied": 0, "removed": 0, "promoted": 0,
-                "message": "Attaching services failed.",
-            }
-        return success(data)
+        return success(service.enable_and_attach(plugin_id, current_user.UserID))
     except service.PluginNotFoundError:
         return error("Plugin not found.", 404)
-    except service.InvalidTransitionError as e:
+    except (service.InvalidTransitionError, service.NotServiceDrivenError) as e:
         return error(e.message, 409)
     except service.NagiosValidationError as e:
         return error(f"Nagios configuration validation failed: {e.message}", 502)
@@ -712,22 +641,13 @@ def disable_plugin_route(plugin_id):
     * ``500`` - unexpected internal error (logged with traceback).
     """
     try:
-        data = service.disable_plugin(plugin_id, current_user.UserID)
-        try:
-            # Its services leave Nagios; the ports keep their state so enabling restores them.
-            data["auto_apply"] = reconcile_plugin_monitoring(current_user.UserID)
-        except Exception:
-            service.db.session.rollback()
-            current_app.logger.exception("Removing services after disabling a plugin failed.")
-            data["auto_apply"] = {
-                "success": False, "applied": 0, "removed": 0, "promoted": 0,
-                "message": "Removing services failed.",
-            }
-        return success(data)
+        return success(service.disable_and_detach(plugin_id, current_user.UserID))
     except service.PluginNotFoundError:
         return error("Plugin not found.", 404)
     except service.InvalidTransitionError as e:
         return error(e.message, 409)
+    except service.MonitoringChangeError as e:
+        return error(f"Nagios did not accept the change, so the plugin is still on: {e.message}", 409)
     except service.NagiosValidationError as e:
         return error(f"Nagios configuration validation failed: {e.message}", 502)
     except Exception:
@@ -1195,68 +1115,31 @@ def rollback_plugin_update_route(plugin_id):
 
 
 # ==========================================================
-# MONITORING CONFIGURATION (Phase 10)
+# SERVICE-DRIVEN MONITORING
 # ==========================================================
 
-@plugin_bp.get('/targets')
+@plugin_bp.get('/<int:plugin_id>/enable-preview')
 @login_required
 @require_permission('plugin.view')
-def monitoring_targets_route():
+def enable_preview_route(plugin_id):
     """
-    List the devices a plugin can be applied to, for the target picker
-    in the plugin details drawer: every discovered device that is still
-    included in scanning (only those have a Nagios host object).
+    Say what enabling a plugin would monitor, without changing anything. The
+    plugin attaches the discovered ports it can check, so no device is picked;
+    this shows how many services and devices that would be before the admin
+    confirms.
 
     **Returns (JSON via success())**
 
     .. code-block:: json
 
-        {
-            "success": true,
-            "data": [
-                {"id": 12, "hostname": "router-01", "ip_address": "192.168.130.10"}
-            ]
-        }
+        {"success": true, "data": {
+            "id": 3, "name": "check_ssh", "status": "Ready",
+            "service_driven": true, "already_enabled": false,
+            "matched_services": 12, "matched_devices": 5,
+            "message": "Enabling will monitor 12 service(s) on 5 device(s)."}}
 
-    **Errors**
-
-    * ``500`` - unexpected internal error (logged with traceback).
-    """
-    try:
-        return success(service.get_monitoring_targets())
-    except Exception:
-        current_app.logger.exception(
-            "An unexpected error occurred while retrieving monitoring targets."
-        )
-        return error("An unexpected error occurred.", 500)
-
-
-@plugin_bp.get('/<int:plugin_id>/configurations')
-@login_required
-@require_permission('plugin.view')
-def get_plugin_configurations_route(plugin_id):
-    """
-    List a plugin's applied/pending/failed monitoring targets (UI Flow
-    Section 8's monitoring-usage context, now backed by real data
-    instead of Phase 3's placeholder).
-
-    **Returns (JSON via success())**
-
-    .. code-block:: json
-
-        {
-            "success": true,
-            "data": [
-                {
-                    "id": 4,
-                    "target": {"id": 12, "hostname": "router-01", "ip_address": "192.168.130.10"},
-                    "service_description": "Interface Traffic",
-                    "status": "Applied",
-                    "configuration_data": null,
-                    "updated_at": "2026-09-22T12:00:00"
-                }
-            ]
-        }
+    A plugin that checks no discovered port reports ``service_driven`` false
+    and zero matches.
 
     **Errors**
 
@@ -1264,109 +1147,135 @@ def get_plugin_configurations_route(plugin_id):
     * ``500`` - unexpected internal error (logged with traceback).
     """
     try:
-        if db.session.get(Plugin, plugin_id) is None:
+        data = service.preview_enable(plugin_id)
+        if data is None:
             return error("Plugin not found.", 404)
-        data = service.get_plugin_configurations(plugin_id)
         return success(data)
     except Exception:
-        current_app.logger.exception(
-            "An unexpected error occurred while retrieving plugin configurations."
-        )
+        current_app.logger.exception("An unexpected error occurred while previewing the plugin.")
         return error("An unexpected error occurred.", 500)
 
 
-@plugin_bp.post('/<int:plugin_id>/configurations')
+@plugin_bp.get('/<int:plugin_id>/services')
 @login_required
-@require_permission('plugin.configure')
-def apply_plugin_configuration_route(plugin_id):
+@require_permission('plugin.view')
+def plugin_services_route(plugin_id):
     """
-    Apply a plugin to a target device/service — the full Phase 10
-    workflow (UI Flow Sections 13-17: Administrator selects plugin
-    capability -> selects target -> Plugin Manager generates/updates
-    Nagios configuration -> validates -> applies/reloads Nagios ->
-    Nagios monitors target).
+    List what a plugin monitors: one row per Nagios service, with the device,
+    port, "running since" and live status read from the latest Nagios result.
+    Ports an admin stopped are listed with ``monitored`` false.
 
-    Confirmed design: targets are always an existing NetworkDiscovery
-    device (the only source of real Nagios host objects in this
-    codebase) — free-form/unscanned targets are out of scope.
+    **Query Parameters**
 
-    On success, this is the ONLY thing in Plugin Manager that can set
-    Plugin.Status to Active — every earlier phase stopped short of it
-    deliberately.
-
-    **Inputs (JSON body)**
-
-    - ``net_discovery_id`` (required): the target device's id.
-    - ``service_description`` (required): e.g. "Interface Traffic".
-    - ``configuration_data`` (optional): arbitrary JSON (e.g. warning/
-      critical thresholds), stored as-is.
+    page (int, default 1), per_page (int, default 10, max 100)
+    search (str, optional): matched against service, device hostname and IP
 
     **Returns (JSON via success())**
 
     .. code-block:: json
 
-        {
-            "success": true,
-            "data": {
-                "success": true,
-                "configuration_id": 4,
-                "status": "Applied",
-                "plugin_status": "Active"
-            }
-        }
+        {"success": true, "data": {
+            "items": [{
+                "id": 8, "service": "ssh-22-tcp",
+                "device": {"id": 4, "hostname": "web-01", "ip_address": "192.168.130.20"},
+                "port": 22, "protocol": "tcp", "metric": null, "monitored": true,
+                "running_since": "2026-10-05T09:30:00+00:00",
+                "status": {"kind": "ok", "state": "OK", "output": "SSH OK - 0.012s response",
+                           "last_check": "2026-10-05T09:35:00+00:00"}}],
+            "page": 1, "per_page": 10, "pages": 1, "total": 1,
+            "has_next": false, "has_prev": false}}
 
-        On failure (still HTTP 200 — the request itself was valid; the
-        CONFIGURATION failed to apply):
-
-        .. code-block:: json
-
-            {
-                "success": true,
-                "data": {
-                    "success": false,
-                    "configuration_id": 4,
-                    "status": "Failed",
-                    "validation_output": "..."
-                }
-            }
+    status.kind is ok, warning, critical, unknown, waiting (not checked yet),
+    stale (no recent result) or stopped.
 
     **Errors**
 
-    * ``400`` - missing required fields.
-    * ``404`` - no plugin with that id, or no target device with that id.
-    * ``409`` - plugin is not Enabled/Active (enable it first), is in a
-      state that blocks configuration, or has no command definition.
+    * ``400`` - invalid page or per_page.
+    * ``404`` - no plugin with that id.
     * ``500`` - unexpected internal error (logged with traceback).
     """
     try:
-        data = request.get_json()
-        err = validate_json_data(data)
-        if err is not None:
-            return err
-
-        err = validate_json_fields(data, {"net_discovery_id": int, "service_description": str})
-        if err is not None:
-            return err
-
-        result = service.apply_plugin_configuration(
-            plugin_id,
-            data["net_discovery_id"],
-            data["service_description"],
-            current_user.UserID,
-            configuration_data=data.get("configuration_data"),
-        )
-        return success(result)
-
+        page = request.args.get("page", default=1, type=int)
+        per_page = request.args.get("per_page", default=10, type=int)
+        search = request.args.get("search", default="", type=str)
+        return success(service.get_plugin_services(plugin_id, page, per_page, search))
+    except service.InvalidQueryError as e:
+        return error(str(e), 400)
     except service.PluginNotFoundError:
         return error("Plugin not found.", 404)
-    except service.InvalidTransitionError as e:
-        return error(e.message, 409)
-    except service.TargetNotFoundError as e:
+    except Exception:
+        current_app.logger.exception("An unexpected error occurred while listing the plugin's services.")
+        return error("An unexpected error occurred.", 500)
+
+
+def change_service_monitoring(plugin_id, monitored):
+    """
+    Shared body of the stop and resume routes: validates the JSON body
+    {"device_id": int, "protocol": "tcp"|"udp", "port": int} and applies the
+    change through service.set_service_monitoring.
+    """
+    data = request.get_json(silent=True)
+    err = validate_json_data(data)
+    if err is not None:
+        return err
+
+    device_id, protocol, port = data.get("device_id"), str(data.get("protocol", "")).lower(), data.get("port")
+    if not isinstance(device_id, int) or isinstance(device_id, bool):
+        return error("device_id must be a number.", 400)
+    if protocol not in ("tcp", "udp"):
+        return error("protocol must be tcp or udp.", 400)
+    if not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:
+        return error("port must be a number between 1 and 65535.", 400)
+
+    try:
+        result = service.set_service_monitoring(
+            plugin_id, device_id, protocol, port, monitored, current_user.UserID
+        )
+        return success(result)
+    except service.PluginNotFoundError:
+        return error("Plugin not found.", 404)
+    except service.MonitoredServiceNotFoundError as e:
         return error(e.message, 404)
-    except service.NoCommandDefinedError as e:
+    except service.MonitoringChangeError as e:
         return error(e.message, 409)
     except Exception:
-        current_app.logger.exception(
-            "An unexpected error occurred while applying the monitoring configuration."
-        )
+        service.db.session.rollback()
+        current_app.logger.exception("An unexpected error occurred while changing service monitoring.")
         return error("An unexpected error occurred.", 500)
+
+
+@plugin_bp.post('/<int:plugin_id>/services/stop')
+@login_required
+@require_permission('plugin.disable')
+def stop_service_monitoring_route(plugin_id):
+    """
+    Stop monitoring one port on one device for this plugin ("Stop monitoring").
+    The port becomes Ignored, its service leaves Nagios, and the change is
+    written to the plugin history. Repeating it reports ``changed`` false.
+
+    **JSON Format**
+
+    .. code-block:: json
+
+        {"device_id": 4, "protocol": "tcp", "port": 22}
+
+    **Errors**
+
+    * ``400`` - invalid body.
+    * ``404`` - no plugin, or this plugin does not monitor that port.
+    * ``409`` - the change is not allowed (e.g. the NCPA port of a deployed
+      agent) or Nagios did not accept it; nothing changed.
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    return change_service_monitoring(plugin_id, False)
+
+
+@plugin_bp.post('/<int:plugin_id>/services/resume')
+@login_required
+@require_permission('plugin.enable')
+def resume_service_monitoring_route(plugin_id):
+    """
+    Resume monitoring a port that was stopped. Same body and errors as
+    ``stop``; only a stopped port can be resumed.
+    """
+    return change_service_monitoring(plugin_id, True)

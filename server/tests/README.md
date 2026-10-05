@@ -127,13 +127,14 @@ Basenames below live under `unit/`, except `integration/test_live_nagios.py`.
 | `test_plugin_descriptions.py` | Generated description/category/documentation catalog (coverage, limits, generator freshness), `--help` fallback parsing, fill-if-empty rules, scanner backfill, and the plugin detail fields |
 | `test_plugin_scanner.py` | Filesystem scanning, executable detection, inventory synchronization, scan routes/status, and real permission checks where supported |
 | `test_plugin_service.py` | Inventory, summary, details, history, commands, and dependency read APIs |
-| `test_plugin_running.py` | Applied configurations returned by `GET /api/plugin/running` |
 | `test_plugin_enable_disable.py` | Enable/disable transitions, Nagios validation, history, rollback behavior, and permission guards |
 | `test_plugin_command_management.py` | Command override/restore routes, validation, immutable originals, and audit history |
 | `test_plugin_validation.py` | Executable, permission, execution, and dependency checks plus validation-state transitions |
 | `test_plugin_custom.py` | Custom-plugin upload staging, validation, collision handling, install rollback, and atomic registration |
 | `test_plugin_update.py` | Download URL/SSRF protection, safe archive extraction, update workflow, failure state, and manual rollback |
-| `test_plugin_monitoring_config.py` | Command/config generation, Nagios config inclusion and validation, apply rollback, and configuration list/create routes |
+| `test_plugin_reconcile.py` | The plugin reconciler: attaching discovered ports of enabled plugins, idempotence, disable/enable, manual rows untouched, the monitoring server, writer failures and rollback, and the callers that trigger it |
+| `test_plugin_services_api.py` | Service-driven plugins, the enable preview, a plugin's monitored services with live status, stop/resume of one port, disable rollback, and the removed manual routes |
+| `test_plugin_config_migration.py`, `test_port_service_map_migration.py`, `test_retire_permission_migration.py` | Alembic round trips with populated data for the plugin-driven monitoring migrations |
 
 ## Test environment
 

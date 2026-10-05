@@ -177,3 +177,29 @@ class TestSyncPermissions:
         warn_if_permissions_missing(Log())
 
         assert any("system.hosts.edit" in m and "sync-permissions" in m for m in messages)
+
+
+# ==========================================================
+# PERMISSIONS STAY IN STEP WITH THE ROUTES
+# ==========================================================
+
+class TestPermissionList:
+
+    def test_plugin_configure_is_retired(self):
+        from app.api.commands.seed import PERMISSIONS
+        assert "plugin.configure" not in PERMISSIONS
+
+    def test_every_permission_a_route_requires_is_seeded(self):
+        """A route guarded by a permission nobody can be granted would be unreachable."""
+        import re
+        from pathlib import Path
+        from app.api.commands.seed import PERMISSIONS
+
+        required = set()
+        for path in (Path(__file__).resolve().parents[2] / "app").rglob("*.py"):
+            if path.name == "permissions.py":      # the decorator's own docs use a placeholder name
+                continue
+            required.update(re.findall(r"require_permission\(\s*['\"]([\w.]+)['\"]", path.read_text(encoding="utf-8")))
+
+        assert required, "no require_permission calls found; the search is broken"
+        assert sorted(required - set(PERMISSIONS)) == []

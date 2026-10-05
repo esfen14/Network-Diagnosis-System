@@ -84,8 +84,11 @@ Plugin lifecycle and active monitoring are separate:
   metric for SNMP/NCPA), promotes identified ports, calls
   `regenerate_and_apply_config_status()` once, and sets each Enabled/Active
   plugin Active when an applied row backs it. `Manual` rows are never touched
-  and are not written to `hosts.cfg`; the legacy manual path still writes them to
-  `plugin-services.cfg` and skips Auto rows so nothing is defined twice. If
+  and are not written to `hosts.cfg`. The manual path that created them
+  (`monitoring_config.py`, `plugin-services.cfg`, the `/configurations` routes and
+  the `plugin.configure` permission) is removed; upgraded installs keep any
+  services it wrote in `plugin-services.cfg`, still loaded by Nagios, until an
+  admin deletes that file's entries (see the plan, G18). If
   Nagios rejects the config the database is rolled back and the failure is
   recorded in the plugin history. Merging devices deletes the source's Auto rows
   (the reconciler rebuilds them) because the unique constraint would collide.

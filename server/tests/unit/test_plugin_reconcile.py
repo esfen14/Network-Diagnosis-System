@@ -397,7 +397,7 @@ class TestTriggers:
         ssh = add_plugin("check_ssh", PluginStatus.INSTALLED)
 
         with patch("app.api.plugin.service.validate_nagios_configuration", return_value=(True, "ok")), \
-             patch("app.api.plugin.manager.reconcile_plugin_monitoring", side_effect=RuntimeError("boom")):
+             patch("app.api.plugin.reconcile.reconcile_plugin_monitoring", side_effect=RuntimeError("boom")):
             resp = logged_in_client.post(f"/api/plugin/{ssh.PluginID}/enable")
 
         assert resp.status_code == 200

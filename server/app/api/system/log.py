@@ -38,7 +38,6 @@ _PLUGIN_LEGACY_ACTIONS = {
     "plugin.update": "Updated a plugin",
     "plugin.enable": "Enabled a plugin",
     "plugin.disable": "Disabled a plugin",
-    "plugin.configure": "Applied a plugin's monitoring configuration",
     "plugin.command_override": "Overrode a plugin command",
     "plugin.command_restore": "Restored a plugin's default command",
     "plugin.validate": "Validated a plugin",

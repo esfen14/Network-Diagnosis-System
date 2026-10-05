@@ -51,7 +51,6 @@ PERMISSIONS = [
     "plugin.custom_add",
     "plugin.update",
     "plugin.update_rollback",
-    "plugin.configure",
     "settings.security",
     "settings.system",
     "settings.discovery",

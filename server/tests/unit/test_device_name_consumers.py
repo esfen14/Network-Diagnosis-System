@@ -29,39 +29,37 @@ def device_named(db_session, status, nagios_name="stable.lan", dns_name="dns.lan
     return device
 
 
-class TestPluginConfigurationsUseTheNagiosName:
+class TestPluginServicesUseTheNagiosName:
+    """The services a plugin monitors are listed and matched to Nagios results by the stable name."""
 
-    def test_tuples_use_the_stable_name_not_the_dns_name(self, db_session, admin_user):
-        device = device_named(db_session, make_status(db_session, admin_user))
-        plugin = Plugin(Name="check_x", Plugin_Type=PluginType.CUSTOM, Source=PluginSource.ADMINISTRATOR_ADDED,
-                        Status=PluginStatus.READY)
+    def attach(self, db_session, admin_user, nagios_name):
+        from app.plugin_models import PluginConfigurationOrigin, PluginConfigurationStatus
+        device = device_named(db_session, make_status(db_session, admin_user), nagios_name=nagios_name)
+        plugin = Plugin(Name="check_ssh", Plugin_Type=PluginType.NAGIOS, Source=PluginSource.BASELINE_ISO,
+                        Status=PluginStatus.ACTIVE)
         db_session.session.add(plugin)
         db_session.session.flush()
-        config = PluginConfiguration(PluginID=plugin.PluginID, NetDiscoveryID=device.NetDiscoveryID,
-                                     Service_Description="x")
-        db_session.session.add(config)
+        db_session.session.add(PluginConfiguration(
+            PluginID=plugin.PluginID, NetDiscoveryID=device.NetDiscoveryID, Service_Description="ssh-22-tcp",
+            Nagios_Service_Name="ssh-22-tcp", Port_Number=22, Protocol="tcp",
+            Status=PluginConfigurationStatus.APPLIED, Origin=PluginConfigurationOrigin.AUTO,
+        ))
         db_session.session.commit()
+        return plugin
 
-        with patch.object(plugin_service, "get_active_command_line", return_value=("check_x $HOSTADDRESS$", None)):
-            tuples = plugin_service.build_configuration_tuples([config])
+    def test_the_listing_shows_the_stable_name_not_the_dns_name(self, db_session, admin_user):
+        plugin = self.attach(db_session, admin_user, "stable.lan")
 
-        assert [t[0] for t in tuples] == ["stable.lan"]
+        (item,) = plugin_service.get_plugin_services(plugin.PluginID, 1, 10, "")["items"]
 
-    def test_device_without_a_stable_name_falls_back_to_the_dns_name(self, db_session, admin_user):
-        device = device_named(db_session, make_status(db_session, admin_user), nagios_name=None)
-        plugin = Plugin(Name="check_x", Plugin_Type=PluginType.CUSTOM, Source=PluginSource.ADMINISTRATOR_ADDED,
-                        Status=PluginStatus.READY)
-        db_session.session.add(plugin)
-        db_session.session.flush()
-        config = PluginConfiguration(PluginID=plugin.PluginID, NetDiscoveryID=device.NetDiscoveryID,
-                                     Service_Description="x")
-        db_session.session.add(config)
-        db_session.session.commit()
+        assert item["device"]["hostname"] == "stable.lan"
 
-        with patch.object(plugin_service, "get_active_command_line", return_value=("check_x", None)):
-            tuples = plugin_service.build_configuration_tuples([config])
+    def test_a_device_without_a_stable_name_falls_back_to_the_dns_name(self, db_session, admin_user):
+        plugin = self.attach(db_session, admin_user, None)
 
-        assert [t[0] for t in tuples] == ["dns.lan"]
+        (item,) = plugin_service.get_plugin_services(plugin.PluginID, 1, 10, "")["items"]
+
+        assert item["device"]["hostname"] == "dns.lan"
 
 
 class TestReportUsesTheNagiosName:

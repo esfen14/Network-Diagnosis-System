@@ -21,7 +21,7 @@ import pytest
 SERVER_DIR = Path(__file__).resolve().parents[2]
 # The revision the runner upgrades to for its before/after checks, and the single head.
 TARGET_REVISION = "d41f7a2b9e10"
-HEAD_REVISION = "b9d5f2a7c3e4"
+HEAD_REVISION = "d2f6a1c8e507"
 
 
 @pytest.fixture(scope="module")
@@ -43,7 +43,7 @@ def test_upgrade_reaches_the_new_revision(report):
 def test_the_chain_reaches_one_head_with_both_branches_applied(report):
     # Service identification, the NCPA run-history migration and the network profile /
     # password-change migrations are joined by one merge revision, followed by the plugin
-    # configuration columns and the Port -> Service map.
+    # configuration columns, the Port -> Service map and the retired plugin.configure permission.
     assert report["version_at_head"] == [[HEAD_REVISION]]
     assert "NCPA_DEPLOYMENT_RESULT" in report["tables_at_head"]
 

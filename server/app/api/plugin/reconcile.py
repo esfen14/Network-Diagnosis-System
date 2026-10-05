@@ -19,6 +19,8 @@ Functions
 ---------
 desired_services()
     The services that should exist right now, read-only.
+preview_enable(plugin_name)
+    What enabling one more plugin would attach, read-only.
 reconcile_plugin_monitoring(user_id)
     Promote identified ports, sync the rows, apply, set plugin states.
 """
@@ -35,8 +37,13 @@ from app.network_discovery.create_host_cfg import (
     plan_host_services,
     regenerate_and_apply_config_status,
 )
-from app.network_discovery.plugin_registry import plugin_for_definition
-from app.network_discovery.port_lifecycle import enabled_plugin_names, promote_identified_ports
+from app.network_discovery.plugin_registry import plugin_for_definition, resolve_plugin_name
+from app.network_discovery.port_lifecycle import (
+    enabled_plugin_names,
+    promotable_ports,
+    promote_identified_ports,
+    transport_for,
+)
 from app.plugin_models import (
     Plugin,
     PluginActionResult,
@@ -82,6 +89,43 @@ def desired_services():
                     "metric": service["metric"],
                 })
     return desired
+
+
+def preview_enable(plugin_name):
+    """
+    Count what enabling plugin_name (a Plugin Manager name such as "check_ssh")
+    would monitor on top of what is enabled now: the services the planner would
+    generate for it from ports that are monitored or missing, plus identified
+    suggestions it would promote. Returns {"matched_services": n,
+    "matched_devices": m}. Read-only: nothing is promoted or saved.
+    """
+    enabled_plugins = enabled_plugin_names() | {plugin_name}
+
+    hosts = {}
+    for network_hosts in _load_monitored_hosts().values():
+        for host_data in network_hosts.values():
+            device_id = host_data["data"].get("net_discovery_id")
+            if device_id is not None:
+                hosts[device_id] = host_data
+
+    for protocol, port in promotable_ports(enabled_plugins):
+        host_data = hosts.get(port.NetDiscoveryID)
+        if host_data is None:
+            continue
+        host_data["services"][protocol][str(port.Port_Number)] = {
+            "service_name": port.Service_Name,
+            "plugin_name": resolve_plugin_name(port.Service_Name, transport_for(protocol)),
+        }
+
+    facts = load_host_plugin_facts()
+    services = 0
+    devices = set()
+    for device_id, host_data in hosts.items():
+        for service in plan_host_services(host_data, facts, current_app.config, None, enabled_plugins):
+            if plugin_for_definition(service["plugin"]) == plugin_name:
+                services += 1
+                devices.add(device_id)
+    return {"matched_services": services, "matched_devices": len(devices)}
 
 
 # ==========================================================

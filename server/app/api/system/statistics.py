@@ -57,10 +57,10 @@ LOAD_PLUGIN  = "check_load"
 DISK_PLUGIN  = "check_disk"
 SWAP_PLUGIN  = "check_swap"
 
-# Command-name prefix used by Plugin Manager's own generated commands
-# (pinpoint_<plugin>, e.g. pinpoint_check_snmp). Mirrors
-# app/api/plugin/monitoring_config.py's COMMAND_NAME_PREFIX; not imported
-# from there to keep this module free of the plugin blueprint package.
+# Command-name prefix used by the commands the retired manual Plugin Manager
+# path generated (pinpoint_<plugin>, e.g. pinpoint_check_snmp). Services
+# from that path can still be running in Nagios on upgraded installs, so
+# they are still recognised here.
 PLUGIN_MANAGER_COMMAND_PREFIX = "pinpoint_"
 
 # Stock Nagios commands for the server's own resources are named

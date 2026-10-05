@@ -262,20 +262,18 @@ def should_auto_monitor(service_name, identified_by, protocol="tcp", enabled_plu
     return plugin_for_definition(definition_name) in enabled_plugins
 
 
-def promote_identified_ports():
+def promotable_ports(enabled_plugins):
     """
-    Start monitoring every SUGGESTED port whose service is identified and whose
-    plugin is now enabled in Plugin Manager, on devices that are scanned and not
-    retired or merged. Enabling a plugin and finding a new device both lead
-    here, so ports are attached without picking devices by hand. Ports flagged
-    "not used as intended" wait for acknowledgement; IGNORED ports stay
-    ignored. Returns the number of ports promoted. Does not commit.
+    The SUGGESTED ports that would start being monitored if exactly these Plugin
+    Manager plugins were enabled: identified (pinned, from the table, or
+    fingerprinted), not flagged "not used as intended", and on a device that is
+    scanned and not retired or merged. Returns a list of (protocol, port row).
+    Read-only; this is also what the enable preview counts.
     """
-    enabled_plugins = enabled_plugin_names()
     if not enabled_plugins:
-        return 0
+        return []
 
-    promoted = 0
+    found = []
     for protocol in ("tcp", "udp"):
         model = port_model(protocol)
         ports = db.session.scalars(
@@ -290,8 +288,24 @@ def promote_identified_ports():
         ).all()
         for port in ports:
             if should_auto_monitor(port.Service_Name, port.Identified_By, protocol, enabled_plugins, port):
-                start_monitoring(port, protocol)
-                promoted += 1
+                found.append((protocol, port))
+    return found
+
+
+def promote_identified_ports():
+    """
+    Start monitoring every SUGGESTED port whose service is identified and whose
+    plugin is now enabled in Plugin Manager, on devices that are scanned and not
+    retired or merged. Enabling a plugin and finding a new device both lead
+    here, so ports are attached without picking devices by hand. Ports flagged
+    "not used as intended" wait for acknowledgement; IGNORED ports stay
+    ignored (see promotable_ports). Returns the number of ports promoted. Does
+    not commit.
+    """
+    promoted = 0
+    for protocol, port in promotable_ports(enabled_plugin_names()):
+        start_monitoring(port, protocol)
+        promoted += 1
     return promoted
 
 
