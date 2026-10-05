@@ -28,6 +28,9 @@ from tests.support.identity_helpers import (
 )
 from tests.unit.test_create_host_cfg import make_host, services_by_host
 
+# Ports are monitored only when their plugin is enabled in Plugin Manager.
+pytestmark = pytest.mark.usefixtures("monitoring_plugins")
+
 
 # ==========================================================
 # WHICH DEVICES ARE LOADED
@@ -325,6 +328,7 @@ class TestDiscoveryFlow:
              patch.object(create_host_cfg, "discover_network", return_value=scanned), \
              patch.object(create_host_cfg, "collect_identifiers", return_value=[]), \
              patch.object(create_host_cfg, "get_monitoring_server_ips", return_value=set()), \
+             patch.object(create_host_cfg, "_sync_running_plugins") as reconcile, \
              patch.object(create_host_cfg, "config_unchanged", return_value=unchanged), \
              patch.object(create_host_cfg, "_validate_config", return_value=(True, "ok")) as validate, \
              patch.object(create_host_cfg, "_apply_new_host_cfg", return_value=(True, "applied")) as apply:
@@ -333,7 +337,16 @@ class TestDiscoveryFlow:
         status = db.session.scalars(
             sa.select(NetworkDiscoveryStatus).order_by(NetworkDiscoveryStatus.DiscoveryStatusID.desc())
         ).first()
+        self.reconcile = reconcile
         return status, validate, apply
+
+    def test_plugins_are_reconciled_after_a_scan_applies_a_config(self, app, db_session, admin_user, tmp_path):
+        self.run_flow(app, admin_user, tmp_path, unchanged=False)
+        self.reconcile.assert_called_once_with(app, admin_user.UserID)
+
+    def test_plugins_are_reconciled_after_a_scan_that_changed_nothing(self, app, db_session, admin_user, tmp_path):
+        self.run_flow(app, admin_user, tmp_path, unchanged=True)
+        self.reconcile.assert_called_once_with(app, admin_user.UserID)
 
     def test_unchanged_config_is_not_validated_applied_or_reloaded(self, app, db_session, admin_user, tmp_path):
         status, validate, apply = self.run_flow(app, admin_user, tmp_path, unchanged=True)

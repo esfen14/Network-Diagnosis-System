@@ -174,7 +174,7 @@ this is a documented implementation mismatch, not a recommended convention.
 | Method and path | Permission | Purpose |
 |---|---|---|
 | `GET /api/system/discovery-settings` | `settings.discovery` | Effective discovery settings, their `config.py` defaults, and whether a scan is running |
-| `PUT /api/system/discovery-settings` | `settings.discovery` | Save networks, TCP/UDP ports, "always treat port as" rules (`tcpForcedServices`, `udpForcedServices`) and fallback service names (`tcpServiceOverrides`, `udpServiceOverrides`); every field is required, the version must match |
+| `PUT /api/system/discovery-settings` | `settings.discovery` | Save networks, TCP/UDP ports and the Port -> Service tables (`tcpPortServices`, `udpPortServices`: the service expected on each port); every field is required, the version must match. GET also returns `ncpaPort`, the derived NCPA entry in the TCP table (accepted back but never stored; mapping that port to anything but `ncpa` is a 400) and `resolution` (which check each entry leads to) |
 
 ### `app/api/system/device_identity.py`
 
@@ -185,7 +185,7 @@ this is a documented implementation mismatch, not a recommended convention.
 | `PUT /api/system/hosts/<id>` | `system.hosts.edit` | Change display name and/or addressing mode |
 | `POST /api/system/hosts/<id>/merge` | `system.hosts.edit` | Merge the device into another |
 | `POST /api/system/hosts/<id>/retire` | `system.hosts.edit` | Retire the device |
-| `PUT /api/system/hosts/<id>/ports/<proto>/<port>` | `system.hosts.edit` | Body `{"state"?, "service_name"?}`: change a port's state, pin its service on this device (never renamed by a scan; a monitored port's plugin is re-frozen), or add a port by hand (`state` MONITORED plus `service_name`); response includes `identified_by` |
+| `PUT /api/system/hosts/<id>/ports/<proto>/<port>` | `system.hosts.edit` | Body `{"state"?, "service_name"?, "acknowledge_mismatch"?}`: change a port's state, pin its service on this device (never renamed by a scan; a monitored port's plugin is re-frozen), acknowledge a port flagged "not used as intended" (accepts the service nmap found; 400 if the port is not flagged), or add a port by hand (`state` MONITORED plus `service_name`); response includes `identified_by`, `expected_service_name` and `mismatch_acknowledged` |
 | `GET /api/system/discover/review` | `system.discover` | Unresolved review items, including `SERVICE_CHANGED` |
 | `POST /api/system/discover/review/<id>/resolve` | `system.hosts.edit` | Mark a review item as dealt with |
 
@@ -251,8 +251,8 @@ update/custom-plugin modules.
 | `GET /api/plugin/<plugin_id>` | `plugin.view` | Plugin detail, including `description`, `category` and `documentation_url` (null for plugins outside the bundled catalog) |
 | `GET /api/plugin/<plugin_id>/commands` | `plugin.view` | Commands and active overrides |
 | `GET /api/plugin/<plugin_id>/dependencies` | `plugin.view` | Dependency status |
-| `POST /api/plugin/<plugin_id>/enable` | `plugin.enable` | Enable a plugin, then apply it to every monitoring target (`apply_running_plugins_to_all_targets`: one rebuild of `plugin-services.cfg`, status becomes Active). The same sync runs after every successful network discovery so new hosts pick up running plugins. A failed auto-apply does not undo the enable; the response carries `auto_apply` |
-| `POST /api/plugin/<plugin_id>/disable` | `plugin.disable` | Disable a plugin |
+| `POST /api/plugin/<plugin_id>/enable` | `plugin.enable` | Enable a plugin, then run the plugin reconciler (`reconcile_plugin_monitoring`): identified ports whose plugin is now enabled are promoted and attached, hosts.cfg is regenerated once through the shared writer, and the plugin becomes Active if anything is attached. No device is picked by hand. The same reconcile runs after every network discovery, port edit, merge or retire, NCPA deployment and NCPA disk refresh. A failed attach does not undo the enable; the response carries `auto_apply` (`success`, `changed`, `applied`, `removed`, `promoted`, `message`) |
+| `POST /api/plugin/<plugin_id>/disable` | `plugin.disable` | Disable a plugin, then reconcile: its services leave Nagios, its ports keep their state and frozen plugin so enabling restores them. The response carries `auto_apply` |
 | `POST /api/plugin/<plugin_id>/commands/<command_id>/override` | `plugin.command_override` | Save a command override |
 | `POST /api/plugin/<plugin_id>/commands/<command_id>/restore-default` | `plugin.command_restore` | Disable the active override |
 | `GET /api/system/network-profile` | `system.network_health` | Editable network name, reference tag and detail rows for the Network Health card (defaults until saved) |

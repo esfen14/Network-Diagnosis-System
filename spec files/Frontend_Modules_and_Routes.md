@@ -65,7 +65,7 @@ When adding a page:
 | `components/plugins/` | Older installed/available plugin table components; do not assume these drive the current page |
 | `components/reports/` | Host availability and network-services report tables |
 | `components/manage-accounts/` | Account management table/UI |
-| `components/settings/` | General, security, and system settings controls |
+| `components/settings/` | General, security, and system settings controls; the Network Discovery tab edits networks, scan ports and one Port → Service table per protocol (NCPA's port fixed, each entry showing the check it leads to) |
 | `components/layout/` | Authenticated application shell and global session/access behavior |
 | `components/shared/` | Reusable headers, summary cards, export menu, alerts sidebar, and rescan modal |
 

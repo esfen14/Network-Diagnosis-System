@@ -15,9 +15,12 @@ from app.system_models import DiscoverySettings, ConfigurationChanges, Permissio
 from app.network_discovery.discovery_settings import (
     DiscoverySettingsError,
     get_discovery_setting,
+    get_port_services,
+    resolve_port_service,
     validate_networks,
+    validate_port_services,
     validate_ports,
-    validate_service_overrides,
+    validate_tcp_port_services,
 )
 
 
@@ -25,10 +28,8 @@ VALID_PAYLOAD = {
     "networks": ["10.0.5.0/24"],
     "tcpPorts": [22, "80-443"],
     "udpPorts": [161],
-    "tcpServiceOverrides": {"22": "ssh"},
-    "udpServiceOverrides": {"161": "snmp"},
-    "tcpForcedServices": {"5693": "ncpa"},
-    "udpForcedServices": {},
+    "tcpPortServices": {"22": "ssh", "5693": "ncpa"},
+    "udpPortServices": {"161": "snmp"},
 }
 
 
@@ -108,9 +109,13 @@ class TestValidatePorts:
             validate_ports([22, "22"], "TCP")
 
 
-class TestValidateServiceOverrides:
+class TestValidatePortServices:
     def test_normalizes_keys_to_strings(self):
-        assert validate_service_overrides({22: "ssh", "161": "snmp"}, "UDP") == {"22": "ssh", "161": "snmp"}
+        assert validate_port_services({22: "ssh", "161": "snmp"}, "UDP") == {"22": "ssh", "161": "snmp"}
+
+    def test_rejects_the_same_port_twice(self):
+        with pytest.raises(DiscoverySettingsError):
+            validate_port_services({22: "ssh", "22": "http"}, "TCP")
 
     @pytest.mark.parametrize("overrides", [
         {"0": "ssh"},
@@ -123,11 +128,35 @@ class TestValidateServiceOverrides:
     ])
     def test_rejects_invalid(self, overrides):
         with pytest.raises(DiscoverySettingsError):
-            validate_service_overrides(overrides, "TCP")
+            validate_port_services(overrides, "TCP")
 
     def test_rejects_non_dict(self):
         with pytest.raises(DiscoverySettingsError):
-            validate_service_overrides([["22", "ssh"]], "TCP")
+            validate_port_services([["22", "ssh"]], "TCP")
+
+
+class TestTcpTableAndNcpa:
+    def test_the_derived_ncpa_entry_is_not_stored(self, app):
+        with app.app_context():
+            assert validate_tcp_port_services({"22": "ssh", "5693": "ncpa"}) == {"22": "ssh"}
+
+    def test_ncpa_port_cannot_be_mapped_to_another_service(self, app):
+        with app.app_context(), pytest.raises(DiscoverySettingsError, match="NCPA"):
+            validate_tcp_port_services({"5693": "http"})
+
+
+class TestResolution:
+    @pytest.mark.parametrize("name, protocol, expected", [
+        ("ssh", "tcp", {"plugin": "check_ssh", "kind": "plugin"}),
+        ("https", "tcp", {"plugin": "check_http", "kind": "plugin"}),
+        ("ntp", "udp", {"plugin": "check_ntp_time", "kind": "plugin"}),
+        ("nrpe", "tcp", {"plugin": "check_tcp", "kind": "generic"}),
+        ("tcp", "tcp", {"plugin": "check_tcp", "kind": "generic"}),
+        ("nrpe", "udp", {"plugin": None, "kind": "skipped"}),
+        ("ssh", "udp", {"plugin": None, "kind": "skipped"}),
+    ])
+    def test_service_to_check(self, name, protocol, expected):
+        assert resolve_port_service(name, protocol) == expected
 
 
 # ==========================================================
@@ -161,10 +190,27 @@ class TestGetDiscoverySettings:
 
         assert data["settings"]["networks"] == app.config["NETWORKS"]
         assert data["settings"]["tcpPorts"] == app.config["TCP_PORTS"]
-        assert data["settings"]["udpServiceOverrides"] == app.config["UDP_SERVICE_OVERRIDES"]
+        assert data["settings"]["udpPortServices"] == app.config["UDP_PORT_SERVICES"]
         assert data["settings"]["version"] == 0
         assert data["defaults"]["networks"] == app.config["NETWORKS"]
         assert data["scanRunning"] is False
+
+    def test_the_tcp_table_always_includes_the_ncpa_port(self, logged_in_client, db_session, app):
+        data = current(logged_in_client)
+        ncpa_port = app.config["NCPA_PORT"]
+
+        assert data["settings"]["tcpPortServices"][ncpa_port] == "ncpa"
+        assert data["defaults"]["tcpPortServices"][ncpa_port] == "ncpa"
+        assert data["settings"]["ncpaPort"] == int(ncpa_port)
+        assert ncpa_port not in app.config["TCP_PORT_SERVICES"]
+
+    def test_each_entry_says_which_check_it_leads_to(self, logged_in_client, db_session):
+        resolution = current(logged_in_client)["settings"]["resolution"]
+
+        assert resolution["tcp"]["22"] == {"plugin": "check_ssh", "kind": "plugin"}
+        assert resolution["tcp"]["5666"] == {"plugin": "check_tcp", "kind": "generic"}
+        assert resolution["udp"]["5666"] == {"plugin": None, "kind": "skipped"}
+        assert resolution["udp"]["161"] == {"plugin": "check_snmp", "kind": "plugin"}
 
 
 class TestUpdateDiscoverySettings:
@@ -179,8 +225,23 @@ class TestUpdateDiscoverySettings:
 
         row = db_session.session.get(DiscoverySettings, 1)
         assert row.Networks == ["10.0.5.0/24"]
-        assert row.TCP_Service_Overrides == {"22": "ssh"}
-        assert row.TCP_Forced_Services == {"5693": "ncpa"}
+        assert row.TCP_Port_Services == {"22": "ssh"}      # NCPA's entry is derived, not stored
+        assert row.UDP_Port_Services == {"161": "snmp"}
+
+    def test_saving_what_was_just_loaded_changes_nothing(self, logged_in_client, db_session):
+        assert save(logged_in_client).status_code == 200
+        settings = current(logged_in_client)["settings"]
+
+        resp = logged_in_client.put("/api/system/discovery-settings", json=settings)
+
+        assert resp.status_code == 200
+        assert resp.get_json()["message"] == "No changes to save."
+
+    def test_ncpa_port_mapped_elsewhere_is_rejected(self, logged_in_client, db_session):
+        resp = save(logged_in_client, tcpPortServices={"5693": "http"})
+
+        assert resp.status_code == 400
+        assert "NCPA" in resp.get_json()["message"]
 
     def test_invalid_value_rejected_and_nothing_saved(self, logged_in_client, db_session):
         resp = save(logged_in_client, networks=["127.0.0.1"])
@@ -240,6 +301,13 @@ class TestScanReadsSavedSettings:
     def test_falls_back_to_config(self, app, db_session):
         with app.app_context():
             assert get_discovery_setting("NETWORKS") == app.config["NETWORKS"]
+
+    def test_scan_table_adds_the_ncpa_port(self, app, db_session):
+        db_session.session.add(DiscoverySettings(Id=1, TCP_Port_Services={"22": "ssh"}))
+        db_session.session.commit()
+
+        assert get_port_services("tcp") == {"22": "ssh", app.config["NCPA_PORT"]: "ncpa"}
+        assert get_port_services("udp") == app.config["UDP_PORT_SERVICES"]
 
     def test_saved_value_wins(self, app, db_session):
         db_session.session.add(DiscoverySettings(Id=1, Networks=["10.9.9.0/24"]))

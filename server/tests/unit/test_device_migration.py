@@ -21,7 +21,7 @@ import pytest
 SERVER_DIR = Path(__file__).resolve().parents[2]
 # The revision the runner upgrades to for its before/after checks, and the single head.
 TARGET_REVISION = "d41f7a2b9e10"
-HEAD_REVISION = "c7e3a9d1b5f2"
+HEAD_REVISION = "b9d5f2a7c3e4"
 
 
 @pytest.fixture(scope="module")
@@ -42,7 +42,8 @@ def test_upgrade_reaches_the_new_revision(report):
 
 def test_the_chain_reaches_one_head_with_both_branches_applied(report):
     # Service identification, the NCPA run-history migration and the network profile /
-    # password-change migrations are all applied and joined by one merge revision.
+    # password-change migrations are joined by one merge revision, followed by the plugin
+    # configuration columns and the Port -> Service map.
     assert report["version_at_head"] == [[HEAD_REVISION]]
     assert "NCPA_DEPLOYMENT_RESULT" in report["tables_at_head"]
 
@@ -51,7 +52,9 @@ def test_service_identification_columns_are_added(report):
     # Existing ports have no recorded identification; the lifecycle treats NULL as before.
     assert report["tcp_identified_by"] and {row[0] for row in report["tcp_identified_by"]} == {None}
     assert "Identified_By" in report["udp_columns"]
-    assert {"TCP_Forced_Services", "UDP_Forced_Services"} <= set(report["settings_columns"])
+    # The "always treat port as" columns it added are merged into the Port -> Service map.
+    assert {"TCP_Port_Services", "UDP_Port_Services"} <= set(report["settings_columns"])
+    assert not {"TCP_Forced_Services", "UDP_Forced_Services"} & set(report["settings_columns"])
 
 
 def test_existing_host_names_are_kept_and_made_unique(report):

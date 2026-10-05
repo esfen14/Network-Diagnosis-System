@@ -53,28 +53,23 @@ class Config:
 
     # How a discovered port's service name is decided, strongest first:
     #   1. a name an operator pinned on that device's port (never rescanned)
-    #   2. *_FORCED_SERVICES: "always treat port X as Y" on every device
-    #   3. the service nmap identified by probing the port (fingerprint)
-    #   4. *_SERVICE_OVERRIDES: fallback names, used only when nmap could not
-    #      fingerprint the port and only guessed from its number
-    # Force only ports whose meaning holds on every device. NCPA's port is
-    # forced because deployment configures the agent there, and nmap would
-    # otherwise fingerprint it as plain https.
-    TCP_FORCED_SERVICES = {
-        NCPA_PORT: "ncpa",
-    }
-    UDP_FORCED_SERVICES = {}
-    TCP_SERVICE_OVERRIDES = {
+    #   2. the service nmap identified by probing the port (fingerprint)
+    #   3. *_PORT_SERVICES: the service an admin expects on that port. Used when
+    #      nmap could not fingerprint the port, or fingerprinted the same
+    #      service. If nmap fingerprinted a different one the port is flagged
+    #      "not used as intended" and is not monitored until acknowledged.
+    #   4. nmap's guess from the port number (never trusted on its own)
+    # NCPA_PORT -> ncpa is always part of the TCP table (added when the table is
+    # read), so it cannot drift from NCPA_PORT. Deployment configures the agent
+    # there, so a fingerprint on that port is not treated as a mismatch.
+    TCP_PORT_SERVICES = {
         "5666": "nrpe",
         "22": "ssh",
         "80": "http",
         "443": "https",
     }
-    UDP_SERVICE_OVERRIDES = {
+    UDP_PORT_SERVICES = {
         "5666": "nrpe",
-        "22": "ssh",
-        "80": "http",
-        "443": "https",
         "161": "snmp",
     }
 
@@ -95,9 +90,6 @@ class Config:
     # it counts as gone, and days a MONITORED port stays MISSING before archive.
     PORT_MISSING_AFTER_SCANS = 5
     PORT_ARCHIVE_AFTER_DAYS = 30
-    # Services monitored on first sighting; every other new port is only
-    # SUGGESTED until a user monitors it.
-    AUTO_MONITOR_SERVICES = ["ssh", "http", "https", "snmp", "ncpa"]
     # Never suggested automatically (Linux / Windows ephemeral ranges).
     EPHEMERAL_PORT_RANGES = [(32768, 60999), (49152, 65535)]
     # How often the NCPA relocation job looks for NCPA devices that moved.

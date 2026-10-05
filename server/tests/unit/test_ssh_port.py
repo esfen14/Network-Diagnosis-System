@@ -30,6 +30,9 @@ from app.system_models import (
 )
 from tests.support.identity_helpers import MAC_1, NET, SSH_1, make_status, patched_config, run_scan, scan
 
+# Ports are monitored only when their plugin is enabled in Plugin Manager.
+pytestmark = pytest.mark.usefixtures("monitoring_plugins")
+
 
 def make_device(db_session, admin_user, tcp):
     """A Linux device saved by a scan that saw the given {port: service} TCP ports."""

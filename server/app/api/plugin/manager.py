@@ -29,6 +29,7 @@ import json
 
 from app.api.plugin import plugin_bp
 from app.api.plugin import service
+from app.api.plugin.reconcile import reconcile_plugin_monitoring
 from app.api.helper import success, error, validate_json_data, validate_json_fields
 from app.api.helper.database_access.permissions import require_permission
 from app.api.plugin.scanner import scan_plugin_directory, sync_plugin_inventory, get_plugin_dir
@@ -658,15 +659,16 @@ def enable_plugin_route(plugin_id):
     try:
         data = service.enable_plugin(plugin_id, current_user.UserID)
         try:
-            auto = service.apply_running_plugins_to_all_targets(
-                current_user.UserID, plugin_ids=[plugin_id],
-            )
+            auto = reconcile_plugin_monitoring(current_user.UserID)
             data["auto_apply"] = auto
             data["status"] = service.db.session.get(service.Plugin, plugin_id).Status.value
         except Exception:
             service.db.session.rollback()
-            current_app.logger.exception("Automatic apply after enabling a plugin failed.")
-            data["auto_apply"] = {"success": False, "applied": 0, "message": "Automatic apply failed."}
+            current_app.logger.exception("Attaching services after enabling a plugin failed.")
+            data["auto_apply"] = {
+                "success": False, "applied": 0, "removed": 0, "promoted": 0,
+                "message": "Attaching services failed.",
+            }
         return success(data)
     except service.PluginNotFoundError:
         return error("Plugin not found.", 404)
@@ -711,6 +713,16 @@ def disable_plugin_route(plugin_id):
     """
     try:
         data = service.disable_plugin(plugin_id, current_user.UserID)
+        try:
+            # Its services leave Nagios; the ports keep their state so enabling restores them.
+            data["auto_apply"] = reconcile_plugin_monitoring(current_user.UserID)
+        except Exception:
+            service.db.session.rollback()
+            current_app.logger.exception("Removing services after disabling a plugin failed.")
+            data["auto_apply"] = {
+                "success": False, "applied": 0, "removed": 0, "promoted": 0,
+                "message": "Removing services failed.",
+            }
         return success(data)
     except service.PluginNotFoundError:
         return error("Plugin not found.", 404)

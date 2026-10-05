@@ -23,6 +23,19 @@ whose service an operator pinned (USER) is never renamed by a scan; and a
 monitored port that now fingerprints as a different service raises a
 SERVICE_CHANGED review item instead of being renamed.
 
+Plugin Manager is the switch: an identified SUGGESTED port is monitored only
+when the plugin that checks its service is Enabled or Active (D2 in the
+plugin-driven monitoring plan), at first sight and again whenever
+promote_identified_ports() runs, e.g. after a plugin is enabled. The generic
+TCP plugin picks up every identified TCP port with no plugin of its own; UDP
+is monitored only through a plugin that speaks its protocol.
+
+Not used as intended: when the Port -> Service setting expects one service on a
+port and nmap fingerprinted another, the port keeps what nmap saw, records the
+expected name in Expected_Service_Name and is not monitored until an admin
+acknowledges it (Mismatch_Acknowledged_At). A change in what nmap sees clears
+the acknowledgement.
+
 Nothing here commits; the caller owns the transaction.
 """
 
@@ -32,9 +45,15 @@ import sqlalchemy as sa
 from flask import current_app
 
 from app import db
-from app.network_discovery.plugin_registry import Transport, resolve_plugin_name
+from app.network_discovery.plugin_registry import (
+    Transport,
+    plugin_for_definition,
+    resolve_plugin_name,
+)
+from app.plugin_models import Plugin, PluginStatus
 from app.system_models import (
     DeviceReviewItem,
+    DeviceState,
     NCPADeployment,
     NetworkDiscovery,
     Open_TCP_Services,
@@ -47,6 +66,17 @@ from app.system_models import (
 
 # States whose ports produce Nagios services.
 CONFIG_STATES = (PortState.MONITORED, PortState.MISSING)
+
+# Plugin states that allow monitoring (Plugin Manager's on switch).
+ENABLED_PLUGIN_STATES = (PluginStatus.ENABLED, PluginStatus.ACTIVE)
+
+# Identification that counts as knowing what a port is: an operator's pin, the
+# Port -> Service table, or nmap's fingerprint. A guess from the number does not.
+IDENTIFIED_BY = (
+    ServiceIdentification.USER,
+    ServiceIdentification.PORT_RULE,
+    ServiceIdentification.FINGERPRINT,
+)
 
 
 def utcnow():
@@ -111,13 +141,30 @@ def identification_from(value):
         return ServiceIdentification.PORT_HINT
 
 
+def enabled_plugin_names():
+    """The Plugin Manager plugins that are Enabled or Active, as a set of names."""
+    return set(db.session.scalars(
+        sa.select(Plugin.Name).where(Plugin.Status.in_(ENABLED_PLUGIN_STATES))
+    ).all())
+
+
+def has_unacknowledged_mismatch(port):
+    """True if the port is flagged "not used as intended" and no admin has acknowledged it."""
+    return port.Expected_Service_Name is not None and port.Mismatch_Acknowledged_At is None
+
+
 def upsert_scanned_port(model, protocol, device_id, port_number, service_name, now,
-                        identified_by=ServiceIdentification.PORT_HINT):
+                        identified_by=ServiceIdentification.PORT_HINT, expected_service=None,
+                        enabled_plugins=None):
     """
     Create or refresh one port the scan saw. A new port is MONITORED when its
-    service is in AUTO_MONITOR_SERVICES and was not just guessed from the port
-    number, otherwise SUGGESTED; a port in an ephemeral range is not recorded
-    at all. A port seen again resets its missed count, MISSING returns to
+    service was identified by more than its port number and the plugin that
+    checks it is enabled in Plugin Manager (should_auto_monitor), otherwise
+    SUGGESTED; a port in an ephemeral range is not recorded at all.
+    expected_service is the Port -> Service entry that nmap's fingerprint
+    contradicted, or None: it flags the port "not used as intended" and keeps it
+    from being monitored until acknowledged. enabled_plugins is the set from
+    enabled_plugin_names(), looked up when not passed. A port seen again resets its missed count, MISSING returns to
     MONITORED, ARCHIVED returns to SUGGESTED, IGNORED stays ignored. A
     monitored port keeps its Service_Name and Plugin_Name, and a port an
     operator pinned keeps its Service_Name in every state; the new guess is
@@ -127,6 +174,8 @@ def upsert_scanned_port(model, protocol, device_id, port_number, service_name, n
     commit.
     """
     identified_by = identification_from(identified_by)
+    if enabled_plugins is None:
+        enabled_plugins = enabled_plugin_names()
     port = db.session.scalar(
         sa.select(model).where(
             model.NetDiscoveryID == device_id, model.Port_Number == port_number
@@ -140,19 +189,27 @@ def upsert_scanned_port(model, protocol, device_id, port_number, service_name, n
             NetDiscoveryID=device_id, Port_Number=port_number, Service_Name=service_name,
             Observed_Service_Name=service_name, Source=PortSource.SCAN,
             Port_State=PortState.SUGGESTED, First_Seen_At=now, Last_Seen_At=now, Missed_Scans=0,
-            Identified_By=identified_by,
+            Identified_By=identified_by, Expected_Service_Name=expected_service,
         )
         db.session.add(port)
-        if should_auto_monitor(service_name, identified_by):
+        if should_auto_monitor(service_name, identified_by, protocol, enabled_plugins, port):
             start_monitoring(port, protocol)
         db.session.flush()
         return port
 
     port.Last_Seen_At = now
     port.Missed_Scans = 0
-    port.Observed_Service_Name = service_name
     pinned = port.Identified_By is ServiceIdentification.USER
     was_guess = port.Identified_By is ServiceIdentification.PORT_HINT
+
+    # An operator's pin outranks the table. Otherwise a changed sighting clears
+    # an earlier acknowledgement, because the admin accepted something else.
+    if pinned:
+        expected_service = None
+    if expected_service is None or port.Observed_Service_Name != service_name:
+        port.Mismatch_Acknowledged_At = None
+    port.Expected_Service_Name = expected_service
+    port.Observed_Service_Name = service_name
 
     if port.Port_State is PortState.MISSING:
         port.Port_State = PortState.MONITORED
@@ -168,7 +225,7 @@ def upsert_scanned_port(model, protocol, device_id, port_number, service_name, n
             port.Service_Name = service_name
             port.Identified_By = identified_by
         if (port.Port_State is PortState.SUGGESTED and was_guess
-                and should_auto_monitor(service_name, identified_by)):
+                and should_auto_monitor(service_name, identified_by, protocol, enabled_plugins, port)):
             start_monitoring(port, protocol)
     elif port.Port_State is PortState.MONITORED and port.Plugin_Name is None:
         # Ports that predate the lifecycle: freeze what they are monitored as today.
@@ -183,17 +240,85 @@ def upsert_scanned_port(model, protocol, device_id, port_number, service_name, n
     return port
 
 
-def should_auto_monitor(service_name, identified_by):
+def should_auto_monitor(service_name, identified_by, protocol="tcp", enabled_plugins=None, port=None):
     """
-    True if a newly seen service is monitored without a user asking: it is in
-    AUTO_MONITOR_SERVICES and was identified by more than its port number.
+    True if a SUGGESTED port should start being monitored without a user
+    asking: its service was identified by more than its port number, it is not
+    flagged "not used as intended" (port, when given), and the Plugin Manager
+    plugin that checks it is Enabled or Active. A TCP service with no plugin
+    of its own is checked by the generic TCP plugin; a UDP one is never
+    monitored this way.
     """
-    if identified_by is ServiceIdentification.PORT_HINT:
+    if identified_by not in IDENTIFIED_BY:
         return False
-    auto_services = []
-    for name in current_app.config["AUTO_MONITOR_SERVICES"]:
-        auto_services.append(name.lower())
-    return str(service_name).lower() in auto_services
+    if port is not None and has_unacknowledged_mismatch(port):
+        return False
+    transport = transport_for(protocol)
+    definition_name = resolve_plugin_name(service_name, transport)
+    if transport is Transport.UDP and definition_name == "udp":
+        return False
+    if enabled_plugins is None:
+        enabled_plugins = enabled_plugin_names()
+    return plugin_for_definition(definition_name) in enabled_plugins
+
+
+def promote_identified_ports():
+    """
+    Start monitoring every SUGGESTED port whose service is identified and whose
+    plugin is now enabled in Plugin Manager, on devices that are scanned and not
+    retired or merged. Enabling a plugin and finding a new device both lead
+    here, so ports are attached without picking devices by hand. Ports flagged
+    "not used as intended" wait for acknowledgement; IGNORED ports stay
+    ignored. Returns the number of ports promoted. Does not commit.
+    """
+    enabled_plugins = enabled_plugin_names()
+    if not enabled_plugins:
+        return 0
+
+    promoted = 0
+    for protocol in ("tcp", "udp"):
+        model = port_model(protocol)
+        ports = db.session.scalars(
+            sa.select(model)
+            .join(NetworkDiscovery, NetworkDiscovery.NetDiscoveryID == model.NetDiscoveryID)
+            .where(
+                model.Port_State == PortState.SUGGESTED,
+                model.Identified_By.in_(IDENTIFIED_BY),
+                NetworkDiscovery.Include_Device_In_Scanning.is_(True),
+                NetworkDiscovery.Device_State.not_in((DeviceState.RETIRED, DeviceState.MERGED)),
+            )
+        ).all()
+        for port in ports:
+            if should_auto_monitor(port.Service_Name, port.Identified_By, protocol, enabled_plugins, port):
+                start_monitoring(port, protocol)
+                promoted += 1
+    return promoted
+
+
+def acknowledge_port_mismatch(device_id, protocol, port_number):
+    """
+    Record that an admin accepts a port flagged "not used as intended" as the
+    service nmap found on it. A SUGGESTED port then follows the normal rule and
+    is monitored if its plugin is enabled. Returns the port, or None if the
+    device has no such port. Raises ValueError if the port is not flagged or
+    was already acknowledged. Does not commit.
+    """
+    model = port_model(protocol)
+    port = db.session.scalar(
+        sa.select(model).where(model.NetDiscoveryID == device_id, model.Port_Number == port_number)
+    )
+    if port is None:
+        return None
+    if not has_unacknowledged_mismatch(port):
+        raise ValueError("This port has no unacknowledged mismatch.")
+
+    port.Mismatch_Acknowledged_At = utcnow()
+    if port.Port_State is PortState.SUGGESTED and should_auto_monitor(
+        port.Service_Name, port.Identified_By, protocol, port=port
+    ):
+        start_monitoring(port, protocol)
+    db.session.flush()
+    return port
 
 
 def flag_service_change(port, protocol, device_id, service_name, identified_by):
@@ -281,12 +406,14 @@ def age_unseen_port(port, protocol, device_id, now):
 def process_device_ports(device, services, host_seen=True):
     """
     Apply one scan's results for a device. services is
-    {"tcp": {port: {"service_name": ..., "identified_by": ...}}, "udp": {...}} as
-    discover_network() builds it after the port rules are applied. Ports not in the results are
+    {"tcp": {port: {"service_name": ..., "identified_by": ..., "expected_service": ...}},
+    "udp": {...}} as discover_network() builds it after the port rules are
+    applied ("expected_service" is only present for a mismatch). Ports not in the results are
     aged only when host_seen is True (a miss on a host that was not found
     proves nothing). Never deletes a row. Does not commit.
     """
     now = utcnow()
+    enabled_plugins = enabled_plugin_names()
     for protocol in ("tcp", "udp"):
         model = port_model(protocol)
         scanned = {}
@@ -295,11 +422,13 @@ def process_device_ports(device, services, host_seen=True):
             scanned[int(port_number)] = (
                 service_data.get("service_name") or "unknown",
                 service_data.get("identified_by"),
+                service_data.get("expected_service"),
             )
 
-        for port_number, (service_name, identified_by) in scanned.items():
+        for port_number, (service_name, identified_by, expected_service) in scanned.items():
             upsert_scanned_port(
-                model, protocol, device.NetDiscoveryID, port_number, service_name, now, identified_by
+                model, protocol, device.NetDiscoveryID, port_number, service_name, now, identified_by,
+                expected_service, enabled_plugins,
             )
 
         if not host_seen:
@@ -336,6 +465,8 @@ def mark_ncpa_port(device_id):
 
     port.Service_Name = "ncpa"
     port.Observed_Service_Name = "ncpa"
+    port.Expected_Service_Name = None
+    port.Mismatch_Acknowledged_At = None
     port.Source = PortSource.NCPA
     # Deployment reached the agent with an authenticated request.
     port.Identified_By = ServiceIdentification.FINGERPRINT
@@ -427,6 +558,9 @@ def pin_port_service(device_id, protocol, port_number, service_name):
 
     port.Service_Name = service_name
     port.Identified_By = ServiceIdentification.USER
+    # The operator decided; the table's expectation no longer applies.
+    port.Expected_Service_Name = None
+    port.Mismatch_Acknowledged_At = None
     if port.Port_State in CONFIG_STATES:
         port.Plugin_Name = resolve_plugin_name(service_name, transport_for(protocol))
     db.session.flush()
@@ -451,6 +585,9 @@ def set_port_state(device_id, protocol, port_number, state):
         raise ValueError("The NCPA port cannot be removed while an NCPA token is deployed.")
 
     if state is PortState.MONITORED:
+        if has_unacknowledged_mismatch(port):
+            # Choosing to monitor the port is accepting it as it is.
+            port.Mismatch_Acknowledged_At = utcnow()
         if port.Port_State in CONFIG_STATES and port.Plugin_Name:
             # Already monitored (or missing): keep the frozen plugin.
             port.Port_State = PortState.MONITORED

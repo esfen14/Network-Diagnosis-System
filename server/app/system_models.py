@@ -490,6 +490,13 @@ class Open_TCP_Services(db.Model):
     Observed_Service_Name: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
     # How Service_Name was decided; NULL for ports recorded before this existed.
     Identified_By: so.Mapped[Optional[ServiceIdentification]] = so.mapped_column(sa.Enum(ServiceIdentification))
+    # The service the Port -> Service setting expects on this port when nmap
+    # fingerprinted something else ("Not used as intended"). The port keeps the
+    # service nmap saw; it is not monitored until an admin acknowledges it
+    # (Mismatch_Acknowledged_At). A change in what nmap sees clears the
+    # acknowledgement.
+    Expected_Service_Name: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
+    Mismatch_Acknowledged_At: so.Mapped[Optional[datetime]] = so.mapped_column()
     First_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Last_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Closed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
@@ -517,6 +524,13 @@ class Open_UDP_Services(db.Model):
     Observed_Service_Name: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
     # How Service_Name was decided; NULL for ports recorded before this existed.
     Identified_By: so.Mapped[Optional[ServiceIdentification]] = so.mapped_column(sa.Enum(ServiceIdentification))
+    # The service the Port -> Service setting expects on this port when nmap
+    # fingerprinted something else ("Not used as intended"). The port keeps the
+    # service nmap saw; it is not monitored until an admin acknowledges it
+    # (Mismatch_Acknowledged_At). A change in what nmap sees clears the
+    # acknowledgement.
+    Expected_Service_Name: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
+    Mismatch_Acknowledged_At: so.Mapped[Optional[datetime]] = so.mapped_column()
     First_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Last_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Closed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
@@ -770,10 +784,9 @@ class DiscoverySettings(db.Model):
     Networks: so.Mapped[Optional[list]] = so.mapped_column(sa.JSON())
     TCP_Ports: so.Mapped[Optional[list]] = so.mapped_column(sa.JSON())
     UDP_Ports: so.Mapped[Optional[list]] = so.mapped_column(sa.JSON())
-    TCP_Service_Overrides: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
-    UDP_Service_Overrides: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
-    TCP_Forced_Services: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
-    UDP_Forced_Services: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
+    # {port: service name}: the service an admin expects on each port.
+    TCP_Port_Services: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
+    UDP_Port_Services: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
 
     # Concurrency + audit trail
     Version: so.Mapped[int] = so.mapped_column(sa.Integer(), default=1)

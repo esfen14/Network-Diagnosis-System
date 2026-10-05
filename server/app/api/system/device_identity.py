@@ -47,7 +47,7 @@ from app.api.helper import error, success, validate_json_data
 from app.api.helper.database_access.permissions import require_permission
 from app.api.system import system_bp
 from app.logging.user_activity import create_user_log
-from app.network_discovery.create_host_cfg import regenerate_and_apply_config
+from app.api.plugin.reconcile import reconcile_plugin_monitoring
 from app.network_discovery.device_identity import (
     close_address,
     nagios_host_name,
@@ -55,12 +55,13 @@ from app.network_discovery.device_identity import (
 )
 from app.network_discovery.discovery_settings import SERVICE_NAME_PATTERN
 from app.network_discovery.port_lifecycle import (
+    acknowledge_port_mismatch,
     add_user_port,
     pin_port_service,
     port_model,
     set_port_state,
 )
-from app.plugin_models import PluginConfiguration
+from app.plugin_models import PluginConfiguration, PluginConfigurationOrigin
 from app.system_models import (
     AddressingMode,
     DeviceAddressHistory,
@@ -96,16 +97,18 @@ def get_device_or_404(id):
 
 def apply_config_change():
     """
-    Regenerate and apply hosts.cfg after a change that affects Nagios. Never
-    raises: returns {"config_applied": bool, "config_message": str} so the
-    caller can report it next to a database change that has already been saved.
+    Bring Nagios in line after a change that affects it (a port edit, merge or
+    retire): the plugin reconciler promotes and attaches ports, then regenerates
+    and applies hosts.cfg through the shared writer. Never raises: returns
+    {"config_applied": bool, "config_message": str} so the caller can report it
+    next to a database change that has already been saved.
     """
     try:
-        changed, message = regenerate_and_apply_config()
+        result = reconcile_plugin_monitoring(current_user.UserID)
     except Exception:
         current_app.logger.exception("Could not regenerate the Nagios config.")
         return {"config_applied": False, "config_message": "The change was saved but the Nagios config could not be updated."}
-    return {"config_applied": changed, "config_message": message}
+    return {"config_applied": result["changed"], "config_message": result["message"]}
 
 
 def serialize_device_summary(device):
@@ -414,7 +417,12 @@ def merge_device(id):
     for config in db.session.scalars(
         sa.select(PluginConfiguration).where(PluginConfiguration.NetDiscoveryID == id)
     ).all():
-        config.NetDiscoveryID = target_id
+        if config.Origin is PluginConfigurationOrigin.AUTO:
+            # Derived from ports: the reconciler rebuilds it for the target, and
+            # moving it could collide with the target's own row for that service.
+            db.session.delete(config)
+        else:
+            config.NetDiscoveryID = target_id
 
     # Review items about the duplicate are settled by merging it.
     for item in db.session.scalars(
@@ -450,14 +458,21 @@ def edit_device_port(id, proto, port):
     The NCPA port cannot be ignored or archived while an NCPA token is
     deployed. <proto> is tcp or udp.
 
+    A port flagged "not used as intended" (the Port -> Service setting expects
+    another service than nmap found) is not monitored until acknowledged:
+    "acknowledge_mismatch": true accepts it as the service nmap found, and the
+    port is then monitored if that service's plugin is enabled. Pinning a
+    service or choosing MONITORED also settles the flag.
+
     JSON Format
     {
         "state": "MONITORED",
-        "service_name": "http"
+        "service_name": "http",
+        "acknowledge_mismatch": true
     }
     "state" is one of MONITORED, SUGGESTED, IGNORED, ARCHIVED and may be
-    left out when "service_name" is sent. "service_name" is lowercase
-    letters, digits, "-" or "_".
+    left out when "service_name" or "acknowledge_mismatch" is sent.
+    "service_name" is lowercase letters, digits, "-" or "_".
     """
     if proto.lower() not in ("tcp", "udp"):
         return error("Protocol must be tcp or udp.", 400)
@@ -481,8 +496,12 @@ def edit_device_port(id, proto, port):
             return error("service_name must be lowercase letters, digits, '-' or '_'.", 400)
         service_name = service_name.strip().lower()
 
-    if state is None and service_name is None:
-        return error("Send a state, a service_name, or both.", 400)
+    acknowledge = data.get("acknowledge_mismatch")
+    if acknowledge is not None and not isinstance(acknowledge, bool):
+        return error("acknowledge_mismatch must be true or false.", 400)
+
+    if state is None and service_name is None and not acknowledge:
+        return error("Send a state, a service_name, acknowledge_mismatch, or a combination.", 400)
 
     device, err = get_device_or_404(id)
     if err is not None:
@@ -501,6 +520,13 @@ def edit_device_port(id, proto, port):
     else:
         # Pin first so a port made MONITORED below freezes the pinned service's plugin.
         port_label = f"{proto.lower()} port {port} on {nagios_host_name(device)}"
+        if acknowledge:
+            expected = port_row.Expected_Service_Name
+            try:
+                acknowledge_port_mismatch(id, proto, port)
+            except ValueError as e:
+                db.session.rollback()
+                return error(str(e), 400)
         if service_name is not None:
             pin_port_service(id, proto, port, service_name)
         if state is not None:
@@ -510,7 +536,9 @@ def edit_device_port(id, proto, port):
                 db.session.rollback()
                 return error(str(e), 400)
 
-        if service_name is None:
+        if acknowledge:
+            action = f"Acknowledged {port_label} as {port_row.Service_Name}, not the expected {expected}"
+        elif service_name is None:
             action = f"Set {port_label} to {state.value}"
         elif state is None:
             action = f"Pinned {port_label} as {service_name}"
@@ -528,6 +556,8 @@ def edit_device_port(id, proto, port):
         "plugin_name": port_row.Plugin_Name,
         "state": port_row.Port_State.name,
         "identified_by": port_row.Identified_By.name if port_row.Identified_By else None,
+        "expected_service_name": port_row.Expected_Service_Name,
+        "mismatch_acknowledged": port_row.Mismatch_Acknowledged_At is not None,
     }
     return success(result, message="Port updated.")
 

@@ -295,7 +295,7 @@ class TestRefreshDisks:
     def test_stores_disks_and_regenerates(self, logged_in_client, db_session, admin_user):
         device, _ = _make_ncpa_device(db_session, admin_user)
         self.deploy(db_session, device)
-        with patch("app.api.system.ncpa_deployment.refresh_ncpa_partitions", return_value=["|", "|boot|efi"]),              patch("app.network_discovery.create_host_cfg.regenerate_and_apply_config", return_value=(True, "ok")):
+        with patch("app.api.system.ncpa_deployment.refresh_ncpa_partitions", return_value=["|", "|boot|efi"]),              patch("app.api.plugin.reconcile.reconcile_plugin_monitoring", return_value={"success": True, "changed": True, "message": "ok"}):
             resp = logged_in_client.post(f"/api/system/deployment/ncpa/{device.NetDiscoveryID}/refresh-disks")
         assert resp.status_code == 200
         data = resp.get_json()["data"]

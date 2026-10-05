@@ -5,7 +5,7 @@ import { SettingsCard } from './SettingsCard'
 import { SettingsActions } from './SettingsActions'
 import { errorMessage } from '../../lib/api'
 import { getDiscoverySettings, saveDiscoverySettings } from '../../lib/discoverySettingsApi'
-import type { DiscoveryPort, DiscoverySettingsValues } from '../../types/discoverySettings'
+import type { DiscoveryPort, DiscoverySettingsValues, PortResolution } from '../../types/discoverySettings'
 
 const NETWORK_PATTERN = /^\d{1,3}(\.\d{1,3}){3}(\/\d{1,2})?$/
 const PORT_PATTERN = /^\d{1,5}(-\d{1,5})?$/
@@ -16,10 +16,8 @@ function toValues(data: DiscoverySettingsValues): DiscoverySettingsValues {
     networks: data.networks,
     tcpPorts: data.tcpPorts,
     udpPorts: data.udpPorts,
-    tcpServiceOverrides: data.tcpServiceOverrides,
-    udpServiceOverrides: data.udpServiceOverrides,
-    tcpForcedServices: data.tcpForcedServices,
-    udpForcedServices: data.udpForcedServices,
+    tcpPortServices: data.tcpPortServices,
+    udpPortServices: data.udpPortServices,
   }
 }
 
@@ -111,22 +109,34 @@ function ListEditor({ label, description, placeholder, items, isValid, invalidMe
   )
 }
 
-interface OverridesEditorProps {
+interface PortServicesEditorProps {
   label: string
-  // Distinguishes the controls of editors that share a label ("TCP").
-  ariaPrefix?: string
   description: string
-  overrides: Record<string, string>
-  onChange: (overrides: Record<string, string>) => void
+  services: Record<string, string>
+  // The table as last saved and which check each saved entry leads to.
+  savedServices: Record<string, string>
+  resolution: Record<string, PortResolution>
+  // A port whose entry is fixed (NCPA's on TCP): shown, never edited.
+  lockedPort?: number
+  onChange: (services: Record<string, string>) => void
 }
 
-// Port -> service name table with an add row.
-function OverridesEditor({ label, ariaPrefix = label, description, overrides, onChange }: OverridesEditorProps) {
+function describeResolution(resolution: PortResolution | undefined) {
+  if (!resolution) return { text: 'Known after saving', tone: 'text-[var(--text-muted)]' }
+  if (resolution.kind === 'plugin') return { text: resolution.plugin ?? '', tone: 'text-[var(--text)]' }
+  if (resolution.kind === 'generic') {
+    return { text: `${resolution.plugin} (generic TCP check)`, tone: 'text-amber-600 dark:text-amber-300' }
+  }
+  return { text: 'Skipped (no UDP check for this service)', tone: 'text-amber-600 dark:text-amber-300' }
+}
+
+// Port -> expected service table with the check each entry leads to and an add row.
+function PortServicesEditor({ label, description, services, savedServices, resolution, lockedPort, onChange }: PortServicesEditorProps) {
   const [port, setPort] = useState('')
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  const entries = Object.entries(overrides).sort(([a], [b]) => Number(a) - Number(b))
+  const entries = Object.entries(services).sort(([a], [b]) => Number(a) - Number(b))
 
   const add = () => {
     const portValue = port.trim()
@@ -136,18 +146,22 @@ function OverridesEditor({ label, ariaPrefix = label, description, overrides, on
       setError('Port must be a number from 1 to 65535.')
       return
     }
+    if (portNumber === lockedPort) {
+      setError(`Port ${portNumber} is NCPA's port and always maps to ncpa.`)
+      return
+    }
     if (!SERVICE_NAME_PATTERN.test(nameValue)) {
       setError("Service name must be lowercase letters, digits, '-' or '_'.")
       return
     }
-    onChange({ ...overrides, [String(portNumber)]: nameValue })
+    onChange({ ...services, [String(portNumber)]: nameValue })
     setPort('')
     setName('')
     setError(null)
   }
 
   const remove = (key: string) => {
-    const next = { ...overrides }
+    const next = { ...services }
     delete next[key]
     onChange(next)
   }
@@ -162,39 +176,50 @@ function OverridesEditor({ label, ariaPrefix = label, description, overrides, on
           <thead>
             <tr className="border-b border-[var(--border)] text-left text-xs text-[var(--text-muted)]">
               <th className="px-3 py-2 font-medium">Port</th>
-              <th className="px-3 py-2 font-medium">Service name</th>
+              <th className="px-3 py-2 font-medium">Expected service</th>
+              <th className="px-3 py-2 font-medium">Checked by</th>
               <th className="w-10" />
             </tr>
           </thead>
           <tbody>
             {entries.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-3 py-3 text-xs text-[var(--text-muted)]">No overrides.</td>
+                <td colSpan={4} className="px-3 py-3 text-xs text-[var(--text-muted)]">No entries.</td>
               </tr>
             )}
-            {entries.map(([key, value]) => (
-              <tr key={key} className="border-b border-[var(--border)] last:border-0">
-                <td className="px-3 py-2 text-[var(--text)]">{key}</td>
-                <td className="px-3 py-2 font-mono text-xs text-[var(--text)]">{value}</td>
-                <td className="px-2 py-2 text-right">
-                  <button
-                    type="button"
-                    aria-label={`Remove ${ariaPrefix} override for port ${key}`}
-                    onClick={() => remove(key)}
-                    className="text-[var(--text-muted)] hover:text-red-500"
-                  >
-                    <X size={14} />
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {entries.map(([key, value]) => {
+              const locked = Number(key) === lockedPort
+              const unchanged = savedServices[key] === value
+              const check = describeResolution(unchanged ? resolution[key] : undefined)
+              return (
+                <tr key={key} className="border-b border-[var(--border)] last:border-0">
+                  <td className="px-3 py-2 text-[var(--text)]">{key}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-[var(--text)]">{value}</td>
+                  <td className={`px-3 py-2 text-xs ${check.tone}`}>{check.text}</td>
+                  <td className="px-2 py-2 text-right">
+                    {locked ? (
+                      <span className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Fixed</span>
+                    ) : (
+                      <button
+                        type="button"
+                        aria-label={`Remove ${label} service for port ${key}`}
+                        onClick={() => remove(key)}
+                        className="text-[var(--text-muted)] hover:text-red-500"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
 
       <div className="mt-3 flex gap-2">
         <input
-          aria-label={`${ariaPrefix} port`}
+          aria-label={`${label} port`}
           value={port}
           placeholder="Port"
           inputMode="numeric"
@@ -202,7 +227,7 @@ function OverridesEditor({ label, ariaPrefix = label, description, overrides, on
           className={`${inputClass} max-w-[110px]`}
         />
         <input
-          aria-label={`${ariaPrefix} service name`}
+          aria-label={`${label} service name`}
           value={name}
           placeholder="Service name, e.g. ssh"
           onChange={(e) => { setName(e.target.value); setError(null) }}
@@ -216,7 +241,7 @@ function OverridesEditor({ label, ariaPrefix = label, description, overrides, on
         />
         <button
           type="button"
-          aria-label={`Add ${ariaPrefix} override`}
+          aria-label={`Add ${label} service`}
           onClick={add}
           className="flex items-center rounded-xl border border-[var(--border)] px-3 text-[var(--text-muted)] transition hover:bg-[var(--hover)]"
         >
@@ -233,6 +258,8 @@ export function DiscoverySettings() {
   const [draft, setDraft] = useState<DiscoverySettingsValues | null>(null)
   const [defaults, setDefaults] = useState<DiscoverySettingsValues | null>(null)
   const [version, setVersion] = useState(0)
+  const [ncpaPort, setNcpaPort] = useState<number | undefined>(undefined)
+  const [resolution, setResolution] = useState<{ tcp: Record<string, PortResolution>; udp: Record<string, PortResolution> }>({ tcp: {}, udp: {} })
   const [scanRunning, setScanRunning] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -246,6 +273,8 @@ export function DiscoverySettings() {
         setDraft(values)
         setDefaults(data.defaults)
         setVersion(data.settings.version)
+        setNcpaPort(data.settings.ncpaPort)
+        setResolution(data.settings.resolution)
         setScanRunning(data.scanRunning)
         setLoadError(null)
       })
@@ -288,6 +317,8 @@ export function DiscoverySettings() {
       setSaved(values)
       setDraft(values)
       setVersion(result.version)
+      setNcpaPort(result.ncpaPort)
+      setResolution(result.resolution)
     } catch (err) {
       setSaveError(errorMessage(err, 'Unable to save discovery settings.'))
     } finally {
@@ -343,43 +374,26 @@ export function DiscoverySettings() {
       </SettingsCard>
 
       <SettingsCard
-        title="Always Treat Port As"
-        description="Ports whose service is fixed on every device, whatever nmap detects. Use only for ports that mean the same thing everywhere, such as NCPA's port. To fix one device's port, pin it on that device instead."
+        title="Port → Service"
+        description="The service you expect on each port. A port nmap cannot identify is treated as this service. If nmap identifies a different service there, it is not relabelled: the port is flagged as not used as intended and is not monitored until you acknowledge it. Monitoring starts only when the plugin that checks the service is enabled in Plugin Manager. To fix one device's port, pin it on that device instead."
       >
         <div className="grid gap-8 lg:grid-cols-2">
-          <OverridesEditor
+          <PortServicesEditor
             label="TCP"
-            ariaPrefix="TCP always"
-            description="Service used for this port on every device."
-            overrides={draft.tcpForcedServices}
-            onChange={(overrides) => update({ tcpForcedServices: overrides })}
+            description="Expected service for this TCP port on every device. NCPA's port is fixed."
+            services={draft.tcpPortServices}
+            savedServices={saved.tcpPortServices}
+            resolution={resolution.tcp}
+            lockedPort={ncpaPort}
+            onChange={(services) => update({ tcpPortServices: services })}
           />
-          <OverridesEditor
+          <PortServicesEditor
             label="UDP"
-            ariaPrefix="UDP always"
-            description="Service used for this port on every device."
-            overrides={draft.udpForcedServices}
-            onChange={(overrides) => update({ udpForcedServices: overrides })}
-          />
-        </div>
-      </SettingsCard>
-
-      <SettingsCard
-        title="Fallback Service Names"
-        description="Names used only when nmap cannot identify the service and guesses from the port number. A service nmap identifies by probing keeps its own name, so SSH on port 2222 or a web server on 8443 is still recognized."
-      >
-        <div className="grid gap-8 lg:grid-cols-2">
-          <OverridesEditor
-            label="TCP"
-            description="Name used for this port when nmap could not identify the service."
-            overrides={draft.tcpServiceOverrides}
-            onChange={(overrides) => update({ tcpServiceOverrides: overrides })}
-          />
-          <OverridesEditor
-            label="UDP"
-            description="Name used for this port when nmap could not identify the service."
-            overrides={draft.udpServiceOverrides}
-            onChange={(overrides) => update({ udpServiceOverrides: overrides })}
+            description="Expected service for this UDP port on every device."
+            services={draft.udpPortServices}
+            savedServices={saved.udpPortServices}
+            resolution={resolution.udp}
+            onChange={(services) => update({ udpPortServices: services })}
           />
         </div>
 

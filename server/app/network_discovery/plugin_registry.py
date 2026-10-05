@@ -384,6 +384,17 @@ def resolve_plugin_name(service_name, transport):
     return GENERIC_PLUGIN_FOR_TRANSPORT[transport]
 
 
+def plugin_for_definition(definition_name):
+    """
+    Return the Plugin Manager plugin (the executable name, e.g. "check_ssh")
+    that checks a registry definition ("ssh"), or None for an unknown name.
+    http and https share check_http. A definition is monitored only while this
+    plugin is Enabled or Active in Plugin Manager.
+    """
+    definition = PLUGIN_DEFINITIONS.get(str(definition_name or "").lower().strip())
+    return definition.check_plugin if definition else None
+
+
 def plugin_for_command(command_name):
     """
     Return the check plugin (e.g. "check_snmp") behind a Nagios command name

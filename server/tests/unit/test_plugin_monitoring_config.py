@@ -459,60 +459,8 @@ class TestEnableThenApplyShowsRunning:
         assert resp.status_code == 409
         assert "Enable the plugin" in resp.get_json()["message"]
 
-    def test_enabled_plugin_is_applied_to_every_host_automatically(self, logged_in_client, db_session, admin_user, nagios_paths):
-        _make_target(db_session, admin_user, hostname="router-01", ip="192.168.130.10")
-        _make_target(db_session, admin_user, hostname="switch-01", ip="192.168.130.11")
-        plugin = _make_plugin(db_session, "check_ping", status=PluginStatus.INSTALLED)
-
-        with patch("app.api.plugin.service.validate_nagios_configuration", return_value=(True, "ok")), \
-                patch("app.api.plugin.monitoring_config.subprocess.run", side_effect=_fake_subprocess_success):
-            resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/enable")
-        assert resp.status_code == 200
-        data = resp.get_json()["data"]
-        assert data["auto_apply"]["success"] is True
-        assert data["status"] == "Active"
-
-        running = logged_in_client.get("/api/plugin/running").get_json()["data"]
-        assert running["total"] == 2
-        assert {i["target"]["hostname"] for i in running["items"]} == {"router-01", "switch-01"}
-
-        details = logged_in_client.get(f"/api/plugin/{plugin.PluginID}").get_json()["data"]
-        assert details["monitoring_usage"]["devices"] == 2
-
-    def test_failed_auto_apply_keeps_plugin_enabled(self, logged_in_client, db_session, admin_user, nagios_paths):
-        _make_target(db_session, admin_user)
-        plugin = _make_plugin(db_session, "check_ping", status=PluginStatus.INSTALLED)
-
-        with patch("app.api.plugin.service.validate_nagios_configuration", return_value=(True, "ok")), \
-                patch("app.api.plugin.monitoring_config.subprocess.run", side_effect=_fake_subprocess_validation_fails):
-            resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/enable")
-        assert resp.status_code == 200
-        data = resp.get_json()["data"]
-        assert data["auto_apply"]["success"] is False
-        assert data["status"] == "Enabled"
-        assert logged_in_client.get("/api/plugin/running").get_json()["data"]["total"] == 0
-
-    def test_later_sync_applies_to_new_hosts_only_once(self, app, db_session, admin_user, nagios_paths):
-        from app.api.plugin import service
-        _make_target(db_session, admin_user, hostname="router-01", ip="192.168.130.10")
-        _make_plugin(db_session, "check_ping", status=PluginStatus.ENABLED)
-
-        with patch("app.api.plugin.monitoring_config.subprocess.run", side_effect=_fake_subprocess_success):
-            first = service.apply_running_plugins_to_all_targets(admin_user.UserID)
-            again = service.apply_running_plugins_to_all_targets(admin_user.UserID)
-            _make_target(db_session, admin_user, hostname="new-host", ip="192.168.130.12")
-            db_session.session.commit()
-            third = service.apply_running_plugins_to_all_targets(admin_user.UserID)
-
-        assert (first["applied"], again["applied"], third["applied"]) == (1, 0, 1)
-        assert db_session.session.query(PluginConfiguration).count() == 2
-
-    def test_plugin_without_command_is_skipped(self, app, db_session, admin_user, nagios_paths):
-        from app.api.plugin import service
-        _make_target(db_session, admin_user)
-        _make_plugin(db_session, "no_command", status=PluginStatus.ENABLED, with_command=False)
-        result = service.apply_running_plugins_to_all_targets(admin_user.UserID)
-        assert result["applied"] == 0
+    # Enabling a plugin no longer applies it to every host. Services are attached
+    # per discovered port by the reconciler; see test_plugin_reconcile.py.
 
     def test_enabled_then_applied_plugin_is_running(self, logged_in_client, db_session, admin_user, nagios_paths):
         target = _make_target(db_session, admin_user)

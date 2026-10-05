@@ -1,10 +1,12 @@
 # Plugin-Driven Monitoring Implementation Plan
 
 Status: **in progress.** Decisions Q1–Q7 are answered (§10). Phase 0 is done
-(results in §7.1). Phase 1 (descriptions) is implemented on the feature branch
-and not yet committed. Phases 2–6 are not started. The port → service → plugin map (§2.7) is fully decided
+(results in §7.1). Phase 1 (descriptions) is committed on the feature branch.
+Phases 2 (data model), 2b (Port → Service map) and 3 (reconciler and gating) are
+implemented; Phases 4–6 are not started. The port → service → plugin map (§2.7) is fully decided
 (Q8 in §10). No questions are open.
-Branch: `feature/plugin-driven-monitoring` (cut from `main`; see §9).
+Branch: `feature/plugin-driven-monitoring` (cut from `main`; see §9). `main` was
+merged in on 2026-10-05 (commit a19620b2). Open gaps are tracked in §13.
 Owning specs to update with this work: `Data_Model_and_Integrations.md`,
 `Backend_Modules_and_Routes.md`, `Frontend_Modules_and_Routes.md`,
 `Implementation_Status.md`.
@@ -191,10 +193,21 @@ Port numbers are also set elsewhere: `NCPA_PORT` and `SNMP_PORT` in
 
 **Decided (D1, D3, D4):**
 
-- **One table per protocol: Port → Service.** Every entry always wins over
-  nmap (D1): the mapped service replaces whatever nmap reported and the port is
-  recorded as `PORT_RULE`. This replaces both tables above. Service-name
-  validation is unchanged.
+- **One table per protocol: Port → Service.** Each entry states the service
+  the admin *expects* on that port (D1). It replaces both tables above.
+  Service-name validation is unchanged.
+  - If nmap did not identify the port, or fingerprinted the same service, the
+    port takes the mapped service and is recorded as `PORT_RULE`.
+  - If nmap **fingerprinted a different service** (for example sshd's banner is
+    not on port 22, or a web server is on 22), Pinpoint does **not** relabel it.
+    The port keeps the service nmap actually saw, records the expected one in
+    `Expected_Service_Name`, is shown as **"Not used as intended"** (expected
+    `ssh`, found `http`), and is **not monitored** until an admin acknowledges
+    it. Acknowledging accepts the port as the service nmap found
+    (`Mismatch_Acknowledged_At`) and lets normal promotion (D2) proceed. If the
+    admin wants the expected service monitored anyway, they pin it per device.
+    A later change in what nmap sees clears the acknowledgement and flags the
+    port again.
 - **The chain is** port → service name → plugin → Plugin Manager state →
   Nagios service. The service name comes from, strongest first: an operator's
   per-device pin, the Port → Service table, nmap's fingerprint, nmap's guess
@@ -212,13 +225,19 @@ Port numbers are also set elsewhere: `NCPA_PORT` and `SNMP_PORT` in
   it does today. API keys `tcpPortServices` / `udpPortServices` replace the four
   old ones. The downgrade writes everything back as "Always Treat Port As".
 - **Behavior change to call out.** The former fallback defaults (22 ssh, 80
-  http, 443 https, 5666 nrpe, UDP 161 snmp) now always win. A non-SSH service
-  on port 22 would be labelled `ssh`. Stored tables migrate verbatim; for new
-  installs the UDP 22/80/443 defaults are dropped from `config.py` because they
-  mean nothing on UDP.
+  http, 443 https, 5666 nrpe, UDP 161 snmp) become *expected* services, not
+  labels. A non-SSH service on port 22 is flagged "Not used as intended" and
+  waits for acknowledgement; it is never labelled `ssh`. Stored tables migrate
+  verbatim; for new installs the UDP 22/80/443 defaults are dropped from
+  `config.py` because they mean nothing on UDP.
+- **Old "Always Treat Port As" behavior ends.** Entries no longer overrule a
+  confident nmap fingerprint. The one exception is `NCPA_PORT → ncpa`, which the
+  deployment flow itself puts on that port (`Source = NCPA`) and is not flagged.
 - **UI.** The two Settings sections become one. Each row shows which plugin the
   service name resolves to, and warns when it resolves to none ("monitored with
-  the generic TCP check" or, on UDP, "skipped").
+  the generic TCP check" or, on UDP, "skipped"). Ports flagged "Not used as
+  intended" appear on the device's ports list with an **Acknowledge** action
+  (permission and audit entry follow the existing port-state change route).
 
 **Decided: consent (D2).** With `AUTO_MONITOR_SERVICES` gone, which ports a
 plugin picks up when an admin enables it:
@@ -244,9 +263,12 @@ plugin picks up when an admin enables it:
 
 ## 3. Data model changes (Alembic migration)
 
-Single new migration; verify one Alembic head before and after (§9).
+Two migrations, one per phase, so each phase ships with the code that uses its
+columns: Phase 2 (`PLUGIN_CONFIGURATION`, below) and Phase 2b (discovery
+settings and port tables, further down). Verify one Alembic head before and
+after each (§9).
 
-`PLUGIN_CONFIGURATION` add:
+**Phase 2 (implemented):** `PLUGIN_CONFIGURATION` add:
 
 | Column | Purpose |
 |---|---|
@@ -258,8 +280,11 @@ Single new migration; verify one Alembic head before and after (§9).
 
 Add a unique constraint on `(PluginID, NetDiscoveryID, Nagios_Service_Name)`.
 
-`DISCOVERY_SETTINGS`: merge `TCP_Service_Overrides` + `TCP_Forced_Services` into
-`TCP_Port_Services`, and the UDP pair into `UDP_Port_Services` (§2.7).
+**Phase 2b:** `DISCOVERY_SETTINGS`: merge `TCP_Service_Overrides` +
+`TCP_Forced_Services` into `TCP_Port_Services`, and the UDP pair into
+`UDP_Port_Services` (§2.7). `OPEN_TCP_Services` and `OPEN_UDP_Services` add
+`Expected_Service_Name` (nullable) and `Mismatch_Acknowledged_At` (nullable) for
+the "Not used as intended" flag.
 
 `PLUGIN` needs **no new column** for descriptions: the documentation link is
 derived from the catalog at read time (§6). Existing `Description`,
@@ -373,12 +398,68 @@ Each phase is one or more commits on the feature branch and must leave
 |---|---|---|
 | 0. Confirm | **Done**, see §7.1 | Notes in §7.1 |
 | 1. Descriptions | **Implemented, uncommitted.** §6. Independent, low risk, can merge first | Drawer shows descriptions after a scan; unit tests for catalog and fallback (done) |
-| 2. Data model | §3 migration and models, upgrade data step | `flask db upgrade` and `downgrade` both clean on a copy of a real DB |
-| 2b. Port → Service map | §2.7: merge the two Settings tables (migration, settings API and validation, one Settings section with the resolved-plugin column), retire `AUTO_MONITOR_SERVICES`, derive the `NCPA_PORT` entry; widen the monitoring-server exclusion to all local interface addresses (§2.6). Implements the D2 promotion rule | `test_discovery_settings.py`, `test_port_lifecycle.py`, `test_service_identification.py` updated; migration round-trips with both old tables populated; the NCPA entry follows `NCPA_PORT` |
-| 3. Reconciler and gating | §2.1–2.3, §4 discovery changes | Unit tests: plugin off → port keeps its state but is not in generated cfg and is recorded as skipped; on → service generated; multi-metric expansion; nothing generated for the monitoring server; idempotent |
+| 2. Data model | **Implemented.** §3 `PLUGIN_CONFIGURATION` migration and models, upgrade data step | `flask db upgrade` and `downgrade` both clean on a copy of a real DB |
+| 2b. Port → Service map | **Implemented**, see §7.2. §2.7: merge the two Settings tables (migration incl. the mismatch columns, settings API and validation, one Settings section with the resolved-plugin column, "Not used as intended" flag and Acknowledge action), retire `AUTO_MONITOR_SERVICES`, derive the `NCPA_PORT` entry; widen the monitoring-server exclusion to all local interface addresses (§2.6). Implements the D2 promotion rule | `test_discovery_settings.py`, `test_port_lifecycle.py`, `test_service_identification.py` updated; migration round-trips with both old tables populated; the NCPA entry follows `NCPA_PORT` |
+| 3. Reconciler and gating | **Implemented**, see §7.3. §2.1–2.3, §4 discovery changes | Unit tests: plugin off → port keeps its state but is not in generated cfg and is recorded as skipped; on → service generated; multi-metric expansion; nothing generated for the monitoring server; idempotent |
 | 4. Enable/disable and API | §2.4, §2.5, new routes, remove manual and running routes | Enable preview counts correct; disable removes services and rolls back on reload failure; exclude/include works; non-service-driven plugins reject enable/disable |
 | 5. Frontend | Remove the Currently Running tab (`RunningChecksTable`, `getRunningChecks`, running count, tab state); §5 services list in the drawer; Monitoring column and "Not service-driven" state; remove `PluginTargetsSection`; enable-preview confirm | Component tests updated (`PluginsTabs` loses the running tab; replace `PluginTargetsSection` tests); manual check in browser |
 | 6. Specs and verification | Update the four specs and `Implementation_Status.md`; live lab re-run (§8) | Lab report attached to the PR |
+
+### 7.2 Phase 2b notes
+
+What shipped, and where it differs from the rows above:
+
+- Migration `b9d5f2a7c3e4`: the four settings columns become
+  `TCP_Port_Services` / `UDP_Port_Services` (the "always treat port as" entry
+  wins when a port was in both; never-saved tables stay unsaved), and both port
+  tables gain `Expected_Service_Name` and `Mismatch_Acknowledged_At`.
+- Promotion follows Plugin Manager: `should_auto_monitor()` is true for an
+  identified, unflagged port whose plugin (`plugin_for_definition()`) is Enabled
+  or Active. `promote_identified_ports()` runs at the end of every scan save.
+  Generation is **not** gated yet, so a port that is already Monitored keeps its
+  service whatever the plugin's state (Phase 3), and the enable/disable
+  triggers for promotion belong to Phase 4.
+- The "Not used as intended" flag and its acknowledgement are implemented in the
+  backend: `PUT /system/hosts/<id>/ports/<proto>/<port>` accepts
+  `"acknowledge_mismatch": true` and returns `expected_service_name` and
+  `mismatch_acknowledged`. The client has **no device ports list**, so there is
+  no Acknowledge button yet. That list is Phase 5 work and is recorded as a gap
+  in `Implementation_Status.md`.
+- Settings → Network Discovery has one **Port → Service** section per protocol
+  with a "Checked by" column (the plugin, "generic TCP check" or "skipped") that
+  the server computes from the saved table; a new or edited row shows "Known
+  after saving". NCPA's port is shown as Fixed.
+- The monitoring server is excluded by every non-loopback IPv4 interface
+  address (`ip -4 -o addr`) as well as its hostname's addresses. This relies on
+  the `ip` command; if it is missing, only the hostname addresses are used.
+- The live-lab harness reads `tcp_port_services` / `udp_port_services` from its
+  config and still accepts the old `*_service_overrides` keys. It was not run.
+
+### 7.3 Phase 3 notes
+
+What shipped, and where it differs from the rows above:
+
+- **Gating.** `plan_host_services()` (new; `build_host_services` wraps it) takes
+  the enabled plugin set and skips ports whose plugin is off, with a reason. The
+  planner now also reports each service's port, protocol and metric.
+- **Reconciler** `app/api/plugin/reconcile.py`. Triggers: end of every discovery
+  (`_sync_running_plugins`), plugin enable and disable (routes), port edit,
+  merge and retire (`apply_config_change`), NCPA deployment finishing
+  (`add_ncpa_port`) and NCPA disk refresh. It calls the new
+  `regenerate_and_apply_config_status()` (the old function wraps it), so there
+  is still one Nagios writer.
+- **Reworked, not kept: the team's `apply_running_plugins_to_all_targets()`**
+  (commit 8a3fe717). It applied every enabled plugin to every scanned host
+  through `plugin-services.cfg`. It is removed. Its three tests are replaced by
+  `test_plugin_reconcile.py`. The manual apply path remains until Phase 4 but now
+  ignores Auto rows.
+- **Startup.** `ensure_plugin_inventory()` scans the plugin directory when the
+  inventory is empty, before a discovery run. It enables nothing.
+- Because a disabled plugin is handled by generation, **disable already removes
+  the services**; Phase 4 keeps the preview, the exclude/include actions and the
+  history rows.
+- Behavior change to tell the team: plugins that check no port (`check_ping`,
+  `check_load`, ...) no longer attach to any host. See G13.
 
 ### 7.1 Phase 0 results
 
@@ -442,6 +523,12 @@ Read from the code, not run against a live Nagios.
   dialog; confirm no Running tab remains.
 - Follow `server/tests/README.md` and `Engineering_Standards.md`.
 
+**Every phase ships unit tests** and leaves the backend suite
+(`pytest tests/unit/`, whose one known failure is listed in §13 G9) and the
+client suite (`npm run test`, `npm run build`) green before it is called done.
+Anything a phase could not verify by a unit test (a live Nagios, a real
+database copy, a browser) goes into §13 instead of being assumed.
+
 ## 9. Branching and merge strategy (do not affect `main`)
 
 `main` must not change until this is reviewed and verified.
@@ -456,9 +543,11 @@ Read from the code, not run against a live Nagios.
    branches; they are stale.)
 2. Never commit or push directly to `main`. One commit per logical step, in the
    phase order of §7, so any phase can be reverted alone.
-3. Keep the branch current: periodically `git merge origin/main` into the
-   feature branch (no rebase/force-push once a PR is open) and resolve
-   conflicts there, not on `main`.
+3. Keep the branch current: `git fetch` and merge `origin/main` into the
+   feature branch (no rebase/force-push once a PR is open) at the **start and end
+   of every phase**, and resolve conflicts there, not on `main`. Commit or stash
+   first. After a merge, check for a single Alembic head and rerun both suites.
+   The team changes the same plugin and discovery code, so expect overlap.
 4. Before opening the PR, check there is exactly one Alembic head after the
    merge (other branches also add migrations) and that migration `downgrade`
    works.
@@ -514,7 +603,35 @@ Read from the code, not run against a live Nagios.
 | Admins expect `check_load`/`check_disk` to be manageable | Clear "Not service-driven: checked by Nagios Core, not managed here" note and no Enable/Disable buttons (§2.6) |
 | Enabling a broad plugin (`check_tcp`) attaches hundreds of services | Enable preview with counts and confirm step; paginated list (§2.4, §5) |
 | Removing routes breaks callers | Search client and tests for `running`, `targets`, `configurations` usages before deleting; update specs together |
-| Former fallback entries (22 ssh, 80 http, 443 https) now always win and mislabel an unrelated service on that port | Called out in §2.7; the Settings table shows the resolved plugin; admins can remove or change an entry, and a per-device pin still outranks the table |
+| A service on a mapped port is not the expected one (for example non-SSH on 22) | Not relabelled and not monitored; flagged "Not used as intended" until an admin acknowledges it (§2.7). Admins can also change the entry or pin the device |
 | Reload failure leaves Nagios broken | Reuse the existing validate/backup/reload/rollback pipeline unchanged |
 | Two Alembic heads from parallel branches | Check before PR (§9) |
 | Cross-bind join between `system.db` and `history.db` | Merge in Python as `statistics.py` does |
+
+## 13. Gap register
+
+Gaps found or deliberately deferred while building. Each has the phase that
+should close it. **At the end of every phase, review this table**: close what
+the phase can close, re-point what it cannot, and add anything new. Status is
+`Open`, `Closed (phase)` or `Accepted` (with the reason).
+
+| # | Gap | Found in | Close in | Status |
+|---|---|---|---|---|
+| G1 | The client has no device ports list, so the "Not used as intended" flag and its Acknowledge action exist only in the API (`acknowledge_mismatch` on `PUT /system/hosts/<id>/ports/<proto>/<port>`) | 2b | 5 | Open |
+| G2 | Generation is not gated by plugin state: a port that is already Monitored keeps its Nagios service when its plugin is off (only promotion follows Plugin Manager) | 2b | 3 | Closed (3) |
+| G3 | Enabling or disabling a plugin does not trigger `promote_identified_ports()`; ports are only promoted at the end of a scan save | 2b | 4 | Closed (3, done early: the enable and disable routes run the reconciler) |
+| G4 | Not verified live: the lab harness was not run for phases 2/2b; migrations `a8c4e1f6b2d3` and `b9d5f2a7c3e4` were not run on a copy of a real database; the Settings page was not opened in a browser; the `ip -4 -o addr` parsing was only tested against sample text, not a Linux host | 2, 2b | 6 | Open |
+| G5 | The phase 2 data step maps ports to plugins with a copied table and cannot see registry aliases, so an unusual legacy service name may enable `check_tcp` instead of its own plugin. If no plugin scan has run when the migration runs, nothing can be enabled and monitoring would stop on upgrade. Phase 3 scans an empty inventory at the next discovery, but the migration has already run by then, so an upgraded install with an empty inventory still needs its plugins enabled by hand | 2 | 6 (upgrade rehearsal; decide whether the migration should scan or document it) | Open |
+| G6 | Migrated Port → Service tables can hold a stored `NCPA_PORT -> ncpa` row (from the old forced table). Harmless, since the derived entry overrides it and a save drops it | 2b | 6 | Accepted until then |
+| G7 | **Design conflict with the team's commit 8a3fe717 on `main`.** `apply_running_plugins_to_all_targets()` applied every enabled plugin to every scanned host through `plugin-services.cfg` (device-wide, bare-command layout) | merge | 3 | Closed (3): replaced by the reconciler; the team still needs telling, see G13 |
+| G8 | The team changed Plugin Manager activity-log text from `plugin.enable` style to readable sentences (`Enabled plugin 'check_ssh'`). New history writes in phases 3-4 must use `record_plugin_action` so the format stays consistent | merge | 4 | Open |
+| G9 | `test_automation.py::TestSecurityCheck::test_flags_broken_plugins_and_logs_summary` fails on the Windows dev machine on a clean checkout (`(2, 2)` instead of `(1, 2)`). Not caused by this work and not investigated | 0 | none; confirm on Linux CI | Accepted |
+| G10 | `test_device_migration.py` hard-codes the latest Alembic revision, so every new migration breaks it, and the team's version of that test disagreed with its own runner. Compute the head from the script directory instead | merge | 3 | Open |
+| G11 | `PLUGIN_DESCRIPTIONS` and `get_default_description()` in `plugin_descriptions.py` exist only so the team's tests keep importing; the catalog is the source of truth | merge | 6: remove once nothing imports them | Open |
+| G12 | The live-lab config still uses the old `*_service_overrides` key names (the runner accepts both) | 2b | 6 | Open |
+| G13 | **Product decision for the team.** Plugins that check no port (`check_ping`, `check_load`, `check_disk`, ...) used to be applied to every host by the team's commit and now attach to nothing, because attachment is port-driven. If host-level checks are wanted, they need their own mechanism (e.g. a per-plugin "applies to every host" flag or a host-check template); the plan only lists them as "Not service-driven" | 3 | decide before 4; build in 4 or 5 | Open |
+| G14 | The reconciler plans every host on every run (also after each port edit), so a large network pays for a full plan even when one port changed. Not measured | 3 | 6 (measure in the lab; narrow to one device if slow) | Open |
+| G15 | Enabling `check_ncpa` is not required to deploy NCPA, but without it the agent's checks are silently skipped. The skipped-services log shows the reason after a discovery, yet the NCPA deployment page says nothing | 3 | 4 (message on enable preview and deployment result) | Open |
+| G16 | `GET /api/plugin/running` ("Currently Running" tab) now lists Auto rows too, with the Nagios service name as the service; the manual fields look the same. The tab itself is removed in Phase 5 | 3 | 5 | Open |
+| G17 | The manual apply route and `plugin-services.cfg` still exist, so two writers can coexist until Phase 4 removes the manual one | 3 | 4 | Open |
+

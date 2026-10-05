@@ -1030,13 +1030,13 @@ def refresh_ncpa_disks(device_id):
         if not disks:
             return error("The NCPA agent reported no monitorable disks.", 502)
 
-        from app.network_discovery.create_host_cfg import regenerate_and_apply_config
-        applied, message = regenerate_and_apply_config()
+        from app.api.plugin.reconcile import reconcile_plugin_monitoring
+        result = reconcile_plugin_monitoring(current_user.UserID)
         return success({
             "device_id": device_id,
             "disks": disks,
-            "config_applied": applied,
-            "message": message,
+            "config_applied": result["changed"],
+            "message": result["message"],
         })
 
     except Exception:

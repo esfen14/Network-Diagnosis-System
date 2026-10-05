@@ -20,7 +20,7 @@ from app.plugin_models import (
     PluginVersion,
     PluginCommand, PluginCommandOverride,
     PluginDependency, DependencyType, DependencyStatus,
-    PluginConfiguration, PluginConfigurationStatus,
+    PluginConfiguration, PluginConfigurationOrigin, PluginConfigurationStatus,
     PluginHistory, PluginHistoryAction, PluginActionResult,
 )
 from app.system_models import ActivityLog, User, NetworkDiscovery
@@ -1491,6 +1491,7 @@ def apply_plugin_configuration(plugin_id, net_discovery_id, service_description,
             PluginConfiguration.PluginID == plugin_id,
             PluginConfiguration.NetDiscoveryID == net_discovery_id,
             PluginConfiguration.Service_Description == service_description,
+            PluginConfiguration.Origin == PluginConfigurationOrigin.MANUAL,
         )
     )
     if existing_config:
@@ -1511,6 +1512,9 @@ def apply_plugin_configuration(plugin_id, net_discovery_id, service_description,
         sa.select(PluginConfiguration).where(
             PluginConfiguration.Status == PluginConfigurationStatus.APPLIED,
             PluginConfiguration.PluginConfigurationID != config.PluginConfigurationID,
+            # Auto-attached services are written to hosts.cfg by the shared
+            # generator; writing them here too would define them twice.
+            PluginConfiguration.Origin == PluginConfigurationOrigin.MANUAL,
         )
     ).all()
 
@@ -1585,86 +1589,5 @@ def apply_plugin_configuration(plugin_id, net_discovery_id, service_description,
             "plugin_status": plugin.Status.value,
         }
 
-    finally:
-        staged_path.unlink(missing_ok=True)
-
-
-def apply_running_plugins_to_all_targets(user_id, plugin_ids=None):
-    query = sa.select(Plugin).where(Plugin.Status.in_((PluginStatus.ENABLED, PluginStatus.ACTIVE)))
-    if plugin_ids is not None:
-        query = query.where(Plugin.PluginID.in_(plugin_ids))
-    plugins = [p for p in db.session.scalars(query).all() if get_active_command_line(p.PluginID)[0]]
-
-    targets = db.session.scalars(
-        sa.select(NetworkDiscovery).where(NetworkDiscovery.Include_Device_In_Scanning.is_(True))
-    ).all()
-    if not plugins or not targets:
-        return {"success": True, "applied": 0, "message": "Nothing to apply."}
-
-    existing = {
-        (c.PluginID, c.NetDiscoveryID): c
-        for c in db.session.scalars(sa.select(PluginConfiguration)).all()
-    }
-    touched = []
-    for plugin in plugins:
-        for target in targets:
-            config = existing.get((plugin.PluginID, target.NetDiscoveryID))
-            if config is None:
-                config = PluginConfiguration(
-                    PluginID=plugin.PluginID,
-                    NetDiscoveryID=target.NetDiscoveryID,
-                    Service_Description=plugin.Name,
-                    Status=PluginConfigurationStatus.PENDING,
-                )
-                db.session.add(config)
-                touched.append(config)
-            elif config.Status != PluginConfigurationStatus.APPLIED:
-                touched.append(config)
-    if not touched:
-        return {"success": True, "applied": 0, "message": "Already applied everywhere."}
-    db.session.flush()
-
-    touched_ids = {c.PluginConfigurationID for c in touched}
-    already_applied = db.session.scalars(
-        sa.select(PluginConfiguration).where(
-            PluginConfiguration.Status == PluginConfigurationStatus.APPLIED,
-            PluginConfiguration.PluginConfigurationID.notin_(touched_ids),
-        )
-    ).all()
-    tuples = build_configuration_tuples(list(already_applied) + touched)
-    staged_path = write_staged_cfg(generate_plugin_services_cfg(tuples))
-
-    def fail(message):
-        for config in touched:
-            config.Status = PluginConfigurationStatus.FAILED
-        for plugin in plugins:
-            record_plugin_action(
-                plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.FAILED, user_id,
-                message=f"Automatic apply to all hosts failed: {message[:400]}",
-            )
-        db.session.commit()
-        return {"success": False, "applied": 0, "message": message}
-
-    try:
-        is_valid, output = validate_plugin_services_config(staged_path)
-        if not is_valid:
-            return fail(output)
-        if not ensure_cfg_file_directive():
-            return fail("Could not ensure plugin-services.cfg is referenced by nagios.cfg.")
-        applied, apply_message = apply_plugin_services_config(staged_path)
-        if not applied:
-            return fail(apply_message)
-
-        for config in touched:
-            config.Status = PluginConfigurationStatus.APPLIED
-        for plugin in plugins:
-            plugin.Status = PluginStatus.ACTIVE
-            record_plugin_action(
-                plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.SUCCESS, user_id,
-                new_value=plugin.Name,
-                message=f"Automatically applied to {len(targets)} host(s).",
-            )
-        db.session.commit()
-        return {"success": True, "applied": len(touched), "message": "Applied."}
     finally:
         staged_path.unlink(missing_ok=True)
