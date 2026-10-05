@@ -443,7 +443,7 @@ class TestPortState:
         assert resp.status_code == 200
         data = resp.get_json()["data"]
         assert data["port"] == {"number": 3306, "protocol": "tcp", "service_name": "mysql",
-                                "plugin_name": "mysql", "state": "MONITORED"}
+                                "plugin_name": "mysql", "state": "MONITORED", "identified_by": "FINGERPRINT"}
         assert data["config_applied"] is True
         regenerate.assert_called_once()
         assert log_actions()[-1] == f"Set tcp port 3306 on {device.Nagios_Host_Name} to Monitored"
@@ -514,6 +514,49 @@ class TestPortState:
 
         assert resp.status_code == 200
         assert resp.get_json()["data"]["port"]["protocol"] == "udp"
+
+    def test_pinning_a_service_without_a_state(self, logged_in_client, db_session, status, regenerate):
+        device = new_device(db_session, status, tcp={8080: "http"})
+
+        resp = self.put(logged_in_client, device, "tcp", 8080, {"service_name": "NCPA"})
+
+        assert resp.status_code == 200
+        port = resp.get_json()["data"]["port"]
+        assert (port["service_name"], port["plugin_name"], port["identified_by"]) == ("ncpa", "ncpa", "USER")
+        assert port["state"] == "MONITORED"
+        regenerate.assert_called_once()
+        assert log_actions()[-1] == f"Pinned tcp port 8080 on {device.Nagios_Host_Name} as ncpa"
+
+    def test_pinning_and_monitoring_a_suggestion_uses_the_pinned_plugin(self, logged_in_client, db_session, status):
+        device = new_device(db_session, status, tcp={2222: "EtherNetIP-1"})
+
+        resp = self.put(logged_in_client, device, "tcp", 2222, {"service_name": "ssh", "state": "MONITORED"})
+
+        port = resp.get_json()["data"]["port"]
+        assert (port["plugin_name"], port["state"], port["identified_by"]) == ("ssh", "MONITORED", "USER")
+        assert log_actions()[-1] == (
+            f"Pinned tcp port 2222 on {device.Nagios_Host_Name} as ssh and set it to Monitored"
+        )
+
+    def test_a_pinned_port_survives_the_next_scan(self, logged_in_client, db_session, status):
+        device = new_device(db_session, status, tcp={8080: "http"})
+        self.put(logged_in_client, device, "tcp", 8080, {"service_name": "ncpa"})
+
+        new_device(db_session, status, tcp={8080: "http"}, mac=device.MAC_Address)
+
+        port = db_session.session.scalar(sa.select(Open_TCP_Services).where(Open_TCP_Services.Port_Number == 8080))
+        assert (port.Service_Name, port.Plugin_Name) == ("ncpa", "ncpa")
+
+    @pytest.mark.parametrize("name", ["bad name", "x;rm", "", 7, "a" * 40])
+    def test_unsafe_service_names_are_rejected(self, logged_in_client, db_session, status, name):
+        device = new_device(db_session, status, tcp={8080: "http"})
+
+        assert self.put(logged_in_client, device, "tcp", 8080, {"service_name": name}).status_code == 400
+
+    def test_pinning_a_port_the_device_does_not_have_is_404(self, logged_in_client, db_session, status):
+        device = new_device(db_session, status, tcp={8080: "http"})
+
+        assert self.put(logged_in_client, device, "tcp", 9090, {"service_name": "http"}).status_code == 404
 
 
 # ==========================================================

@@ -40,8 +40,8 @@ def device(db_session, admin_user):
 
 def services(tcp=None, udp=None):
     return {
-        "tcp": {str(p): {"service_name": n} for p, n in (tcp or {}).items()},
-        "udp": {str(p): {"service_name": n} for p, n in (udp or {}).items()},
+        "tcp": {str(p): {"service_name": n, "identified_by": "FINGERPRINT"} for p, n in (tcp or {}).items()},
+        "udp": {str(p): {"service_name": n, "identified_by": "FINGERPRINT"} for p, n in (udp or {}).items()},
     }
 
 

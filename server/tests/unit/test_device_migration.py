@@ -1,6 +1,8 @@
 """
 tests/unit/test_device_migration.py — The device-identity Alembic migration
-(migrations/versions/d41f7a2b9e10_device_identity_and_port_lifecycle.py).
+(migrations/versions/d41f7a2b9e10_device_identity_and_port_lifecycle.py) and
+the service-identification migration on top of it
+(migrations/versions/e5a9c3d7f210_service_identification.py).
 
 Runs the migration on throwaway SQLite files seeded with pre-migration rows
 (tests/support/migration_runner.py, in a subprocess), then checks that existing data
@@ -34,6 +36,19 @@ def report():
 def test_upgrade_reaches_the_new_revision(report):
     assert report["version"] == [[LATEST_REVISION]]
     assert report["version_after_reupgrade"] == [[LATEST_REVISION]]
+
+
+def test_the_chain_reaches_one_head_with_both_branches_applied(report):
+    # Service identification and the NCPA run-history migration are both applied.
+    assert report["version_at_head"] == [["f3b7d2e8a614"]]
+    assert "NCPA_DEPLOYMENT_RESULT" in report["tables_at_head"]
+
+
+def test_service_identification_columns_are_added(report):
+    # Existing ports have no recorded identification; the lifecycle treats NULL as before.
+    assert report["tcp_identified_by"] and {row[0] for row in report["tcp_identified_by"]} == {None}
+    assert "Identified_By" in report["udp_columns"]
+    assert {"TCP_Forced_Services", "UDP_Forced_Services"} <= set(report["settings_columns"])
 
 
 def test_existing_host_names_are_kept_and_made_unique(report):

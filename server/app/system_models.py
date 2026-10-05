@@ -315,6 +315,7 @@ class ReviewKind(Enum):
     IP_REUSE = "IP Reused"
     DUPLICATE_IDENTITY = "Duplicate Identity"
     STATIC_MOVED = "Static Device Moved"
+    SERVICE_CHANGED = "Service Changed"
 
 """
 Port lifecycle enums for Open_TCP_Services / Open_UDP_Services.
@@ -331,6 +332,18 @@ class PortSource(Enum):
     SCAN = "Scan"
     NCPA = "NCPA"
     USER = "User"
+
+class ServiceIdentification(Enum):
+    """
+    How a port's Service_Name was decided, strongest first. USER is pinned by
+    an operator and never changed by a scan; PORT_RULE comes from an "always
+    treat port X as Y" setting; FINGERPRINT means nmap identified the service
+    by probing it; PORT_HINT is only a guess from the port number.
+    """
+    USER = "User"
+    PORT_RULE = "Port Rule"
+    FINGERPRINT = "Fingerprint"
+    PORT_HINT = "Port Hint"
 
 """
 ScanStatus Enum so that Scan_Status is consistent
@@ -475,6 +488,8 @@ class Open_TCP_Services(db.Model):
     # Latest nmap guess, kept apart from Service_Name once the port is
     # monitored so a changed guess becomes a suggestion, not a rename.
     Observed_Service_Name: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
+    # How Service_Name was decided; NULL for ports recorded before this existed.
+    Identified_By: so.Mapped[Optional[ServiceIdentification]] = so.mapped_column(sa.Enum(ServiceIdentification))
     First_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Last_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Closed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
@@ -500,6 +515,8 @@ class Open_UDP_Services(db.Model):
     # Latest nmap guess, kept apart from Service_Name once the port is
     # monitored so a changed guess becomes a suggestion, not a rename.
     Observed_Service_Name: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
+    # How Service_Name was decided; NULL for ports recorded before this existed.
+    Identified_By: so.Mapped[Optional[ServiceIdentification]] = so.mapped_column(sa.Enum(ServiceIdentification))
     First_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Last_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Closed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
@@ -547,12 +564,62 @@ class NCPADeploymentStatus(db.Model):
     Completed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
     Error: so.Mapped[Optional[str]] = so.mapped_column()
 
+    # Set when an administrator marks a finished run as reviewed.
+    Reviewed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
+
     # Foreign Key
     LogID: so.Mapped[int] = so.mapped_column(sa.ForeignKey(ActivityLog.LogID))
+    Reviewed_By: so.Mapped[Optional[int]] = so.mapped_column(sa.ForeignKey(User.UserID))
 
     # Relationships
     Logs: so.Mapped[ActivityLog] = so.relationship(back_populates='Deployment_Logs')
     Device_Deployment: so.Mapped['NCPADeployment'] = so.relationship(back_populates='Deployment_Status')
+    Reviewer: so.Mapped[Optional[User]] = so.relationship(foreign_keys=[Reviewed_By])
+    Results: so.WriteOnlyMapped['NCPADeploymentResult'] = so.relationship(back_populates='Run')
+
+
+class DeploymentOutcome(Enum):
+    """What happened to one device in one NCPA deployment run."""
+    PENDING = "Pending"            # accepted for the run, not started yet
+    RUNNING = "Running"
+    SUCCESS = "Success"
+    FAILED = "Failed"
+    UNREACHABLE = "Down"           # the device did not answer on SSH
+    INCOMPATIBLE = "Incompatible"  # unsupported operating system
+    REJECTED = "Rejected"          # failed the pre-flight checks in /start
+    SKIPPED = "Skipped"            # the run was stopped before this device
+
+
+class NCPADeploymentResult(db.Model):
+    """
+    One row per device per NCPA deployment run. NCPADeployment holds only a
+    device's latest state; these rows keep what happened in every run.
+    Hostname and IP are copied at run time so history stays readable after
+    a device is renamed or moves. Error holds a user-facing reason only,
+    never credentials or command output.
+    """
+    # Table Name
+    __tablename__ = "NCPA_DEPLOYMENT_RESULT"
+
+    # Table Fields
+    NCPADeployResultID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Hostname: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
+    IP_Address: so.Mapped[Optional[str]] = so.mapped_column(sa.String(45))
+    Outcome: so.Mapped[DeploymentOutcome] = so.mapped_column(sa.Enum(DeploymentOutcome))
+    Error: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
+    Started_At: so.Mapped[Optional[datetime]] = so.mapped_column()
+    Completed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
+
+    # Foreign Key Fields
+    NCPADeploymentStatusID: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey(NCPADeploymentStatus.NCPADeployStatusID), index=True
+    )
+    NetworkDiscoveryID: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey(NetworkDiscovery.NetDiscoveryID), index=True
+    )
+
+    # Relationships
+    Run: so.Mapped[NCPADeploymentStatus] = so.relationship(back_populates='Results')
 """
 AgentStatus Enum so that Agent_Status is consistent
 To call use "NRPEDeployment.Agent_Status = AgentStatus.DISCOVERED"
@@ -705,6 +772,8 @@ class DiscoverySettings(db.Model):
     UDP_Ports: so.Mapped[Optional[list]] = so.mapped_column(sa.JSON())
     TCP_Service_Overrides: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
     UDP_Service_Overrides: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
+    TCP_Forced_Services: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
+    UDP_Forced_Services: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
 
     # Concurrency + audit trail
     Version: so.Mapped[int] = so.mapped_column(sa.Integer(), default=1)

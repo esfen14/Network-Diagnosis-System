@@ -34,6 +34,12 @@ describe('pageAccess', () => {
     expect(canAccessPage('/dashboard', [])).toBe(false)
   })
 
+  it('gates NCPA Deployment on the deploy permission', () => {
+    expect(canAccessPage('/ncpa-deployment', ['system.deploy.ncpa'])).toBe(true)
+    expect(canAccessPage('/ncpa-deployment', ['plugin.view'])).toBe(false)
+    expect(firstAccessiblePage(['system.deploy.ncpa'])).toBe('/ncpa-deployment')
+  })
+
   it('always allows Settings', () => {
     expect(canAccessPage('/settings', [])).toBe(true)
   })
@@ -60,6 +66,18 @@ describe('Sidebar', () => {
     expect(screen.getByText('Settings')).toBeInTheDocument()
     expect(screen.queryByText('Manage Roles')).not.toBeInTheDocument()
     expect(screen.queryByText('System Logs')).not.toBeInTheDocument()
+    expect(screen.queryByText('NCPA Deployment')).not.toBeInTheDocument()
+  })
+
+  it('shows NCPA Deployment with the deploy permission', () => {
+    signIn(['system.deploy.ncpa'])
+    render(
+      <MemoryRouter>
+        <Sidebar />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText('NCPA Deployment')).toBeInTheDocument()
   })
 })
 

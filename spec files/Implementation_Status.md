@@ -19,8 +19,9 @@ the normative behavior in the requirement specifications.
   events and Pinpoint acknowledgement history.
 - Header notification feed with per-user unread cursor.
 - Network discovery start/stop/status and Nagios host/service config generation.
-- NCPA eligibility, SSH fingerprint trust, deployment, cancellation, status,
-  and trusted-device routes.
+- NCPA eligibility, SSH fingerprint trust (approved key only), login checks,
+  deployment with per-device outcomes, cancellation, status, run history and
+  review, and trusted-device routes.
 - Activity, configuration, discovery, NCPA, and export logs.
 - Availability, OS, network-service, device-service, alert, and notification
   report APIs.
@@ -43,6 +44,9 @@ the normative behavior in the requirement specifications.
 - Reports UI for host availability and network services.
 - Plugin Manager inventory/running tabs, details, scan, custom plugin, and
   administrative actions.
+- NCPA Deployment page: device list, deploy wizard with host-key verification
+  and per-device login checks, live progress, header bell item, and Deployment
+  History with run review.
 - Header notification feed/unread behavior, session timeout, maintenance banner,
   shared export UI, and network rescan workflow.
 
@@ -61,6 +65,11 @@ the normative behavior in the requirement specifications.
 | Plugin lifecycle and discovery | Discovery generates its own commands without checking Plugin Manager status; disable changes database status without stopping existing Nagios checks. The live harness now enables required plugins through APIs before discovery | Unify product lifecycle enforcement in a separate behavior change; enable setup alone does not close this integration gap |
 | Custom plugins | `POST /api/plugin/custom` and its client call are commented out; the Add Custom Plugin button is greyed out | Restore both together when custom plugins enter scope |
 | Plugin auto-apply scope | Enabled plugins are applied to every `Include_Device_In_Scanning` host with the plugin name as service description; there is no per-plugin/OS applicability metadata | Add applicability rules if some plugins must not run on every host |
+| Per-device port service UI | Services are identified by fingerprint with port rules (see `Data_Model_and_Integrations.md`); pinning one device's port and resolving `SERVICE_CHANGED` review items are API-only because no page lists a discovered device's ports | Add a discovered-ports view with pin/state controls and the review list when the device inventory contract is approved |
+| NCPA port per device | `NCPA_PORT` is one global setting (config only) used by checks, probes and relocation; agents deployed on another port are not tracked | Store the deployed port per device and add a re-port action if the port ever becomes user-configurable |
+| NCPA deployment cleanup | A failed install leaves the deployment account, key, sudo rule and helper on the device; the error message says so | Add an explicit cleanup action if operators need it |
+| SERVICE_CHANGED auto-clear | A `SERVICE_CHANGED` review item stays open after the mismatch disappears (seen when a port rule was removed); only an operator resolves it | Resolve the item automatically when the port again matches its frozen plugin |
+| NCPA token in check command | The NCPA token is a positional argument of the Nagios command, so it is visible in process listings and any transcript of the command | Review passing the token another way (for example a Nagios resource file) |
 | Installer | Developed in another repository | Keep installer work out of this repository unless scope changes |
 
 ## Test approach status

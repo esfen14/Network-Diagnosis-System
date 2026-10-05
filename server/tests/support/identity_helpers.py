@@ -77,8 +77,8 @@ def scan(ip, mac=None, hostname="Unknown", os="Linux", identifiers=(), tcp=None,
                     "identifiers": list(identifiers),
                 },
                 "services": {
-                    "tcp": {str(p): {"service_name": n} for p, n in (tcp or {}).items()},
-                    "udp": {str(p): {"service_name": n} for p, n in (udp or {}).items()},
+                    "tcp": {str(p): {"service_name": n, "identified_by": "FINGERPRINT"} for p, n in (tcp or {}).items()},
+                    "udp": {str(p): {"service_name": n, "identified_by": "FINGERPRINT"} for p, n in (udp or {}).items()},
                 },
             }
         }

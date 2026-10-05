@@ -29,6 +29,8 @@ def tls_certificate_fingerprint(ip_address, port, timeout=PROBE_TIMEOUT):
     service on ip_address:port presents, or None if it cannot be read.
     Certificate validity is deliberately not checked (NCPA uses a self-signed
     certificate); the fingerprint is the identity. Sends no application data.
+    The TLS session is shut down cleanly (close_notify): NCPA 3.5.0 stops
+    listening when a client drops the connection mid-session.
     """
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.check_hostname = False
@@ -38,12 +40,26 @@ def tls_certificate_fingerprint(ip_address, port, timeout=PROBE_TIMEOUT):
         with socket.create_connection((ip_address, int(port)), timeout=timeout) as raw:
             with context.wrap_socket(raw) as tls:
                 der = tls.getpeercert(binary_form=True)
+                try:
+                    tls.unwrap()
+                except (OSError, ssl.SSLError):
+                    # The certificate is already read; a failed shutdown must not lose it.
+                    pass
     except (OSError, ssl.SSLError, ValueError):
         return None
 
     if not der:
         return None
     return hashlib.sha256(der).hexdigest()
+
+
+def port_accepts_connections(ip_address, port, timeout=PROBE_TIMEOUT):
+    """True if a TCP connection to ip_address:port succeeds. Sends no data."""
+    try:
+        with socket.create_connection((ip_address, int(port)), timeout=timeout):
+            return True
+    except (OSError, ValueError):
+        return False
 
 
 def ssh_host_key_fingerprint(ip_address, port=22, timeout=PROBE_TIMEOUT):
@@ -71,11 +87,15 @@ def ssh_host_key_fingerprint(ip_address, port=22, timeout=PROBE_TIMEOUT):
 
 def collect_identifiers(ip_address, tcp_ports):
     """
-    Probe one host for identity evidence based on its open TCP ports: the
-    NCPA certificate if the NCPA port is open, the SSH host key if port 22 is.
-    Returns a list of (IdentifierKind, value) pairs, possibly empty.
+    Probe one host for identity evidence based on its open TCP ports
+    ({port: {"service_name": ...}}): the NCPA certificate if the NCPA port is
+    open, and the SSH host key on the standard SSH port and on every port nmap
+    identified as ssh, so SSH on a non-standard port is still evidence. Each
+    distinct value is reported once. Returns a list of (IdentifierKind, value)
+    pairs, possibly empty.
     """
-    ports = {str(port) for port in tcp_ports or {}}
+    tcp_ports = tcp_ports or {}
+    ports = {str(port) for port in tcp_ports}
     identifiers = []
 
     ncpa_port = str(current_app.config["NCPA_PORT"])
@@ -84,10 +104,27 @@ def collect_identifiers(ip_address, tcp_ports):
         if fingerprint:
             identifiers.append((IdentifierKind.NCPA_CERT, fingerprint))
 
-    ssh_port = str(current_app.config.get("SSH_PORT", 22))
-    if ssh_port in ports:
-        fingerprint = ssh_host_key_fingerprint(ip_address, ssh_port)
-        if fingerprint:
+    for ssh_port in ssh_ports_to_probe(tcp_ports):
+        fingerprint = ssh_host_key_fingerprint(ip_address, int(ssh_port))
+        if fingerprint and (IdentifierKind.SSH_HOST_KEY, fingerprint) not in identifiers:
             identifiers.append((IdentifierKind.SSH_HOST_KEY, fingerprint))
 
     return identifiers
+
+
+def ssh_ports_to_probe(tcp_ports):
+    """
+    The open ports worth an SSH host-key probe, as strings: the standard
+    SSH_PORT if it is open, then every other port nmap named ssh, in port
+    order.
+    """
+    standard_port = str(current_app.config["SSH_PORT"])
+    selected = []
+    if standard_port in {str(port) for port in tcp_ports}:
+        selected.append(standard_port)
+
+    for port, service_data in sorted(tcp_ports.items(), key=lambda item: int(item[0])):
+        service_name = str((service_data or {}).get("service_name") or "").strip().lower()
+        if service_name == "ssh" and str(port) not in selected:
+            selected.append(str(port))
+    return selected

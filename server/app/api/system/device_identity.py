@@ -27,7 +27,7 @@ POST /system/hosts/<id>/retire
     Retire a device (removed from Nagios, record and history kept).
 
 PUT  /system/hosts/<id>/ports/<proto>/<port>
-    Change a port's state, or add a port by hand.
+    Change a port's state, pin its service, or add a port by hand.
 
 GET  /system/discover/review
     Conflicts and possible duplicates raised by discovery.
@@ -53,8 +53,10 @@ from app.network_discovery.device_identity import (
     nagios_host_name,
     recompute_confidence,
 )
+from app.network_discovery.discovery_settings import SERVICE_NAME_PATTERN
 from app.network_discovery.port_lifecycle import (
     add_user_port,
+    pin_port_service,
     port_model,
     set_port_state,
 )
@@ -437,7 +439,11 @@ def merge_device(id):
 @require_permission('system.hosts.edit')
 def edit_device_port(id, proto, port):
     """
-    Change the state of one of the device's ports. Making a port MONITORED
+    Change one of the device's ports: its state, its service, or both.
+
+    "service_name" pins the port's service on this device ("always treat
+    this port as ..."): scans never rename it again, and a monitored port is
+    re-frozen to the plugin for the new name. Making a port MONITORED
     freezes the plugin it is monitored with. If the device has no such port
     and the new state is MONITORED, the port is added by hand (this is how an
     ephemeral-range port gets monitored); "service_name" is then required.
@@ -449,8 +455,9 @@ def edit_device_port(id, proto, port):
         "state": "MONITORED",
         "service_name": "http"
     }
-    "state" is one of MONITORED, SUGGESTED, IGNORED, ARCHIVED.
-    "service_name" is only used when adding a port.
+    "state" is one of MONITORED, SUGGESTED, IGNORED, ARCHIVED and may be
+    left out when "service_name" is sent. "service_name" is lowercase
+    letters, digits, "-" or "_".
     """
     if proto.lower() not in ("tcp", "udp"):
         return error("Protocol must be tcp or udp.", 400)
@@ -462,29 +469,55 @@ def edit_device_port(id, proto, port):
     if err is not None:
         return err
 
-    state = USER_PORT_STATES.get(str(data.get("state", "")).upper())
-    if state is None:
-        return error("state must be MONITORED, SUGGESTED, IGNORED or ARCHIVED.", 400)
+    state = None
+    if data.get("state") is not None:
+        state = USER_PORT_STATES.get(str(data.get("state")).upper())
+        if state is None:
+            return error("state must be MONITORED, SUGGESTED, IGNORED or ARCHIVED.", 400)
+
+    service_name = data.get("service_name")
+    if service_name is not None:
+        if not isinstance(service_name, str) or not SERVICE_NAME_PATTERN.match(service_name.strip().lower()):
+            return error("service_name must be lowercase letters, digits, '-' or '_'.", 400)
+        service_name = service_name.strip().lower()
+
+    if state is None and service_name is None:
+        return error("Send a state, a service_name, or both.", 400)
 
     device, err = get_device_or_404(id)
     if err is not None:
         return err
 
-    try:
-        port_row = set_port_state(id, proto, port, state)
-    except ValueError as e:
-        return error(str(e), 400)
+    model = port_model(proto)
+    port_row = db.session.scalar(
+        sa.select(model).where(model.NetDiscoveryID == id, model.Port_Number == port)
+    )
 
     if port_row is None:
-        service_name = data.get("service_name")
-        if state is not PortState.MONITORED or not isinstance(service_name, str) or not service_name.strip():
+        if state is not PortState.MONITORED or service_name is None:
             return error("Device has no such port. To add one, set state MONITORED and send service_name.", 404)
-        port_row = add_user_port(id, proto, port, service_name.strip())
+        port_row = add_user_port(id, proto, port, service_name)
+        action = f"Added {proto.lower()} port {port} on {nagios_host_name(device)} as {service_name}"
+    else:
+        # Pin first so a port made MONITORED below freezes the pinned service's plugin.
+        port_label = f"{proto.lower()} port {port} on {nagios_host_name(device)}"
+        if service_name is not None:
+            pin_port_service(id, proto, port, service_name)
+        if state is not None:
+            try:
+                set_port_state(id, proto, port, state)
+            except ValueError as e:
+                db.session.rollback()
+                return error(str(e), 400)
 
-    create_user_log(
-        current_user.UserID,
-        f"Set {proto.lower()} port {port} on {nagios_host_name(device)} to {state.value}",
-    )
+        if service_name is None:
+            action = f"Set {port_label} to {state.value}"
+        elif state is None:
+            action = f"Pinned {port_label} as {service_name}"
+        else:
+            action = f"Pinned {port_label} as {service_name} and set it to {state.value}"
+
+    create_user_log(current_user.UserID, action)
     db.session.commit()
 
     result = apply_config_change()
@@ -494,6 +527,7 @@ def edit_device_port(id, proto, port):
         "service_name": port_row.Service_Name,
         "plugin_name": port_row.Plugin_Name,
         "state": port_row.Port_State.name,
+        "identified_by": port_row.Identified_By.name if port_row.Identified_By else None,
     }
     return success(result, message="Port updated.")
 

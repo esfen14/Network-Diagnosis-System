@@ -1,7 +1,7 @@
 import paramiko
 from flask import current_app
 from app.logging.deployment_history import *
-from app.system_models import SSHCredentials, NCPADeployment, NCPADevicePartition, DeploymentMethod, AgentStatus, NetworkDiscovery
+from app.system_models import SSHCredentials, NCPADeployment, NCPADevicePartition, DeploymentMethod, AgentStatus, NetworkDiscovery, DeploymentOutcome
 from datetime import datetime, timezone
 import hashlib
 import base64
@@ -14,7 +14,7 @@ import re
 import textwrap
 from app.network_discovery.create_host_cfg import add_ncpa_port, ADD_NCPA_PORT_PROGRESS_WEIGHT
 from app.network_discovery.device_identity import Evidence, is_hardware_mac, normalize_mac, record_device_evidence
-from app.network_discovery.identity_probes import tls_certificate_fingerprint
+from app.network_discovery.identity_probes import port_accepts_connections, tls_certificate_fingerprint
 from app.system_models import IdentifierKind
 
 
@@ -22,8 +22,6 @@ home = str(os.getenv("HOME"))
 PUBLIC_KEY_PATH = os.path.join(home,".ssh","pinpoint_ncpa_deploy.pub")
 PRIVATE_KEY_PATH = os.path.join(home,".ssh","pinpoint_ncpa_deploy")
 
-SSH_PORT = 22
-NCPA_PORT = "5693"
 DEPLOYMENT_USER = "pinpoint-deployment"
 SSH_TIMEOUT = 10
 REMOTE_SSH_DIR = f"/home/{DEPLOYMENT_USER}/.ssh" 
@@ -31,6 +29,35 @@ REMOTE_AUTHORIZED_KEYS = f"{REMOTE_SSH_DIR}/authorized_keys"
 
 REMOTE_HELPER = "/usr/local/sbin/pinpoint-ncpa-deploy" 
 REMOTE_SUDOERS = "/etc/sudoers.d/pinpoint-ncpa-deploy"
+
+LEFTOVER_NOTE = "The deployment account, its key, sudo rule and helper remain on the device; a retry will reuse them."
+NCPA_STOPPED_MESSAGE = "NCPA stopped listening after the identity check."
+NCPA_PORT_MESSAGE = "NCPA_PORT must be an integer between 1 and 65535."
+
+
+def ncpa_port():
+    """
+    NCPA's listener port from Config.NCPA_PORT as an int. Raises ValueError if
+    it is not a valid TCP port, since it is written into the remote helper.
+    """
+    try:
+        port = int(current_app.config["NCPA_PORT"])
+    except (TypeError, ValueError):
+        raise ValueError(NCPA_PORT_MESSAGE) from None
+    if not 1 <= port <= 65535:
+        raise ValueError(NCPA_PORT_MESSAGE)
+    return port
+
+
+def ssh_host_key_name(ip_address, ssh_port):
+    """
+    The name paramiko looks a host key up by: the bare address on port 22,
+    "[address]:port" on any other port (the known_hosts convention).
+    """
+    if int(ssh_port) == 22:
+        return ip_address
+    return f"[{ip_address}]:{int(ssh_port)}"
+
 
 def mark_device_incompatible(device_id):
     device = db.session.get(NetworkDiscovery, device_id)
@@ -140,10 +167,14 @@ def run_sudo_command(client, command, password, log_command=None):
             "error": errors
             }
 
-def get_host_key_fingerprint(ip_address):
+def get_host_key_fingerprint(ip_address, ssh_port):
+    """
+    Fetch the live SSH host-key fingerprint (SHA-256, base64) of
+    ip_address:ssh_port. Returns None if the host cannot be reached.
+    """
     transport = None
     try:
-        transport = paramiko.Transport((ip_address, SSH_PORT))
+        transport = paramiko.Transport((ip_address, int(ssh_port)))
         transport.start_client(timeout=SSH_TIMEOUT)
         key = transport.get_remote_server_key()
 
@@ -162,27 +193,34 @@ def get_host_key_fingerprint(ip_address):
         if transport is not None:
             transport.close()
 
-def query_key_fingerprint(device_id):
-
-    try :
+def query_trusted_host(device_id):
+    """
+    Return (fingerprint, ssh_port) trusted for a device at trust confirmation.
+    The fingerprint only vouches for the port it was read from, so the two are
+    always used together. Returns (None, None) if the device has no record.
+    """
+    try:
         creds = db.session.scalar(
-            sa.select(SSHCredentials.Key_Fingerprint).where(SSHCredentials.NetworkDiscoveryID == device_id)
+            sa.select(SSHCredentials).where(SSHCredentials.NetworkDiscoveryID == device_id)
         )
-    except Exception as e:
+    except Exception:
         current_app.logger.exception(f"Device {device_id} does not exist.")
         creds = None
 
-    return creds
+    if creds is None:
+        return None, None
+    return creds.Key_Fingerprint, creds.SSH_Port or int(current_app.config["SSH_PORT"])
 
-def verify_host_fingerprint(ip_address, expected_fingerprint): 
+def verify_host_fingerprint(ip_address, ssh_port, expected_fingerprint): 
     """ 
-    Verify that the live SSH host key matches the trusted fingerprint. 
+    Verify that the live SSH host key on ip_address:ssh_port matches the
+    trusted fingerprint. 
     """ 
     if not expected_fingerprint: 
         current_app.logger.error("No trusted host fingerprint exists.")
         return False
     
-    actual_fingerprint = get_host_key_fingerprint(ip_address)
+    actual_fingerprint = get_host_key_fingerprint(ip_address, ssh_port)
 
     if actual_fingerprint is None:
         current_app.logger.error(f"Cannot reach host {ip_address}.")
@@ -196,6 +234,7 @@ def verify_host_fingerprint(ip_address, expected_fingerprint):
 
 def connect_with_fingerprint_check( 
         ip_address, 
+        ssh_port,
         username, 
         expected_fingerprint, 
         password=None,
@@ -204,6 +243,7 @@ def connect_with_fingerprint_check(
 
     result = verify_host_fingerprint( 
         ip_address,
+        ssh_port,
         expected_fingerprint
     ) 
 
@@ -215,14 +255,16 @@ def connect_with_fingerprint_check(
     client.set_missing_host_key_policy( paramiko.RejectPolicy() ) 
     
     transport = paramiko.Transport( 
-        (ip_address, SSH_PORT) 
+        (ip_address, int(ssh_port)) 
     ) 
 
     try: 
         transport.start_client(timeout=SSH_TIMEOUT) 
         host_key = transport.get_remote_server_key() 
+        # Stored under the name connect() looks it up by, or a non-22
+        # port is rejected by RejectPolicy.
         client.get_host_keys().add( 
-            ip_address, host_key.get_name(), 
+            ssh_host_key_name(ip_address, ssh_port), host_key.get_name(), 
             host_key
             )
     except paramiko.SSHException as e:
@@ -236,7 +278,7 @@ def connect_with_fingerprint_check(
 
     client.connect( 
             hostname=ip_address, 
-            port=SSH_PORT, 
+            port=int(ssh_port), 
             username=username, 
             password=password,
             key_filename=private_key,
@@ -372,7 +414,7 @@ def install_deployment_helper(client, password):
     TEE="/usr/bin/tee"
     SED="/usr/bin/sed"
     UFW="/usr/sbin/ufw"
-    NCPA_INIT="/etc/init.d/ncpa"
+    SYSTEMCTL="/usr/bin/systemctl"
     CURL="/usr/bin/curl"
 
     KEYRING_DIR="/etc/apt/keyrings"
@@ -380,7 +422,7 @@ def install_deployment_helper(client, password):
     NCPA_SOURCE="/etc/apt/sources.list.d/nagios.sources"
     NCPA_CONFIG="/usr/local/ncpa/etc/ncpa.cfg"
 
-    NCPA_PORT="5693"
+    NCPA_PORT="__NCPA_PORT__"
 
     "$APT" update
 
@@ -409,6 +451,18 @@ def install_deployment_helper(client, password):
 
     "$SED" -i "s/^community_string = .*/community_string = $TOKEN/" "$NCPA_CONFIG"
 
+    # Listen on PinPoint's configured NCPA port. Stock ncpa.cfg has only a
+    # commented "# port =" in [listener], so drop any port line there (active
+    # or commented) and write exactly one after the section header.
+    "$SED" -i "/^\\[listener\\]/,/^\\[/ {/^#\\? *port *=/d}" "$NCPA_CONFIG"
+    "$SED" -i "/^\\[listener\\]/a port = $NCPA_PORT" "$NCPA_CONFIG"
+
+    PORT_LINES="$("$SED" -n "/^\\[listener\\]/,/^\\[/ {/^port = $NCPA_PORT\\$/p}" "$NCPA_CONFIG" | /usr/bin/wc -l)"
+    if [ "$PORT_LINES" -ne 1 ]; then
+        echo "Could not set the NCPA listener port." >&2
+        exit 1
+    fi
+
     # Use a persistent self-signed certificate instead of NCPA's "adhoc" one,
     # which may be regenerated on restart. PinPoint identifies the device by
     # this certificate's fingerprint after its IP changes, so it must survive
@@ -436,9 +490,9 @@ def install_deployment_helper(client, password):
 
     "$SED" -i "s|^certificate = .*|certificate = $CERT_FILE,$KEY_FILE|" "$NCPA_CONFIG"
 
-    "$NCPA_INIT" stop || true
-    sleep 1
-    "$NCPA_INIT" start
+    # Restart through systemd so the ncpa.service unit tracks the agent
+    # (the init script would leave the unit "failed").
+    "$SYSTEMCTL" restart ncpa
 
     # "init status" can report running while the listener is down, so probe
     # the port and make an authenticated HTTPS request, retrying briefly.
@@ -455,7 +509,7 @@ def install_deployment_helper(client, password):
 
     if [ "$NCPA_OK" -ne 1 ]; then
         echo "NCPA is not listening or rejected an authenticated request on port $NCPA_PORT." >&2
-        "$NCPA_INIT" status >&2 || true
+        "$SYSTEMCTL" status ncpa --no-pager >&2 || true
         exit 1
     fi
 
@@ -472,7 +526,7 @@ def install_deployment_helper(client, password):
     done
     echo "hostname=$(/usr/bin/hostname)"
     echo "IDENTITY_END"
-    ''').lstrip('\n')
+    ''').lstrip('\n').replace("__NCPA_PORT__", str(ncpa_port()))
 
     try:
 
@@ -554,90 +608,169 @@ def install_deployment_helper(client, password):
             pass
 
 
-def give_program_permissions( device_id, ncpa_deployment_status_id, ip_address, username, password ): 
-    """ 
-    Bootstrap the remote machine for NCPA deployment. 
-    Security properties: 
-    - verifies the stored SSH host key before authentication 
-    - checks OS compatibility before deployment 
-    - creates a dedicated deployment account 
-    - installs a dedicated SSH key 
-    - avoids unrestricted sudo permissions 
-    - does not store the user's password 
-    - does not log credentials 
-    - operations are idempotent
-    """ 
-    client = None 
-    try: 
-        fingerprint = query_key_fingerprint(device_id) 
-        if not fingerprint: 
-            update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="Device has not been trust-confirmed." ) 
-            return False 
+# Errors raised when a device does not answer at all (as opposed to
+# answering and refusing the login). NoValidConnectionsError and
+# socket.timeout are both OSError subclasses.
+UNREACHABLE_ERRORS = (OSError, paramiko.ssh_exception.NoValidConnectionsError)
 
-        client = connect_with_fingerprint_check( ip_address, username, fingerprint, password=password, )
+UNREACHABLE_MESSAGE = "Device unreachable."
+HOST_KEY_CHANGED_MESSAGE = "Host key changed. Verify the device's host key again."
+AUTH_FAILED_MESSAGE = "SSH authentication failed."
+
+
+def check_host_key(ip_address, ssh_port, expected_fingerprint):
+    """
+    Compare the device's live SSH host key on ssh_port with the trusted one.
+    Returns "ok", "unreachable" (no answer on SSH) or "mismatch". Opens and
+    closes one SSH transport; sends no credentials.
+    """
+    actual_fingerprint = get_host_key_fingerprint(ip_address, ssh_port)
+    if actual_fingerprint is None:
+        return "unreachable"
+    if not hmac.compare_digest(actual_fingerprint, expected_fingerprint):
+        return "mismatch"
+    return "ok"
+
+
+def fail_device(device_id, ncpa_deployment_status_id, outcome, error):
+    """
+    Record a device step that did not succeed on the device's NCPADeployment
+    row and return (outcome, error) for the caller to pass on. An
+    incompatible device keeps the Incompatible agent status; every other
+    failure is Deployment Failed so it can be retried. Commits.
+    """
+    agent_status = AgentStatus.INCOMPATIBLE if outcome is DeploymentOutcome.INCOMPATIBLE else AgentStatus.FAILED
+    update_ncpa_deployment_info(device_id, ncpa_deployment_status_id, agent_status=agent_status, error=error)
+    return outcome, error
+
+
+def give_program_permissions( device_id, ncpa_deployment_status_id, ip_address, username, password ):
+    """
+    Bootstrap the remote machine for NCPA deployment.
+    Security properties:
+    - verifies the stored SSH host key before authentication
+    - checks OS compatibility before deployment
+    - creates a dedicated deployment account
+    - installs a dedicated SSH key
+    - avoids unrestricted sudo permissions
+    - does not store the user's password
+    - does not log credentials
+    - operations are idempotent
+
+    Returns (DeploymentOutcome, error): SUCCESS with error None when the
+    deployment account and key are in place; otherwise FAILED, UNREACHABLE
+    or INCOMPATIBLE with a user-facing reason.
+    """
+    client = None
+    try:
+        fingerprint, ssh_port = query_trusted_host(device_id)
+        if not fingerprint:
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, "Device has not been trust-confirmed.")
+
+        host_key = check_host_key(ip_address, ssh_port, fingerprint)
+        if host_key == "unreachable":
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.UNREACHABLE, UNREACHABLE_MESSAGE)
+        if host_key == "mismatch":
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, HOST_KEY_CHANGED_MESSAGE)
+
+        client = connect_with_fingerprint_check( ip_address, ssh_port, username, fingerprint, password=password, )
 
         if client is None:
-            update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="Cannot reach host.") 
-            return False
-        
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.UNREACHABLE, UNREACHABLE_MESSAGE)
+
         is_compatible, os_info = check_debian_based(client)
-        if not is_compatible: 
-            mark_device_incompatible(device_id) 
-            update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.INCOMPATIBLE, error=f"Unsupported distro {os_info}." ) 
-            return False 
+        if not is_compatible:
+            mark_device_incompatible(device_id)
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.INCOMPATIBLE, f"Unsupported distro {os_info}.")
 
-        if not ensure_deployment_user(client, password): 
-            update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="Unable to create deployment account.") 
-            return False 
+        if not ensure_deployment_user(client, password):
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, "Unable to create deployment account.")
 
-        if not install_deployment_helper(client, password): 
-            update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="Unable to create deployment script.") 
-            return False 
+        if not install_deployment_helper(client, password):
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, "Unable to create deployment script.")
 
-        if not install_deployment_key(client, password): 
-            update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="Unable to install deployment SSH key.") 
-            return False 
+        if not install_deployment_key(client, password):
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, "Unable to install deployment SSH key.")
 
-        if not install_restricted_sudo(client, password): 
-            update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="Unable to configure restricted privileges.") 
-            return False 
+        if not install_restricted_sudo(client, password):
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, "Unable to configure restricted privileges.")
 
         ssh_credentials = db.session.scalar(
             sa.select(SSHCredentials)
-            .where( 
-                SSHCredentials.NetworkDiscoveryID == device_id 
-            ) 
-        ) 
+            .where(
+                SSHCredentials.NetworkDiscoveryID == device_id
+            )
+        )
 
-        if ssh_credentials is None: 
-            update_ncpa_deployment_info(device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="SSH credential record not found.") 
-            return False 
+        if ssh_credentials is None:
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, "SSH credential record not found.")
 
-        ssh_credentials.Key_Installed = True 
-        db.session.commit() 
-        update_ncpa_deployment_info(device_id, ncpa_deployment_status_id, agent_status=AgentStatus.PENDING_NCPA) 
-        return True 
-    
-    except paramiko.AuthenticationException: 
-        current_app.logger.warning(f"SSH authentication failed for device {device_id}.") 
-        update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="SSH authentication failed.") 
-        return False 
-    
-    except paramiko.SSHException: 
-        current_app.logger.exception(f"SSH error while preparing device {device_id}.") 
-        update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="SSH connection error." ) 
-        return False 
-    
-    except Exception: 
-        db.session.rollback() 
-        update_ncpa_deployment_info( device_id, ncpa_deployment_status_id, agent_status=AgentStatus.FAILED, error="An unexpected error occurred.") 
-        current_app.logger.exception(f"Unexpected error while preparing device {device_id}.") 
-        return False 
-    
-    finally: 
-        password = None 
-        if client is not None: 
-            try: client.close() 
+        ssh_credentials.Key_Installed = True
+        db.session.commit()
+        update_ncpa_deployment_info(device_id, ncpa_deployment_status_id, agent_status=AgentStatus.PENDING_NCPA)
+        return DeploymentOutcome.SUCCESS, None
+
+    except paramiko.AuthenticationException:
+        current_app.logger.warning(f"SSH authentication failed for device {device_id}.")
+        return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, AUTH_FAILED_MESSAGE)
+
+    except paramiko.SSHException:
+        current_app.logger.exception(f"SSH error while preparing device {device_id}.")
+        return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, "SSH connection error.")
+
+    except UNREACHABLE_ERRORS:
+        current_app.logger.warning(f"Device {device_id} did not answer on SSH.")
+        return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.UNREACHABLE, UNREACHABLE_MESSAGE)
+
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(f"Unexpected error while preparing device {device_id}.")
+        return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, "An unexpected error occurred.")
+
+    finally:
+        password = None
+        if client is not None:
+            try: client.close()
+            except Exception: pass
+
+
+def check_device_credentials(ip_address, ssh_port, fingerprint, username, password):
+    """
+    Test one device's login without changing anything on it: verify the
+    trusted host key, log in with the password, and check the account can
+    use sudo. Returns "ok", "auth_failed", "no_sudo", "unreachable" or
+    "host_key_changed". Nothing is stored and credentials are never logged.
+    """
+    client = None
+    try:
+        host_key = check_host_key(ip_address, ssh_port, fingerprint)
+        if host_key == "unreachable":
+            return "unreachable"
+        if host_key == "mismatch":
+            return "host_key_changed"
+
+        client = connect_with_fingerprint_check(ip_address, ssh_port, username, fingerprint, password=password)
+        if client is None:
+            return "unreachable"
+
+        # -k ignores any cached sudo timestamp so the password is really tested.
+        result = run_sudo_command(client, "-k -v", password, log_command="sudo -k -v")
+        return "ok" if result["success"] else "no_sudo"
+
+    except paramiko.AuthenticationException:
+        return "auth_failed"
+
+    except paramiko.SSHException:
+        current_app.logger.warning(f"SSH error while checking credentials for {ip_address}.")
+        return "unreachable"
+
+    except UNREACHABLE_ERRORS:
+        return "unreachable"
+
+    finally:
+        password = None
+        if client is not None:
+            try: client.close()
             except Exception: pass
 
 def verify_ncpa_reachable(ip_address, token, timeout=5):
@@ -646,7 +779,8 @@ def verify_ncpa_reachable(ip_address, token, timeout=5):
     that NCPA accepts the generated authentication token.
     """
 
-    url = f"https://{ip_address}:{NCPA_PORT}/api"
+    port = ncpa_port()
+    url = f"https://{ip_address}:{port}/api"
 
     try:
         response = requests.get(
@@ -682,7 +816,7 @@ def verify_ncpa_reachable(ip_address, token, timeout=5):
     except requests.exceptions.ConnectionError:
         return {
             "success": False,
-            "message": f"Unable to connect to NCPA on port {NCPA_PORT}."
+            "message": f"Unable to connect to NCPA on port {port}."
         }
 
     except requests.RequestException as e:
@@ -700,16 +834,21 @@ def verify_ncpa_reachable(ip_address, token, timeout=5):
 # Filesystem types and node names that never carry a monitorable disk.
 PSEUDO_FILESYSTEMS = frozenset({
     "tmpfs", "devtmpfs", "squashfs", "overlay", "proc", "sysfs", "cgroup",
-    "cgroup2", "devpts", "efivarfs", "ramfs", "swap", "iso9660",
+    "cgroup2", "devpts", "efivarfs", "ramfs", "swap", "iso9660", "bpf",
+    "tracefs", "debugfs", "securityfs", "configfs", "pstore", "mqueue",
+    "hugetlbfs", "fusectl", "autofs", "binfmt_misc", "rpc_pipefs", "nsfs",
 })
-DISK_PERCENT_LEAF = "percent"
+# NCPA node names ("|" is "/") that are never monitored, with everything under
+# them: kernel and runtime trees, and the small UEFI boot partition.
+EXCLUDED_NODE_PREFIXES = ("|sys", "|proc", "|run", "|dev", "|boot|efi")
+DISK_PERCENT_LEAF = "used_percent"
 
 
 def _ncpa_get(ip_address, token, path, timeout=5):
     """GET an NCPA API node (e.g. "disk/logical"); the decoded JSON, or None."""
     try:
         response = requests.get(
-            f"https://{ip_address}:{NCPA_PORT}/api/{path}",
+            f"https://{ip_address}:{ncpa_port()}/api/{path}",
             params={"token": token},
             verify=False,
             timeout=timeout,
@@ -728,6 +867,9 @@ def _is_monitorable_disk_node(name, info):
     """Mounted, real filesystems only; no swap, boot-only or pseudo nodes."""
     if not name or any(char in name for char in ("!", ";", "'", '"', " ", "\n")):
         return False
+    for prefix in EXCLUDED_NODE_PREFIXES:
+        if name == prefix or name.startswith(prefix + "|"):
+            return False
     if isinstance(info, dict):
         fstype = info.get("fstype")
         if isinstance(fstype, list):
@@ -844,36 +986,30 @@ def store_deployment_identity(device_id, identity, cert_fingerprint):
 
 
 def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
+    """
+    Install NCPA on a device that already has the deployment account, then
+    verify it answers and record its token, disks and identity evidence.
+    Returns (DeploymentOutcome, error) like give_program_permissions.
+    """
 
     client = None
 
     try:
-        fingerprint = query_key_fingerprint(device_id)
+        fingerprint, ssh_port = query_trusted_host(device_id)
 
         if fingerprint is None:
-            update_ncpa_deployment_info(
-                device_id,
-                ncpa_deployment_status_id,
-                agent_status=AgentStatus.FAILED,
-                error="Device has not been trust-confirmed."
-            )
-            return False
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, "Device has not been trust-confirmed.")
 
         client = connect_with_fingerprint_check(
             ip_address,
+            ssh_port,
             DEPLOYMENT_USER,
             fingerprint,
             private_key=PRIVATE_KEY_PATH
         )
 
         if client is None:
-            update_ncpa_deployment_info(
-                device_id,
-                ncpa_deployment_status_id,
-                agent_status=AgentStatus.FAILED,
-                error="ACannot connect to device."
-            )
-            return None
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.UNREACHABLE, UNREACHABLE_MESSAGE)
 
         # A redeploy to the same device reuses its token rather than minting
         # a new one, so nothing already configured against it breaks.
@@ -892,13 +1028,7 @@ def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
         )
 
         if not result["success"]:
-            update_ncpa_deployment_info(
-                device_id,
-                ncpa_deployment_status_id,
-                agent_status=AgentStatus.FAILED,
-                error=result["message"]
-            )
-            return False
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, result["message"])
 
         reachability = verify_ncpa_reachable(
             ip_address,
@@ -906,13 +1036,7 @@ def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
         )
 
         if not reachability["success"]:
-            update_ncpa_deployment_info(
-                device_id,
-                ncpa_deployment_status_id,
-                agent_status=AgentStatus.FAILED,
-                error=reachability["message"]
-            )
-            return False
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, reachability["message"])
 
         ncpa_deployment = db.session.scalar(
             sa.select(NCPADeployment).where(
@@ -921,13 +1045,7 @@ def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
         )
 
         if ncpa_deployment is None:
-            update_ncpa_deployment_info(
-                device_id,
-                ncpa_deployment_status_id,
-                agent_status=AgentStatus.FAILED,
-                error="NCPA deployment record not found."
-            )
-            return False
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, "NCPA deployment record not found.")
 
         ncpa_deployment.Deployement_Method = DeploymentMethod.AUTOMATIC
         ncpa_deployment.Agent_Status = AgentStatus.DEPLOYED
@@ -952,138 +1070,170 @@ def install_ncpa(device_id, ncpa_deployment_status_id, ip_address):
         # a failure here must not mark the deployment as failed.
         try:
             identity = _parse_identity(stdout_text)
-            cert_fingerprint = tls_certificate_fingerprint(ip_address, NCPA_PORT)
+            cert_fingerprint = tls_certificate_fingerprint(ip_address, ncpa_port())
             store_deployment_identity(device_id, identity, cert_fingerprint)
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Could not store identity evidence after NCPA deployment.")
 
-        return True
+        # The identity probe talks to the agent; make sure it did not stop it.
+        if not port_accepts_connections(ip_address, ncpa_port()):
+            current_app.logger.error("NCPA stopped listening after the identity check.")
+            return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, NCPA_STOPPED_MESSAGE)
+
+        return DeploymentOutcome.SUCCESS, None
 
     except paramiko.SSHException:
         db.session.rollback()
         current_app.logger.exception(
             "SSH error during NCPA installation."
         )
-        update_ncpa_deployment_info(
-            device_id,
-            ncpa_deployment_status_id,
-            agent_status=AgentStatus.FAILED,
-            error="An error occurred while connecting to the device."
-        )
-        return False
+        return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, "An error occurred while connecting to the device.")
+
+    except UNREACHABLE_ERRORS:
+        db.session.rollback()
+        current_app.logger.warning("Device stopped answering during NCPA installation.")
+        return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.UNREACHABLE, UNREACHABLE_MESSAGE)
 
     except Exception:
         db.session.rollback()
         current_app.logger.exception(
             "NCPA installation failed."
         )
-        update_ncpa_deployment_info(
-            device_id,
-            ncpa_deployment_status_id,
-            agent_status=AgentStatus.FAILED,
-            error="An unexpected error occurred."
-        )
-        return False
+        return fail_device(device_id, ncpa_deployment_status_id, DeploymentOutcome.FAILED, "An unexpected error occurred.")
 
     finally:
         if client is not None:
             client.close()
 
 
-def install_process(app, user_id, device_list, stop_event):
+def deploy_device(device_id, ncpa_deployment_status_id, ip_address, username, password):
+    """
+    Run both deployment steps on one device: bootstrap the restricted
+    deployment account with the user's credentials, then install NCPA with
+    the deployment key. Returns (DeploymentOutcome, error).
+    """
+    outcome, error = give_program_permissions(device_id, ncpa_deployment_status_id, ip_address, username, password)
+    if outcome is not DeploymentOutcome.SUCCESS:
+        return outcome, error
+    outcome, error = install_ncpa(device_id, ncpa_deployment_status_id, ip_address)
+    if outcome is DeploymentOutcome.SUCCESS:
+        return outcome, error
+
+    # Step one already created the deployment account on the device; say so,
+    # since nothing removes it and the user may want to clean it up.
+    error = f"{error} {LEFTOVER_NOTE}"
+    update_ncpa_deployment_info(device_id, ncpa_deployment_status_id, error=error)
+    return outcome, error
+
+
+def final_run_status(successful, failed):
+    """
+    The run's status and message once every device has been tried:
+    Success when nothing failed, Failed when nothing succeeded, otherwise
+    Partial Failure.
+    """
+    if not failed:
+        return DeploymentStatus.SUCCESS, f"Deployed NCPA to {len(successful)} device(s)."
+    if not successful:
+        return DeploymentStatus.FAILED, f"NCPA was not deployed to any of {len(failed)} device(s)."
+    return DeploymentStatus.PARTIAL_FAILURE, f"Deployed NCPA to {len(successful)} device(s); {len(failed)} failed."
+
+
+def install_process(app, ncpa_deployment_status_id, device_list, stop_event):
     '''
-        device_credentials: list of dicts like
+    Background worker for one deployment run. The run row and a Pending
+    result row per device are created by POST /deployment/ncpa/start.
+
+        device_list: list of dicts like
         [
             {
-            "device_id": 1, 
+            "device_id": 1,
             "ip_address": "192.168.130.10",
             "username": "admin",
-            "password": "password123"
+            "password": "<never logged or stored>"
             }, ...
         ]
+
+    Each device's result moves Pending -> Running -> its outcome. When the
+    stop event is set, the devices not yet started become Skipped and the
+    run is Interrupted. After the devices, the NCPA port is added to Nagios
+    for every successful device; if that step fails or is stopped, its
+    status is kept rather than overwritten.
     '''
     with app.app_context():
-
-        ncpa_deployment_status = create_ncpa_deployment_status(user_id)
-
-        if ncpa_deployment_status is None:
-            return None
-        
-        ncpa_deployment_status_id = ncpa_deployment_status.NCPADeployStatusID
         processed_devices = 0
         progress = 0
         failed_deployment = []
         successful_deployment = []
-        try: 
+        try:
             total_devices = len(device_list)
             for entry in device_list:
                 device_id = entry["device_id"]
-                ip_address = entry["ip_address"]
-                username = entry["username"]
-                password = entry["password"]
 
                 if stop_event.is_set():
+                    close_open_results(ncpa_deployment_status_id, DeploymentOutcome.SKIPPED, "Deployment stopped before this device.")
                     update_ncpa_deployment_status(
                         ncpa_deployment_status_id,
                         DeploymentStatus.INTERRUPTED,
                         progress,
-                        "NCPA deployment stopped by user."
+                        "NCPA deployment stopped by user.",
+                        datetime.now(timezone.utc)
                     )
                     return
 
-                key_installed = give_program_permissions(device_id, ncpa_deployment_status_id, ip_address, username, password)
-                if key_installed:
-                    installed_ncpa = install_ncpa(device_id, ncpa_deployment_status_id, ip_address)
-
-                    if not installed_ncpa:
-                        app.logger.error(f"Cannot install ncpa in device {device_id}, {ip_address}.")
-                        failed_deployment.append(device_id)
-                    else:
-                        successful_deployment.append(device_id)
-
-                else:
-                    app.logger.error(f"Cannot install key in device {device_id}, {ip_address}.")
-                    failed_deployment.append(device_id)
-
-                processed_devices += 1
-
-                progress = calculate_progress(processed_devices, total_devices, 0, ADD_NCPA_PORT_PROGRESS_WEIGHT[0])
+                set_deployment_result(ncpa_deployment_status_id, device_id, DeploymentOutcome.RUNNING)
                 update_ncpa_deployment_status(
                     ncpa_deployment_status_id,
                     DeploymentStatus.RUNNING,
                     progress,
-                    "Deploying NCPA."
+                    f"Deploying NCPA ({processed_devices + 1} of {total_devices})."
                 )
+
+                outcome, error = deploy_device(
+                    device_id, ncpa_deployment_status_id, entry["ip_address"], entry["username"], entry["password"]
+                )
+                set_deployment_result(ncpa_deployment_status_id, device_id, outcome, error)
+
+                if outcome is DeploymentOutcome.SUCCESS:
+                    successful_deployment.append(device_id)
+                else:
+                    app.logger.error(f"NCPA deployment to device {device_id} ended as {outcome.value}: {error}")
+                    failed_deployment.append(device_id)
+
+                processed_devices += 1
+                progress = calculate_progress(processed_devices, total_devices, 0, ADD_NCPA_PORT_PROGRESS_WEIGHT[0])
 
             if successful_deployment:
                 add_ncpa_port(app, successful_deployment, ncpa_deployment_status_id, stop_event)
-                        
-            if not failed_deployment:
-                update_ncpa_deployment_status(
-                    ncpa_deployment_status_id, DeploymentStatus.SUCCESS, 100,
-                    "Successfully deployed NCPA to all devices.",
-                    datetime.now(timezone.utc)
-                )
-            else:
-                update_ncpa_deployment_status(
-                    ncpa_deployment_status_id, DeploymentStatus.PARTIAL_FAILURE, 100,
-                    f"Deployment completed with {len(failed_deployment)} failure(s).",
-                    datetime.now(timezone.utc),
-                    error=str(failed_deployment)
-                )
 
-            
+                # add_ncpa_port records a stop or a config that could not be
+                # applied; keep that instead of reporting success.
+                run = get_deployment_ncpa_status_by_id(ncpa_deployment_status_id)
+                if run is not None and run.Status in (DeploymentStatus.FAILED, DeploymentStatus.INTERRUPTED):
+                    return
 
-        except Exception as e:
-            app.logger.exception(f"NCPA Deployment failed")
+            status, message = final_run_status(successful_deployment, failed_deployment)
+            update_ncpa_deployment_status(
+                ncpa_deployment_status_id, status, 100, message,
+                datetime.now(timezone.utc)
+            )
 
-            if ncpa_deployment_status_id is not None:
-                update_ncpa_deployment_status(
-                    ncpa_deployment_status_id,
-                    DeploymentStatus.FAILED,
-                    100,
-                    "NCPA Deploymnet failed",
-                    datetime.now(timezone.utc),
-                    str(e)
-                )
+        except Exception:
+            app.logger.exception("NCPA deployment failed.")
+            db.session.rollback()
+            close_open_results(ncpa_deployment_status_id, DeploymentOutcome.FAILED, "The deployment stopped unexpectedly.")
+            update_ncpa_deployment_status(
+                ncpa_deployment_status_id,
+                DeploymentStatus.FAILED,
+                100,
+                "NCPA deployment failed.",
+                datetime.now(timezone.utc),
+                "An unexpected error occurred."
+            )
+
+        finally:
+            # The credentials are not needed once the devices have been tried,
+            # however the run ended (finished, stopped or crashed).
+            for entry in device_list:
+                entry["password"] = None

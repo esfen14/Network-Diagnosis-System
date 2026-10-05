@@ -1,10 +1,12 @@
 """
 Editable Network Discovery settings: which networks nmap scans, which
-TCP/UDP ports it probes, and the port -> service name overrides applied
-to its results.
+TCP/UDP ports it probes, the "always treat port as" rules (forced
+services) and the fallback service names used when nmap only guessed a
+service from its port number.
 
 The defaults live in config.py (NETWORKS, TCP_PORTS, UDP_PORTS,
-TCP_SERVICE_OVERRIDES, UDP_SERVICE_OVERRIDES). Once an administrator
+TCP_FORCED_SERVICES, UDP_FORCED_SERVICES, TCP_SERVICE_OVERRIDES,
+UDP_SERVICE_OVERRIDES). Once an administrator
 saves them from the Settings page they are stored in the
 DiscoverySettings row in system.db, which takes precedence over
 config.py from the next scan on — no restart needed.
@@ -42,6 +44,8 @@ SETTING_FIELDS = [
     ("UDP_Ports", "UDP_PORTS", "udpPorts"),
     ("TCP_Service_Overrides", "TCP_SERVICE_OVERRIDES", "tcpServiceOverrides"),
     ("UDP_Service_Overrides", "UDP_SERVICE_OVERRIDES", "udpServiceOverrides"),
+    ("TCP_Forced_Services", "TCP_FORCED_SERVICES", "tcpForcedServices"),
+    ("UDP_Forced_Services", "UDP_FORCED_SERVICES", "udpForcedServices"),
 ]
 
 
@@ -241,4 +245,6 @@ def validate_discovery_settings(payload):
         "UDP_Ports": validate_ports(payload["udpPorts"], "UDP"),
         "TCP_Service_Overrides": validate_service_overrides(payload["tcpServiceOverrides"], "TCP"),
         "UDP_Service_Overrides": validate_service_overrides(payload["udpServiceOverrides"], "UDP"),
+        "TCP_Forced_Services": validate_service_overrides(payload["tcpForcedServices"], "TCP"),
+        "UDP_Forced_Services": validate_service_overrides(payload["udpForcedServices"], "UDP"),
     }

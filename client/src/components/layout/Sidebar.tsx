@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   LogOut,
   Network,
+  ServerCog,
   Settings,
   Shield,
   Users,
@@ -44,6 +45,11 @@ const navItems = [
     to: '/plugins',
     label: 'Plugins',
     icon: Wrench,
+  },
+  {
+    to: '/ncpa-deployment',
+    label: 'NCPA Deployment',
+    icon: ServerCog,
   },
   {
     to: '/history',

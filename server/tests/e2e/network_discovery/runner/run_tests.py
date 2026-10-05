@@ -49,6 +49,41 @@ def _probe(argv: list[str], timeout: int = 30) -> bool:
         return False
 
 
+def _nmap_sudo_works() -> bool:
+    """Run the scan wrapper itself; a file that exists may still be unusable by this account."""
+    wrapper = "/usr/local/bin/nmap-sudo"
+    return Path(wrapper).is_file() and _probe([wrapper, "--version"], timeout=20)
+
+
+def _ssh_keys_work(config: dict) -> bool:
+    """
+    Log in to every target that names a key with strict, pinned host-key
+    checking (known_hosts next to the key). Existing key files are not enough:
+    the NCPA deployment key exists but is rejected by the test guests.
+    """
+    checked = 0
+    for target in config["targets"].values():
+        reference = target.get("ssh_key_env")
+        if not reference:
+            continue
+        key_path = os.environ.get(reference)
+        if not key_path:
+            return False
+        key = Path(key_path)
+        known_hosts = key.parent / "known_hosts"
+        if not key.is_file() or not known_hosts.is_file():
+            return False
+        argv = [
+            "ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
+            "-o", f"UserKnownHostsFile={known_hosts}", "-o", "ConnectTimeout=5",
+            "-i", str(key), f"{target['ssh_user']}@{target['address']}", "true",
+        ]
+        if not _probe(argv, timeout=20):
+            return False
+        checked += 1
+    return checked > 0
+
+
 def _network_visible(config: dict) -> bool:
     """Confirm the lab CIDR is on a non-default local interface."""
     ip = shutil.which("ip")
@@ -111,9 +146,8 @@ def cmd_preflight(args, config_path: Path, config: dict) -> int:
         "ssh_environment": ssh_environment,
         "nagios_binary": nagios_binary.is_file() and os.access(nagios_binary, os.X_OK),
         "nagios_config": nagios_config.is_file() and os.access(nagios_config, os.R_OK),
-        "nmap_sudo": Path("/usr/local/bin/nmap-sudo").is_file()
-        and os.access("/usr/local/bin/nmap-sudo", os.X_OK),
-        "ssh": bool(shutil.which("ssh")),
+        "nmap_sudo": _nmap_sudo_works(),
+        "ssh": bool(shutil.which("ssh")) and ssh_environment and _ssh_keys_work(config),
         "systemctl": bool(shutil.which("systemctl")),
         "database": discovery.resolve_config_path(config_path, config["databases"]["system"]).is_file(),
     }

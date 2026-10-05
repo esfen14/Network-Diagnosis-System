@@ -4,11 +4,14 @@
 
 export class ApiError extends Error {
   status: number
+  // The error envelope's optional "data" (e.g. which devices were rejected).
+  data: unknown
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, data?: unknown) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.data = data
   }
 }
 
@@ -41,7 +44,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       res.status === 401
         ? 'You must be signed in to do that.'
         : `Request failed (${res.status})`
-    throw new ApiError(body?.message ?? fallback, res.status)
+    throw new ApiError(body?.message ?? fallback, res.status, body?.data)
   }
 
   return (body && 'data' in body ? body.data : body) as T

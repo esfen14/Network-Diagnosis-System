@@ -23,6 +23,7 @@ requests use `src/lib/api.ts`; Plugin Manager wrappers live in
 | `/device-inventory` | `DeviceInventoryPage` | `system.network_health` | Connected to the latest-host endpoints and acknowledgement API |
 | `/topology` | `TopologyPage` | `system.network_health` | Still routed and shown as “System Status”; excluded from current product scope and must be removed from navigation/routing while retaining source |
 | `/plugins` | `PluginsPage` | `plugin.view` | Connected to Plugin Manager inventory, running checks, details, scanning, and mutation APIs |
+| `/ncpa-deployment` | `NcpaDeploymentPage` | `system.deploy.ncpa` | Connected to the NCPA deployment routes: device list, deploy wizard (host-key trust, login checks, start), live run banner, Deployment History tab and run review drawer (`?tab=history&run=<id>`) |
 | `/reports` | `ReportsPage` | `system.report` | Connected for host availability and network-services views; backend exposes additional report routes |
 | `/system-logs` | `SystemLogsPage` | `system.logs` | Connected to five log categories |
 | `/accounts` | `ManageAccountsPage` | `account.view` | Connected to account/role APIs |
@@ -60,6 +61,7 @@ When adding a page:
 | `components/network-health/` | Trend/metric cards, network health summaries, insight panels, and graph modal |
 | `components/device-inventory/` | Host/device table |
 | `components/plugin-manager/` | Current Plugin Manager inventory, checks, details, custom upload, and configuration UI |
+| `components/ncpa-deployment/` | NCPA device table, deploy wizard, run banner, history table, run drawer, outcome badges and the header bell item |
 | `components/plugins/` | Older installed/available plugin table components; do not assume these drive the current page |
 | `components/reports/` | Host availability and network-services report tables |
 | `components/manage-accounts/` | Account management table/UI |
@@ -74,9 +76,11 @@ When adding a page:
   handles optimistic version conflicts, and supplies `dashboardRefreshRate` and
   `scanFrequency`.
 - `useNetworkRescan` starts and polls network discovery.
-- `useNetworkProfile` loads/saves the editable network profile; the Network Health info card's button is Edit (gated on `settings.discovery`) and the Dashboard banner shows the same name.
-- `ForcePasswordChange` replaces the whole app shell (`AdminLayout`) while `/api/user/me` reports `must_change_password`.
-- The header bell lists Nagios and Pinpoint notifications with a source badge; each item opens a detail dialog with the full description. Network scan results come from the feed; the live scan progress row only shows while a scan runs.
+- `useNcpaDeploymentStatus` polls the latest NCPA run (2 s running, 15 s idle)
+  for the page and the header bell, which shows a dedicated deployment item
+  for users with `system.deploy.ncpa`. NCPA wrappers live in
+  `src/lib/ncpaDeploymentApi.ts`; `ApiError.data` carries an error envelope's
+  `data`.
 - `types/` owns TypeScript API records, view models, and conversion functions.
 - `formatDateTime.ts` applies display preferences to timestamps.
 - `exportData.ts` performs client-side exports and records export actions.

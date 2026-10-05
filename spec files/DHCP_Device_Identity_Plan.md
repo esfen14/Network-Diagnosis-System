@@ -86,7 +86,7 @@ Flow: `discover_network()` → `_create_hostname()` → `_override_service_names
 |---|---|---|---|
 | **NCPA TLS certificate fingerprint** | At NCPA deployment; checked on every scan with a TLS handshake to port 5693 | Strong | No secret sent. Requires a persistent per-device certificate (see §7). |
 | **`/etc/machine-id`** | At NCPA deployment (SSH helper) | Strong | Stable per OS install. Cloned VMs can share it. Only available over SSH/NCPA. |
-| **SSH host key fingerprint** | Already stored in `SSH_CREDENTIALS.Key_Fingerprint` at trust confirmation; collected in scans when port 22 is open | Strong | Uses existing `get_host_key_fingerprint()`. Changes on OS reinstall; cloned VMs can share. |
+| **SSH host key fingerprint** | Already stored in `SSH_CREDENTIALS.Key_Fingerprint` at trust confirmation; collected in scans on `SSH_PORT` and on every port nmap identified as ssh | Strong | Uses existing `get_host_key_fingerprint()`. Changes on OS reinstall; cloned VMs can share. |
 | **Hardware MAC** (universally administered) | nmap on the same L2 segment; `ip -o link` at deployment | Medium–strong | Absent across routers. Multi-NIC devices have several. |
 | **Randomized MAC** (locally administered bit set) | nmap | Weak | Phones and some laptops. Treat like no MAC. |
 | **Reverse DNS / NetBIOS / NCPA node name** | nmap `-R`, NCPA `/api/system` | Weak | Tiebreaker only. |
@@ -405,7 +405,7 @@ All routes follow the existing conventions (module docstring, `success`/`error`,
 | `PUT /system/hosts/<id>` | Display name, addressing mode | `system.hosts.edit` *(new)* |
 | `POST /system/hosts/<id>/merge` | Merge this device into another (`{"target_id": 12}`) | `system.hosts.edit` |
 | `POST /system/hosts/<id>/retire` | Retire a device | `system.hosts.edit` |
-| `PUT /system/hosts/<id>/ports/<proto>/<int:port>` | Change port state (`{"state": "MONITORED"}`) | `system.hosts.edit` |
+| `PUT /system/hosts/<id>/ports/<proto>/<int:port>` | Change port state (`{"state": "MONITORED"}`) and/or pin the port's service (`{"service_name": "ssh"}`, see "Service identification" in `Data_Model_and_Integrations.md`) | `system.hosts.edit` |
 | `GET /system/discover/review` | Conflicts and possible duplicates from the last scan | `system.discover` |
 
 ### UI (Device Inventory and scan results)

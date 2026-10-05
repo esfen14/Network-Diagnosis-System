@@ -17,6 +17,8 @@ const values = {
   udpPorts: [53, 161],
   tcpServiceOverrides: { '22': 'ssh' },
   udpServiceOverrides: { '161': 'snmp' },
+  tcpForcedServices: { '5693': 'ncpa' },
+  udpForcedServices: {},
 }
 
 function loaded(overrides: Record<string, unknown> = {}) {
@@ -74,8 +76,8 @@ describe('DiscoverySettings', () => {
       Promise.resolve({ ...next, version: version + 1, updatedAt: null }))
     render(<DiscoverySettings />)
 
-    fireEvent.change(await screen.findByLabelText('TCP port'), { target: { value: '5693' } })
-    fireEvent.change(screen.getByLabelText('TCP service name'), { target: { value: 'ncpa' } })
+    fireEvent.change(await screen.findByLabelText('TCP port'), { target: { value: '5666' } })
+    fireEvent.change(screen.getByLabelText('TCP service name'), { target: { value: 'nrpe' } })
     fireEvent.click(screen.getByLabelText('Add TCP override'))
     fireEvent.change(screen.getByLabelText('Add UDP Ports'), { target: { value: '123' } })
     fireEvent.click(screen.getByLabelText('Add to UDP Ports'))
@@ -83,8 +85,30 @@ describe('DiscoverySettings', () => {
 
     await waitFor(() => expect(saveDiscoverySettings).toHaveBeenCalled())
     const [sent] = saveDiscoverySettings.mock.calls[0]
-    expect(sent.tcpServiceOverrides).toEqual({ '22': 'ssh', '5693': 'ncpa' })
+    expect(sent.tcpServiceOverrides).toEqual({ '22': 'ssh', '5666': 'nrpe' })
+    expect(sent.tcpForcedServices).toEqual({ '5693': 'ncpa' })
     expect(sent.udpPorts).toEqual([53, 161, 123])
+  })
+
+  it('edits the always-treat-port-as rules separately from the fallback names', async () => {
+    saveDiscoverySettings.mockImplementation((next, version) =>
+      Promise.resolve({ ...next, version: version + 1, updatedAt: null }))
+    render(<DiscoverySettings />)
+
+    expect(await screen.findByText('Always Treat Port As')).toBeInTheDocument()
+    expect(screen.getByText('Fallback Service Names')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('UDP always port'), { target: { value: '1161' } })
+    fireEvent.change(screen.getByLabelText('UDP always service name'), { target: { value: 'snmp' } })
+    fireEvent.click(screen.getByLabelText('Add UDP always override'))
+    fireEvent.click(screen.getByLabelText('Remove TCP always override for port 5693'))
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/ }))
+
+    await waitFor(() => expect(saveDiscoverySettings).toHaveBeenCalled())
+    const [sent] = saveDiscoverySettings.mock.calls[0]
+    expect(sent.udpForcedServices).toEqual({ '1161': 'snmp' })
+    expect(sent.tcpForcedServices).toEqual({})
+    expect(sent.udpServiceOverrides).toEqual({ '161': 'snmp' })
   })
 
   it('shows the server message when a save is rejected', async () => {
