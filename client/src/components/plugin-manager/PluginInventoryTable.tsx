@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { ArrowUpDown, Filter, RefreshCw, Search } from 'lucide-react'
 import type { PluginListItem, PluginStatus, PluginType } from '../../types/plugin'
 
@@ -103,6 +104,11 @@ export function PluginInventoryTable({
   onScan,
   isScanning,
 }: Props) {
+  const [hover, setHover] = useState<{ plugin: PluginListItem; x: number; y: number } | null>(null)
+
+  const showHover = (plugin: PluginListItem, event: React.MouseEvent) =>
+    setHover({ plugin, x: event.clientX, y: event.clientY })
+
   return (
     <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[#171B20]">
       <div className="relative flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 p-4 dark:border-white/10">
@@ -226,6 +232,9 @@ export function PluginInventoryTable({
                 <tr
                   key={plugin.id}
                   onClick={() => onSelectPlugin(plugin)}
+                  onMouseEnter={(e) => showHover(plugin, e)}
+                  onMouseMove={(e) => showHover(plugin, e)}
+                  onMouseLeave={() => setHover(null)}
                   className="cursor-pointer border-b border-gray-100 transition hover:bg-gray-50 dark:border-white/5 dark:hover:bg-white/5"
                 >
                   <td className="px-4 py-3 text-gray-900 dark:text-white">
@@ -276,6 +285,37 @@ export function PluginInventoryTable({
           </button>
         </div>
       </div>
+      {hover && (
+        <div
+          role="tooltip"
+          className="pointer-events-none fixed z-50 w-72 rounded-xl border border-gray-200 bg-white p-3 text-xs shadow-lg dark:border-white/10 dark:bg-[#0D1117]"
+          style={{
+            left: Math.min(hover.x + 16, window.innerWidth - 300),
+            top: Math.min(hover.y + 16, window.innerHeight - 160),
+          }}
+        >
+          <p className="text-sm font-semibold text-gray-900 dark:text-white">
+            {hover.plugin.display_name || hover.plugin.name}
+          </p>
+          <p className="mt-1 text-gray-600 dark:text-gray-300">
+            {hover.plugin.description || 'No description available.'}
+          </p>
+          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-gray-500 dark:text-gray-400">
+            <dt>Type</dt>
+            <dd className="text-gray-700 dark:text-gray-200">{hover.plugin.type}</dd>
+            <dt>Version</dt>
+            <dd className="text-gray-700 dark:text-gray-200">{hover.plugin.current_version ?? '—'}</dd>
+            <dt>Status</dt>
+            <dd className="text-gray-700 dark:text-gray-200">{hover.plugin.status}</dd>
+            {hover.plugin.category && (
+              <>
+                <dt>Category</dt>
+                <dd className="text-gray-700 dark:text-gray-200">{hover.plugin.category}</dd>
+              </>
+            )}
+          </dl>
+        </div>
+      )}
     </div>
   )
 }

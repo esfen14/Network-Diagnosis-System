@@ -74,6 +74,9 @@ class User(UserMixin, db.Model):
     Email: so.Mapped[str] = so.mapped_column(sa.String(120), unique=True, index=True)
     Hashed_Password: so.Mapped[str] = so.mapped_column(sa.String(256))
     Status: so.Mapped[UserStatus] = so.mapped_column(sa.Enum(UserStatus))
+    Must_Change_Password: so.Mapped[bool] = so.mapped_column(
+        sa.Boolean(), default=False, server_default=sa.false()
+    )
     Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Updated_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc),onupdate= lambda: datetime.now(timezone.utc))
 
@@ -774,6 +777,21 @@ class DiscoverySettings(db.Model):
 
     # Concurrency + audit trail
     Version: so.Mapped[int] = so.mapped_column(sa.Integer(), default=1)
+    Updated_At: so.Mapped[datetime] = so.mapped_column(
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    Updated_By: so.Mapped[Optional[int]] = so.mapped_column(sa.ForeignKey(User.UserID), index=True)
+
+
+class NetworkProfile(db.Model):
+    __tablename__ = "NETWORK_PROFILE"
+
+    Id: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Name: so.Mapped[str] = so.mapped_column(sa.String(100))
+    Reference: so.Mapped[Optional[str]] = so.mapped_column(sa.String(50))
+    Details: so.Mapped[Optional[dict]] = so.mapped_column(sa.JSON())
+
     Updated_At: so.Mapped[datetime] = so.mapped_column(
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),

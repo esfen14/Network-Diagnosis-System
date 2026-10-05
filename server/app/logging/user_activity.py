@@ -20,3 +20,9 @@ def create_user_log(user_id, action):
         current_app.logger.exception(f"Cannot create log for user {user_id} error: {e}")
         raise
 
+
+def create_audit_log(user_id, action):
+    from app.api.helper.settings_flags import is_audit_logging_enabled
+    if not is_audit_logging_enabled():
+        return None
+    return create_user_log(user_id, action[:255])

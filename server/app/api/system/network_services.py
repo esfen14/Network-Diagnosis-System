@@ -29,6 +29,7 @@ from sqlalchemy.exc import IntegrityError
 from app import db
 from app.api.helper.database_access.permissions import require_permission
 from app.api.helper.responses import success, error
+from app.logging.user_activity import create_audit_log
 from app.api.system import system_bp
 from app.history_models import (
     ServiceStatus,
@@ -431,6 +432,7 @@ def acknowledge_service():
             ActorUserID  = current_user.UserID,
             Comment      = comment,
         ))
+        create_audit_log(current_user.UserID, f"Acknowledged alert on {hostname} / {service_name}: {comment}")
         db.session.commit()
 
         return success(
@@ -496,6 +498,7 @@ def unacknowledge_service():
             ActorUserID  = current_user.UserID,
             Comment      = None,
         ))
+        create_audit_log(current_user.UserID, f"Removed acknowledgement from {hostname} / {service_name}")
         db.session.commit()
 
         return success(message="Acknowledgement removed.")

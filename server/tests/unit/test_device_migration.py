@@ -19,6 +19,9 @@ from pathlib import Path
 import pytest
 
 SERVER_DIR = Path(__file__).resolve().parents[2]
+# The revision the runner upgrades to for its before/after checks, and the single head.
+TARGET_REVISION = "d41f7a2b9e10"
+HEAD_REVISION = "c7e3a9d1b5f2"
 
 
 @pytest.fixture(scope="module")
@@ -33,13 +36,14 @@ def report():
 
 
 def test_upgrade_reaches_the_new_revision(report):
-    assert report["version"] == [["d41f7a2b9e10"]]
-    assert report["version_after_reupgrade"] == [["d41f7a2b9e10"]]
+    assert report["version"] == [[TARGET_REVISION]]
+    assert report["version_after_reupgrade"] == [[TARGET_REVISION]]
 
 
 def test_the_chain_reaches_one_head_with_both_branches_applied(report):
-    # Service identification and the NCPA run-history migration are both applied.
-    assert report["version_at_head"] == [["f3b7d2e8a614"]]
+    # Service identification, the NCPA run-history migration and the network profile /
+    # password-change migrations are all applied and joined by one merge revision.
+    assert report["version_at_head"] == [[HEAD_REVISION]]
     assert "NCPA_DEPLOYMENT_RESULT" in report["tables_at_head"]
 
 

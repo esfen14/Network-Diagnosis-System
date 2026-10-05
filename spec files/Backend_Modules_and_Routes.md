@@ -71,8 +71,9 @@ as current-state inventory rather than treated as intended permission design.
 | `POST /api/user/accounts` | `account.edit` | Create a user account |
 | `GET /api/user/accounts` | `account.view` | Paginated account list |
 | `GET /api/user/accounts/<id>` | `account.info` | Account detail |
-| `PUT /api/user/accounts/<id>` | `account.edit` | Edit account details/status; users are not deleted |
-| `GET /api/user/me` | Login | Return the current user and permissions |
+| `PUT /api/user/accounts/<id>` | `account.edit` | Edit account details/status; users are not deleted. `password`/`confirm_password` are optional (omit to keep the password, so suspend/deactivate needs none). Setting a password on another account, or returning an account to Active from Suspended/Inactive, sets `Must_Change_Password` |
+| `GET /api/user/me` | Login | Return the current user, permissions and `must_change_password` |
+| `POST /api/user/change-password` | Login | Change the caller's own password (`current_password`, `new_password`, `confirm_password`); clears `Must_Change_Password`. While that flag is set every other `/api` route except login, logout and `/me` returns 403 (`enforce_password_change`). A user whose status is no longer Active is signed out on their next request |
 
 ### `app/api/user/preferences.py`
 
@@ -143,8 +144,8 @@ Valid trend windows are `hours=1`, `6`, `24`, or `168`.
 |---|---|---|
 | `GET /api/system/history/alerts` | `system.history` | Paginated Nagios state-change events |
 | `GET /api/system/history/alerts/detail` | `system.history` | Full detail for one alert event |
-| `GET /api/system/history/notifications` | `system.history` | Paginated Nagios notification events |
-| `GET /api/system/history/notifications/detail` | `system.history` | Full detail for one notification event |
+| `GET /api/system/history/notifications` | `system.history` | Paginated notification events from Nagios and Pinpoint; every item has `source` (`nagios` or `pinpoint`), filterable with `source=`. Pinpoint items are finished network scans (`type: scan`, state SUCCESS/FAILED/CANCELLED) read from `NETWORK_DISCOVERY_STATUS`; host/service/contact/type filters exclude them |
+| `GET /api/system/history/notifications/detail` | `system.history` | Full detail for one notification event; Pinpoint events use `source=pinpoint&id=<DiscoveryStatusID>` |
 
 The route implementation exists, but `system.history` is not currently present
 in the seed permission list. This is tracked in `Implementation_Status.md`.
@@ -153,7 +154,7 @@ in the seed permission list. This is tracked in `Implementation_Status.md`.
 
 | Method and path | Permission | Purpose |
 |---|---|---|
-| `GET /api/system/notifications` | `system.notifications` | Recent Nagios notifications annotated with per-user read state |
+| `GET /api/system/notifications` | `system.notifications` | Recent notifications from Nagios (`source: nagios`) and Pinpoint itself (`source: pinpoint`, network scan results) annotated with per-user read state |
 | `GET /api/system/notifications/unread-count` | `system.notifications` | Count events after the user's cursor |
 | `POST /api/system/notifications/mark-read` | `system.notifications` | Advance the user's notification cursor |
 
@@ -250,12 +251,14 @@ update/custom-plugin modules.
 | `GET /api/plugin/<plugin_id>` | `plugin.view` | Plugin detail, including `description`, `category` and `documentation_url` (null for plugins outside the bundled catalog) |
 | `GET /api/plugin/<plugin_id>/commands` | `plugin.view` | Commands and active overrides |
 | `GET /api/plugin/<plugin_id>/dependencies` | `plugin.view` | Dependency status |
-| `POST /api/plugin/<plugin_id>/enable` | `plugin.enable` | Enable a plugin |
+| `POST /api/plugin/<plugin_id>/enable` | `plugin.enable` | Enable a plugin, then apply it to every monitoring target (`apply_running_plugins_to_all_targets`: one rebuild of `plugin-services.cfg`, status becomes Active). The same sync runs after every successful network discovery so new hosts pick up running plugins. A failed auto-apply does not undo the enable; the response carries `auto_apply` |
 | `POST /api/plugin/<plugin_id>/disable` | `plugin.disable` | Disable a plugin |
 | `POST /api/plugin/<plugin_id>/commands/<command_id>/override` | `plugin.command_override` | Save a command override |
 | `POST /api/plugin/<plugin_id>/commands/<command_id>/restore-default` | `plugin.command_restore` | Disable the active override |
+| `GET /api/system/network-profile` | `system.network_health` | Editable network name, reference tag and detail rows for the Network Health card (defaults until saved) |
+| `PUT /api/system/network-profile` | `settings.discovery` | Save the network profile (descriptive only) |
 | `POST /api/plugin/<plugin_id>/validate` | `plugin.validate` | Validate executable, permissions, and dependencies |
-| `POST /api/plugin/custom` | `plugin.custom_add` | Upload and register a custom plugin |
+| ~~`POST /api/plugin/custom`~~ | `plugin.custom_add` | **Disabled** — route commented out in `manager.py` (and the client call in `pluginApi.ts`); not part of the current release |
 | `POST /api/plugin/<plugin_id>/update` | `plugin.update` | Update from an archive |
 | `POST /api/plugin/<plugin_id>/update/rollback` | `plugin.update_rollback` | Restore the backed-up version |
 | `GET /api/plugin/<plugin_id>/configurations` | `plugin.view` | List monitoring targets/configurations |
@@ -272,7 +275,9 @@ update/custom-plugin modules.
 | `api/helper/database_access/` | User, role, and permission lookup helpers |
 | `api/commands/seed.py` | Seeds permissions, roles, settings, and development users |
 | `nagios/status.py` | Polls status/object CGI data and writes snapshot models |
+| `api/plugin/plugin_descriptions.py` | One-line descriptions for the 58 bundled plugins; the scan fills a plugin's empty `Description` from it, and never overwrites an edited one |
 | `nagios/notifications.py` | Queries archive CGI alerts and notification events |
+| `nagios/pinpoint_events.py` | Pinpoint's own notifications (finished network scans) shaped like notification events |
 | `network_discovery/` | Scans networks and builds/applies host/service configuration |
 | `ncpa_deployment/` | Fingerprint-pinned SSH workflow and remote NCPA installation |
 | `logging/` | Writes activity and subsystem audit records |

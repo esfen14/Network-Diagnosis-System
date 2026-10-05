@@ -158,6 +158,106 @@ function ScanStatusItem({
   )
 }
 
+const STATE_BADGE: Record<string, string> = {
+  CRITICAL: 'bg-red-500/15 text-red-600 dark:text-red-400',
+  FAILED: 'bg-red-500/15 text-red-600 dark:text-red-400',
+  WARNING: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+  CANCELLED: 'bg-gray-500/15 text-gray-600 dark:text-gray-400',
+  OK: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+  SUCCESS: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+}
+
+function StateBadge({ state }: { state: string }) {
+  if (!state) return null
+  return (
+    <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${STATE_BADGE[state] ?? 'bg-gray-500/15 text-gray-600 dark:text-gray-400'}`}>
+      {state}
+    </span>
+  )
+}
+
+function SourceBadge({ source }: { source: NotificationItem['source'] }) {
+  return (
+    <span
+      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+        source === 'pinpoint' ? 'bg-[#ffb100]/20 text-[#b37a00] dark:text-[#ffb100]' : 'bg-sky-500/15 text-sky-700 dark:text-sky-300'
+      }`}
+    >
+      {source === 'pinpoint' ? 'Pinpoint' : 'Nagios'}
+    </span>
+  )
+}
+
+function notificationTitle(n: NotificationItem) {
+  if (n.source === 'pinpoint') return n.serviceName ?? 'Pinpoint notification'
+  return `${n.type} ${n.hostname}${n.serviceName ? ` / ${n.serviceName}` : ''}`.trim()
+}
+
+function NotificationDetailModal({
+  notification,
+  onClose,
+  onViewHistory,
+}: {
+  notification: NotificationItem
+  onClose: () => void
+  onViewHistory?: () => void
+}) {
+  const when = new Date(notification.timestamp * 1000).toLocaleString()
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Notification details"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <SourceBadge source={notification.source} />
+          <StateBadge state={notification.state} />
+          <span className="text-xs text-[var(--text-muted)]">{when}</span>
+        </div>
+        <h2 className="mt-3 text-lg font-semibold text-[var(--text)]">{notificationTitle(notification)}</h2>
+        <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+          <dt className="text-[var(--text-muted)]">{notification.source === 'pinpoint' ? 'Origin' : 'Host'}</dt>
+          <dd className="text-[var(--text)]">{notification.hostname || '—'}</dd>
+          {notification.source === 'nagios' && (
+            <>
+              <dt className="text-[var(--text-muted)]">Service</dt>
+              <dd className="text-[var(--text)]">{notification.serviceName ?? 'Host check'}</dd>
+            </>
+          )}
+        </dl>
+        <p className="mt-4 text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">Description</p>
+        <pre className="mt-1 max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-xl bg-[var(--hover)] p-3 text-sm text-[var(--text)]">
+          {notification.fullMessage || 'No description available.'}
+        </pre>
+        <div className="mt-6 flex justify-end gap-3">
+          {onViewHistory && (
+            <button
+              type="button"
+              onClick={onViewHistory}
+              className="rounded-2xl border border-[var(--border)] px-5 py-2 text-sm font-medium text-[var(--text)] hover:bg-[var(--hover)]"
+            >
+              View history
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-2xl bg-[#ffb100] px-5 py-2 text-sm font-medium text-black hover:brightness-95"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Header() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
@@ -197,6 +297,7 @@ export function Header() {
   const menuRef = useOutsideClick(() => setOpenMenu(null))
 
   const [showLogoutModal, setShowLogoutModal] = useState(false)
+  const [selectedNotification, setSelectedNotification] = useState<NotificationItem | null>(null)
 
   // esc para isara lahat ng dropdown
   useEffect(() => {
@@ -398,7 +499,7 @@ export function Header() {
                   )}
                 </div>
 
-                {canDiscover && discovery.scan && (
+                {canDiscover && discovery.scan && (discovery.scan.status === 'Running' || !notificationsEnabled) && (
                   <ScanStatusItem
                     scan={discovery.scan}
                     isCancelling={discovery.isCancelling}
@@ -427,21 +528,26 @@ export function Header() {
                     <p className="px-4 py-6 text-center text-sm text-gray-400">No notifications</p>
                   ) : (
                     notifications.map((n) => (
-                      <div
+                      <button
+                        type="button"
                         key={n.id}
-                        className={`border-b border-gray-50 px-4 py-3 last:border-0 dark:border-white/5 ${
+                        onClick={() => {
+                          setSelectedNotification(n)
+                          setOpenMenu(null)
+                        }}
+                        className={`block w-full cursor-pointer border-b border-gray-50 px-4 py-3 text-left last:border-0 hover:bg-black/5 dark:border-white/5 dark:hover:bg-white/5 ${
                           !n.isRead ? 'bg-[#ffb100]/5' : ''
                         }`}
                       >
                         <div className="flex items-center gap-2">
-                          {!n.isRead && <span className="h-1.5 w-1.5 rounded-full bg-[#ffb100]" />}
-                          <span className="text-sm font-medium text-gray-900 dark:text-white">
-                            {n.type} {n.hostname}{n.serviceName ? ` / ${n.serviceName}` : ''}
-                          </span>
+                          {!n.isRead && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#ffb100]" />}
+                          <SourceBadge source={n.source} />
+                          <StateBadge state={n.state} />
                         </div>
-                        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{n.message}</p>
+                        <p className="mt-1 text-sm font-medium text-gray-900 dark:text-white">{notificationTitle(n)}</p>
+                        <p className="mt-0.5 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">{n.message}</p>
                         <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{formatNotificationTime(n.timestamp)}</p>
-                      </div>
+                      </button>
                     ))
                   )}
                 </div>
@@ -544,6 +650,21 @@ export function Header() {
           )}
         </div>
       </div>
+
+      {selectedNotification && (
+        <NotificationDetailModal
+          notification={selectedNotification}
+          onClose={() => setSelectedNotification(null)}
+          onViewHistory={
+            hasPermission('system.history')
+              ? () => {
+                  setSelectedNotification(null)
+                  navigate('/history')
+                }
+              : undefined
+          }
+        />
+      )}
 
       {showLogoutModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">

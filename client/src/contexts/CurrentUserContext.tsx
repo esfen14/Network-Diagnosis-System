@@ -17,12 +17,14 @@ export type CurrentUser = {
   email: string
   role: string
   permissions: string[]
+  mustChangePassword: boolean
 }
 
 type CurrentUserContextValue = {
   user: CurrentUser | null
   isLoading: boolean
   hasPermission: (permission: string) => boolean
+  reload: () => void
 }
 
 const CurrentUserContext = createContext<CurrentUserContextValue | undefined>(undefined)
@@ -42,6 +44,7 @@ async function fetchCurrentUser(): Promise<CurrentUser> {
     email: data.email,
     role: data.role,
     permissions: Array.isArray(data.permissions) ? data.permissions : [],
+    mustChangePassword: data.must_change_password === true,
   }
 }
 
@@ -83,13 +86,19 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const reload = useCallback(() => {
+    fetchCurrentUser()
+      .then(setUser)
+      .catch((error) => console.error('Unable to load current user:', error))
+  }, [])
+
   const hasPermission = useCallback(
     (permission: string) => user?.permissions.includes(permission) ?? false,
     [user]
   )
 
   return (
-    <CurrentUserContext.Provider value={{ user, isLoading, hasPermission }}>
+    <CurrentUserContext.Provider value={{ user, isLoading, hasPermission, reload }}>
       {children}
     </CurrentUserContext.Provider>
   )

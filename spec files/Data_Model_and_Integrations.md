@@ -19,7 +19,8 @@ acknowledgements belong in `system.db` even though they relate to Nagios alerts.
 
 ### Default bind: identity, configuration, operations, and acknowledgement
 
-- Identity/access: `Permission`, `Role`, `RolePermission`, `User`.
+- Identity/access: `Permission`, `Role`, `RolePermission`, `User` (`Must_Change_Password` forces a password change after reactivation or an admin password reset).
+- Network profile: singleton `NetworkProfile` (`Id=1`) holding the editable name, reference and detail rows of the Network Health info card.
 - Audit/logging: `ActivityLog`, `ConfigurationChanges`, `ExportLog`.
 - Discovery: `NetworkDiscoveryStatus`, `SkippedService`, `NetworkDiscovery`,
   `Open_TCP_Services`, `Open_UDP_Services`.

@@ -16,7 +16,8 @@ from app.api.helper.settings_flags import (
     get_session_timeout_minutes
 )
 from app.api.user import user_bp
-from app.logging.user_activity import create_user_log
+from app.logging.user_activity import create_user_log, create_audit_log
+from app.system_models import UserStatus
 
 
 def _record_failed_login(user):
@@ -54,6 +55,11 @@ def enforce_session_timeout():
     if not current_user.is_authenticated:
         return None
 
+    if current_user.Status != UserStatus.ACTIVE:
+        logout_user()
+        session.pop("last_activity", None)
+        return error("Account inactive.", 401)
+
     now = time.time()
     last_activity = session.get("last_activity")
     timeout_seconds = get_session_timeout_minutes() * 60
@@ -65,6 +71,25 @@ def enforce_session_timeout():
 
     session["last_activity"] = now
     return None
+
+
+_PASSWORD_CHANGE_ALLOWED_ENDPOINTS = {
+    "api.user.login",
+    "api.user.logout",
+    "api.user.user_permission",
+    "api.user.change_password",
+}
+
+
+@user_bp.before_app_request
+def enforce_password_change():
+    if not current_user.is_authenticated or not current_user.Must_Change_Password:
+        return None
+    if request.endpoint in _PASSWORD_CHANGE_ALLOWED_ENDPOINTS:
+        return None
+    if not (request.blueprint or "").startswith("api"):
+        return None
+    return error("You must change your password before continuing.", 403)
 
 
 # ==========================================================
@@ -129,13 +154,28 @@ def login():
 
     login_user(user)
     session["last_activity"] = time.time()
+    try:
+        create_audit_log(user.UserID, f"Signed in ({user.Email})")
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(f"Unable to record login for user {user.UserID}")
 
-    return success(message="User logged in.")
+    return success(
+        {"must_change_password": bool(user.Must_Change_Password)},
+        message="User logged in.",
+    )
 
 
 @user_bp.post('/logout')
 @login_required
 def logout():
+    try:
+        create_audit_log(current_user.UserID, f"Signed out ({current_user.Email})")
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Unable to record logout")
     logout_user()
     session.pop("last_activity", None)
     return success(message="User logged out.")

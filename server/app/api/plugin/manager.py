@@ -13,8 +13,7 @@ GET  /plugin/history         - Global plugin history, optional ?plugin_id= (Phas
 GET  /plugin/<id>/commands   - A plugin's commands + active overrides (Phase 3)
 GET  /plugin/<id>/dependencies - A plugin's dependencies (Phase 3)
 GET  /plugin/targets         - Devices a plugin can be applied to
-POST /plugin/custom          - Upload and register a custom plugin
-                               (Phase 8, currently disabled — commented out)
+(POST /plugin/custom is disabled — its route is commented out below.)
 
 The scan routes (Phase 2) match app/api/system/network_discovery.py's
 background-thread + status-polling pattern. The Phase 3 read routes
@@ -658,6 +657,16 @@ def enable_plugin_route(plugin_id):
     """
     try:
         data = service.enable_plugin(plugin_id, current_user.UserID)
+        try:
+            auto = service.apply_running_plugins_to_all_targets(
+                current_user.UserID, plugin_ids=[plugin_id],
+            )
+            data["auto_apply"] = auto
+            data["status"] = service.db.session.get(service.Plugin, plugin_id).Status.value
+        except Exception:
+            service.db.session.rollback()
+            current_app.logger.exception("Automatic apply after enabling a plugin failed.")
+            data["auto_apply"] = {"success": False, "applied": 0, "message": "Automatic apply failed."}
         return success(data)
     except service.PluginNotFoundError:
         return error("Plugin not found.", 404)

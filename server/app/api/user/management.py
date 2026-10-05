@@ -1,7 +1,7 @@
 from flask import request
 from flask_login import login_required, current_user
 from app.api.helper.database_access.permissions import require_permission
-from app.system_models import Permission, User, Role, RolePermission
+from app.system_models import Permission, User, Role, RolePermission, UserStatus
 from app.api.helper import *
 from app.api.helper.responses import success, error
 from flask import current_app
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from app import db
 
 from app.api.user import user_bp
-from app.logging.user_activity import create_user_log
+from app.logging.user_activity import create_user_log, create_audit_log
 from app.api.helper.settings_flags import is_audit_logging_enabled
     
 @user_bp.get('/permissions/options')
@@ -101,6 +101,10 @@ def create_role():
                 )
                 db.session.add(role_permission)
             
+            create_audit_log(
+                current_user.UserID,
+                f"Created role '{role_name}' with {len(permissions)} permission(s)",
+            )
             db.session.commit()
         except Exception:
             db.session.rollback()
@@ -328,6 +332,11 @@ def edit_role(id):
                 )
                 db.session.add(role_permission)
             
+            create_audit_log(
+                current_user.UserID,
+                f"Updated role '{role_name}' ({len(permissions)} permission(s), "
+                f"{'active' if role.Is_Active else 'inactive'})",
+            )
             db.session.commit()
             
         except Exception:
@@ -354,6 +363,10 @@ def roles_status(id):
         old_status = role.Is_Active
         try:
             role.Is_Active = not role.Is_Active
+            create_audit_log(
+                current_user.UserID,
+                f"{'Activated' if role.Is_Active else 'Deactivated'} role '{role.Name}'",
+            )
             db.session.commit()
         except Exception:   
             db.session.rollback()
@@ -600,8 +613,6 @@ def edit_account(id):
             "first_name": str, 
             "last_name": str,
             "email": str,
-            "password": str,
-            "confirm_password": str,
             "role_id": int,
             "status": str
         }
@@ -612,22 +623,27 @@ def edit_account(id):
         first_name = data.get('first_name')
         last_name = data.get('last_name')
         email = data.get('email')
-        password = data.get('password')
-        confirm_password = data.get('confirm_password')
+        password = data.get('password') or ""
+        confirm_password = data.get('confirm_password') or ""
         role = data.get('role_id')
         status = data.get('status')
+
+        if not isinstance(password, str) or not isinstance(confirm_password, str):
+            return error("Password must be text.", 400)
 
         err = validate_userstatus(status)
         if err is not None:
             return err
-        
-        err = validate_password_is_same(password, confirm_password)
-        if err is not None:
-            return err
-        
-        err = validate_password(password)
-        if err is not None:
-            return err
+
+        changing_password = bool(password or confirm_password)
+        if changing_password:
+            err = validate_password_is_same(password, confirm_password)
+            if err is not None:
+                return err
+
+            err = validate_password(password)
+            if err is not None:
+                return err
         
         err = validate_user_email(email)
         if err is not None:
@@ -648,17 +664,31 @@ def edit_account(id):
         role_info = get_role_by_id(role)
 
         normalized_status = convert_user_status(status)
+        was_active = user_info.Status == UserStatus.ACTIVE
+        old_status = user_info.Status.value
+        is_self = user_info.UserID == current_user.UserID
 
         try:
             user_info.First_Name = first_name
             user_info.Last_Name = last_name
             user_info.Email = normalized_email
-            user_info.set_password(password)
             user_info.RoleID = role_info.RoleID
             user_info.Status = normalized_status
 
+            if changing_password:
+                user_info.set_password(password)
+                if not is_self:
+                    user_info.Must_Change_Password = True
+            if normalized_status == UserStatus.ACTIVE and not was_active and not is_self:
+                user_info.Must_Change_Password = True
+
             if is_audit_logging_enabled():
-                create_user_log(current_user.UserID, f"Updated account for {normalized_email}")
+                details = [f"Updated account for {normalized_email}"]
+                if old_status != normalized_status.value:
+                    details.append(f"status {old_status} -> {normalized_status.value}")
+                if changing_password:
+                    details.append("password reset by admin")
+                create_user_log(current_user.UserID, "; ".join(details))
             db.session.commit()
         except Exception:
             db.session.rollback()
@@ -666,6 +696,53 @@ def edit_account(id):
             return error("An error occurred.", 400)
         
         return success(message="Successfully updated user.")
+    except Exception:
+        current_app.logger.exception("An unexpected error occured.")
+        return error("An unexpected error occured.", 500)
+
+@user_bp.post('/change-password')
+@login_required
+def change_password():
+    try:
+        data = request.get_json(silent=True)
+        err = validate_json_data(data)
+        if err is not None:
+            return err
+
+        err = validate_json_fields(data, {
+            "current_password": str,
+            "new_password": str,
+            "confirm_password": str,
+        })
+        if err is not None:
+            return err
+
+        if not current_user.check_password(data["current_password"]):
+            return error("Current password is incorrect.", 400)
+
+        err = validate_password_is_same(data["new_password"], data["confirm_password"])
+        if err is not None:
+            return err
+
+        err = validate_password(data["new_password"])
+        if err is not None:
+            return err
+
+        if current_user.check_password(data["new_password"]):
+            return error("Choose a password different from your current one.", 400)
+
+        try:
+            current_user.set_password(data["new_password"])
+            current_user.Must_Change_Password = False
+            if is_audit_logging_enabled():
+                create_user_log(current_user.UserID, f"Changed own password ({current_user.Email})")
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Failed to change password.")
+            return error("An error occurred.", 400)
+
+        return success(message="Password changed.")
     except Exception:
         current_app.logger.exception("An unexpected error occured.")
         return error("An unexpected error occured.", 500)
@@ -706,7 +783,8 @@ def user_permission():
             "last_name": current_user.Last_Name,
             "email": current_user.Email,
             "role": role_name,
-            "permissions": permission_array
+            "permissions": permission_array,
+            "must_change_password": bool(current_user.Must_Change_Password),
         })
     except Exception:
         current_app.logger.exception("An unexpected error occured.")

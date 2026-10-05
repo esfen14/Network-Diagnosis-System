@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, Loader2, RefreshCw } from 'lucide-react'
 
 import { PageHeader } from '../components/shared/PageHeader'
@@ -36,8 +36,10 @@ type AlertDetail = AlertEvent & {
 }
 
 type NotificationEvent = {
+  source: 'nagios' | 'pinpoint'
+  id?: number
   timestamp: number
-  type: 'host' | 'service'
+  type: 'host' | 'service' | 'scan'
   hostname: string
   service_name: string | null
   state: string
@@ -62,6 +64,7 @@ type Filters = {
   stateType: string
   ack: string
   contact: string
+  source: string
 }
 
 const EMPTY_FILTERS: Filters = {
@@ -75,6 +78,7 @@ const EMPTY_FILTERS: Filters = {
   stateType: '',
   ack: 'all',
   contact: '',
+  source: '',
 }
 
 const PRESETS = [
@@ -87,6 +91,7 @@ const PRESETS = [
 ]
 
 const STATE_OPTIONS = ['OK', 'UP', 'WARNING', 'CRITICAL', 'DOWN', 'UNKNOWN', 'UNREACHABLE']
+const PINPOINT_STATE_OPTIONS = ['SUCCESS', 'FAILED', 'CANCELLED']
 
 const CONTROL_CLASS =
   'h-10 rounded-xl border border-[var(--border)] bg-[var(--input-bg)] px-3 text-sm text-[var(--text)] outline-none transition duration-200 focus:border-[#ffb100]'
@@ -96,11 +101,13 @@ function stateBadgeClass(state: string) {
     case 'OK':
     case 'UP':
     case 'RECOVERY':
+    case 'SUCCESS':
       return 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
     case 'WARNING':
       return 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
     case 'CRITICAL':
     case 'DOWN':
+    case 'FAILED':
       return 'bg-red-500/15 text-red-600 dark:text-red-400'
     default:
       return 'bg-gray-500/15 text-[var(--text-muted)]'
@@ -112,6 +119,20 @@ function StateBadge({ state }: { state: string }) {
   return (
     <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${stateBadgeClass(state)}`}>
       {state}
+    </span>
+  )
+}
+
+function SourceBadge({ source }: { source: 'nagios' | 'pinpoint' }) {
+  return (
+    <span
+      className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
+        source === 'pinpoint'
+          ? 'bg-[#ffb100]/20 text-[#b37a00] dark:text-[#ffb100]'
+          : 'bg-sky-500/15 text-sky-700 dark:text-sky-300'
+      }`}
+    >
+      {source === 'pinpoint' ? 'Pinpoint' : 'Nagios'}
     </span>
   )
 }
@@ -158,14 +179,22 @@ function buildQuery(filters: Filters, tab: HistoryTab, page: number, perPage: nu
   } else {
     if (filters.state) p.set('state', filters.state)
     if (filters.contact.trim()) p.set('contact', filters.contact.trim())
+    if (filters.source) p.set('source', filters.source)
   }
   p.set('page', String(page))
   p.set('per_page', String(perPage))
   return p.toString()
 }
 
-function detailQuery(event: { hostname: string; service_name: string | null; timestamp: number }, newState?: string) {
+function detailQuery(
+  event: { hostname: string; service_name: string | null; timestamp: number; source?: string; id?: number },
+  newState?: string
+) {
   const p = new URLSearchParams({ hostname: event.hostname, timestamp: String(event.timestamp) })
+  if (event.source === 'pinpoint') {
+    p.set('source', 'pinpoint')
+    p.set('id', String(event.id ?? 0))
+  }
   if (event.service_name) p.set('service', event.service_name)
   if (newState) p.set('new_state', newState)
   return p.toString()
@@ -188,7 +217,10 @@ export function HistoryPage() {
   const [notificationDetail, setNotificationDetail] = useState<NotificationDetail | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
 
+  const requestId = useRef(0)
+
   const load = useCallback(async () => {
+    const thisRequest = ++requestId.current
     if (applied.preset === 'custom' && (!applied.startDate || !applied.endDate)) {
       setLoadError('Pick a start and end date for a custom range.')
       setIsLoading(false)
@@ -199,15 +231,17 @@ export function HistoryPage() {
     try {
       const qs = buildQuery(applied, tab, page, perPage)
       if (tab === 'alerts') {
-        setAlerts(await apiGet<Page<AlertEvent>>(`/api/system/history/alerts?${qs}`))
+        const result = await apiGet<Page<AlertEvent>>(`/api/system/history/alerts?${qs}`)
+        if (thisRequest === requestId.current) setAlerts(result)
       } else {
-        setNotifications(await apiGet<Page<NotificationEvent>>(`/api/system/history/notifications?${qs}`))
+        const result = await apiGet<Page<NotificationEvent>>(`/api/system/history/notifications?${qs}`)
+        if (thisRequest === requestId.current) setNotifications(result)
       }
-      setLoadedAt(new Date())
+      if (thisRequest === requestId.current) setLoadedAt(new Date())
     } catch (err) {
-      setLoadError(errorMessage(err, 'Unable to load history.'))
+      if (thisRequest === requestId.current) setLoadError(errorMessage(err, 'Unable to load history.'))
     } finally {
-      setIsLoading(false)
+      if (thisRequest === requestId.current) setIsLoading(false)
     }
   }, [applied, tab, page, perPage])
 
@@ -255,7 +289,7 @@ export function HistoryPage() {
   }
 
   async function toggleNotification(event: NotificationEvent) {
-    const key = `n-${event.hostname}-${event.service_name}-${event.timestamp}-${event.contact}`
+    const key = `n-${event.source}-${event.id ?? ''}-${event.hostname}-${event.service_name}-${event.timestamp}-${event.contact}`
     if (expanded === key) {
       setExpanded(null)
       return
@@ -276,7 +310,7 @@ export function HistoryPage() {
   const hasFilters = JSON.stringify(applied) !== JSON.stringify(EMPTY_FILTERS)
   const rangeStart = data && data.total > 0 ? (data.page - 1) * data.per_page + 1 : 0
   const rangeEnd = data ? Math.min(data.page * data.per_page, data.total) : 0
-  const colSpan = tab === 'alerts' ? 9 : 8
+  const colSpan = tab === 'alerts' ? 9 : 9
 
   return (
     <main className="ml-55 flex-1">
@@ -284,7 +318,7 @@ export function HistoryPage() {
         <PageHeader
           title="History"
           highlight={tab === 'alerts' ? 'Alerts' : 'Notifications'}
-          description="Browse past state changes and the notifications Nagios sent for them."
+          description="Browse past state changes and the notifications raised by Nagios and by Pinpoint (such as network scan results)."
         />
 
         <div className="flex gap-6 border-b border-[var(--border)]">
@@ -364,7 +398,7 @@ export function HistoryPage() {
             className={CONTROL_CLASS}
           >
             <option value="" className="bg-[var(--card)]">{tab === 'alerts' ? 'Any new state' : 'Any state'}</option>
-            {STATE_OPTIONS.map((s) => (
+            {(tab === 'alerts' ? STATE_OPTIONS : [...STATE_OPTIONS, ...PINPOINT_STATE_OPTIONS]).map((s) => (
               <option key={s} value={s} className="bg-[var(--card)]">{s}</option>
             ))}
           </select>
@@ -392,6 +426,17 @@ export function HistoryPage() {
               </select>
             </>
           ) : (
+            <>
+              <select
+                aria-label="Source"
+                value={filters.source}
+                onChange={(e) => setFilters({ ...filters, source: e.target.value })}
+                className={CONTROL_CLASS}
+              >
+                <option value="" className="bg-[var(--card)]">All sources</option>
+                <option value="nagios" className="bg-[var(--card)]">Nagios</option>
+                <option value="pinpoint" className="bg-[var(--card)]">Pinpoint</option>
+              </select>
             <input
               placeholder="Contact"
               aria-label="Contact"
@@ -399,6 +444,7 @@ export function HistoryPage() {
               onChange={(e) => setFilters({ ...filters, contact: e.target.value })}
               className={`${CONTROL_CLASS} w-36`}
             />
+            </>
           )}
           <button
             type="button"
@@ -471,6 +517,7 @@ export function HistoryPage() {
                 <tr>
                   <th className="w-8 px-3 py-3" />
                   <th className="px-3 py-3">Time</th>
+                  <th className="px-3 py-3">Source</th>
                   <th className="px-3 py-3">Type</th>
                   <th className="px-3 py-3">Host</th>
                   <th className="px-3 py-3">Service</th>
@@ -578,7 +625,7 @@ export function HistoryPage() {
               })}
 
               {tab === 'notifications' && notifications?.items.map((n) => {
-                const key = `n-${n.hostname}-${n.service_name}-${n.timestamp}-${n.contact}`
+                const key = `n-${n.source}-${n.id ?? ''}-${n.hostname}-${n.service_name}-${n.timestamp}-${n.contact}`
                 const open = expanded === key
                 return (
                   <FragmentRows key={key}>
@@ -590,7 +637,8 @@ export function HistoryPage() {
                         {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       </td>
                       <td className="whitespace-nowrap px-3 py-3"><Timestamp ts={n.timestamp} /></td>
-                      <td className="px-3 py-3 capitalize">{n.type}</td>
+                      <td className="px-3 py-3"><SourceBadge source={n.source} /></td>
+                      <td className="px-3 py-3 capitalize">{n.type === 'scan' ? 'Network scan' : n.type}</td>
                       <td className="px-3 py-3">{n.hostname}</td>
                       <td className="px-3 py-3">{n.service_name ?? '—'}</td>
                       <td className="px-3 py-3"><StateBadge state={n.state} /></td>
@@ -613,8 +661,10 @@ export function HistoryPage() {
                                   {notificationDetail.message || '—'}
                                 </pre>
                               </div>
-                              <p>Contacts notified: <strong>{notificationDetail.contacts.join(', ') || '—'}</strong></p>
-                              {notificationDetail.linked_alert ? (
+                              {n.source === 'pinpoint' ? null : (
+                                <p>Contacts notified: <strong>{notificationDetail.contacts.join(', ') || '—'}</strong></p>
+                              )}
+                              {n.source === 'pinpoint' ? null : notificationDetail.linked_alert ? (
                                 <p>
                                   Related alert:{' '}
                                   <StateBadge state={notificationDetail.linked_alert.prev_state} /> →{' '}

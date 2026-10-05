@@ -16,6 +16,7 @@ import { TrendStatCard } from '../components/network-health/TrendStatCard'
 import { PageHeader } from '../components/shared/PageHeader'
 import { useCurrentUser } from '../contexts/CurrentUserContext'
 import { useSystemSettings } from '../contexts/SystemSettingsContext'
+import { useNetworkProfile } from '../hooks/useNetworkProfile'
 import { useNetworkRescan } from '../hooks/useNetworkRescan'
 import { apiGet, errorMessage } from '../lib/api'
 import { fromTrendsResponse, type TrendPoint, type TrendsResponse } from '../types/dashboard'
@@ -205,6 +206,8 @@ export function NetworkHealthPage() {
   const { hasPermission } = useCurrentUser()
   const canRescan = hasPermission('system.discover')
   const rescan = useNetworkRescan(loadData)
+  const canEditProfile = hasPermission('settings.discovery')
+  const networkProfile = useNetworkProfile()
   const { savedSettings } = useSystemSettings()
 
   // Keeps "5 min ago" current while the page stays open.
@@ -353,7 +356,8 @@ export function NetworkHealthPage() {
                 <NetworkInfoCard
                   lastScanTime={lastScanTime}
                   lastScanDate={lastScanDate}
-                  onStartScan={startScan}
+                  profile={networkProfile.profile}
+                  onSave={canEditProfile ? networkProfile.save : undefined}
                 />
                 <div className="flex-1">
                   <ResourceUsageCard
