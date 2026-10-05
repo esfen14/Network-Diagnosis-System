@@ -30,6 +30,7 @@ export type PluginListItem = {
   id: number
   name: string
   display_name: string | null
+  description: string | null
   category: string | null
   type: PluginType
   source: PluginSource

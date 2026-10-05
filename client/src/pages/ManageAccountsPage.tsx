@@ -449,11 +449,10 @@ function EditAccountModal({
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // The backend's edit_account endpoint requires a new password on every
-  // edit — there's no "leave unchanged" option, so this field is mandatory
-  // here too (see server/app/api/user/management.py edit_account).
+  const changingPassword = newPassword !== '' || confirmPassword !== ''
   const passwordValid =
-    newPassword === confirmPassword && isPasswordValid(newPassword, strongPasswordPolicy)
+    !changingPassword ||
+    (newPassword === confirmPassword && isPasswordValid(newPassword, strongPasswordPolicy))
 
   const handleSave = async () => {
     if (!passwordValid) return
@@ -466,8 +465,7 @@ function EditAccountModal({
         email: form.email.trim(),
         role_id: form.roleId,
         status: form.status,
-        password: newPassword,
-        confirm_password: confirmPassword,
+        ...(changingPassword ? { password: newPassword, confirm_password: confirmPassword } : {}),
       })
       onSaved()
     } catch (err) {
@@ -490,7 +488,7 @@ function EditAccountModal({
 
         <h2 className="text-xl font-semibold text-[var(--text)]">Edit Account</h2>
         <p className="mt-1 text-sm text-[var(--text-muted)]">
-          Update personal information of users and reset password securely.
+          Update personal information, status and role. Suspending or deactivating an account does not need a password.
         </p>
 
         <div className="mt-6 grid grid-cols-2 gap-4">
@@ -558,9 +556,11 @@ function EditAccountModal({
 
         <div className="mt-4 grid grid-cols-2 gap-4 rounded-xl border border-[var(--border)] p-4">
           <div className="col-span-2 text-xs text-[var(--text-muted)]">
+            Leave blank to keep the current password. A password set here is temporary: the user must
+            change it at their next login, as must anyone whose account is reactivated.{' '}
             {strongPasswordPolicy
-              ? 'Saving requires setting a new password (12+ characters, upper, lower, number, symbol).'
-              : 'Saving requires setting a new password (at least 8 characters).'}
+              ? 'Requires 12+ characters, upper, lower, number, symbol.'
+              : 'Requires at least 8 characters.'}
           </div>
           <div>
             <label className="mb-1.5 block text-xs font-medium tracking-wide text-[var(--text-muted)]">

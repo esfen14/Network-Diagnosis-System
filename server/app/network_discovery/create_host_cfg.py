@@ -834,6 +834,17 @@ def _run_nagios_verify(main_cfg_path):
     except FileNotFoundError:
         return False, f"Nagios binary not found at {NAGIOS_BIN}."
 
+def _sync_running_plugins(app, user_id):
+    try:
+        from app.api.plugin.service import apply_running_plugins_to_all_targets
+        result = apply_running_plugins_to_all_targets(user_id)
+        if not result["success"]:
+            app.logger.warning("Running plugins were not applied after discovery: %s", result["message"])
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Applying running plugins after discovery failed.")
+
+
 def _validate_config(cfg_path):
     """
     Validates a candidate host config file WITHOUT touching the live
@@ -1169,6 +1180,7 @@ def discover_network_create_hosts(app, user_id, stop_event):
                         "Host configuration unchanged; Nagios was not reloaded",
                         datetime.now(timezone.utc)
                     )
+                    _sync_running_plugins(app, user_id)
                     return
 
                 if stop_event.is_set():
@@ -1199,6 +1211,7 @@ def discover_network_create_hosts(app, user_id, stop_event):
                             "New host.cfg successfully applied",
                             datetime.now(timezone.utc)
                             )
+                        _sync_running_plugins(app, user_id)
                         print(apply_message)
                     else:
                         update_network_discovery_status(

@@ -59,6 +59,8 @@ the normative behavior in the requirement specifications.
 | Network Health plugin section | Backend endpoint exists; current page does not call `/network-health/plugins` | Connect it when implementing the corresponding `Display_Requirements.md` section |
 | Device discovery inventory | Historical docs described `/system/hosts` and port endpoints, but those routes do not exist; current Device Inventory uses latest Nagios host status | Treat the current host-status API as implemented behavior unless a separate discovery inventory contract is approved |
 | Plugin lifecycle and discovery | Discovery generates its own commands without checking Plugin Manager status; disable changes database status without stopping existing Nagios checks. The live harness now enables required plugins through APIs before discovery | Unify product lifecycle enforcement in a separate behavior change; enable setup alone does not close this integration gap |
+| Custom plugins | `POST /api/plugin/custom` and its client call are commented out; the Add Custom Plugin button is greyed out | Restore both together when custom plugins enter scope |
+| Plugin auto-apply scope | Enabled plugins are applied to every `Include_Device_In_Scanning` host with the plugin name as service description; there is no per-plugin/OS applicability metadata | Add applicability rules if some plugins must not run on every host |
 | Installer | Developed in another repository | Keep installer work out of this repository unless scope changes |
 
 ## Test approach status

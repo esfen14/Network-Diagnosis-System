@@ -131,6 +131,9 @@ export type AddCustomPluginInput = {
 }
 
 export async function addCustomPlugin(input: AddCustomPluginInput): Promise<CustomPluginUploadResult> {
+  void input
+  throw new Error('Custom plugins are not available in this release.')
+  /*
   const formData = new FormData()
   formData.append('file', input.file)
   formData.append('name', input.name)
@@ -154,6 +157,7 @@ export async function addCustomPlugin(input: AddCustomPluginInput): Promise<Cust
     throw new Error(body?.message ?? `Request failed (${res.status})`)
   }
   return (body.data ?? body) as CustomPluginUploadResult
+  */
 }
 
 export type PluginUpdateResult = {

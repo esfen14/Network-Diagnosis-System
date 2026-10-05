@@ -126,7 +126,6 @@ describe('NetworkHealthPage last scan', () => {
     expect(apiPost).toHaveBeenCalledWith('/api/system/discover/start')
     expect(screen.queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /last scan: scanning/i })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /rescan network/i })).toBeDisabled()
 
     lastScan = { completed_at: '2026-09-26T10:00:00+00:00', is_running: false }
     apiGet.mockImplementation((path: string) => {
@@ -173,6 +172,6 @@ describe('NetworkHealthPage last scan', () => {
     await flush()
 
     expect(screen.getByRole('button', { name: /last scan: 2 hours ago/i })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /rescan network/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^edit$/i })).toBeDisabled()
   })
 })

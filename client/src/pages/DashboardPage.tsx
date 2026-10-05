@@ -9,6 +9,7 @@ import { ResourceUtilizationSection, type TrendHours } from '../components/dashb
 import { ServiceOverview } from '../components/dashboard/ServiceOverview'
 import { SummaryStatCard } from '../components/shared/SummaryStatCard'
 import { useSystemSettings } from '../contexts/SystemSettingsContext'
+import { DEFAULT_NETWORK_NAME, useNetworkProfile } from '../hooks/useNetworkProfile'
 import { formatDateTime } from '../utils/formatDateTime'
 import { trendBuckets } from '../utils/trendHours'
 import { fromPluginsResponse, type PluginGroup, type PluginsApiResponse } from '../types/networkHealth'
@@ -29,6 +30,7 @@ const SEVERITY_RANK: Record<string, number> = { CRITICAL: 0, WARNING: 1, UNKNOWN
 
 export function DashboardPage() {
   const { settings } = useSystemSettings()
+  const networkProfile = useNetworkProfile()
   const [lastRefreshed, setLastRefreshed] = useState(() => new Date())
 
   const [status, setStatus] = useState<DashboardStatus | null>(null)
@@ -162,7 +164,7 @@ export function DashboardPage() {
             <div className="rounded-2xl bg-[var(--card)] border border-[var(--border)] p-[var(--dash-card-padding)] shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-[var(--text)]">CICT Network</h2>
+                  <h2 className="text-lg font-semibold text-[var(--text)]">{networkProfile.profile?.name ?? DEFAULT_NETWORK_NAME}</h2>
                   <p className="text-sm text-[var(--text-muted)]">
                     Last Updated: {formatDateTime(lastRefreshed, settings.dateTimeFormat, settings.timeZone)}
                   </p>

@@ -191,7 +191,9 @@ export function SystemLogsPage() {
                       }`}>!</div>
                       <span className="text-sm text-[var(--text)]">
                         <strong>{log.title}</strong>{' '}
-                        <span className="text-[var(--text-muted)]">{log.description}</span>
+                        {log.description !== log.title && (
+                          <span className="text-[var(--text-muted)]">{log.description}</span>
+                        )}
                       </span>
                     </div>
                     <span className="text-[var(--text-muted)] text-sm">

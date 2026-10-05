@@ -58,6 +58,7 @@ from flask import current_app
 from app import db
 from app.plugin_models import Plugin, PluginVersion, PluginCommand, PluginType, PluginSource, PluginStatus
 from app.api.plugin.plugin_command_defaults import get_default_command
+from app.api.plugin.plugin_descriptions import get_default_description
 
 
 def get_plugin_dir():
@@ -268,6 +269,7 @@ def sync_plugin_inventory(scan_results):
         if plugin is None:
             plugin = Plugin(
                 Name=scanned.name,
+                Description=get_default_description(scanned.name),
                 Plugin_Type=PluginType.NAGIOS,
                 Source=PluginSource.BASELINE_ISO if is_initial_seed else PluginSource.ADMINISTRATOR_ADDED,
                 Status=PluginStatus.READY,
@@ -312,6 +314,10 @@ def sync_plugin_inventory(scan_results):
 
         if plugin.Executable_Path != scanned.path:
             plugin.Executable_Path = scanned.path
+            changed = True
+
+        if not plugin.Description and get_default_description(scanned.name):
+            plugin.Description = get_default_description(scanned.name)
             changed = True
 
         if scanned.version and plugin.Current_Version and scanned.version != plugin.Current_Version:

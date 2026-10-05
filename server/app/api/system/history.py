@@ -47,6 +47,12 @@ from app.nagios.notifications import (
     request_alerts_range,
     request_notifications_range,
 )
+from app.nagios.pinpoint_events import (
+    SOURCE_NAGIOS,
+    SOURCE_PINPOINT,
+    get_scan_event,
+    get_scan_events,
+)
 
 # Valid per-page values from the spec (§3.5).
 _VALID_PER_PAGE = {25, 50, 100}
@@ -446,6 +452,7 @@ def notifications_history():
         service_f  = request.args.get("service", default="", type=str)
         state_f    = request.args.get("state", default="", type=str).upper()
         contact_f  = request.args.get("contact", default="", type=str).lower()
+        source_f   = request.args.get("source", default="", type=str).lower()
         sort_by    = request.args.get("sort_by", default="timestamp", type=str).lower()
         order      = request.args.get("order", default="desc", type=str).lower()
         page       = request.args.get("page", default=1, type=int)
@@ -457,6 +464,8 @@ def notifications_history():
             return error(f"per_page must be one of: {sorted(_VALID_PER_PAGE)}.", 400)
         if order not in ("asc", "desc"):
             return error("order must be 'asc' or 'desc'.", 400)
+        if source_f not in ("", SOURCE_NAGIOS, SOURCE_PINPOINT):
+            return error("source must be 'nagios' or 'pinpoint'.", 400)
 
         start_ts, end_ts = resolve_time_range(
             preset or None, start_date or None, end_date or None
@@ -467,16 +476,19 @@ def notifications_history():
                 "or provide start_date and end_date as YYYY-MM-DD.", 400
             )
 
-        raw = request_notifications_range(
-            start_ts, end_ts,
-            hostname=hostname_f or None,
-            service=service_f or None,
-        )
+        notifications = []
+        nagios_unavailable = False
+        if source_f != SOURCE_PINPOINT:
+            raw = request_notifications_range(
+                start_ts, end_ts,
+                hostname=hostname_f or None,
+                service=service_f or None,
+            )
 
-        if raw is None:
-            return error("Failed to retrieve notification history from Nagios.", 502)
-
-        notifications = normalize_nagios_list(raw)
+            if raw is None:
+                nagios_unavailable = True
+            else:
+                notifications = normalize_nagios_list(raw)
 
         items = []
         for notif in notifications:
@@ -497,6 +509,7 @@ def notifications_history():
                 continue
 
             items.append({
+                "source":       SOURCE_NAGIOS,
                 "timestamp":    timestamp,
                 "type":         notif_type,
                 "hostname":     hostname,
@@ -507,6 +520,23 @@ def notifications_history():
                 "message":      message[:200],
             })
 
+        if source_f != SOURCE_NAGIOS and not (type_f or hostname_f or service_f or contact_f):
+            for event in get_scan_events(start_ts, end_ts):
+                if state_f and event["state"] != state_f:
+                    continue
+                items.append({
+                    "source":       SOURCE_PINPOINT,
+                    "id":           event["id"],
+                    "timestamp":    event["timestamp"],
+                    "type":         "scan",
+                    "hostname":     "Pinpoint",
+                    "service_name": event["title"],
+                    "state":        event["state"],
+                    "contact":      "",
+                    "method":       "",
+                    "message":      event["message"][:200],
+                })
+
         _sort_keys = {
             "timestamp": lambda n: n["timestamp"],
             "hostname":  lambda n: n["hostname"].lower(),
@@ -515,7 +545,11 @@ def notifications_history():
         key_fn = _sort_keys.get(sort_by, _sort_keys["timestamp"])
         items.sort(key=key_fn, reverse=(order == "desc"))
 
+        if nagios_unavailable and not items:
+            return error("Failed to retrieve notification history from Nagios.", 502)
+
         result = paginate_list(items, page, per_page)
+        result["nagios_unavailable"] = nagios_unavailable
         return success(result)
 
     except Exception:
@@ -545,6 +579,24 @@ def notifications_history_detail():
         hostname  = request.args.get("hostname", default="", type=str)
         timestamp = request.args.get("timestamp", default=0, type=int)
         service   = request.args.get("service", default="", type=str) or None
+
+        if request.args.get("source", default="", type=str).lower() == SOURCE_PINPOINT:
+            event = get_scan_event(request.args.get("id", default=0, type=int))
+            if event is None:
+                return error("Notification event not found.", 404)
+            return success({
+                "source":       SOURCE_PINPOINT,
+                "id":           event["id"],
+                "hostname":     "Pinpoint",
+                "service_name": event["title"],
+                "timestamp":    event["timestamp"],
+                "type":         "scan",
+                "state":        event["state"],
+                "contacts":     [],
+                "method":       "",
+                "message":      event["message"],
+                "linked_alert": None,
+            })
 
         if not hostname:
             return error("hostname is required.", 400)
@@ -602,6 +654,7 @@ def notifications_history_detail():
                 }
 
         return success({
+            "source":       SOURCE_NAGIOS,
             "hostname":     hostname,
             "service_name": service,
             "timestamp":    timestamp,

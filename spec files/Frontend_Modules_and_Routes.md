@@ -74,6 +74,9 @@ When adding a page:
   handles optimistic version conflicts, and supplies `dashboardRefreshRate` and
   `scanFrequency`.
 - `useNetworkRescan` starts and polls network discovery.
+- `useNetworkProfile` loads/saves the editable network profile; the Network Health info card's button is Edit (gated on `settings.discovery`) and the Dashboard banner shows the same name.
+- `ForcePasswordChange` replaces the whole app shell (`AdminLayout`) while `/api/user/me` reports `must_change_password`.
+- The header bell lists Nagios and Pinpoint notifications with a source badge; each item opens a detail dialog with the full description. Network scan results come from the feed; the live scan progress row only shows while a scan runs.
 - `types/` owns TypeScript API records, view models, and conversion functions.
 - `formatDateTime.ts` applies display preferences to timestamps.
 - `exportData.ts` performs client-side exports and records export actions.

@@ -33,6 +33,68 @@ class _ManualPagination:
         self.has_prev = page > 1
 
 
+_PLUGIN_LEGACY_ACTIONS = {
+    "plugin.install": "Installed a plugin",
+    "plugin.update": "Updated a plugin",
+    "plugin.enable": "Enabled a plugin",
+    "plugin.disable": "Disabled a plugin",
+    "plugin.configure": "Applied a plugin's monitoring configuration",
+    "plugin.command_override": "Overrode a plugin command",
+    "plugin.command_restore": "Restored a plugin's default command",
+    "plugin.validate": "Validated a plugin",
+    "plugin.rollback": "Rolled back a plugin",
+    "plugin.remove": "Removed a plugin",
+}
+
+_ACTIVITY_TITLES = (
+    ("Signed in", "Sign in"),
+    ("Signed out", "Sign out"),
+    ("Failed login attempt", "Failed sign in"),
+    ("Changed own password", "Password changed"),
+    ("Created account", "Account created"),
+    ("Updated account", "Account updated"),
+    ("Created role", "Role created"),
+    ("Updated role", "Role updated"),
+    ("Activated role", "Role activated"),
+    ("Deactivated role", "Role deactivated"),
+    ("Updated network profile", "Network profile updated"),
+    ("Acknowledged", "Alert acknowledged"),
+    ("Removed acknowledgement", "Acknowledgement removed"),
+    ("Edited device", "Device edited"),
+    ("Retired device", "Device retired"),
+    ("Merged device", "Devices merged"),
+    ("Resolved device review", "Device review resolved"),
+    ("Discovering Network Hosts", "Network scan started"),
+    ("Scanning Nagios Plugin Directory", "Plugin scan started"),
+    ("Enabled plugin", "Plugin enabled"),
+    ("Disabled plugin", "Plugin disabled"),
+    ("Installed plugin", "Plugin installed"),
+    ("Updated plugin", "Plugin updated"),
+    ("Validated plugin", "Plugin validated"),
+    ("Rolled back plugin", "Plugin rolled back"),
+    ("Removed plugin", "Plugin removed"),
+    ("Applied monitoring configuration", "Plugin applied"),
+    ("Overrode command", "Plugin command overridden"),
+    ("Restored default command", "Plugin command restored"),
+)
+
+_ACTIVITY_DESCRIPTIONS = {
+    "Failed login attempt": "Someone tried to sign in to this account with the wrong password.",
+    "Discovering Network Hosts": "A network scan was started to find hosts and generate their Nagios configuration.",
+    "Scanning Nagios Plugin Directory": "The Nagios plugin directory was scanned for new or changed plugins.",
+}
+
+
+def _describe_activity(action):
+    if action in _PLUGIN_LEGACY_ACTIONS:
+        text = _PLUGIN_LEGACY_ACTIONS[action]
+        return text, f"{text}. (Logged before plugin names were recorded.)"
+    for prefix, title in _ACTIVITY_TITLES:
+        if action.startswith(prefix):
+            return title, _ACTIVITY_DESCRIPTIONS.get(action, action)
+    return action, action
+
+
 def _paginate_multi(query, page, per_page):
     total = db.session.scalar(
         sa.select(sa.func.count()).select_from(query.subquery())
@@ -181,13 +243,14 @@ def activity_logs():
 
         items = []
         for activity, user in logs.items:
+            title, description = _describe_activity(activity.Action_Type)
             items.append({
                 "id":          activity.LogID,
                 "category":    "activity",
                 "type":        "account",
-                "title":       activity.Action_Type,
+                "title":       title,
                 "user":        f"{user.First_Name} {user.Last_Name}",
-                "description": activity.Action_Type,
+                "description": description,
                 "timestamp":   activity.Performed_At.isoformat(),
                 "tagId":       f"AL-{activity.LogID:04d}",
             })

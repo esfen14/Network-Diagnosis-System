@@ -42,6 +42,7 @@ from sqlalchemy.exc import IntegrityError
 from app import db
 from app.api.helper.database_access.permissions import require_permission
 from app.api.helper.responses import success, error
+from app.logging.user_activity import create_audit_log
 from app.api.system import system_bp
 from app.api.system.network_health import utc_isoformat
 from app.api.system.statistics import (
@@ -601,6 +602,10 @@ def acknowledge_alert():
         ack = _new_ack(hostname, service_name, comment, now)
         db.session.add(ack)
         db.session.add(_new_ack_history(hostname, service_name, AckAction.ACKNOWLEDGED, now, comment))
+        create_audit_log(
+            current_user.UserID,
+            f"Acknowledged alert on {hostname}{' / ' + service_name if service_name else ''}: {comment}",
+        )
         db.session.commit()
 
         return success(
@@ -679,6 +684,11 @@ def acknowledge_all_alerts():
             db.session.add(_new_ack_history(hostname, service_name, AckAction.ACKNOWLEDGED, now, comment))
             created += 1
 
+        if created:
+            create_audit_log(
+                current_user.UserID,
+                f"Acknowledged {created} alert(s) at once: {comment}",
+            )
         db.session.commit()
 
         return success({
@@ -735,6 +745,10 @@ def unacknowledge_alert():
         db.session.add(_new_ack_history(
             hostname, service_name, AckAction.UNACKNOWLEDGED, datetime.now(timezone.utc)
         ))
+        create_audit_log(
+            current_user.UserID,
+            f"Removed acknowledgement from {hostname}{' / ' + service_name if service_name else ''}",
+        )
         db.session.commit()
 
         return success(message="Acknowledgement removed.")

@@ -30,6 +30,7 @@ from sqlalchemy.exc import IntegrityError
 from app import db
 from app.api.helper.database_access.permissions import require_permission
 from app.api.helper.responses import success, error
+from app.logging.user_activity import create_audit_log
 from app.api.system import system_bp
 from app.history_models import (
     HostStatus,
@@ -416,6 +417,7 @@ def acknowledge_host():
             ActorUserID  = current_user.UserID,
             Comment      = comment,
         ))
+        create_audit_log(current_user.UserID, f"Acknowledged alert on {hostname}: {comment}")
         db.session.commit()
 
         return success(_serialize_ack(ack), message="Host alert acknowledged.", status=201)
@@ -471,6 +473,7 @@ def unacknowledge_host():
             ActorUserID  = current_user.UserID,
             Comment      = None,
         ))
+        create_audit_log(current_user.UserID, f"Removed acknowledgement from {hostname}")
         db.session.commit()
 
         return success(message="Acknowledgement removed.")

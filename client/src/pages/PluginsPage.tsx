@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-// PackagePlus is only used by the commented-out Add Custom Plugin button.
 import { AlertTriangle, Boxes, CheckCircle2, /* PackagePlus, */ Puzzle, RefreshCcw } from 'lucide-react'
 import { PageHeader } from '../components/shared/PageHeader'
 import { SummaryStatCard } from '../components/shared/SummaryStatCard'
 import { PluginInventoryTable } from '../components/plugin-manager/PluginInventoryTable'
 import { RunningChecksTable } from '../components/plugin-manager/RunningChecksTable'
 import { PluginDetailsDrawer } from '../components/plugin-manager/PluginDetailsDrawer'
-// Custom plugins are not part of the current release; see the button below.
 // import { AddCustomPluginModal } from '../components/plugin-manager/AddCustomPluginModal'
 import { errorMessage } from '../lib/api'
 import { getPluginInventory, getPluginScanStatus, getPluginSummary, getRunningChecks, startPluginScan } from '../lib/pluginApi'
@@ -150,14 +148,11 @@ export function PluginsPage() {
           description="Manage Nagios plugin executables and command definitions on this server."
         />
         {/*
-          Add Custom Plugin is not part of the current release. Kept
-          commented out (with its modal below and POST /api/plugin/custom
-          in server/app/api/plugin/manager.py) so it can be restored later.
-
         <button
           type="button"
-          onClick={() => setShowAddCustom(true)}
-          className="flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-white/20 dark:text-gray-200 dark:hover:bg-white/10"
+          disabled
+          title="Custom plugins are not available in this release"
+          className="flex cursor-not-allowed items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-400 opacity-60 dark:border-white/20 dark:text-gray-500"
         >
           <PackagePlus className="h-4 w-4" /> Add Custom Plugin
         </button>

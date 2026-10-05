@@ -355,6 +355,50 @@ class TestSyncPluginInventory:
         assert summary == {"created": 0, "updated": 0, "unchanged": 1}
 
 
+class TestPluginDescriptions:
+    def _scan(self, tmp_path, name):
+        _write_fake_plugin(tmp_path, name)
+        with _ALWAYS_EXECUTABLE, \
+             patch("app.api.plugin.scanner.subprocess.run",
+                   return_value=_mock_completed_process(f"{name} v2.4.12")):
+            return sync_plugin_inventory(scan_plugin_directory(str(tmp_path)))
+
+    def _plugin(self, db_session, name):
+        return db_session.session.execute(
+            db_session.select(Plugin).where(Plugin.Name == name)
+        ).scalar_one()
+
+    def test_known_plugin_gets_a_description(self, db_session, tmp_path):
+        self._scan(tmp_path, "check_ping")
+        assert "ping" in self._plugin(db_session, "check_ping").Description.lower()
+
+    def test_unknown_plugin_has_no_description(self, db_session, tmp_path):
+        self._scan(tmp_path, "check_some_custom_thing")
+        assert self._plugin(db_session, "check_some_custom_thing").Description is None
+
+    def test_rescan_fills_a_missing_description_but_keeps_an_edited_one(self, db_session, tmp_path):
+        self._scan(tmp_path, "check_ping")
+        plugin = self._plugin(db_session, "check_ping")
+        plugin.Description = None
+        db_session.session.commit()
+
+        summary = self._scan(tmp_path, "check_ping")
+        assert summary["updated"] == 1
+        assert self._plugin(db_session, "check_ping").Description
+
+        plugin = self._plugin(db_session, "check_ping")
+        plugin.Description = "Custom wording"
+        db_session.session.commit()
+        self._scan(tmp_path, "check_ping")
+        assert self._plugin(db_session, "check_ping").Description == "Custom wording"
+
+    def test_every_catalog_plugin_has_a_short_description(self):
+        from app.api.plugin.plugin_command_defaults import PLUGIN_COMMAND_DEFAULTS
+        from app.api.plugin.plugin_descriptions import PLUGIN_DESCRIPTIONS
+        assert set(PLUGIN_COMMAND_DEFAULTS) <= set(PLUGIN_DESCRIPTIONS)
+        assert all(0 < len(d) <= 500 for d in PLUGIN_DESCRIPTIONS.values())
+
+
 # ─── is_executable: real permission bits, Linux only ─────────────────────────
 
 @pytest.mark.skipif(

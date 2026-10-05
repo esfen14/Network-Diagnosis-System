@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 SERVER_DIR = Path(__file__).resolve().parents[2]
+LATEST_REVISION = "f2b9d6a4c871"
 
 
 @pytest.fixture(scope="module")
@@ -31,8 +32,8 @@ def report():
 
 
 def test_upgrade_reaches_the_new_revision(report):
-    assert report["version"] == [["d41f7a2b9e10"]]
-    assert report["version_after_reupgrade"] == [["d41f7a2b9e10"]]
+    assert report["version"] == [[LATEST_REVISION]]
+    assert report["version_after_reupgrade"] == [[LATEST_REVISION]]
 
 
 def test_existing_host_names_are_kept_and_made_unique(report):

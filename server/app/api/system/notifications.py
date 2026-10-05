@@ -44,6 +44,7 @@ from app.nagios.notifications import (
     request_notifications_range,
     request_notification_count_range,
 )
+from app.nagios.pinpoint_events import SOURCE_NAGIOS, get_scan_events
 
 _DEFAULT_LOOKBACK_DAYS = 7
 _DEFAULT_LIMIT = 50
@@ -132,14 +133,16 @@ def get_notifications():
 
         raw = request_notifications_range(start_ts, now_ts)
 
-        if raw is None:
+        scan_events = get_scan_events(start_ts, now_ts)
+        if raw is None and not scan_events:
             return error(
                 "Failed to retrieve notifications from Nagios. "
                 "Check server logs for details.",
                 502,
             )
 
-        items = _normalize_nagios_list(raw)
+        items = [{**n, "source": SOURCE_NAGIOS} for n in _normalize_nagios_list(raw)]
+        items.extend(scan_events)
 
         # Sort newest-first, then take only the requested limit
         items.sort(key=lambda n: n.get("timestamp", 0), reverse=True)
@@ -208,18 +211,23 @@ def get_unread_count():
 
         count_data = request_notification_count_range(effective_start, now_ts)
 
-        if count_data is None:
+        scan_count = len(get_scan_events(effective_start + 1, now_ts))
+
+        if count_data is None and not scan_count:
             return error(
                 "Failed to retrieve notification count from Nagios. "
                 "Check server logs for details.",
                 502,
             )
 
-        # Nagios notificationcount returns {"total": n, "ok": n, ...}
-        if isinstance(count_data, dict):
+        if count_data is None:
+            unread_count = 0
+        elif isinstance(count_data, dict):
             unread_count = count_data.get("total", 0)
         else:
             unread_count = int(count_data)
+
+        unread_count += scan_count
 
         return success({
             "unread_count": unread_count,
