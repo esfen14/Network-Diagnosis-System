@@ -415,6 +415,11 @@ def get_plugin_summary():
     active = db.session.scalar(
         sa.select(sa.func.count()).select_from(Plugin).where(Plugin.Status == PluginStatus.ACTIVE)
     )
+    enabled = db.session.scalar(
+        sa.select(sa.func.count()).select_from(Plugin).where(
+            Plugin.Status.in_((PluginStatus.ENABLED, PluginStatus.ACTIVE))
+        )
+    )
     custom = db.session.scalar(
         sa.select(sa.func.count()).select_from(Plugin).where(Plugin.Plugin_Type == PluginType.CUSTOM)
     )
@@ -428,6 +433,7 @@ def get_plugin_summary():
     return {
         "installed_plugins": installed,
         "active_capabilities": active,
+        "enabled_plugins": enabled,
         "custom_plugins": custom,
         "updates_available": updates_available,
         "validation_issues": validation_issues,

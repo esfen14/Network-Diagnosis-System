@@ -245,7 +245,7 @@ update/custom-plugin modules.
 | `POST /api/plugin/scan` | `plugin.scan` | Start plugin-directory scan |
 | `GET /api/plugin/scan/status` | `plugin.scan` | Read latest scan status |
 | `GET /api/plugin` | `plugin.view` | Paginated plugin inventory |
-| `GET /api/plugin/summary` | `plugin.view` | Plugin-manager summary counts |
+| `GET /api/plugin/summary` | `plugin.view` | Plugin-manager summary counts, including `enabled_plugins` (Enabled or Active; zero drives the "no plugins enabled" banner) |
 | `GET /api/plugin/history` | `plugin.view` | Plugin audit/history records |
 | `GET /api/plugin/<plugin_id>` | `plugin.view` | Plugin detail, including `description`, `category` and `documentation_url` (null for plugins outside the bundled catalog) |
 | `GET /api/plugin/<plugin_id>/commands` | `plugin.view` | Commands and active overrides |

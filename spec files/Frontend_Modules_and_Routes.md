@@ -22,8 +22,8 @@ requests use `src/lib/api.ts`; Plugin Manager wrappers live in
 | `/network-health` | `NetworkHealthPage` | `system.network_health` | Connected to summary and trends APIs; detailed host/service UI is supplied elsewhere |
 | `/device-inventory` | `DeviceInventoryPage` | `system.network_health` | Connected to the latest-host endpoints and acknowledgement API |
 | `/topology` | `TopologyPage` | `system.network_health` | Still routed and shown as “System Status”; excluded from current product scope and must be removed from navigation/routing while retaining source |
-| `/plugins` | `PluginsPage` | `plugin.view` | Connected to Plugin Manager inventory, running checks, details, scanning, and mutation APIs |
-| `/ncpa-deployment` | `NcpaDeploymentPage` | `system.deploy.ncpa` | Connected to the NCPA deployment routes: device list, deploy wizard (host-key trust, login checks, start), live run banner, Deployment History tab and run review drawer (`?tab=history&run=<id>`) |
+| `/plugins` | `PluginsPage` | `plugin.view` | Connected to Plugin Manager inventory (with a Monitoring column and a banner while no plugin is enabled), plugin details with an enable confirmation that previews what will be monitored, the plugin's monitored services with live status and per-device stop/resume, scanning, and mutation APIs. There is no Currently Running tab and devices are never picked by hand |
+| `/ncpa-deployment` | `NcpaDeploymentPage` | `system.deploy.ncpa` | Warns, through `useNcpaPluginState`, when `check_ncpa` is not enabled in Plugin Manager (the agent's checks are monitored only while it is). Connected to the NCPA deployment routes: device list, deploy wizard (host-key trust, login checks, start), live run banner, Deployment History tab and run review drawer (`?tab=history&run=<id>`) |
 | `/reports` | `ReportsPage` | `system.report` | Connected for host availability and network-services views; backend exposes additional report routes |
 | `/system-logs` | `SystemLogsPage` | `system.logs` | Connected to five log categories |
 | `/accounts` | `ManageAccountsPage` | `account.view` | Connected to account/role APIs |
@@ -60,7 +60,7 @@ When adding a page:
 | `components/dashboard/` | Dashboard metrics, resource views, alerts, charts, and outage presentation |
 | `components/network-health/` | Trend/metric cards, network health summaries, insight panels, and graph modal |
 | `components/device-inventory/` | Host/device table |
-| `components/plugin-manager/` | Current Plugin Manager inventory, checks, details, custom upload, and configuration UI |
+| `components/plugin-manager/` | Plugin inventory table, details drawer (enable preview dialog, "Not service-driven" state, attach notices), `PluginServicesSection` (paginated, searchable monitored services with status chips and Stop/Resume), and the disabled custom-upload modal |
 | `components/ncpa-deployment/` | NCPA device table, deploy wizard, run banner, history table, run drawer, outcome badges and the header bell item |
 | `components/plugins/` | Older installed/available plugin table components; do not assume these drive the current page |
 | `components/reports/` | Host availability and network-services report tables |

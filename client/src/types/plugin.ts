@@ -37,6 +37,11 @@ export type PluginListItem = {
   status: PluginStatus
   current_version: string | null
   updated_at: string
+  // False for plugins that check no discovered port (check_ping, check_load, ...).
+  // They cannot be enabled; services attach only to ports discovery found.
+  service_driven: boolean
+  // Services applied for this plugin and the devices they run on.
+  monitoring_usage: { services: number; devices: number }
 }
 
 export type PluginListResponse = {
@@ -49,36 +54,11 @@ export type PluginListResponse = {
   has_prev: boolean
 }
 
-export type RunningCheck = {
-  id: number
-  plugin: {
-    id: number
-    name: string
-    display_name: string | null
-    status: PluginStatus
-  }
-  target: {
-    id: number
-    hostname: string | null
-    ip_address: string
-  } | null
-  service_description: string | null
-  applied_at: string
-}
-
-export type RunningChecksResponse = {
-  items: RunningCheck[]
-  page: number
-  per_page: number
-  pages: number
-  total: number
-  has_next: boolean
-  has_prev: boolean
-}
-
 export type PluginSummary = {
   installed_plugins: number
   active_capabilities: number
+  // Plugins that are Enabled or Active; zero means nothing is being monitored.
+  enabled_plugins: number
   custom_plugins: number
   updates_available: number
   validation_issues: number
@@ -100,6 +80,7 @@ export type PluginDetails = {
   category: string | null
   // Official documentation page for bundled plugins; null for custom ones.
   documentation_url?: string | null
+  service_driven: boolean
   type: PluginType
   source: PluginSource
   status: PluginStatus
@@ -164,10 +145,79 @@ export type PluginHistoryResponse = {
   has_prev: boolean
 }
 
+// What the reconciler did after an enable or disable (api/plugin/reconcile.py).
+export type AttachResult = {
+  success: boolean
+  changed?: boolean
+  applied: number
+  removed: number
+  promoted: number
+  message: string
+}
+
 export type PluginTransitionResult = {
   id: number
   status: PluginStatus
   changed: boolean
+  auto_apply?: AttachResult
+}
+
+// GET /api/plugin/<id>/enable-preview: what enabling would monitor.
+export type EnablePreview = {
+  id: number
+  name: string
+  status: PluginStatus
+  service_driven: boolean
+  already_enabled: boolean
+  matched_services: number
+  matched_devices: number
+  message: string
+}
+
+export type ServiceStatusKind =
+  | 'ok'
+  | 'warning'
+  | 'critical'
+  | 'unknown'
+  | 'waiting'
+  | 'stale'
+  | 'stopped'
+
+export type ServiceStatus = {
+  kind: ServiceStatusKind
+  state: string | null
+  output: string
+  last_check: string | null
+}
+
+// One monitored service of a plugin (GET /api/plugin/<id>/services).
+export type PluginServiceItem = {
+  // Null for a stopped port, which has no applied configuration.
+  id: number | null
+  service: string
+  device: { id: number; hostname: string; ip_address: string }
+  port: number
+  protocol: 'tcp' | 'udp'
+  metric: string | null
+  monitored: boolean
+  running_since: string | null
+  status: ServiceStatus
+}
+
+export type PluginServicesResponse = {
+  items: PluginServiceItem[]
+  page: number
+  per_page: number
+  pages: number
+  total: number
+  has_next: boolean
+  has_prev: boolean
+}
+
+export type ServiceMonitoringResult = {
+  changed: boolean
+  monitored: boolean
+  auto_apply?: AttachResult
 }
 
 export type CustomPluginCheckResult = {
@@ -198,29 +248,4 @@ export type PluginValidationResult = {
     permissions: PluginValidationCheck
     execution: PluginValidationCheck
   }
-}
-
-export type MonitoringTarget = {
-  id: number
-  hostname: string | null
-  ip_address: string
-}
-
-export type PluginConfigurationStatus = 'Pending' | 'Applied' | 'Failed'
-
-export type PluginConfigurationItem = {
-  id: number
-  target: MonitoringTarget | null
-  service_description: string | null
-  status: PluginConfigurationStatus
-  configuration_data: Record<string, unknown> | null
-  updated_at: string
-}
-
-export type ApplyConfigurationResult = {
-  success: boolean
-  configuration_id: number
-  status: PluginConfigurationStatus
-  plugin_status?: PluginStatus
-  validation_output?: string
 }

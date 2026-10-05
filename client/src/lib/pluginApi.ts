@@ -3,20 +3,19 @@
 // reference doc, Section 2 "Route Reference").
 import { apiGet, apiPost } from './api'
 import type {
-  ApplyConfigurationResult,
   CustomPluginUploadResult,
-  MonitoringTarget,
-  PluginConfigurationItem,
+  EnablePreview,
   PluginCommand,
   PluginDependency,
   PluginDetails,
   PluginHistoryResponse,
   PluginListResponse,
   PluginScanStatus,
+  PluginServicesResponse,
   PluginSummary,
   PluginTransitionResult,
   PluginValidationResult,
-  RunningChecksResponse,
+  ServiceMonitoringResult,
 } from '../types/plugin'
 
 function buildQuery(params: Record<string, string | number | undefined>) {
@@ -44,11 +43,6 @@ export function getPluginSummary() {
 export function getPluginInventory(query: InventoryQuery) {
   const qs = buildQuery(query)
   return apiGet<PluginListResponse>(`/api/plugin?${qs}`)
-}
-
-export function getRunningChecks(query: { page?: number; per_page?: number; search?: string }) {
-  const qs = buildQuery(query)
-  return apiGet<RunningChecksResponse>(`/api/plugin/running?${qs}`)
 }
 
 export function getPluginDetails(id: number) {
@@ -101,19 +95,25 @@ export function validatePlugin(id: number) {
   return apiPost<PluginValidationResult>(`/api/plugin/${id}/validate`)
 }
 
-export function getMonitoringTargets() {
-  return apiGet<MonitoringTarget[]>('/api/plugin/targets')
+// What enabling would monitor, without changing anything.
+export function getEnablePreview(id: number) {
+  return apiGet<EnablePreview>(`/api/plugin/${id}/enable-preview`)
 }
 
-export function getPluginConfigurations(pluginId: number) {
-  return apiGet<PluginConfigurationItem[]>(`/api/plugin/${pluginId}/configurations`)
+// What a plugin monitors, one row per Nagios service, with live status.
+export function getPluginServices(id: number, query: { page?: number; per_page?: number; search?: string }) {
+  const qs = buildQuery(query)
+  return apiGet<PluginServicesResponse>(`/api/plugin/${id}/services?${qs}`)
 }
 
-export function applyPluginConfiguration(pluginId: number, netDiscoveryId: number, serviceDescription: string) {
-  return apiPost<ApplyConfigurationResult>(`/api/plugin/${pluginId}/configurations`, {
-    net_discovery_id: netDiscoveryId,
-    service_description: serviceDescription,
-  })
+export type ServicePortRef = { device_id: number; protocol: 'tcp' | 'udp'; port: number }
+
+export function stopServiceMonitoring(id: number, ref: ServicePortRef) {
+  return apiPost<ServiceMonitoringResult>(`/api/plugin/${id}/services/stop`, ref)
+}
+
+export function resumeServiceMonitoring(id: number, ref: ServicePortRef) {
+  return apiPost<ServiceMonitoringResult>(`/api/plugin/${id}/services/resume`, ref)
 }
 
 // Used only by AddCustomPluginModal, which is disabled for now: the Add

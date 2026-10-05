@@ -74,6 +74,16 @@ function StatusBadge({ status }: { status: PluginStatus }) {
   )
 }
 
+// Coverage at a glance: how many services a plugin runs and on how many devices.
+export function monitoringLabel(plugin: PluginListItem) {
+  if (!plugin.service_driven) return 'Not service-driven'
+  const { services, devices } = plugin.monitoring_usage
+  if (services > 0) {
+    return `${services} ${services === 1 ? 'service' : 'services'} on ${devices} ${devices === 1 ? 'device' : 'devices'}`
+  }
+  return plugin.status === 'Enabled' || plugin.status === 'Active' ? 'No matching services yet' : '—'
+}
+
 function formatDateTime(iso: string | null) {
   if (!iso) return '—'
   const date = new Date(iso)
@@ -210,6 +220,7 @@ export function PluginInventoryTable({
               <th className="px-4 py-3 font-normal">Source</th>
               <th className="px-4 py-3 font-normal">Version</th>
               <th className="px-4 py-3 font-normal">Status</th>
+              <th className="px-4 py-3 font-normal">Monitoring</th>
               <th className="px-4 py-3 font-normal">Updated</th>
             </tr>
           </thead>
@@ -217,13 +228,13 @@ export function PluginInventoryTable({
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                   Loading plugins…
                 </td>
               </tr>
             ) : plugins.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                   No plugins match your search or filter
                 </td>
               </tr>
@@ -246,6 +257,13 @@ export function PluginInventoryTable({
                     {plugin.current_version ?? '—'}
                   </td>
                   <td className="px-4 py-3"><StatusBadge status={plugin.status} /></td>
+                  <td
+                    className={`px-4 py-3 ${
+                      plugin.service_driven ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'
+                    }`}
+                  >
+                    {monitoringLabel(plugin)}
+                  </td>
                   <td className="px-4 py-3 text-gray-500 dark:text-gray-400">
                     {formatDateTime(plugin.updated_at)}
                   </td>
@@ -307,6 +325,8 @@ export function PluginInventoryTable({
             <dd className="text-gray-700 dark:text-gray-200">{hover.plugin.current_version ?? '—'}</dd>
             <dt>Status</dt>
             <dd className="text-gray-700 dark:text-gray-200">{hover.plugin.status}</dd>
+            <dt>Monitoring</dt>
+            <dd className="text-gray-700 dark:text-gray-200">{monitoringLabel(hover.plugin)}</dd>
             {hover.plugin.category && (
               <>
                 <dt>Category</dt>

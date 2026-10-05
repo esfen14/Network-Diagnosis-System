@@ -1,14 +1,14 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ApiError } from '../lib/api'
 import { PluginDetailsDrawer } from '../components/plugin-manager/PluginDetailsDrawer'
-import type { PluginDetails } from '../types/plugin'
+import type { EnablePreview, PluginDetails } from '../types/plugin'
 
-const getPluginDetails = vi.fn()
-
-vi.mock('../lib/pluginApi', () => ({
-  getPluginDetails: (id: number) => getPluginDetails(id),
-  getPluginCommands: () => Promise.resolve([]),
-  getPluginDependencies: () => Promise.resolve([]),
+const api = vi.hoisted(() => ({
+  getPluginDetails: vi.fn(),
+  getPluginCommands: vi.fn(),
+  getPluginDependencies: vi.fn(),
+  getEnablePreview: vi.fn(),
   enablePlugin: vi.fn(),
   disablePlugin: vi.fn(),
   validatePlugin: vi.fn(),
@@ -18,12 +18,17 @@ vi.mock('../lib/pluginApi', () => ({
   rollbackPluginUpdate: vi.fn(),
 }))
 
+vi.mock('../lib/pluginApi', () => api)
+
 vi.mock('../contexts/CurrentUserContext', () => ({
   useCurrentUser: () => ({ user: null, isLoading: false, hasPermission: () => true }),
 }))
 
-vi.mock('../components/plugin-manager/PluginTargetsSection', () => ({
-  PluginTargetsSection: () => <div>Targets section</div>,
+// The list has its own tests; here it only shows that it was rendered and when it reloads.
+vi.mock('../components/plugin-manager/PluginServicesSection', () => ({
+  PluginServicesSection: ({ pluginId, refreshKey }: { pluginId: number; refreshKey: number }) => (
+    <div>Services section for {pluginId} (reload {refreshKey})</div>
+  ),
 }))
 
 function details(overrides: Partial<PluginDetails> = {}): PluginDetails {
@@ -35,6 +40,7 @@ function details(overrides: Partial<PluginDetails> = {}): PluginDetails {
     author: null,
     category: 'Network Services',
     documentation_url: 'https://www.nagios-plugins.org/doc/man/check_ssh.html',
+    service_driven: true,
     type: 'Nagios',
     source: 'Baseline (ISO)',
     status: 'Ready',
@@ -49,14 +55,32 @@ function details(overrides: Partial<PluginDetails> = {}): PluginDetails {
   }
 }
 
+function preview(overrides: Partial<EnablePreview> = {}): EnablePreview {
+  return {
+    id: 1, name: 'check_ssh', status: 'Ready', service_driven: true, already_enabled: false,
+    matched_services: 12, matched_devices: 5, message: 'Enabling will monitor 12 service(s) on 5 device(s).',
+    ...overrides,
+  }
+}
+
+const attach = (overrides = {}) => ({
+  success: true, changed: true, applied: 12, removed: 0, promoted: 12, message: 'applied', ...overrides,
+})
+
+function renderDrawer(onChanged = vi.fn()) {
+  return render(<PluginDetailsDrawer pluginId={1} onClose={() => {}} onChanged={onChanged} />)
+}
+
 describe('PluginDetailsDrawer description', () => {
   beforeEach(() => {
-    getPluginDetails.mockReset()
+    Object.values(api).forEach((fn) => fn.mockReset())
+    api.getPluginCommands.mockResolvedValue([])
+    api.getPluginDependencies.mockResolvedValue([])
   })
 
   it('shows the description, category and a documentation link', async () => {
-    getPluginDetails.mockResolvedValue(details())
-    render(<PluginDetailsDrawer pluginId={1} onClose={() => {}} onChanged={() => {}} />)
+    api.getPluginDetails.mockResolvedValue(details())
+    renderDrawer()
 
     expect(await screen.findByText('Check SSH server connection.')).toBeInTheDocument()
     expect(screen.getByText('Network Services')).toBeInTheDocument()
@@ -68,12 +92,191 @@ describe('PluginDetailsDrawer description', () => {
   })
 
   it('falls back to a message and no link for a plugin without a description', async () => {
-    getPluginDetails.mockResolvedValue(
+    api.getPluginDetails.mockResolvedValue(
       details({ name: 'check_company', description: null, category: null, documentation_url: null }),
     )
-    render(<PluginDetailsDrawer pluginId={1} onClose={() => {}} onChanged={() => {}} />)
+    renderDrawer()
 
     expect(await screen.findByText('No description available.')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Documentation' })).not.toBeInTheDocument()
+  })
+})
+
+describe('PluginDetailsDrawer enable and disable', () => {
+  beforeEach(() => {
+    Object.values(api).forEach((fn) => fn.mockReset())
+    api.getPluginCommands.mockResolvedValue([])
+    api.getPluginDependencies.mockResolvedValue([])
+    api.getPluginDetails.mockResolvedValue(details())
+  })
+
+  it('no longer offers to pick a device by hand', async () => {
+    renderDrawer()
+
+    await screen.findByText('Check SSH server connection.')
+    expect(screen.queryByText(/apply to device/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it('lists the services a service-driven plugin monitors', async () => {
+    renderDrawer()
+
+    expect(await screen.findByText('Services section for 1 (reload 0)')).toBeInTheDocument()
+  })
+
+  it('shows what enabling would monitor and waits for confirmation', async () => {
+    api.getEnablePreview.mockResolvedValue(preview())
+    renderDrawer()
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Enable$/ }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Enable check_ssh' })
+    expect(within(dialog).getByText('Enabling will monitor 12 service(s) on 5 device(s).')).toBeInTheDocument()
+    expect(within(dialog).getByText('12')).toBeInTheDocument()
+    expect(within(dialog).getByText('5')).toBeInTheDocument()
+    expect(within(dialog).getByText(/not picked by hand/)).toBeInTheDocument()
+    expect(api.enablePlugin).not.toHaveBeenCalled()
+  })
+
+  it('does not enable when the preview is cancelled', async () => {
+    api.getEnablePreview.mockResolvedValue(preview())
+    renderDrawer()
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Enable$/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(api.enablePlugin).not.toHaveBeenCalled()
+  })
+
+  it('enables after confirmation, reloads the list and tells the page', async () => {
+    api.getEnablePreview.mockResolvedValue(preview())
+    api.enablePlugin.mockResolvedValue({ id: 1, status: 'Active', changed: true, auto_apply: attach() })
+    const onChanged = vi.fn()
+    renderDrawer(onChanged)
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Enable$/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm enable' }))
+
+    expect(await screen.findByText('Monitoring 12 new service(s) from discovered ports.')).toBeInTheDocument()
+    expect(api.enablePlugin).toHaveBeenCalledWith(1)
+    expect(onChanged).toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('Services section for 1 (reload 1)')).toBeInTheDocument()
+  })
+
+  it('says so when nothing matched yet', async () => {
+    api.getEnablePreview.mockResolvedValue(preview({ matched_services: 0, matched_devices: 0, message: 'No matching services yet.' }))
+    api.enablePlugin.mockResolvedValue({ id: 1, status: 'Enabled', changed: true, auto_apply: attach({ applied: 0, promoted: 0 }) })
+    renderDrawer()
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Enable$/ }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByText('Devices')).not.toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm enable' }))
+
+    expect(await screen.findByText(/No matching services yet; they attach as devices are found/)).toBeInTheDocument()
+  })
+
+  it('warns when the plugin was enabled but Nagios was not updated', async () => {
+    api.getEnablePreview.mockResolvedValue(preview())
+    api.enablePlugin.mockResolvedValue({
+      id: 1, status: 'Enabled', changed: true,
+      auto_apply: attach({ success: false, applied: 0, message: 'Config failed to validate: bad directive' }),
+    })
+    renderDrawer()
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Enable$/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm enable' }))
+
+    expect(await screen.findByText(/Nagios was not updated: Config failed to validate: bad directive/)).toBeInTheDocument()
+  })
+
+  it('shows the server message when the preview cannot be loaded', async () => {
+    api.getEnablePreview.mockRejectedValue(new ApiError('Plugin not found.', 404))
+    renderDrawer()
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Enable$/ }))
+
+    expect(await screen.findByText('Plugin not found.')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('reports how many services a disable stopped', async () => {
+    api.getPluginDetails.mockResolvedValue(details({ status: 'Active' }))
+    api.disablePlugin.mockResolvedValue({
+      id: 1, status: 'Disabled', changed: true, auto_apply: attach({ applied: 0, removed: 12 }),
+    })
+    renderDrawer()
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Disable$/ }))
+
+    expect(await screen.findByText('Stopped 12 service(s). Enabling again restores them.')).toBeInTheDocument()
+  })
+
+  it('shows why Nagios refused a disable and that the plugin is still on', async () => {
+    api.getPluginDetails.mockResolvedValue(details({ status: 'Active' }))
+    api.disablePlugin.mockRejectedValue(
+      new ApiError('Nagios did not accept the change, so the plugin is still on: bad directive', 409),
+    )
+    renderDrawer()
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Disable$/ }))
+
+    expect(await screen.findByText(/the plugin is still on: bad directive/)).toBeInTheDocument()
+  })
+
+  it('cannot enable a plugin that is already on', async () => {
+    api.getPluginDetails.mockResolvedValue(details({ status: 'Enabled' }))
+    renderDrawer()
+
+    expect(await screen.findByRole('button', { name: /^Enable$/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^Disable$/ })).toBeEnabled()
+  })
+})
+
+describe('PluginDetailsDrawer not service-driven', () => {
+  beforeEach(() => {
+    Object.values(api).forEach((fn) => fn.mockReset())
+    api.getPluginCommands.mockResolvedValue([])
+    api.getPluginDependencies.mockResolvedValue([])
+  })
+
+  it('explains that there is nothing to attach and offers no Enable, Disable or services list', async () => {
+    api.getPluginDetails.mockResolvedValue(details({ name: 'check_ping', service_driven: false }))
+    renderDrawer()
+
+    expect(await screen.findByText('Not service-driven.')).toBeInTheDocument()
+    expect(screen.getByText(/does not check a service that discovery finds on a port/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Enable$/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Disable$/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Services section/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Validate/ })).toBeInTheDocument()
+  })
+
+  it.each(['check_load', 'check_disk', 'check_swap', 'check_procs', 'check_users'])(
+    'says %s is checked by Nagios Core itself',
+    async (name) => {
+      api.getPluginDetails.mockResolvedValue(details({ name, service_driven: false }))
+      renderDrawer()
+
+      expect(await screen.findByText(/Checks the Nagios server itself through Nagios Core. Not managed here./)).toBeInTheDocument()
+    },
+  )
+
+  it('still lets a plugin that was enabled before this rule be disabled', async () => {
+    api.getPluginDetails.mockResolvedValue(details({ name: 'check_ping', service_driven: false, status: 'Active' }))
+    renderDrawer()
+
+    expect(await screen.findByRole('button', { name: /^Disable$/ })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: /^Enable$/ })).not.toBeInTheDocument()
+  })
+
+  it('does not ask for a preview', async () => {
+    api.getPluginDetails.mockResolvedValue(details({ name: 'check_ping', service_driven: false }))
+    renderDrawer()
+
+    await screen.findByText('Not service-driven.')
+    await waitFor(() => expect(api.getEnablePreview).not.toHaveBeenCalled())
   })
 })
