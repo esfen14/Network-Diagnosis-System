@@ -2,7 +2,7 @@
 
 **Last verified against the repository:** 2026-10-04
 
-**Current isolated collection:** 1,382 collected tests
+**Current isolated collection:** 1,590 collected tests
 
 This directory contains the pytest suite for the Flask backend. It covers API
 authorization and contracts, database models, Nagios parsing and aggregation,
@@ -124,6 +124,7 @@ Basenames below live under `unit/`, except `integration/test_live_nagios.py`.
 |---|---|
 | `test_plugin_models.py` | Plugin, version, command override, dependency, configuration, and history ORM behavior |
 | `test_plugin_command_defaults.py` | Curated defaults for the bundled plugin catalog |
+| `test_plugin_descriptions.py` | Generated description/category/documentation catalog (coverage, limits, generator freshness), `--help` fallback parsing, fill-if-empty rules, scanner backfill, and the plugin detail fields |
 | `test_plugin_scanner.py` | Filesystem scanning, executable detection, inventory synchronization, scan routes/status, and real permission checks where supported |
 | `test_plugin_service.py` | Inventory, summary, details, history, commands, and dependency read APIs |
 | `test_plugin_running.py` | Applied configurations returned by `GET /api/plugin/running` |

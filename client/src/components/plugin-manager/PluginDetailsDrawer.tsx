@@ -189,6 +189,16 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                   {details.description || 'No description available.'}
                 </p>
+                {details.documentation_url && (
+                  <a
+                    href={details.documentation_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 inline-block text-xs font-medium text-[#b37b00] hover:underline dark:text-[#ffb100]"
+                  >
+                    Documentation
+                  </a>
+                )}
 
                 <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
                   <div>
@@ -198,6 +208,10 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
                   <div>
                     <dt className="text-gray-400">Version</dt>
                     <dd className="font-medium text-gray-900 dark:text-white">{details.current_version ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-gray-400">Category</dt>
+                    <dd className="font-medium text-gray-900 dark:text-white">{details.category ?? '—'}</dd>
                   </div>
                   <div>
                     <dt className="text-gray-400">Type</dt>

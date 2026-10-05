@@ -43,6 +43,7 @@ from app.api.plugin.plugin_update import (
     NoBackupAvailableError,
 )
 from app.api.plugin.scanner import extract_version
+from app.api.plugin.plugin_descriptions import documentation_url
 from app.api.plugin.monitoring_config import (
     generate_command_name, generate_plugin_services_cfg, write_staged_cfg,
     ensure_cfg_file_directive, validate_plugin_services_config, apply_plugin_services_config,
@@ -301,6 +302,7 @@ def get_plugin_details(plugin_id):
         "description": plugin.Description,
         "author": plugin.Author,
         "category": plugin.Category,
+        "documentation_url": documentation_url(plugin.Name),
         "type": plugin.Plugin_Type.value,
         "source": plugin.Source.value,
         "status": plugin.Status.value,

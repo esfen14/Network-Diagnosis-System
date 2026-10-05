@@ -97,6 +97,8 @@ export type PluginDetails = {
   description: string | null
   author: string | null
   category: string | null
+  // Official documentation page for bundled plugins; null for custom ones.
+  documentation_url?: string | null
   type: PluginType
   source: PluginSource
   status: PluginStatus

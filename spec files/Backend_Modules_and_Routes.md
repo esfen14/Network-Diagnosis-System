@@ -235,7 +235,9 @@ accepts an optional `data` argument for errors the client must act on.
 
 All routes are implemented in `app/api/plugin/manager.py`; supporting logic is
 split across `scanner.py`, `service.py`, `monitoring_config.py`, validators,
-command defaults, and update/custom-plugin modules.
+command defaults, `plugin_descriptions.py` (description/category/documentation
+lookups, backed by the generated `plugin_catalog_data.py`), and
+update/custom-plugin modules.
 
 | Method and path | Permission | Purpose |
 |---|---|---|
@@ -245,7 +247,7 @@ command defaults, and update/custom-plugin modules.
 | `GET /api/plugin/running` | `plugin.view` | Checks currently configured in Nagios |
 | `GET /api/plugin/summary` | `plugin.view` | Plugin-manager summary counts |
 | `GET /api/plugin/history` | `plugin.view` | Plugin audit/history records |
-| `GET /api/plugin/<plugin_id>` | `plugin.view` | Plugin detail |
+| `GET /api/plugin/<plugin_id>` | `plugin.view` | Plugin detail, including `description`, `category` and `documentation_url` (null for plugins outside the bundled catalog) |
 | `GET /api/plugin/<plugin_id>/commands` | `plugin.view` | Commands and active overrides |
 | `GET /api/plugin/<plugin_id>/dependencies` | `plugin.view` | Dependency status |
 | `POST /api/plugin/<plugin_id>/enable` | `plugin.enable` | Enable a plugin |

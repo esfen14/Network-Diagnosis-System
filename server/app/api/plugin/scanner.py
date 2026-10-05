@@ -58,6 +58,9 @@ from flask import current_app
 from app import db
 from app.plugin_models import Plugin, PluginVersion, PluginCommand, PluginType, PluginSource, PluginStatus
 from app.api.plugin.plugin_command_defaults import get_default_command
+from app.api.plugin.plugin_descriptions import (
+    extract_help_description, fill_missing_metadata, get_catalog_entry,
+)
 
 
 def get_plugin_dir():
@@ -84,6 +87,9 @@ class ScannedPlugin:
     is_executable: bool
     version: Optional[str]
     version_raw_output: Optional[str]
+    # From the plugin's own --help, only for plugins outside the bundled
+    # catalog (see plugin_descriptions.py).
+    description: Optional[str] = None
 
 
 def extract_version(plugin_path):
@@ -213,6 +219,7 @@ def scan_plugin_directory(directory=None):
                 continue
 
             version, raw_output = extract_version(entry.path)
+            description = None if get_catalog_entry(entry.name) else extract_help_description(entry.path)
 
             results.append(ScannedPlugin(
                 name=entry.name,
@@ -222,6 +229,7 @@ def scan_plugin_directory(directory=None):
                 is_executable=executable,
                 version=version,
                 version_raw_output=raw_output,
+                description=description,
             ))
 
     return results
@@ -274,6 +282,7 @@ def sync_plugin_inventory(scan_results):
                 Executable_Path=scanned.path,
                 Current_Version=scanned.version,
             )
+            fill_missing_metadata(plugin, scanned.description)
             db.session.add(plugin)
             db.session.flush()  # get plugin.PluginID
 
@@ -308,7 +317,9 @@ def sync_plugin_inventory(scan_results):
             created += 1
             continue
 
-        changed = False
+        # Backfills plugins registered before descriptions existed; never
+        # overwrites a value that is already set.
+        changed = fill_missing_metadata(plugin, scanned.description)
 
         if plugin.Executable_Path != scanned.path:
             plugin.Executable_Path = scanned.path
