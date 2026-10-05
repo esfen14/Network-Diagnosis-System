@@ -14,10 +14,12 @@ from app.plugin_models import (
     PluginVersion,
     PluginCommand, PluginCommandOverride,
     PluginDependency, DependencyType, DependencyStatus,
-    PluginConfiguration,
+    PluginConfiguration, PluginConfigurationOrigin,
     PluginHistory, PluginHistoryAction, PluginActionResult,
 )
-from app.system_models import ActivityLog
+from app.logging.user_activity import create_user_log
+from app.system_models import ActivityLog, DiscoveryStatus, NetworkDiscovery, NetworkDiscoveryStatus
+import sqlalchemy as sa
 
 
 def _make_activity_log(db_session, admin_user, action="test.plugin.action"):
@@ -40,6 +42,20 @@ def _make_plugin(db_session, name="check_company", plugin_type=PluginType.CUSTOM
     db_session.session.add(plugin)
     db_session.session.flush()
     return plugin
+
+
+def _make_device(db_session, admin_user):
+    log = create_user_log(admin_user.UserID, "Discovering Network Hosts")
+    status = NetworkDiscoveryStatus(Status=DiscoveryStatus.SUCCESS, Progress=100, Message="done", LogID=log.LogID)
+    db_session.session.add(status)
+    db_session.session.flush()
+    device = NetworkDiscovery(
+        Hostname="web", IP_Address="192.168.130.10", Network="192.168.130.0/24",
+        DiscoveryStatusID=status.DiscoveryStatusID,
+    )
+    db_session.session.add(device)
+    db_session.session.flush()
+    return device
 
 
 class TestPlugin:
@@ -159,6 +175,46 @@ class TestPluginConfiguration:
         db_session.session.expire_all()
         fetched = db_session.session.get(PluginConfiguration, cfg.PluginConfigurationID)
         assert fetched.Configuration_Data["OID"] == "1.3.6.1"
+
+    def test_service_columns_and_origin_default(self, db_session, admin_user):
+        plugin = _make_plugin(db_session, name="check_ssh")
+        device = _make_device(db_session, admin_user)
+        cfg = PluginConfiguration(PluginID=plugin.PluginID, NetDiscoveryID=device.NetDiscoveryID)
+        db_session.session.add(cfg)
+        db_session.session.commit()
+        assert cfg.Origin == PluginConfigurationOrigin.MANUAL
+        assert cfg.Port_Number is None and cfg.Nagios_Service_Name is None and cfg.Applied_At is None
+
+        derived = PluginConfiguration(
+            PluginID=plugin.PluginID, NetDiscoveryID=device.NetDiscoveryID,
+            Port_Number=22, Protocol="tcp", Metric=None, Nagios_Service_Name="ssh-22-tcp",
+            Origin=PluginConfigurationOrigin.AUTO,
+        )
+        db_session.session.add(derived)
+        db_session.session.commit()
+        db_session.session.expire_all()
+        fetched = db_session.session.get(PluginConfiguration, derived.PluginConfigurationID)
+        assert (fetched.Port_Number, fetched.Protocol, fetched.Nagios_Service_Name) == (22, "tcp", "ssh-22-tcp")
+        assert fetched.Origin == PluginConfigurationOrigin.AUTO
+
+    def test_same_service_cannot_be_recorded_twice_for_a_device(self, db_session, admin_user):
+        plugin = _make_plugin(db_session, name="check_ssh")
+        device = _make_device(db_session, admin_user)
+        for _ in range(2):
+            db_session.session.add(PluginConfiguration(
+                PluginID=plugin.PluginID, NetDiscoveryID=device.NetDiscoveryID,
+                Nagios_Service_Name="ssh-22-tcp", Origin=PluginConfigurationOrigin.AUTO,
+            ))
+        with pytest.raises(sa.exc.IntegrityError):
+            db_session.session.commit()
+        db_session.session.rollback()
+
+    def test_legacy_rows_without_a_service_name_do_not_collide(self, db_session, admin_user):
+        plugin = _make_plugin(db_session, name="check_ping")
+        device = _make_device(db_session, admin_user)
+        for _ in range(2):
+            db_session.session.add(PluginConfiguration(PluginID=plugin.PluginID, NetDiscoveryID=device.NetDiscoveryID))
+        db_session.session.commit()
 
 
 class TestPluginHistory:
