@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Pinpoint demo lab: build, run and show a small VirtualBox lab.
+Pinpoint demo lab: build, run and show a set of small VirtualBox servers.
 
-It creates two Ubuntu target VMs (web01, infra01) from one base image, and a
-disposable copy of your Pinpoint server VM, all on a private VirtualBox
-network (10.77.0.0/28) that never touches your real LAN. See README.md for the
-plan, the one-time preparation and the run of show.
+It creates five tiny Ubuntu servers from one base image. They are the machines
+Pinpoint's network discovery finds, and every service they run is one Pinpoint
+turns into a Nagios check automatically (ssh, http, https, snmp, and ncpa once
+deployed). Pinpoint itself is NOT created here: use your own Pinpoint VM and put
+it on the same private network (see README.md).
 
 Safety rules
 ------------
-* Only VMs named "pinpoint-demo-*" are ever created, changed or deleted. The
-  source Pinpoint VM is only read (it is cloned, never modified).
+* Only VMs named "pinpoint-demo-*" are ever created, changed or deleted.
 * build-base, create, snapshot, reset and destroy print the exact VBoxManage
   commands and change nothing unless --apply is given. The demo controls
   (up, down, break, fix, ssh-port, load) act immediately; they only touch demo
@@ -28,48 +28,60 @@ import concurrent.futures
 import contextlib
 import io
 import os
+import re
 import secrets
 import shlex
 import socket
 import subprocess
 import sys
 import time
-import urllib.request
 from pathlib import Path
+from typing import NoReturn
 
 PREFIX = "pinpoint-demo"
-LAN_NAME = "pinpoint-demo"          # VirtualBox internal network
-LAN_CIDR = "10.77.0.0/28"
 BASE_SNAPSHOT = "base-ready"
 DEMO_SNAPSHOT = "demo-ready"
 DEMO_USER = "demo"
 DEFAULT_ISO = Path.home() / "Downloads" / "ubuntu-24.04.5-live-server-amd64.iso"
 DEFAULT_STATE = Path.home() / ".local" / "share" / "pinpoint-demo"
-DEFAULT_SOURCE_VM = "Pinpoint-installer-testing"
-DEFAULT_UI_HOST_PORT = 8480        # 8080 is commonly taken on a developer laptop
+DEFAULT_LAN_NAME = "pinpoint-demo"      # VirtualBox internal network
+DEFAULT_LAN_PREFIX = "10.77.0"          # first three octets; the lab is <prefix>.0/28
+LAN_PREFIXLEN = 28
+DEFAULT_TARGET_MEMORY = 512             # MiB per target
 
+# Targets, in the order they are created and started. "host" is the last octet of
+# the lab address (.1 is left for your Pinpoint VM). service_ssh_port is where the
+# monitored SSH listens when it is not 22.
 VMS = {
     "base": {"name": PREFIX + "-base", "ssh_port": 2200, "memory": 1024, "cpus": 1},
-    "pinpoint": {"name": PREFIX + "-server", "ip": "10.77.0.1", "ssh_port": 2201,
-                 "memory": 4096, "cpus": 2},
-    "web01": {"name": PREFIX + "-web01", "role": "web", "ip": "10.77.0.2",
-              "ssh_port": 2202, "memory": 1024, "cpus": 1},
-    "infra01": {"name": PREFIX + "-infra01", "role": "infra", "ip": "10.77.0.3",
-                "ssh_port": 2203, "memory": 1024, "cpus": 1,
-                # Its monitored SSH starts on a non-standard port (see README).
-                "service_ssh_port": 2222},
+    "web01": {"role": "web", "host": 2, "ssh_port": 2201},
+    "web02": {"role": "web80", "host": 3, "ssh_port": 2202},
+    "app01": {"role": "app", "host": 4, "ssh_port": 2203},
+    "snmp01": {"role": "snmp", "host": 5, "ssh_port": 2204},
+    "legacy01": {"role": "legacy", "host": 6, "ssh_port": 2205, "service_ssh_port": 2222},
 }
-TARGETS = ("web01", "infra01")
+TARGETS = ("web01", "web02", "app01", "snmp01", "legacy01")
+for target_key in TARGETS:
+    VMS[target_key]["name"] = PREFIX + "-" + target_key
+    VMS[target_key]["memory"] = DEFAULT_TARGET_MEMORY
+    VMS[target_key]["cpus"] = 1
 
-# (label shown to the audience, systemd unit, port) per role.
+# What each role runs: (label shown to the audience, systemd unit, port). Every
+# one of these is a service Pinpoint monitors automatically once discovered.
 ROLE_SERVICES = {
-    "web": [("ssh", "ssh", "22/tcp"), ("http", "nginx", "80/tcp"),
-            ("https", "nginx", "443/tcp"), ("mariadb", "mariadb", "3306/tcp")],
-    "infra": [("ssh", "ssh", "22/tcp"), ("dns", "named", "53/udp"),
-              ("ntp", "chrony", "123/udp"), ("snmp", "snmpd", "161/udp")],
+    "web": [("ssh", "ssh", "22/tcp"), ("http", "nginx", "80/tcp"), ("https", "nginx", "443/tcp")],
+    "web80": [("ssh", "ssh", "22/tcp"), ("http", "nginx", "80/tcp")],
+    "app": [("ssh", "ssh", "22/tcp"), ("http", "nginx", "8080/tcp")],
+    "snmp": [("ssh", "ssh", "22/tcp"), ("snmp", "snmpd", "161/udp")],
+    "legacy": [("ssh", "ssh", "2222/tcp")],
 }
 
 PREVIEW_FIRST = ("build-base", "create", "snapshot", "reset", "destroy")
+
+# Set by configure() from the command line.
+LAN_NAME = DEFAULT_LAN_NAME
+LAN_PREFIX = DEFAULT_LAN_PREFIX
+ACTIVE_TARGETS = list(TARGETS)
 
 
 # ==========================================================
@@ -82,11 +94,22 @@ BASE_SCRIPT = r"""#!/usr/bin/env bash
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
+# The installer only fetched the main section (see INSTALLER_APT); enable the rest here.
+cat > /etc/apt/sources.list.d/ubuntu.sources <<'EOF'
+Types: deb
+URIs: https://archive.ubuntu.com/ubuntu
+Suites: noble noble-updates noble-security
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+EOF
+# The lab NAT has no IPv6; skipping it avoids slow fallbacks.
+printf 'Acquire::ForceIPv4 "true";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99demo
+
 apt-get update
-apt-get install -y nginx mariadb-server bind9 bind9-utils chrony snmpd socat openssl curl python3
+apt-get install -y nginx snmpd openssl curl python3
 
 # Role services stay off until demo-role enables the ones a VM needs.
-for unit in nginx mariadb named chrony snmpd; do
+for unit in nginx snmpd; do
     systemctl disable --now "$unit" || true
 done
 
@@ -181,9 +204,9 @@ chmod 755 /usr/local/bin/demo-board
 
 cat > /usr/local/sbin/demo-role <<'EOF'
 #!/usr/bin/env bash
-# demo-role ROLE NAME IP LAN_MAC [SSH_PORT]: turn a clone of the base into a lab target.
+# demo-role ROLE NAME IP LAN_MAC SSH_PORT LAN_CIDR: turn a clone of the base into a lab target.
 set -euo pipefail
-ROLE="$1"; NAME="$2"; IP="$3"; LAN_MAC="$4"; SSH_PORT="${5:-22}"
+ROLE="$1"; NAME="$2"; IP="$3"; LAN_MAC="$4"; SSH_PORT="$5"; LAN_CIDR="$6"
 
 hostnamectl set-hostname "$NAME"
 sed -i '/^127\.0\.1\.1 /d' /etc/hosts
@@ -204,20 +227,26 @@ netplan apply
 
 printf 'ListenAddress %s\nPort %s\nPasswordAuthentication yes\n' "$IP" "$SSH_PORT" > /etc/ssh/sshd_config.d/10-demo.conf
 
+web_site() {
+    # web_site PORT...: serve the demo page on the given plain-HTTP port.
+    install -d /var/www/demo
+    echo "<h1>$NAME</h1><p>Pinpoint demo lab server</p>" > /var/www/demo/index.html
+    rm -f /etc/nginx/sites-enabled/default
+    : > /etc/nginx/conf.d/demo.conf
+    for port in "$@"; do
+        printf 'server {\n    listen %s default_server;\n    root /var/www/demo;\n}\n' "$port" >> /etc/nginx/conf.d/demo.conf
+    done
+}
+
+UNITS=""
 case "$ROLE" in
 web)
-    install -d /var/www/demo
-    echo "<h1>$NAME</h1><p>Pinpoint demo lab web server</p>" > /var/www/demo/index.html
+    web_site 80
     if [ ! -s /etc/ssl/private/demo.key ]; then
         openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=$NAME" \
             -keyout /etc/ssl/private/demo.key -out /etc/ssl/certs/demo.crt
     fi
-    rm -f /etc/nginx/sites-enabled/default
-    cat > /etc/nginx/conf.d/demo.conf <<'NGINX'
-server {
-    listen 80 default_server;
-    root /var/www/demo;
-}
+    cat >> /etc/nginx/conf.d/demo.conf <<'NGINX'
 server {
     listen 443 ssl default_server;
     ssl_certificate /etc/ssl/certs/demo.crt;
@@ -225,29 +254,26 @@ server {
     root /var/www/demo;
 }
 NGINX
-    printf '[mysqld]\nbind-address = 0.0.0.0\n' > /etc/mysql/mariadb.conf.d/99-demo.cnf
-    UNITS="nginx mariadb"
-    printf 'ssh ssh %s/tcp\nhttp nginx 80/tcp\nhttps nginx 443/tcp\nmariadb mariadb 3306/tcp\n' "$SSH_PORT" > /etc/demo-lab/services.conf
+    UNITS="nginx"
+    printf 'ssh ssh %s/tcp\nhttp nginx 80/tcp\nhttps nginx 443/tcp\n' "$SSH_PORT" > /etc/demo-lab/services.conf
     ;;
-infra)
-    cat > /etc/bind/named.conf.options <<'BIND'
-options {
-    directory "/var/cache/bind";
-    recursion no;
-    allow-query { any; };
-    listen-on { any; };
-    listen-on-v6 { none; };
-};
-BIND
-    printf 'local stratum 10\nallow @LAN_CIDR@\n' > /etc/chrony/conf.d/demo.conf
-    cat > /etc/snmp/snmpd.conf <<'SNMP'
-agentAddress udp:161
-sysLocation Pinpoint demo lab
-sysContact demo
-rocommunity public @LAN_CIDR@
-SNMP
-    UNITS="named chrony snmpd"
-    printf 'ssh ssh %s/tcp\ndns named 53/udp\nntp chrony 123/udp\nsnmp snmpd 161/udp\n' "$SSH_PORT" > /etc/demo-lab/services.conf
+web80)
+    web_site 80
+    UNITS="nginx"
+    printf 'ssh ssh %s/tcp\nhttp nginx 80/tcp\n' "$SSH_PORT" > /etc/demo-lab/services.conf
+    ;;
+app)
+    web_site 8080
+    UNITS="nginx"
+    printf 'ssh ssh %s/tcp\nhttp nginx 8080/tcp\n' "$SSH_PORT" > /etc/demo-lab/services.conf
+    ;;
+snmp)
+    printf 'agentAddress udp:161\nsysLocation Pinpoint demo lab\nsysContact demo\nrocommunity public %s\n' "$LAN_CIDR" > /etc/snmp/snmpd.conf
+    UNITS="snmpd"
+    printf 'ssh ssh %s/tcp\nsnmp snmpd 161/udp\n' "$SSH_PORT" > /etc/demo-lab/services.conf
+    ;;
+legacy)
+    printf 'ssh ssh %s/tcp\n' "$SSH_PORT" > /etc/demo-lab/services.conf
     ;;
 *)
     echo "unknown role: $ROLE" >&2
@@ -256,10 +282,12 @@ SNMP
 esac
 
 systemctl daemon-reload
-# shellcheck disable=SC2086
-systemctl enable $UNITS
-# shellcheck disable=SC2086
-systemctl restart $UNITS
+if [ -n "$UNITS" ]; then
+    # shellcheck disable=SC2086
+    systemctl enable $UNITS
+    # shellcheck disable=SC2086
+    systemctl restart $UNITS
+fi
 systemctl restart ssh
 systemctl restart getty@tty1
 EOF
@@ -280,16 +308,59 @@ REMOTE_STATUS = (
 
 
 # ==========================================================
-# HELPERS
+# CONFIGURATION AND HELPERS
 # ==========================================================
 
 def say(message=""):
     print(message, flush=True)
 
 
-def fail(message, code=1):
+def fail(message, code=1) -> NoReturn:
     print("ERROR: " + message, file=sys.stderr)
     sys.exit(code)
+
+
+def configure(args):
+    """Apply the global command-line options (network, targets, memory)."""
+    global LAN_NAME, LAN_PREFIX, ACTIVE_TARGETS
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", args.lan_name):
+        fail("--lan-name may only contain letters, digits, '_', '.' and '-'")
+    if not re.fullmatch(r"\d{1,3}\.\d{1,3}\.\d{1,3}", args.lan_prefix):
+        fail("--lan-prefix must be three octets such as 10.77.0")
+    for octet in args.lan_prefix.split("."):
+        if int(octet) > 255:
+            fail("--lan-prefix has an octet above 255")
+    LAN_NAME = args.lan_name
+    LAN_PREFIX = args.lan_prefix
+
+    if args.targets:
+        chosen = []
+        for key in args.targets.split(","):
+            key = key.strip()
+            if key not in TARGETS:
+                fail("unknown target '" + key + "'. Choose from: " + ", ".join(TARGETS))
+            if key not in chosen:
+                chosen.append(key)
+        ACTIVE_TARGETS = chosen
+    else:
+        ACTIVE_TARGETS = list(TARGETS)
+
+    if args.memory < 256:
+        fail("--memory must be at least 256 MiB")
+    for key in TARGETS:
+        VMS[key]["memory"] = args.memory
+
+
+def lan_cidr():
+    return LAN_PREFIX + ".0/" + str(LAN_PREFIXLEN)
+
+
+def lan_ip(key):
+    return LAN_PREFIX + "." + str(VMS[key]["host"])
+
+
+def service_ssh_port(key):
+    return VMS[key].get("service_ssh_port", 22)
 
 
 def quote_args(args):
@@ -461,11 +532,17 @@ def run_script(state_dir, vm_key, script, timeout):
     return ssh_run(state_dir, vm_key, "sudo bash /tmp/demo-script.sh", timeout=timeout)
 
 
-def wait_for_ssh(state_dir, vm_key, minutes):
-    """Poll the management SSH until it answers; False on timeout."""
+def wait_for_ssh(state_dir, vm_key, minutes, vm_name=None):
+    """Poll the management SSH until it answers; False on timeout.
+
+    With vm_name, also give up as soon as that VM is no longer running, because a
+    powered-off guest will never answer.
+    """
     deadline = time.time() + minutes * 60
     started = time.time()
     while time.time() < deadline:
+        if vm_name is not None and vm_state(vm_name) != "running":
+            return False
         try:
             if ssh_run(state_dir, vm_key, "true", timeout=8, check=False).returncode == 0:
                 return True
@@ -485,11 +562,45 @@ def wait_for_state(name, wanted, seconds):
     return False
 
 
+# The installer's own `apt-get update` downloads every index of every repository
+# section. On a slow link that ran for more than 25 minutes and then failed, so the
+# installer fetches only the main section of the release pocket and installs
+# openssh-server itself; BASE_SCRIPT enables the rest over SSH afterwards.
+# The mirror is used over https: on some networks plain http to the Ubuntu
+# mirrors is reset while https works.
+INSTALLER_APT = """  apt:
+    geoip: false
+    fallback: offline-install
+    primary:
+      - arches: [default]
+        uri: https://archive.ubuntu.com/ubuntu
+    disable_components: [restricted, universe, multiverse]
+    disable_suites: [updates, backports, security]
+  ssh:
+    install-server: true
+"""
+VBOX_DEFAULT_APT = "  apt:\n    fallback: offline-install\n"
+
+
+def patch_installer_config(apply, name):
+    """Swap the apt section of the generated autoinstall file before the VM starts."""
+    if not apply:
+        say("  + patch the installer's apt settings (main only, openssh-server from the installer)")
+        return
+    files = sorted((default_machine_folder() / name).glob("Unattended-*-user-data"))
+    if not files:
+        fail("VirtualBox did not generate the installer's user-data file; cannot set its apt options.")
+    text = files[0].read_text()
+    if VBOX_DEFAULT_APT not in text:
+        fail("the installer's user-data has no apt section in the expected form; "
+             "this VirtualBox version needs demo_lab.py updated (see VBOX_DEFAULT_APT).")
+    files[0].write_text(text.replace(VBOX_DEFAULT_APT, INSTALLER_APT))
+
+
 def post_install_command(public_key):
     """One-line command for the unattended installer: SSH, our key, sudo."""
     script = (
         "set -e\n"
-        "apt-get install -y openssh-server\n"
         "install -d -m 700 -o demo -g demo /home/demo/.ssh\n"
         "echo '" + public_key.strip() + "' > /home/demo/.ssh/authorized_keys\n"
         "chown demo:demo /home/demo/.ssh/authorized_keys\n"
@@ -524,6 +635,14 @@ def port_is_free(port):
         probe.close()
 
 
+def disk_free_gib(folder):
+    probe = Path(folder)
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
+    stats = os.statvfs(str(probe))
+    return int(stats.f_bavail * stats.f_frsize / (1024 ** 3))
+
+
 def cmd_preflight(args):
     """Read-only checks. Exit status 1 if something blocks the demo."""
     problems = 0
@@ -544,52 +663,49 @@ def cmd_preflight(args):
         if not name.startswith(PREFIX):
             running.append(name)
     report(not running, "other running VMs: " + (", ".join(running) or "none")
-           + ("  (power them off before the demo: they use host RAM)" if running else ""),
+           + ("  (they use host RAM; power them off if you are short)" if running else ""),
            blocking=False)
 
     needed = 0
-    for key in ("pinpoint", "web01", "infra01"):
+    for key in ACTIVE_TARGETS:
         if vm_state(VMS[key]["name"]) != "running":
             needed += VMS[key]["memory"]
     free = mem_available_mib()
     report(free >= needed + 1024,
-           "free RAM " + str(free) + " MiB, demo VMs need " + str(needed) + " MiB plus headroom")
+           "free RAM " + str(free) + " MiB; " + str(len(ACTIVE_TARGETS)) + " targets need "
+           + str(needed) + " MiB plus headroom")
 
     folder = default_machine_folder()
-    disk_free = shutil_disk_free_gib(folder)
-    report(disk_free >= 20, "free disk in " + str(folder) + ": " + str(disk_free) + " GiB (need 20)")
-
-    source_info = vm_info(args.source_vm)
-    report(bool(source_info), "source Pinpoint VM '" + args.source_vm + "' exists")
-    report(DEMO_SNAPSHOT in snapshot_names(source_info),
-           "source VM has a '" + DEMO_SNAPSHOT + "' snapshot (see README step 1)")
-
-    for key in ("base", "web01", "infra01", "pinpoint"):
-        state = vm_state(VMS[key]["name"])
-        report(True, VMS[key]["name"] + ": " + state, blocking=False)
+    free_disk = disk_free_gib(folder)
+    report(free_disk >= 20, "free disk in " + str(folder) + ": " + str(free_disk) + " GiB (need 20)")
 
     lab_running = False
-    for key in VMS:
-        if vm_state(VMS[key]["name"]) == "running":
+    for key in ["base"] + list(TARGETS):
+        state = vm_state(VMS[key]["name"])
+        if state == "running":
             lab_running = True
+        report(True, VMS[key]["name"] + ": " + state, blocking=False)
+        leftover = folder / VMS[key]["name"]
+        if state == "missing" and leftover.exists():
+            report(False, leftover.name + ": a folder from an earlier lab is still on disk, so "
+                   "VirtualBox cannot create the VM. Delete " + str(leftover)
+                   + " (and `VBoxManage closemedium disk` any of its disks first)")
+
     busy = []
-    for port in (2200, 2201, 2202, 2203, args.ui_host_port):
+    wanted_ports = [VMS["base"]["ssh_port"]]
+    for key in ACTIVE_TARGETS:
+        wanted_ports.append(VMS[key]["ssh_port"])
+    for port in wanted_ports:
         if not port_is_free(port) and not lab_running:
             busy.append(str(port))
-    report(not busy, "host ports free (2200-2203, " + str(args.ui_host_port) + ")"
+    report(not busy, "host ports free for the management SSH forwards"
            + ("; in use: " + ", ".join(busy) if busy else ""), blocking=False)
 
     say("")
+    say("Your Pinpoint VM must be on VirtualBox internal network '" + LAN_NAME + "' with address "
+        + LAN_PREFIX + ".1/" + str(LAN_PREFIXLEN) + " (README step 1).")
     say("preflight: " + ("blocked by " + str(problems) + " item(s)" if problems else "nothing blocking"))
     return 1 if problems else 0
-
-
-def shutil_disk_free_gib(folder):
-    probe = Path(folder)
-    while not probe.exists() and probe != probe.parent:
-        probe = probe.parent
-    stats = os.statvfs(str(probe))
-    return int(stats.f_bavail * stats.f_frsize / (1024 ** 3))
 
 
 # ==========================================================
@@ -629,6 +745,7 @@ def cmd_build_base(args):
                 "--full-user-name=Pinpoint Demo", "--hostname=demo-base.lab.local",
                 "--locale=en_US", "--time-zone=UTC", "--no-install-additions",
                 "--post-install-command=" + post_install_command(public_key))
+        patch_installer_config(apply, name)
         # Disk first once installed; the empty disk falls through to the ISO the first time.
         vbox_do(apply, "modifyvm", name, "--boot1=disk", "--boot2=dvd", "--boot3=none", "--boot4=none")
 
@@ -643,11 +760,12 @@ def cmd_build_base(args):
         return 0
 
     say("Waiting for the installer (it reboots on its own)...")
-    if not wait_for_ssh(state_dir, "base", 45):
-        fail("the base VM did not answer on SSH within 45 minutes. Open its console with "
-             "`VBoxManage startvm " + name + " --type separate` to see why.")
+    if not wait_for_ssh(state_dir, "base", 45, vm_name=name):
+        fail("the base VM did not answer on SSH (it stopped, or 45 minutes passed). Open its "
+             "console with `VBoxManage startvm " + name + " --type separate`; if the installer "
+             "stopped on an error, press Enter for a shell and read /var/log/installer/.")
     say("Provisioning the base VM...")
-    run_script(state_dir, "base", BASE_SCRIPT.replace("@LAN_CIDR@", LAN_CIDR), timeout=1800)
+    run_script(state_dir, "base", BASE_SCRIPT, timeout=1800)
     ssh_run(state_dir, "base", "sudo systemctl poweroff", check=False)
     if not wait_for_state(name, "poweroff", 180):
         fail("the base VM did not power off.")
@@ -687,28 +805,21 @@ def eject_isos(name):
                 "--device", device, "--medium", "emptydrive", check=False)
 
 
-def clone_vm(apply, source, snapshot, target):
-    """Linked clone of a snapshot (small and fast), registered."""
-    if vm_exists(target):
-        say("  " + target + " already exists, keeping it.")
-        return
-    vbox_do(apply, "clonevm", source, "--snapshot", snapshot, "--options=link",
-            "--name", target, "--register")
-
-
 def create_target(args, key):
     apply = args.apply
     spec = VMS[key]
     name = spec["name"]
     state_dir = Path(args.state_dir)
-    say("Target " + key + " (" + spec["role"] + ", " + spec["ip"] + ", monitored SSH on port "
-        + str(spec.get("service_ssh_port", 22)) + "):")
+    say("Target " + key + " (" + spec["role"] + ", " + lan_ip(key) + ", " + str(spec["memory"])
+        + " MiB, monitored SSH on port " + str(service_ssh_port(key)) + "):")
     if vm_exists(name) and DEMO_SNAPSHOT in snapshot_names(vm_info(name)):
         say("  already created (snapshot '" + DEMO_SNAPSHOT + "'), keeping it.")
         return
-    clone_vm(apply, VMS["base"]["name"], BASE_SNAPSHOT, name)
+    if not vm_exists(name):
+        vbox_do(apply, "clonevm", VMS["base"]["name"], "--snapshot", BASE_SNAPSHOT,
+                "--options=link", "--name", name, "--register")
     vbox_do(apply, "modifyvm", name, "--memory", spec["memory"], "--cpus", spec["cpus"],
-            "--nic2=intnet", "--intnet2=" + LAN_NAME)
+            "--vram", 8, "--nic2=intnet", "--intnet2=" + LAN_NAME)
     set_forward(apply, name, "ssh", spec["ssh_port"], 22)
     if not apply:
         say("  then: start, apply the " + spec["role"] + " role over SSH, power off, snapshot '"
@@ -721,41 +832,22 @@ def create_target(args, key):
     if not mac:
         fail("could not read the lab NIC MAC address of " + name)
     ssh_run(state_dir, key, "sudo /usr/local/sbin/demo-role " + spec["role"] + " " + key + " "
-            + spec["ip"] + " " + mac + " " + str(spec.get("service_ssh_port", 22)), timeout=300)
+            + lan_ip(key) + " " + mac + " " + str(service_ssh_port(key)) + " " + lan_cidr(),
+            timeout=300)
     ssh_run(state_dir, key, "sudo systemctl poweroff", check=False)
     wait_for_state(name, "poweroff", 180)
     vbox_do(True, "snapshot", name, "take", DEMO_SNAPSHOT)
 
 
-def create_pinpoint(args):
-    apply = args.apply
-    spec = VMS["pinpoint"]
-    name = spec["name"]
-    say("Pinpoint server (a linked copy of '" + args.source_vm + "' at snapshot '" + DEMO_SNAPSHOT + "'):")
-    source_info = vm_info(args.source_vm)
-    require(DEMO_SNAPSHOT in snapshot_names(source_info),
-            "'" + args.source_vm + "' has no '" + DEMO_SNAPSHOT + "' snapshot. Do README step 1 first.", apply)
-    if vm_exists(name) and DEMO_SNAPSHOT in snapshot_names(vm_info(name)):
-        say("  already created (snapshot '" + DEMO_SNAPSHOT + "'), keeping it.")
-        return
-    clone_vm(apply, args.source_vm, DEMO_SNAPSHOT, name)
-    vbox_do(apply, "modifyvm", name, "--memory", spec["memory"], "--cpus", spec["cpus"],
-            "--nic1=nat", "--nic2=intnet", "--intnet2=" + LAN_NAME)
-    set_forward(apply, name, "ui", args.ui_host_port, args.ui_guest_port)
-    set_forward(apply, name, "ssh", spec["ssh_port"], 22)
-    vbox_do(apply, "snapshot", name, "take", DEMO_SNAPSHOT)
-
-
 def cmd_create(args):
-    """Create the target VMs and the Pinpoint server copy."""
+    """Create the target VMs as linked clones of the base."""
     apply = args.apply
     ensure_credentials(args.state_dir, apply)
     base = VMS["base"]["name"]
     require(BASE_SNAPSHOT in snapshot_names(vm_info(base)),
             "base VM not built. Run: python3 demo_lab.py build-base --apply", apply)
-    for key in TARGETS:
+    for key in ACTIVE_TARGETS:
         create_target(args, key)
-    create_pinpoint(args)
     if apply:
         say("")
         say("Created. Start the lab with: python3 demo_lab.py up --gui")
@@ -767,12 +859,24 @@ def cmd_create(args):
 # ==========================================================
 
 def demo_vm_keys():
-    """Existing demo VMs, targets first so Pinpoint finds them at its first scan."""
+    """The selected targets that exist."""
     keys = []
-    for key in TARGETS + ("pinpoint",):
+    for key in ACTIVE_TARGETS:
         if vm_exists(VMS[key]["name"]):
             keys.append(key)
     return keys
+
+
+def start_vm(name, session):
+    """startvm, retrying while VirtualBox still holds the session of a VM just powered off."""
+    for attempt in range(6):
+        result = vbox_do(True, "startvm", name, "--type", session, check=False)
+        if result.returncode == 0:
+            return
+        if "locked by a session" not in result.stderr or attempt == 5:
+            fail("VBoxManage startvm " + name + " failed:\n" + result.stderr.strip())
+        say("  " + name + " is still being released by VirtualBox; retrying in 5 s")
+        time.sleep(5)
 
 
 def cmd_up(args):
@@ -783,8 +887,8 @@ def cmd_up(args):
             say(key + ": already running")
             continue
         say(key + ": starting (" + session + ")")
-        vbox_do(True, "startvm", name, "--type", session)
-    say("Pinpoint UI (once booted): http://127.0.0.1:" + str(args.ui_host_port))
+        start_vm(name, session)
+    say("Lab network '" + LAN_NAME + "' " + lan_cidr() + ": point your Pinpoint VM's discovery at it.")
     return 0
 
 
@@ -804,14 +908,6 @@ def cmd_down(args):
             say(key + ": did not stop in 60 s, powering off")
             vbox_do(True, "controlvm", name, "poweroff", check=False)
     return 0
-
-
-def pinpoint_ui_status(port):
-    try:
-        with urllib.request.urlopen("http://127.0.0.1:" + str(port) + "/", timeout=2) as reply:
-            return "UI answers (HTTP " + str(reply.status) + ")"
-    except Exception as error:
-        return "UI not answering (" + type(error).__name__ + ")"
 
 
 def collect_target(state_dir, key):
@@ -846,16 +942,12 @@ def colour(text, code, use_colour):
     return "\033[" + code + "m" + text + "\033[0m"
 
 
-def render_wall(results, pinpoint_state, ui_text, use_colour):
+def render_wall(results, use_colour):
     lines = []
-    lines.append(colour("Pinpoint demo lab", "1", use_colour) + "   " + time.strftime("%H:%M:%S"))
-    lines.append("")
-    state_text = pinpoint_state
-    if pinpoint_state == "running":
-        state_text = colour("running", "1;32", use_colour) + "   " + ui_text
-    lines.append("pinpoint  10.77.0.1   " + state_text)
+    lines.append(colour("Pinpoint demo lab", "1", use_colour) + "   " + time.strftime("%H:%M:%S")
+                 + "   network " + LAN_NAME + " " + lan_cidr())
     for result in results:
-        spec = VMS[result["key"]]
+        key = result["key"]
         state = result["state"]
         shown = colour(state, "1;32" if state == "running" else "1;31", use_colour)
         extra = ""
@@ -864,7 +956,7 @@ def render_wall(results, pinpoint_state, ui_text, use_colour):
         if result.get("note"):
             extra = "   " + result["note"]
         lines.append("")
-        lines.append(result["key"].ljust(9) + " " + spec["ip"] + "   " + shown + extra)
+        lines.append(key.ljust(9) + " " + lan_ip(key).ljust(11) + " " + shown + extra)
         for label, port, status in result["services"]:
             ok = status == "active"
             mark = colour("UP  ", "1;32", use_colour) if ok else colour("DOWN", "1;31", use_colour)
@@ -874,20 +966,17 @@ def render_wall(results, pinpoint_state, ui_text, use_colour):
 
 def build_wall(args):
     use_colour = sys.stdout.isatty() and not args.no_colour
-    keys = []
-    for key in TARGETS:
-        if vm_exists(VMS[key]["name"]):
-            keys.append(key)
+    keys = demo_vm_keys()
     results = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         futures = []
         for key in keys:
             futures.append(pool.submit(collect_target, args.state_dir, key))
         for future in futures:
             results.append(future.result())
-    pinpoint_state = vm_state(VMS["pinpoint"]["name"])
-    ui_text = pinpoint_ui_status(args.ui_host_port) if pinpoint_state == "running" else ""
-    return render_wall(results, pinpoint_state, ui_text, use_colour)
+    if not results:
+        return "No demo VMs yet. Run: python3 demo_lab.py create --apply"
+    return render_wall(results, use_colour)
 
 
 def cmd_status(args):
@@ -948,7 +1037,7 @@ def cmd_fix(args):
     name = VMS[args.vm]["name"]
     if args.service == "host":
         say(args.vm + ": starting")
-        vbox_do(True, "startvm", name, "--type", "gui" if args.gui else "headless")
+        start_vm(name, "gui" if args.gui else "headless")
         return 0
     units = []
     if args.service == "all":
@@ -967,12 +1056,12 @@ def cmd_ssh_port(args):
 
     Pinpoint keeps preferring the port it knew until that port has been missing
     for five scans, so use this to show the change on the wall; do not rely on it
-    for an NCPA deployment right after the move. infra01 already starts on 2222.
+    for an NCPA deployment right after the move. legacy01 already starts on 2222.
     """
     port = args.port
     if port != 22 and not 1024 <= port <= 65535:
         fail("use 22 or a port from 1024 to 65535")
-    ip = VMS[args.vm]["ip"]
+    ip = lan_ip(args.vm)
     remote = (
         "printf 'ListenAddress " + ip + "\\nPort " + str(port) + "\\nPasswordAuthentication yes\\n' "
         "| sudo tee /etc/ssh/sshd_config.d/10-demo.conf >/dev/null && "
@@ -1009,7 +1098,10 @@ def cmd_creds(args):
         fail("no credentials yet. Run build-base first.")
     say("Username: " + DEMO_USER)
     say("Password: " + pw.read_text().strip())
-    say("Targets: " + ", ".join(VMS[key]["ip"] + " (" + key + ")" for key in TARGETS))
+    parts = []
+    for key in ACTIVE_TARGETS:
+        parts.append(lan_ip(key) + " (" + key + ")")
+    say("Targets: " + ", ".join(parts))
     return 0
 
 
@@ -1018,7 +1110,7 @@ def cmd_creds(args):
 # ==========================================================
 
 def cmd_snapshot(args):
-    """Re-take '<demo-ready>' on powered-off demo VMs (e.g. after tuning Pinpoint)."""
+    """Re-take the clean snapshot on powered-off targets."""
     apply = args.apply
     keys = args.vms or demo_vm_keys()
     for key in keys:
@@ -1031,14 +1123,31 @@ def cmd_snapshot(args):
     return 0
 
 
+def confirm(args, question):
+    """Ask the person at the terminal before a destructive step; --yes skips it."""
+    if not args.apply or getattr(args, "yes", False):
+        return
+    if not sys.stdin.isatty():
+        fail("this needs a person at the terminal to confirm, or pass --yes.")
+    answer = input(question + " Type 'yes' to continue: ")
+    if answer.strip().lower() != "yes":
+        say("Cancelled. Nothing was changed.")
+        sys.exit(1)
+
+
 def cmd_reset(args):
-    """Return every demo VM to '<demo-ready>' (clean state for the next run)."""
+    """Return every selected target to its clean snapshot (a clean state for the next run)."""
     apply = args.apply
+    keys = demo_vm_keys()
+    if keys:
+        confirm(args, "This discards everything changed in " + ", ".join(keys) + " since their clean snapshot.")
     for key in demo_vm_keys():
         name = VMS[key]["name"]
         say(key + ":")
         if vm_state(name) == "running":
             vbox_do(apply, "controlvm", name, "poweroff")
+            if apply:
+                wait_for_state(name, "poweroff", 60)
         vbox_do(apply, "snapshot", name, "restore", DEMO_SNAPSHOT)
     if apply and args.up:
         return cmd_up(args)
@@ -1071,9 +1180,15 @@ def remove_installer_leftovers(apply, name):
 
 
 def cmd_destroy(args):
-    """Delete the demo VMs and their disks. Never touches other VMs."""
+    """Delete the demo VMs and their disks (all targets, then the base). Never touches other VMs."""
     apply = args.apply
-    order = ("web01", "infra01", "pinpoint", "base")
+    order = list(reversed(TARGETS)) + ["base"]
+    existing = []
+    for key in order:
+        if vm_exists(VMS[key]["name"]):
+            existing.append(VMS[key]["name"])
+    if existing:
+        confirm(args, "This deletes " + ", ".join(existing) + " and their disks.")
     for key in order:
         name = VMS[key]["name"]
         if not name.startswith(PREFIX + "-"):
@@ -1112,26 +1227,62 @@ def cmd_self_test(args):
         for label, _unit, _port in ROLE_SERVICES[role]:
             labels.append(label)
         check("ssh" in labels, role + " has ssh")
+        # Every service must be one Pinpoint monitors on its own after discovery.
+        for label in labels:
+            check(label in ("ssh", "http", "https", "snmp"), role + ": " + label + " is auto-monitored")
     check(unit_for("web01", "http") == "nginx", "unit_for")
-    check(VMS["infra01"]["service_ssh_port"] != 22, "infra01 monitored SSH is non-standard")
+    check(service_ssh_port("legacy01") != 22, "legacy01 monitored SSH is non-standard")
 
     decoded = base64.b64decode(post_install_command("ssh-ed25519 AAAA test").split()[1]).decode()
     check("ssh-ed25519 AAAA test" in decoded and "NOPASSWD" in decoded, "post_install_command")
 
-    names_seen = set()
+    ports = set()
+    hosts = set()
     for key in VMS:
         check(VMS[key]["name"].startswith(PREFIX + "-"), key + " name prefix")
-        check(VMS[key]["ssh_port"] not in names_seen, key + " unique ssh port")
-        names_seen.add(VMS[key]["ssh_port"])
+        check(VMS[key]["ssh_port"] not in ports, key + " unique management port")
+        ports.add(VMS[key]["ssh_port"])
+    for key in TARGETS:
+        check(VMS[key]["host"] not in hosts and 2 <= VMS[key]["host"] <= 14, key + " unique lab address inside the /28")
+        hosts.add(VMS[key]["host"])
+        check(VMS[key]["role"] in ROLE_SERVICES, key + " has a known role")
 
-    shell_ok = True
+    check("disable_components" in INSTALLER_APT and "install-server: true" in INSTALLER_APT,
+          "installer apt section limits components and installs openssh-server")
+    check(INSTALLER_APT.startswith(VBOX_DEFAULT_APT.split("\n")[0]), "installer apt section replaces the same key")
+
+    script_ok = True
     if shutil_which("bash"):
-        script = BASE_SCRIPT.replace("@LAN_CIDR@", LAN_CIDR)
-        outcome = subprocess.run(["bash", "-n"], input=script, capture_output=True, text=True)
+        outcome = subprocess.run(["bash", "-n"], input=BASE_SCRIPT, capture_output=True, text=True)
         if outcome.returncode != 0:
-            shell_ok = False
+            script_ok = False
             failures.append("bash -n base script: " + outcome.stderr.strip())
-    check(shell_ok, "guest scripts parse")
+    check(script_ok, "guest scripts parse")
+
+    # The confirmation: only an explicit "yes" goes ahead, and a preview never asks.
+    import builtins
+    saved_input, saved_isatty = builtins.input, sys.stdin.isatty
+    sys.stdin.isatty = lambda: True
+    try:
+        ask = argparse.Namespace(apply=True, yes=False)
+        builtins.input = lambda prompt="": "yes"
+        confirm(ask, "q")
+        check(True, "confirm accepts yes")
+        builtins.input = lambda prompt="": "no"
+        stopped = False
+        with contextlib.redirect_stdout(io.StringIO()):
+            try:
+                confirm(ask, "q")
+            except SystemExit:
+                stopped = True
+        check(stopped, "confirm stops on anything but yes")
+        builtins.input = lambda prompt="": (_ for _ in ()).throw(AssertionError("asked in a preview"))
+        confirm(argparse.Namespace(apply=False, yes=False), "q")
+        confirm(argparse.Namespace(apply=True, yes=True), "q")
+        check(True, "confirm never asks in a preview or with --yes")
+    finally:
+        builtins.input = saved_input
+        sys.stdin.isatty = saved_isatty
 
     # The printed plan for `create` with nothing built yet: no VBoxManage call is made.
     saved = (vbox_read, vm_info, vm_exists, ensure_credentials)
@@ -1141,19 +1292,18 @@ def cmd_self_test(args):
     globals()["ensure_credentials"] = lambda state_dir, apply: None
     buffer = io.StringIO()
     try:
-        plan_args = argparse.Namespace(apply=False, state_dir="/nonexistent", source_vm="Src",
-                                       ui_guest_port=80, ui_host_port=DEFAULT_UI_HOST_PORT)
+        plan_args = argparse.Namespace(apply=False, state_dir="/nonexistent")
         with contextlib.redirect_stdout(buffer):
             cmd_create(plan_args)
     finally:
         (globals()["vbox_read"], globals()["vm_info"], globals()["vm_exists"],
          globals()["ensure_credentials"]) = saved
     plan = buffer.getvalue()
-    check("--options=link" in plan and "clonevm" in plan, "create plans linked clones")
+    check(plan.count("--options=link") == len(ACTIVE_TARGETS), "create plans one linked clone per target")
     check("--nat-pf1 delete ssh" in plan and "delete=ssh" not in plan, "create drops inherited forwards (7.2 syntax)")
-    check("--nat-pf1 delete ui" in plan, "pinpoint copy drops an inherited ui forward")
     check("--intnet2=" + LAN_NAME in plan, "create attaches the lab network")
-    check("--nat-pf1=ui,tcp,127.0.0.1," + str(DEFAULT_UI_HOST_PORT) in plan, "create forwards the UI")
+    check("--memory 512" in plan, "targets are small")
+    check("pinpoint-demo-server" not in plan, "no Pinpoint VM is created")
 
     if failures:
         for item in failures:
@@ -1179,9 +1329,13 @@ def build_parser():
     parser = argparse.ArgumentParser(description="Pinpoint demo lab (VirtualBox).")
     parser.add_argument("--state-dir", default=str(DEFAULT_STATE), help="where the SSH key and password live")
     parser.add_argument("--iso", default=str(DEFAULT_ISO), help="Ubuntu 24.04 live-server ISO for build-base")
-    parser.add_argument("--source-vm", default=DEFAULT_SOURCE_VM, help="your installed Pinpoint VM (cloned, never changed)")
-    parser.add_argument("--ui-guest-port", type=int, default=80, help="port the Pinpoint web UI listens on inside its VM")
-    parser.add_argument("--ui-host-port", type=int, default=DEFAULT_UI_HOST_PORT, help="127.0.0.1 port that reaches the UI")
+    parser.add_argument("--lan-name", default=DEFAULT_LAN_NAME,
+                        help="VirtualBox internal network the targets join (your Pinpoint VM must be on it too)")
+    parser.add_argument("--lan-prefix", default=DEFAULT_LAN_PREFIX,
+                        help="first three octets of the lab /28; targets use .2-.6, leave .1 for Pinpoint")
+    parser.add_argument("--targets", default="",
+                        help="comma-separated subset of: " + ",".join(TARGETS) + " (default: all)")
+    parser.add_argument("--memory", type=int, default=DEFAULT_TARGET_MEMORY, help="MiB of RAM per target")
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add(name, handler, help_text):
@@ -1193,10 +1347,10 @@ def build_parser():
 
     add("preflight", cmd_preflight, "check this machine and the VMs (read-only)")
     add("build-base", cmd_build_base, "install and provision the base Ubuntu VM")
-    add("create", cmd_create, "create web01, infra01 and the Pinpoint server copy")
-    up = add("up", cmd_up, "start the lab")
+    add("create", cmd_create, "create the target servers from the base")
+    up = add("up", cmd_up, "start the targets")
     up.add_argument("--gui", action="store_true", help="open a console window per VM")
-    add("down", cmd_down, "shut the lab down")
+    add("down", cmd_down, "shut the targets down")
     add("status", cmd_status, "one-off status table")
     wall = add("wall", cmd_wall, "live status board for the presenter's screen")
     wall.add_argument("--once", action="store_true")
@@ -1217,13 +1371,15 @@ def build_parser():
     load.add_argument("--seconds", default=90)
     shell = add("shell", cmd_shell, "management shell in a target")
     shell.add_argument("vm", choices=TARGETS)
-    snap = add("snapshot", cmd_snapshot, "re-take the clean snapshot on powered-off VMs")
-    snap.add_argument("vms", nargs="*", choices=list(TARGETS) + ["pinpoint"])
-    reset = add("reset", cmd_reset, "restore every VM to the clean snapshot")
+    snap = add("snapshot", cmd_snapshot, "re-take the clean snapshot on powered-off targets")
+    snap.add_argument("vms", nargs="*", choices=list(TARGETS))
+    reset = add("reset", cmd_reset, "restore every target to the clean snapshot")
     reset.add_argument("--up", action="store_true", help="start the lab afterwards")
     reset.add_argument("--gui", action="store_true")
+    reset.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     add("creds", cmd_creds, "print the login for the NCPA deployment wizard")
-    add("destroy", cmd_destroy, "delete the demo VMs")
+    destroy = add("destroy", cmd_destroy, "delete the demo VMs")
+    destroy.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     add("self-test", cmd_self_test, "check the script's own logic")
     return parser
 
@@ -1234,6 +1390,7 @@ def main(argv=None):
         args.apply = True
     if not hasattr(args, "gui"):
         args.gui = False
+    configure(args)
     return args.handler(args)
 
 

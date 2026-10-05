@@ -7,7 +7,7 @@ result, and deletes it. It never installs an OS:
 
 * Stage A runs build-base, create, reset, snapshot and destroy for real, but
   never starts a VM and fakes the steps that need a running guest (SSH).
-* Stage B starts the two empty targets for a few seconds to check start/stop,
+* Stage B starts two of the empty targets for a few seconds to check start/stop,
   the 127.0.0.1-only NAT forwards and the wall's handling of a guest that does
   not answer. They have no OS, so they only sit at "no bootable medium".
 
@@ -30,7 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import demo_lab as d
 
-MIN_BOOT_RAM_MIB = 2600     # two 1 GiB guests plus headroom
+MIN_BOOT_RAM_MIB = 1600     # two small guests plus headroom
 results = []
 
 
@@ -89,33 +89,31 @@ def stage_a_build_and_create(args):
     check("installer script carries the post-install command (key + sudo)",
           installer_post_command_ok(Path(info["CfgFile"]).parent, public_key))
 
-    title("A2. create: linked clones (the Pinpoint source is the base with a demo-ready snapshot)")
-    d.vbox_do(True, "snapshot", base, "take", d.DEMO_SNAPSHOT)
+    title("A2. create: one linked clone per target")
     try:
         d.cmd_create(args)
     except SystemExit as stop:
         check("create completed", False, "exit " + str(stop.code))
         raise
     check("create completed", True)
-    for key in d.TARGETS:
+    ports_seen = []
+    for key in d.ACTIVE_TARGETS:
         spec = d.VMS[key]
         name = spec["name"]
         vm = d.vm_info(name)
+        check(key + ": registered", d.vm_exists(name))
         check(key + ": NIC2 is the lab network", vm.get("nic2") == "intnet" and vm.get("intnet2") == d.LAN_NAME)
         check(key + ": exactly one forward, to its own port",
               forwards(name) == ["ssh,tcp,127.0.0.1," + str(spec["ssh_port"]) + ",,22"], forwards(name))
-        check(key + ": memory and CPUs", vm.get("memory") == str(spec["memory"]) and vm.get("cpus") == str(spec["cpus"]))
+        ports_seen.append(spec["ssh_port"])
+        check(key + ": small (512 MiB, 1 CPU, 8 MiB video)",
+              vm.get("memory") == "512" and vm.get("cpus") == "1" and vm.get("vram") == "8",
+              (vm.get("memory"), vm.get("cpus"), vm.get("vram")))
         check(key + ": has the demo-ready snapshot", d.DEMO_SNAPSHOT in d.snapshot_names(vm))
         check(key + ": lab MAC readable", bool(re.fullmatch(r"([0-9a-f]{2}:){5}[0-9a-f]{2}", d.lan_mac(name))))
-    spec = d.VMS["pinpoint"]
-    vm = d.vm_info(spec["name"])
-    wanted = sorted(["ui,tcp,127.0.0.1," + str(args.ui_host_port) + ",," + str(args.ui_guest_port),
-                     "ssh,tcp,127.0.0.1," + str(spec["ssh_port"]) + ",,22"])
-    check("pinpoint copy: NIC1 NAT, NIC2 lab network",
-          vm.get("nic1") == "nat" and vm.get("nic2") == "intnet" and vm.get("intnet2") == d.LAN_NAME)
-    check("pinpoint copy: ui and ssh forwards replaced the inherited ones", forwards(spec["name"]) == wanted, forwards(spec["name"]))
-    check("pinpoint copy: memory and CPUs", vm.get("memory") == str(spec["memory"]) and vm.get("cpus") == str(spec["cpus"]))
-    check("pinpoint copy: has the demo-ready snapshot", d.DEMO_SNAPSHOT in d.snapshot_names(vm))
+    check("management ports are all different", len(set(ports_seen)) == len(ports_seen), ports_seen)
+    registered = d.registered_vms()
+    check("no Pinpoint VM is created", (d.PREFIX + "-server") not in registered, registered)
 
     title("A3. create again changes nothing")
     before = sorted(d.registered_vms())
@@ -124,33 +122,45 @@ def stage_a_build_and_create(args):
 
 
 def stage_b_boot(args, real_ssh_run, fake_ssh_run, guard):
-    web, infra = d.VMS["web01"]["name"], d.VMS["infra01"]["name"]
-    title("B. start the two empty targets for a few seconds")
+    first, last = d.ACTIVE_TARGETS[0], d.ACTIVE_TARGETS[-1]
+    names = [d.VMS[first]["name"], d.VMS[last]["name"]]
+    ports = [d.VMS[first]["ssh_port"], d.VMS[last]["ssh_port"]]
+    title("B. start " + first + " and " + last + " for a few seconds (no OS installed)")
     guard["on"] = False
     d.ssh_run = real_ssh_run           # the wall must meet a real guest that does not answer
-    d.vbox_do(True, "startvm", web, "--type", "headless")
-    d.vbox_do(True, "startvm", infra, "--type", "headless")
+    for name in names:
+        d.vbox_do(True, "startvm", name, "--type", "headless")
     time.sleep(12)
-    check("both targets report running", d.vm_state(web) == "running" and d.vm_state(infra) == "running")
+    check("both report running", d.vm_state(names[0]) == "running" and d.vm_state(names[1]) == "running")
     listening = subprocess.run(["ss", "-ltn"], capture_output=True, text=True).stdout
-    check("host listens on 127.0.0.1:2202 and :2203", "127.0.0.1:2202" in listening and "127.0.0.1:2203" in listening)
+    for port in ports:
+        check("host listens on 127.0.0.1:" + str(port), "127.0.0.1:" + str(port) in listening)
     wide = []
     for line in listening.splitlines():
-        if (":2202 " in line or ":2203 " in line) and "127.0.0.1" not in line:
-            wide.append(line)
+        for port in ports:
+            if (":" + str(port) + " ") in line and "127.0.0.1" not in line:
+                wide.append(line)
     check("the forwards are bound to 127.0.0.1 only", not wide, wide)
     board = d.build_wall(args)
     print("  ---- wall ----")
     for line in board.splitlines():
         print("  | " + line)
-    check("wall lists both targets as running", board.count("running") >= 2)
+    check("wall lists the two running targets", board.count("running") >= 2)
     check("wall reports an unreachable guest without crashing", "not up yet" in board or "timed out" in board)
-    d.vbox_do(True, "controlvm", web, "poweroff")
-    d.vbox_do(True, "controlvm", infra, "poweroff")
+    check("wall lists every target", all_targets_listed(board))
+    for name in names:
+        d.vbox_do(True, "controlvm", name, "poweroff")
     d.ssh_run = fake_ssh_run
     time.sleep(6)
-    check("both targets power off", d.vm_state(web) == "poweroff" and d.vm_state(infra) == "poweroff")
+    check("both power off", d.vm_state(names[0]) == "poweroff" and d.vm_state(names[1]) == "poweroff")
     guard["on"] = True
+
+
+def all_targets_listed(board):
+    for key in d.ACTIVE_TARGETS:
+        if key not in board:
+            return False
+    return True
 
 
 def stage_a_reset_and_snapshot(args):
@@ -161,25 +171,25 @@ def stage_a_reset_and_snapshot(args):
         check("reset completed", False, "exit " + str(stop.code))
         return
     check("reset completed", True)
-    for key in d.TARGETS + ("pinpoint",):
+    for key in d.ACTIVE_TARGETS:
         name = d.VMS[key]["name"]
         check(key + ": poweroff with demo-ready after reset",
               d.vm_state(name) == "poweroff" and d.DEMO_SNAPSHOT in d.snapshot_names(d.vm_info(name)))
-    args.vms = ["web01"]
+    args.vms = [d.ACTIVE_TARGETS[0]]
     try:
         d.cmd_snapshot(args)
         check("snapshot re-take completed", True)
     except SystemExit as stop:
         check("snapshot re-take completed", False, "exit " + str(stop.code))
-    check("web01 keeps demo-ready after the re-take",
-          d.DEMO_SNAPSHOT in d.snapshot_names(d.vm_info(d.VMS["web01"]["name"])))
+    check(d.ACTIVE_TARGETS[0] + " keeps demo-ready after the re-take",
+          d.DEMO_SNAPSHOT in d.snapshot_names(d.vm_info(d.VMS[d.ACTIVE_TARGETS[0]]["name"])))
     args.vms = []
 
 
 def main():
     parser = argparse.ArgumentParser(description="Smoke test for demo_lab.py (real VirtualBox, no OS install).")
     parser.add_argument("--iso", default=str(d.DEFAULT_ISO))
-    parser.add_argument("--no-boot", action="store_true", help="skip stage B (needs about 2.6 GiB free RAM)")
+    parser.add_argument("--no-boot", action="store_true", help="skip stage B (needs about 1.6 GiB free RAM)")
     options = parser.parse_args()
 
     existing = []
@@ -196,9 +206,14 @@ def main():
         return 2
 
     state_dir = tempfile.mkdtemp(prefix="demo-smoke-")
-    args = argparse.Namespace(apply=True, state_dir=state_dir, iso=options.iso, source_vm=d.VMS["base"]["name"],
-                              ui_guest_port=80, ui_host_port=d.DEFAULT_UI_HOST_PORT, up=False, gui=False,
-                              vms=[], no_colour=True)
+    args = d.build_parser().parse_args(["--state-dir", state_dir, "--iso", options.iso, "status"])
+    args.apply = True
+    args.gui = False
+    args.up = False
+    args.yes = True          # the test deletes its own VMs without asking
+    args.vms = []
+    args.no_colour = True
+    d.configure(args)
 
     # Never boot a VM and fake the guest side, except where stage B says otherwise.
     guard = {"on": True}
