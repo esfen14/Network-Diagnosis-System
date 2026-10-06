@@ -18,8 +18,10 @@ from app.network_discovery.port_lifecycle import (
     add_user_port,
     mark_ncpa_port,
     process_device_ports,
+    promote_identified_ports,
     set_port_state,
 )
+from app.plugin_models import Plugin, PluginSource, PluginStatus, PluginType
 from app.system_models import (
     AgentStatus,
     NCPADeployment,
@@ -29,6 +31,9 @@ from app.system_models import (
     PortState,
 )
 from tests.support.identity_helpers import MAC_1, NET, make_status, patched_config, run_scan, scan
+
+# Ports are monitored only when their plugin is enabled in Plugin Manager.
+pytestmark = pytest.mark.usefixtures("monitoring_plugins")
 
 
 @pytest.fixture
@@ -95,12 +100,30 @@ class TestNewPorts:
         assert tcp_port(device, 9999).Port_State is PortState.SUGGESTED
         assert tcp_port(device, 8080).Plugin_Name is None
 
-    def test_auto_monitor_list_is_configurable(self, app, device):
-        with patched_config(app, AUTO_MONITOR_SERVICES=["ssh"]):
-            scan_ports(device, tcp={22: "ssh", 80: "http"})
+    def test_plugin_manager_is_the_switch(self, device):
+        http_plugin = db.session.scalar(sa.select(Plugin).where(Plugin.Name == "check_http"))
+        http_plugin.Status = PluginStatus.DISABLED
+        db.session.commit()
+
+        scan_ports(device, tcp={22: "ssh", 80: "http"})
 
         assert tcp_port(device, 22).Port_State is PortState.MONITORED
         assert tcp_port(device, 80).Port_State is PortState.SUGGESTED
+        assert tcp_port(device, 80).Plugin_Name is None
+
+    def test_enabling_a_plugin_promotes_its_identified_ports(self, device):
+        scan_ports(device, tcp={3306: "mysql"})
+        assert tcp_port(device, 3306).Port_State is PortState.SUGGESTED
+        assert promote_identified_ports() == 0
+
+        db.session.add(Plugin(Name="check_mysql", Plugin_Type=PluginType.NAGIOS,
+                              Source=PluginSource.BASELINE_ISO, Status=PluginStatus.ENABLED))
+        db.session.commit()
+
+        assert promote_identified_ports() == 1
+        db.session.commit()
+        assert tcp_port(device, 3306).Port_State is PortState.MONITORED
+        assert tcp_port(device, 3306).Plugin_Name == "mysql"
 
     def test_ephemeral_ports_are_never_recorded(self, device):
         scan_ports(device, tcp={40000: "http", 55000: "ssh", 6000: "http"})

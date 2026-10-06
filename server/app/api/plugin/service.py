@@ -13,17 +13,19 @@ per_page/pages/total/has_next/has_prev response shape).
 from datetime import datetime, timezone
 
 import sqlalchemy as sa
+from flask import current_app
 
 from app import db
+from app.history_models import ServiceStatus
 from app.plugin_models import (
     Plugin, PluginType, PluginStatus, PluginSource,
     PluginVersion,
     PluginCommand, PluginCommandOverride,
     PluginDependency, DependencyType, DependencyStatus,
-    PluginConfiguration, PluginConfigurationStatus,
+    PluginConfiguration, PluginConfigurationOrigin, PluginConfigurationStatus,
     PluginHistory, PluginHistoryAction, PluginActionResult,
 )
-from app.system_models import ActivityLog, User, NetworkDiscovery
+from app.system_models import ActivityLog, User, NetworkDiscovery, PortState
 from app.network_discovery.device_identity import nagios_host_name
 from app.api.plugin.nagios_validator import validate_nagios_configuration
 from app.api.plugin.command_validator import validate_command_definition
@@ -43,10 +45,9 @@ from app.api.plugin.plugin_update import (
     NoBackupAvailableError,
 )
 from app.api.plugin.scanner import extract_version
-from app.api.plugin.monitoring_config import (
-    generate_command_name, generate_plugin_services_cfg, write_staged_cfg,
-    ensure_cfg_file_directive, validate_plugin_services_config, apply_plugin_services_config,
-)
+from app.api.plugin.plugin_descriptions import documentation_url, get_catalog_entry
+from app.network_discovery.plugin_registry import is_service_driven, plugin_for_definition
+from app.network_discovery.port_lifecycle import CONFIG_STATES, port_model, set_port_state
 import os
 
 
@@ -89,20 +90,65 @@ class InvalidQueryError(ValueError):
     pass
 
 
-def serialize_plugin_summary_row(plugin):
-    """Shape used by the inventory list (one row per plugin)."""
+def catalog_fallback(plugin, field):
+    """
+    A plugin's Description or Category, falling back to the bundled catalog when the row has none
+    (rows created before descriptions were stored stay empty until a plugin scan fills them).
+    """
+    value = plugin.Description if field == "description" else plugin.Category
+    if value:
+        return value
+    entry = get_catalog_entry(plugin.Name)
+    return entry[field] if entry else None
+
+
+def serialize_plugin_summary_row(plugin, usage=None):
+    """
+    Shape used by the inventory list (one row per plugin). usage is
+    {"services": n, "devices": m} for the applied services behind the plugin
+    (zero when omitted). service_driven is false for plugins that check no
+    discovered port; those cannot be enabled or disabled.
+    """
+    usage = usage or {}
     return {
         "id": plugin.PluginID,
         "name": plugin.Name,
         "display_name": plugin.Display_Name,
-        "description": plugin.Description,
-        "category": plugin.Category,
+        "description": catalog_fallback(plugin, "description"),
+        "category": catalog_fallback(plugin, "category"),
         "type": plugin.Plugin_Type.value,
         "source": plugin.Source.value,
         "status": plugin.Status.value,
         "current_version": plugin.Current_Version,
         "updated_at": plugin.Updated_At.isoformat(),
+        "service_driven": is_service_driven(plugin.Name),
+        "monitoring_usage": {
+            "services": usage.get("services", 0),
+            "devices": usage.get("devices", 0),
+        },
     }
+
+
+def get_applied_usage(plugin_ids):
+    """
+    Return {plugin id: {"services": n, "devices": m}} for the Applied
+    configurations behind each of plugin_ids (plugins with none are absent).
+    """
+    if not plugin_ids:
+        return {}
+    rows = db.session.execute(
+        sa.select(
+            PluginConfiguration.PluginID,
+            sa.func.count(),
+            sa.func.count(sa.distinct(PluginConfiguration.NetDiscoveryID)),
+        )
+        .where(
+            PluginConfiguration.PluginID.in_(plugin_ids),
+            PluginConfiguration.Status == PluginConfigurationStatus.APPLIED,
+        )
+        .group_by(PluginConfiguration.PluginID)
+    ).all()
+    return {plugin_id: {"services": services, "devices": devices} for plugin_id, services, devices in rows}
 
 
 def get_plugin_inventory(page, per_page, search, plugin_type, status, sort_by, order):
@@ -169,89 +215,8 @@ def get_plugin_inventory(page, per_page, search, plugin_type, status, sort_by, o
 
     result = db.paginate(query, page=page, per_page=per_page, error_out=False)
 
-    items = [serialize_plugin_summary_row(p) for p in result.items]
-
-    return {
-        "items": items,
-        "page": result.page,
-        "per_page": result.per_page,
-        "pages": result.pages,
-        "total": result.total,
-        "has_next": result.has_next,
-        "has_prev": result.has_prev,
-    }
-
-
-def get_running_checks(page, per_page, search):
-    """
-    Paginated list of monitoring checks that are live in Nagios right
-    now: every PluginConfiguration with Status APPLIED, i.e. one plugin
-    wired to one target device as a Nagios service. Backs the Plugin
-    Manager's "Currently Running" tab. Pending and failed configurations
-    are left out since they aren't running.
-
-    Args:
-        page, per_page: pagination.
-        search: matched against plugin name, service description,
-            device hostname and IP (case-insensitive).
-
-    Returns: dict shaped for success() -> items/page/per_page/pages/
-        total/has_next/has_prev.
-
-    Raises: InvalidQueryError for invalid pagination.
-    """
-    if page < 1:
-        raise InvalidQueryError("Page must be greater than 0")
-    if per_page < 1 or per_page > 100:
-        raise InvalidQueryError("per_page must be between 1 and 100")
-
-    query = (
-        sa.select(PluginConfiguration)
-        .join(Plugin, Plugin.PluginID == PluginConfiguration.PluginID)
-        .outerjoin(NetworkDiscovery, NetworkDiscovery.NetDiscoveryID == PluginConfiguration.NetDiscoveryID)
-        .where(PluginConfiguration.Status == PluginConfigurationStatus.APPLIED)
-    )
-
-    if search:
-        query = query.where(
-            sa.or_(
-                Plugin.Name.ilike(f"%{search}%"),
-                Plugin.Display_Name.ilike(f"%{search}%"),
-                PluginConfiguration.Service_Description.ilike(f"%{search}%"),
-                NetworkDiscovery.Hostname.ilike(f"%{search}%"),
-                NetworkDiscovery.Nagios_Host_Name.ilike(f"%{search}%"),
-                NetworkDiscovery.IP_Address.ilike(f"%{search}%"),
-            )
-        )
-
-    query = query.order_by(
-        Plugin.Name.asc(),
-        NetworkDiscovery.Hostname.asc(),
-        PluginConfiguration.Service_Description.asc(),
-    )
-
-    result = db.paginate(query, page=page, per_page=per_page, error_out=False)
-
-    items = []
-    for config in result.items:
-        plugin = config.Plugin_Configuration
-        target = config.Target_Device
-        items.append({
-            "id": config.PluginConfigurationID,
-            "plugin": {
-                "id": plugin.PluginID,
-                "name": plugin.Name,
-                "display_name": plugin.Display_Name,
-                "status": plugin.Status.value,
-            },
-            "target": {
-                "id": target.NetDiscoveryID,
-                "hostname": nagios_host_name(target),
-                "ip_address": target.IP_Address,
-            } if target else None,
-            "service_description": config.Service_Description,
-            "applied_at": config.Updated_At.isoformat(),
-        })
+    usage = get_applied_usage([p.PluginID for p in result.items])
+    items = [serialize_plugin_summary_row(p, usage.get(p.PluginID)) for p in result.items]
 
     return {
         "items": items,
@@ -299,9 +264,11 @@ def get_plugin_details(plugin_id):
         "id": plugin.PluginID,
         "name": plugin.Name,
         "display_name": plugin.Display_Name,
-        "description": plugin.Description,
+        "description": catalog_fallback(plugin, "description"),
         "author": plugin.Author,
-        "category": plugin.Category,
+        "category": catalog_fallback(plugin, "category"),
+        "documentation_url": documentation_url(plugin.Name),
+        "service_driven": is_service_driven(plugin.Name),
         "type": plugin.Plugin_Type.value,
         "source": plugin.Source.value,
         "status": plugin.Status.value,
@@ -460,6 +427,11 @@ def get_plugin_summary():
     active = db.session.scalar(
         sa.select(sa.func.count()).select_from(Plugin).where(Plugin.Status == PluginStatus.ACTIVE)
     )
+    enabled = db.session.scalar(
+        sa.select(sa.func.count()).select_from(Plugin).where(
+            Plugin.Status.in_((PluginStatus.ENABLED, PluginStatus.ACTIVE))
+        )
+    )
     custom = db.session.scalar(
         sa.select(sa.func.count()).select_from(Plugin).where(Plugin.Plugin_Type == PluginType.CUSTOM)
     )
@@ -473,6 +445,7 @@ def get_plugin_summary():
     return {
         "installed_plugins": installed,
         "active_capabilities": active,
+        "enabled_plugins": enabled,
         "custom_plugins": custom,
         "updates_available": updates_available,
         "validation_issues": validation_issues,
@@ -486,6 +459,13 @@ def get_plugin_summary():
 class PluginNotFoundError(Exception):
     """No Plugin row with the given id."""
     pass
+
+
+class NotServiceDrivenError(Exception):
+    """The plugin checks no discovered port, so it has nothing to enable or attach."""
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
 
 
 class InvalidTransitionError(Exception):
@@ -548,8 +528,13 @@ def enable_plugin(plugin_id, user_id):
     not downgrade ACTIVE back to ENABLED — ACTIVE is Phase 10's
     territory).
 
+    Only service-driven plugins (those that check a discovered port) can be
+    enabled; see plugin_registry.is_service_driven. A plugin that was enabled
+    before that rule can still be disabled.
+
     Raises:
-        PluginNotFoundError, InvalidTransitionError, NagiosValidationError
+        PluginNotFoundError, InvalidTransitionError, NotServiceDrivenError,
+        NagiosValidationError
     """
     plugin = db.session.get(Plugin, plugin_id)
     if plugin is None:
@@ -560,6 +545,11 @@ def enable_plugin(plugin_id, user_id):
 
     if plugin.Status in (PluginStatus.ENABLED, PluginStatus.ACTIVE):
         return {"id": plugin.PluginID, "status": plugin.Status.value, "changed": False}
+
+    if not is_service_driven(plugin.Name):
+        raise NotServiceDrivenError(
+            f"{plugin.Name} does not check a discovered service, so it cannot be enabled."
+        )
 
     is_valid, output = validate_nagios_configuration()
 
@@ -1314,355 +1304,377 @@ def rollback_plugin_update(plugin_id, user_id):
 
 
 # ==========================================================
-# MONITORING CONFIGURATION (Phase 10)
+# SERVICE-DRIVEN MONITORING
 # ==========================================================
+# Devices are never picked by hand: enabling a plugin attaches the discovered
+# ports it can check (api/plugin/reconcile.py). What remains here is previewing
+# that, listing what a plugin monitors with live status, and stopping or
+# resuming one port on one device.
 
-class TargetNotFoundError(Exception):
+# Nagios checks each service every 5 minutes by default; a service with no
+# result for this many intervals is reported as having no recent data.
+DEFAULT_CHECK_INTERVAL_SECONDS = 300
+STALE_AFTER_INTERVALS = 3
+
+
+class MonitoredServiceNotFoundError(Exception):
+    """The device has no such port, or the port does not belong to this plugin."""
     def __init__(self, message):
         super().__init__(message)
         self.message = message
 
 
-class NoCommandDefinedError(Exception):
+class MonitoringChangeError(Exception):
+    """A monitoring change was refused or Nagios did not accept it; nothing changed."""
     def __init__(self, message):
         super().__init__(message)
         self.message = message
 
 
-class ConfigurationNotFoundError(Exception):
-    def __init__(self, message):
-        super().__init__(message)
-        self.message = message
-
-
-def get_active_command_line(plugin_id):
+def attach_result(callable_, *args):
     """
-    Resolves the effective command line for a plugin: an active
-    override if one exists (Phase 6), otherwise the default command
-    (Phase 1). Reused by Phase 10 to know what a target's generated
-    Nagios `command` object should actually run.
-
-    Returns:
-        (command_line: str | None, command: PluginCommand | None)
+    Run the reconciler (callable_ is reconcile.reconcile_plugin_monitoring) and
+    return its result, or a failure result if it raised, so a plugin
+    state change that is already saved is still reported.
     """
-    default_command = db.session.scalar(
-        sa.select(PluginCommand).where(
-            PluginCommand.PluginID == plugin_id, PluginCommand.Is_Default.is_(True),
+    try:
+        return callable_(*args)
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Reconciling plugin monitoring failed.")
+        return {
+            "success": False, "changed": False, "applied": 0, "removed": 0, "promoted": 0,
+            "message": "Updating Nagios failed.",
+        }
+
+
+def preview_enable(plugin_id):
+    """
+    What enabling a plugin would monitor, without changing anything: the
+    services and devices it would attach from monitored ports and from
+    identified suggestions on scanned devices. Returns None if the plugin does
+    not exist; a plugin that is not service-driven reports zero and
+    service_driven false.
+    """
+    plugin = db.session.get(Plugin, plugin_id)
+    if plugin is None:
+        return None
+
+    from app.api.plugin import reconcile
+
+    service_driven = is_service_driven(plugin.Name)
+    matches = reconcile.preview_enable(plugin.Name) if service_driven else {
+        "matched_services": 0, "matched_devices": 0, "held_ports": 0,
+    }
+    if not service_driven:
+        message = f"{plugin.Name} does not check a discovered service."
+    elif matches["matched_services"] == 0:
+        message = "No matching services yet. It will attach them as devices are found."
+    else:
+        message = (
+            f"Enabling will monitor {matches['matched_services']} service(s) "
+            f"on {matches['matched_devices']} device(s)."
         )
-    )
-    if default_command is None:
-        return None, None
-
-    active_override = db.session.scalar(
-        sa.select(PluginCommandOverride).where(
-            PluginCommandOverride.PluginCommandID == default_command.PluginCommandID,
-            PluginCommandOverride.Is_Active.is_(True),
+    if matches["held_ports"]:
+        message += (
+            f" {matches['held_ports']} identified port(s) are held back (left Suggested on purpose or at an "
+            f"upgrade) and will not be attached until an admin monitors them."
         )
+    return {
+        "id": plugin.PluginID,
+        "name": plugin.Name,
+        "status": plugin.Status.value,
+        "service_driven": service_driven,
+        "already_enabled": plugin.Status in (PluginStatus.ENABLED, PluginStatus.ACTIVE),
+        "message": message,
+        **matches,
+    }
+
+
+def enable_and_attach(plugin_id, user_id):
+    """
+    Enable a plugin and attach its discovered ports. A failure to update Nagios
+    does not undo the enable: the plugin stays Enabled and the result's
+    "auto_apply" says what went wrong. Raises what enable_plugin raises.
+    """
+    from app.api.plugin import reconcile
+
+    data = enable_plugin(plugin_id, user_id)
+    data["auto_apply"] = attach_result(reconcile.reconcile_plugin_monitoring, user_id)
+    data["status"] = db.session.get(Plugin, plugin_id).Status.value
+    return data
+
+
+def disable_and_detach(plugin_id, user_id):
+    """
+    Disable a plugin and remove its services from Nagios; its ports keep their
+    state and frozen plugin, so enabling restores them. If Nagios does not
+    accept the change the plugin goes back to its previous state (the services
+    are still running), the failure is recorded, and MonitoringChangeError is
+    raised. Raises what disable_plugin raises.
+    """
+    from app.api.plugin import reconcile
+
+    plugin = db.session.get(Plugin, plugin_id)
+    previous = plugin.Status if plugin is not None else None
+
+    data = disable_plugin(plugin_id, user_id)
+    if not data["changed"]:
+        return data
+
+    result = attach_result(reconcile.reconcile_plugin_monitoring, user_id)
+    if not result["success"]:
+        plugin = db.session.get(Plugin, plugin_id)
+        plugin.Status = previous
+        record_plugin_action(
+            plugin, PluginHistoryAction.DISABLE, PluginActionResult.FAILED, user_id,
+            old_value=PluginStatus.DISABLED.value, new_value=previous.value,
+            message=f"Nagios did not accept the change: {result['message']}",
+        )
+        db.session.commit()
+        raise MonitoringChangeError(result["message"])
+
+    data["auto_apply"] = result
+    data["status"] = db.session.get(Plugin, plugin_id).Status.value
+    return data
+
+
+def as_utc(moment):
+    """A datetime as timezone-aware UTC (naive values are taken to be UTC)."""
+    if moment is None:
+        return None
+    if moment.tzinfo is None:
+        return moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc)
+
+
+def latest_service_results(pairs):
+    """
+    Return {(host name, service name): latest ServiceStatus row} for pairs, a
+    set of (host name, service name). history.db is a separate database, so this
+    is its own query and the caller merges in Python.
+    """
+    hosts = {host for host, _ in pairs}
+    if not hosts:
+        return {}
+
+    latest = (
+        sa.select(
+            ServiceStatus.Hostname,
+            ServiceStatus.Service,
+            sa.func.max(ServiceStatus.Timestamp).label("max_ts"),
+        )
+        .where(ServiceStatus.Hostname.in_(hosts))
+        .group_by(ServiceStatus.Hostname, ServiceStatus.Service)
+        .subquery()
     )
-    command_line = active_override.Override_Command if active_override else default_command.Command_Definition
-    return command_line, default_command
-
-
-def build_configuration_tuples(configurations):
-    """
-    Resolves each PluginConfiguration row into the
-    (host_name, service_description, command_name, command_line)
-    tuple generate_plugin_services_cfg() needs, skipping any row
-    whose plugin/target/command can no longer be resolved (e.g. the
-    plugin or target was deleted after this configuration was
-    applied) rather than letting one bad row break the whole rebuild.
-    """
-    tuples = []
-    for config in configurations:
-        plugin = db.session.get(Plugin, config.PluginID)
-        target = db.session.get(NetworkDiscovery, config.NetDiscoveryID)
-        if plugin is None or target is None:
-            continue
-
-        command_line, _ = get_active_command_line(config.PluginID)
-        if not command_line:
-            continue
-
-        tuples.append((
-            nagios_host_name(target),
-            config.Service_Description,
-            generate_command_name(plugin.Name),
-            command_line,
-        ))
-    return tuples
-
-
-def get_monitoring_targets():
-    """
-    Devices a plugin can be applied to: every NetworkDiscovery device
-    still included in scanning, since only those get a Nagios host
-    object in hosts.cfg (see create_host_cfg.py). Ordered by hostname,
-    then IP.
-    """
-    devices = db.session.scalars(
-        sa.select(NetworkDiscovery)
-        .where(NetworkDiscovery.Include_Device_In_Scanning.is_(True))
-        .order_by(NetworkDiscovery.Hostname.asc(), NetworkDiscovery.IP_Address.asc())
+    rows = db.session.scalars(
+        sa.select(ServiceStatus).join(
+            latest,
+            sa.and_(
+                ServiceStatus.Hostname == latest.c.Hostname,
+                ServiceStatus.Service == latest.c.Service,
+                ServiceStatus.Timestamp == latest.c.max_ts,
+            ),
+        )
     ).all()
-
-    items = []
-    for device in devices:
-        items.append({
-            "id": device.NetDiscoveryID,
-            "hostname": device.Hostname,
-            "ip_address": device.IP_Address,
-        })
-    return items
+    return {(row.Hostname, row.Service): row for row in rows if (row.Hostname, row.Service) in pairs}
 
 
-def get_plugin_configurations(plugin_id):
-    """GET /plugin/<id>/configurations — list this plugin's applied/pending/failed targets."""
+def describe_service_status(result, applied_at, now):
+    """
+    Turn a service's latest Nagios result into the status shown beside it:
+    {"kind", "state", "output", "last_check"}. kind is ok, warning, critical or
+    unknown for a fresh result; "waiting" when Nagios has not checked it yet;
+    "stale" when the result is older than three check intervals.
+    """
+    if result is None:
+        since = f" Applied {applied_at.isoformat()}." if applied_at else ""
+        return {
+            "kind": "waiting", "state": None, "last_check": None,
+            "output": f"Waiting for first check.{since} Checks run every 5 minutes.",
+        }
+
+    last_check = as_utc(result.Last_Check)
+    interval = DEFAULT_CHECK_INTERVAL_SECONDS
+    if result.Next_Check and result.Last_Check:
+        scheduled = (as_utc(result.Next_Check) - last_check).total_seconds()
+        if scheduled > 0:
+            interval = scheduled
+
+    if (now - last_check).total_seconds() > STALE_AFTER_INTERVALS * interval:
+        return {
+            "kind": "stale", "state": result.Current_State.name, "last_check": last_check.isoformat(),
+            "output": f"No recent data. Last check {last_check.isoformat()}. Nagios may be down or paused.",
+        }
+    return {
+        "kind": result.Current_State.name.lower(), "state": result.Current_State.name,
+        "last_check": last_check.isoformat(), "output": result.Plugin_Output,
+    }
+
+
+def get_plugin_services(plugin_id, page, per_page, search):
+    """
+    Paginated list of what a plugin monitors, one row per Nagios service: the
+    applied automatic configurations plus ports an admin stopped monitoring that
+    this plugin used to check. Each row has the service name, device, port,
+    protocol, metric, whether it is monitored, "running since" and live status
+    (see describe_service_status). search matches service, device and IP.
+
+    Raises: PluginNotFoundError, InvalidQueryError.
+    """
+    if db.session.get(Plugin, plugin_id) is None:
+        raise PluginNotFoundError()
+    if page < 1:
+        raise InvalidQueryError("Page must be greater than 0")
+    if per_page < 1 or per_page > 100:
+        raise InvalidQueryError("per_page must be between 1 and 100")
+
+    plugin = db.session.get(Plugin, plugin_id)
+    rows = []
+
     configs = db.session.scalars(
-        sa.select(PluginConfiguration).where(PluginConfiguration.PluginID == plugin_id)
+        sa.select(PluginConfiguration).where(
+            PluginConfiguration.PluginID == plugin_id,
+            PluginConfiguration.Origin == PluginConfigurationOrigin.AUTO,
+            PluginConfiguration.Status == PluginConfigurationStatus.APPLIED,
+        )
     ).all()
-
-    result = []
     for config in configs:
-        target = db.session.get(NetworkDiscovery, config.NetDiscoveryID)
-        result.append({
-            "id": config.PluginConfigurationID,
-            "target": {
-                "id": target.NetDiscoveryID,
-                "hostname": nagios_host_name(target),
-                "ip_address": target.IP_Address,
-            } if target else None,
-            "service_description": config.Service_Description,
-            "status": config.Status.value,
-            "configuration_data": config.Configuration_Data,
-            "updated_at": config.Updated_At.isoformat(),
+        device = config.Target_Device
+        if device is None:
+            continue
+        rows.append({
+            "id": config.PluginConfigurationID, "service": config.Nagios_Service_Name, "device": device,
+            "port": config.Port_Number, "protocol": config.Protocol, "metric": config.Metric,
+            "monitored": True, "applied_at": config.Applied_At,
         })
-    return result
+
+    for protocol in ("tcp", "udp"):
+        model = port_model(protocol)
+        stopped = db.session.scalars(
+            sa.select(model).where(model.Port_State == PortState.IGNORED, model.Plugin_Name.is_not(None))
+        ).all()
+        for port in stopped:
+            if plugin_for_definition(port.Plugin_Name) != plugin.Name:
+                continue
+            device = db.session.get(NetworkDiscovery, port.NetDiscoveryID)
+            if device is None:
+                continue
+            rows.append({
+                "id": None, "service": f"{port.Plugin_Name}-{port.Port_Number}-{protocol}", "device": device,
+                "port": port.Port_Number, "protocol": protocol, "metric": None,
+                "monitored": False, "applied_at": None,
+            })
+
+    if search:
+        needle = search.lower()
+        rows = [
+            row for row in rows
+            if needle in row["service"].lower()
+            or needle in nagios_host_name(row["device"]).lower()
+            or needle in (row["device"].Hostname or "").lower()
+            or needle in row["device"].IP_Address
+        ]
+    rows.sort(key=lambda row: (nagios_host_name(row["device"]).lower(), row["service"]))
+
+    total = len(rows)
+    pages = max(1, -(-total // per_page))
+    window = rows[(page - 1) * per_page: page * per_page]
+
+    results = latest_service_results({
+        (nagios_host_name(row["device"]), row["service"]) for row in window if row["monitored"]
+    })
+    now = datetime.now(timezone.utc)
+    items = []
+    for row in window:
+        device = row["device"]
+        if row["monitored"]:
+            status = describe_service_status(
+                results.get((nagios_host_name(device), row["service"])), row["applied_at"], now
+            )
+        else:
+            status = {
+                "kind": "stopped", "state": None, "last_check": None,
+                "output": "Monitoring stopped for this device.",
+            }
+        items.append({
+            "id": row["id"],
+            "service": row["service"],
+            "device": {"id": device.NetDiscoveryID, "hostname": nagios_host_name(device),
+                       "ip_address": device.IP_Address},
+            "port": row["port"],
+            "protocol": row["protocol"],
+            "metric": row["metric"],
+            "monitored": row["monitored"],
+            "running_since": row["applied_at"].isoformat() if row["applied_at"] else None,
+            "status": status,
+        })
+
+    return {
+        "items": items, "page": page, "per_page": per_page, "pages": pages, "total": total,
+        "has_next": page < pages, "has_prev": page > 1,
+    }
 
 
-def apply_plugin_configuration(plugin_id, net_discovery_id, service_description, user_id, configuration_data=None):
+def set_service_monitoring(plugin_id, device_id, protocol, port_number, monitored, user_id):
     """
-    Full Phase 10 workflow (Implementation Plan Section 18):
-    Administrator selects plugin capability -> selects target ->
-    Plugin Manager generates/updates Nagios configuration -> validates
-    it -> applies/reloads Nagios -> Nagios monitors target.
+    Stop monitoring one port on one device (monitored=False: the port becomes
+    Ignored) or resume it (monitored=True), then update Nagios. Only a port this
+    plugin checks can be changed through it. The change is saved with a history
+    row first; if Nagios does not accept it the port goes back to its previous
+    state and MonitoringChangeError is raised. Idempotent: repeating a change
+    reports changed false.
 
-    Regenerates plugin-services.cfg from scratch each pass (all
-    currently-Applied configurations, PLUS this one as a candidate) —
-    matches Network Discovery's own established full-rebuild
-    convention for its file, rather than incrementally patching.
-
-    On success: this configuration's Status becomes APPLIED, and
-    Plugin.Status becomes ACTIVE — the one thing in the entire Plugin
-    Manager module that can set that status; every earlier phase
-    stopped short of it deliberately.
-
-    On failure: nothing live is touched (validation runs against a
-    throwaway temp copy, never the real files) — this configuration's
-    Status becomes FAILED and Plugin.Status is left alone.
-
-    Raises:
-        PluginNotFoundError, InvalidTransitionError, TargetNotFoundError,
-        NoCommandDefinedError
+    Raises: PluginNotFoundError, MonitoredServiceNotFoundError,
+    MonitoringChangeError.
     """
+    from app.api.plugin import reconcile
+
     plugin = db.session.get(Plugin, plugin_id)
     if plugin is None:
         raise PluginNotFoundError()
 
-    if plugin.Status in BLOCKED_TRANSITION_STATUSES:
-        raise InvalidTransitionError(
-            f"Cannot apply monitoring configuration for a plugin in '{plugin.Status.value}' state."
-        )
-
-    if plugin.Status not in (PluginStatus.ENABLED, PluginStatus.ACTIVE):
-        raise InvalidTransitionError("Enable the plugin before applying it to a device.")
-
-    target = db.session.get(NetworkDiscovery, net_discovery_id)
-    if target is None:
-        raise TargetNotFoundError(f"No target device with id {net_discovery_id}.")
-
-    command_line, _ = get_active_command_line(plugin_id)
-    if not command_line:
-        raise NoCommandDefinedError(f"Plugin '{plugin.Name}' has no command definition.")
-
-    existing_config = db.session.scalar(
-        sa.select(PluginConfiguration).where(
-            PluginConfiguration.PluginID == plugin_id,
-            PluginConfiguration.NetDiscoveryID == net_discovery_id,
-            PluginConfiguration.Service_Description == service_description,
-        )
+    model = port_model(protocol)
+    port = db.session.scalar(
+        sa.select(model).where(model.NetDiscoveryID == device_id, model.Port_Number == port_number)
     )
-    if existing_config:
-        config = existing_config
-        config.Configuration_Data = configuration_data
-    else:
-        config = PluginConfiguration(
-            PluginID=plugin_id,
-            NetDiscoveryID=net_discovery_id,
-            Service_Description=service_description,
-            Configuration_Data=configuration_data,
-            Status=PluginConfigurationStatus.PENDING,
-        )
-        db.session.add(config)
-    db.session.flush()
+    if port is None or port.Plugin_Name is None or plugin_for_definition(port.Plugin_Name) != plugin.Name:
+        raise MonitoredServiceNotFoundError(f"{plugin.Name} does not monitor {protocol} port {port_number} on that device.")
 
-    already_applied = db.session.scalars(
-        sa.select(PluginConfiguration).where(
-            PluginConfiguration.Status == PluginConfigurationStatus.APPLIED,
-            PluginConfiguration.PluginConfigurationID != config.PluginConfigurationID,
-        )
-    ).all()
-
-    candidate_configs = list(already_applied) + [config]
-    tuples = build_configuration_tuples(candidate_configs)
-
-    cfg_contents = generate_plugin_services_cfg(tuples)
-    staged_path = write_staged_cfg(cfg_contents)
+    wanted = PortState.MONITORED if monitored else PortState.IGNORED
+    previous_state, previous_closed = port.Port_State, port.Closed_At
+    if (monitored and previous_state in CONFIG_STATES) or (not monitored and previous_state is PortState.IGNORED):
+        return {"changed": False, "monitored": monitored}
+    if monitored and previous_state is not PortState.IGNORED:
+        raise MonitoredServiceNotFoundError("Only a port that was stopped can be resumed.")
 
     try:
-        is_valid, output = validate_plugin_services_config(staged_path)
+        set_port_state(device_id, protocol, port_number, wanted)
+    except ValueError as exc:
+        db.session.rollback()
+        raise MonitoringChangeError(str(exc))
 
-        if not is_valid:
-            config.Status = PluginConfigurationStatus.FAILED
-            record_plugin_action(
-                plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.FAILED, user_id,
-                message=f"Monitoring configuration validation failed: {output[:500]}",
-            )
-            db.session.commit()
-            return {
-                "success": False,
-                "configuration_id": config.PluginConfigurationID,
-                "status": config.Status.value,
-                "validation_output": output,
-            }
+    device = db.session.get(NetworkDiscovery, device_id)
+    label = f"{protocol.lower()} port {port_number} on {nagios_host_name(device)}"
+    record_plugin_action(
+        plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.SUCCESS, user_id,
+        new_value=plugin.Name,
+        message=f"{'Resumed' if monitored else 'Stopped'} monitoring {label}.",
+    )
+    db.session.commit()
 
-        directive_ok = ensure_cfg_file_directive()
-        if not directive_ok:
-            config.Status = PluginConfigurationStatus.FAILED
-            record_plugin_action(
-                plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.FAILED, user_id,
-                message="Could not ensure plugin-services.cfg is referenced by nagios.cfg.",
-            )
-            db.session.commit()
-            return {
-                "success": False,
-                "configuration_id": config.PluginConfigurationID,
-                "status": config.Status.value,
-                "validation_output": "Failed to update nagios.cfg's cfg_file directives.",
-            }
-
-        applied, apply_message = apply_plugin_services_config(staged_path)
-
-        if not applied:
-            config.Status = PluginConfigurationStatus.FAILED
-            record_plugin_action(
-                plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.FAILED, user_id,
-                message=apply_message,
-            )
-            db.session.commit()
-            return {
-                "success": False,
-                "configuration_id": config.PluginConfigurationID,
-                "status": config.Status.value,
-                "validation_output": apply_message,
-            }
-
-        config.Status = PluginConfigurationStatus.APPLIED
-        plugin.Status = PluginStatus.ACTIVE
-
+    result = attach_result(reconcile.reconcile_plugin_monitoring, user_id)
+    if not result["success"]:
+        port = db.session.scalar(
+            sa.select(model).where(model.NetDiscoveryID == device_id, model.Port_Number == port_number)
+        )
+        port.Port_State, port.Closed_At = previous_state, previous_closed
         record_plugin_action(
-            plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.SUCCESS, user_id,
-            new_value=service_description,
-            message=f"Applied to {nagios_host_name(target)}: {service_description}.",
+            plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.FAILED, user_id,
+            message=f"Could not {'resume' if monitored else 'stop'} monitoring {label}: {result['message']}",
         )
         db.session.commit()
+        raise MonitoringChangeError(result["message"])
 
-        return {
-            "success": True,
-            "configuration_id": config.PluginConfigurationID,
-            "status": config.Status.value,
-            "plugin_status": plugin.Status.value,
-        }
-
-    finally:
-        staged_path.unlink(missing_ok=True)
-
-
-def apply_running_plugins_to_all_targets(user_id, plugin_ids=None):
-    query = sa.select(Plugin).where(Plugin.Status.in_((PluginStatus.ENABLED, PluginStatus.ACTIVE)))
-    if plugin_ids is not None:
-        query = query.where(Plugin.PluginID.in_(plugin_ids))
-    plugins = [p for p in db.session.scalars(query).all() if get_active_command_line(p.PluginID)[0]]
-
-    targets = db.session.scalars(
-        sa.select(NetworkDiscovery).where(NetworkDiscovery.Include_Device_In_Scanning.is_(True))
-    ).all()
-    if not plugins or not targets:
-        return {"success": True, "applied": 0, "message": "Nothing to apply."}
-
-    existing = {
-        (c.PluginID, c.NetDiscoveryID): c
-        for c in db.session.scalars(sa.select(PluginConfiguration)).all()
-    }
-    touched = []
-    for plugin in plugins:
-        for target in targets:
-            config = existing.get((plugin.PluginID, target.NetDiscoveryID))
-            if config is None:
-                config = PluginConfiguration(
-                    PluginID=plugin.PluginID,
-                    NetDiscoveryID=target.NetDiscoveryID,
-                    Service_Description=plugin.Name,
-                    Status=PluginConfigurationStatus.PENDING,
-                )
-                db.session.add(config)
-                touched.append(config)
-            elif config.Status != PluginConfigurationStatus.APPLIED:
-                touched.append(config)
-    if not touched:
-        return {"success": True, "applied": 0, "message": "Already applied everywhere."}
-    db.session.flush()
-
-    touched_ids = {c.PluginConfigurationID for c in touched}
-    already_applied = db.session.scalars(
-        sa.select(PluginConfiguration).where(
-            PluginConfiguration.Status == PluginConfigurationStatus.APPLIED,
-            PluginConfiguration.PluginConfigurationID.notin_(touched_ids),
-        )
-    ).all()
-    tuples = build_configuration_tuples(list(already_applied) + touched)
-    staged_path = write_staged_cfg(generate_plugin_services_cfg(tuples))
-
-    def fail(message):
-        for config in touched:
-            config.Status = PluginConfigurationStatus.FAILED
-        for plugin in plugins:
-            record_plugin_action(
-                plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.FAILED, user_id,
-                message=f"Automatic apply to all hosts failed: {message[:400]}",
-            )
-        db.session.commit()
-        return {"success": False, "applied": 0, "message": message}
-
-    try:
-        is_valid, output = validate_plugin_services_config(staged_path)
-        if not is_valid:
-            return fail(output)
-        if not ensure_cfg_file_directive():
-            return fail("Could not ensure plugin-services.cfg is referenced by nagios.cfg.")
-        applied, apply_message = apply_plugin_services_config(staged_path)
-        if not applied:
-            return fail(apply_message)
-
-        for config in touched:
-            config.Status = PluginConfigurationStatus.APPLIED
-        for plugin in plugins:
-            plugin.Status = PluginStatus.ACTIVE
-            record_plugin_action(
-                plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.SUCCESS, user_id,
-                new_value=plugin.Name,
-                message=f"Automatically applied to {len(targets)} host(s).",
-            )
-        db.session.commit()
-        return {"success": True, "applied": len(touched), "message": "Applied."}
-    finally:
-        staged_path.unlink(missing_ok=True)
+    return {"changed": True, "monitored": monitored, "auto_apply": result}

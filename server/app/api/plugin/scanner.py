@@ -58,7 +58,9 @@ from flask import current_app
 from app import db
 from app.plugin_models import Plugin, PluginVersion, PluginCommand, PluginType, PluginSource, PluginStatus
 from app.api.plugin.plugin_command_defaults import get_default_command
-from app.api.plugin.plugin_descriptions import get_default_description
+from app.api.plugin.plugin_descriptions import (
+    extract_help_description, fill_missing_metadata, get_catalog_entry,
+)
 
 
 def get_plugin_dir():
@@ -85,6 +87,9 @@ class ScannedPlugin:
     is_executable: bool
     version: Optional[str]
     version_raw_output: Optional[str]
+    # From the plugin's own --help, only for plugins outside the bundled
+    # catalog (see plugin_descriptions.py).
+    description: Optional[str] = None
 
 
 def extract_version(plugin_path):
@@ -132,7 +137,8 @@ def is_executable(entry, entry_stat):
     return bool(entry_stat.st_mode & stat.S_IXUSR) and os.access(entry.path, os.X_OK)
 
 
-# Build/packaging scripts from the nagios-plugins source tree. They start
+# Build/packaging scripts from the nagios-plugins source tree, plus utils.sh,
+# the shared library the shell plugins source (it checks nothing itself). They start
 # with "#!" like a real plugin script, so is_plugin_program() can't tell
 # them apart by content alone — and running NP-VERSION-GEN with --version
 # writes an NP-VERSION-FILE into the current directory.
@@ -151,6 +157,7 @@ NON_PLUGIN_SCRIPT_NAMES = {
     "missing",
     "mkinstalldirs",
     "test-driver",
+    "utils.sh",
     "ylwrap",
 }
 
@@ -214,6 +221,7 @@ def scan_plugin_directory(directory=None):
                 continue
 
             version, raw_output = extract_version(entry.path)
+            description = None if get_catalog_entry(entry.name) else extract_help_description(entry.path)
 
             results.append(ScannedPlugin(
                 name=entry.name,
@@ -223,6 +231,7 @@ def scan_plugin_directory(directory=None):
                 is_executable=executable,
                 version=version,
                 version_raw_output=raw_output,
+                description=description,
             ))
 
     return results
@@ -269,13 +278,13 @@ def sync_plugin_inventory(scan_results):
         if plugin is None:
             plugin = Plugin(
                 Name=scanned.name,
-                Description=get_default_description(scanned.name),
                 Plugin_Type=PluginType.NAGIOS,
                 Source=PluginSource.BASELINE_ISO if is_initial_seed else PluginSource.ADMINISTRATOR_ADDED,
                 Status=PluginStatus.READY,
                 Executable_Path=scanned.path,
                 Current_Version=scanned.version,
             )
+            fill_missing_metadata(plugin, scanned.description)
             db.session.add(plugin)
             db.session.flush()  # get plugin.PluginID
 
@@ -310,14 +319,12 @@ def sync_plugin_inventory(scan_results):
             created += 1
             continue
 
-        changed = False
+        # Backfills plugins registered before descriptions existed; never
+        # overwrites a value that is already set.
+        changed = fill_missing_metadata(plugin, scanned.description)
 
         if plugin.Executable_Path != scanned.path:
             plugin.Executable_Path = scanned.path
-            changed = True
-
-        if not plugin.Description and get_default_description(scanned.name):
-            plugin.Description = get_default_description(scanned.name)
             changed = True
 
         if scanned.version and plugin.Current_Version and scanned.version != plugin.Current_Version:

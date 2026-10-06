@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "scenarios": [
+    {
+      "id": "PORT-FLAG",
+      "case_id": "L-03",
+      "target": "target02",
+      "port": 80,
+      "plugin": "check_ssh",
+      "mismatch_fixture": "sshd-80",
+      "replacement_fixture": "http-80",
+      "found_service": "ssh",
+      "expected_service": "http"
+    },
+    {
+      "id": "PORT-HELD",
+      "case_id": "L-05",
+      "target": "target01",
+      "port": 9000,
+      "plugin": "check_tcp"
+    },
+    {
+      "id": "PORT-GUESS",
+      "case_id": "L-01",
+      "target": "target02",
+      "port": 9100,
+      "plugin": "check_tcp",
+      "fixture": "silent-9100"
+    },
+    {
+      "id": "PORT-PIN",
+      "case_id": "L-06",
+      "target": "target02",
+      "port": 8080,
+      "plugin": "check_http",
+      "fixture": "http-8080",
+      "pin_name": "ssh"
+    },
+    {
+      "id": "STOP-RESUME",
+      "case_id": "F-06",
+      "target": "target01",
+      "port": 22,
+      "plugin": "check_ssh"
+    },
+    {
+      "id": "LOCALHOST",
+      "case_id": "O-04-SCOPE",
+      "not_service_driven": [
+        "check_load",
+        "check_ping"
+      ]
+    },
+    {
+      "id": "REJECT-CONFIG",
+      "case_id": "R-01",
+      "target": "target01",
+      "port": 22,
+      "stable_plugin": "check_ssh",
+      "other_plugin": "check_http"
+    },
+    {
+      "id": "PORT-LIFECYCLE",
+      "case_id": "L-08",
+      "target": "target02",
+      "port": 8081,
+      "plugin": "check_http",
+      "fixture": "http-8081",
+      "missing_after_scans": 5,
+      "archive_after_seconds": 120
+    },
+    {
+      "id": "PERMISSIONS",
+      "case_id": "P-01",
+      "target": "target01",
+      "port": 22,
+      "plugin": "check_ssh"
+    }
+  ]
+}

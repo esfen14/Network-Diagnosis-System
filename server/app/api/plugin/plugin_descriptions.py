@@ -1,64 +1,127 @@
-PLUGIN_DESCRIPTIONS = {
-    "check_apt": "Checks a Debian/Ubuntu server for pending package updates and flags security updates.",
-    "check_breeze": "Reads the signal strength of Breezecom wireless equipment over SNMP.",
-    "check_by_ssh": "Runs a check command on a remote machine over SSH and reports its result.",
-    "check_cluster": "Combines the states of several hosts or services into one cluster status.",
-    "check_dbi": "Connects to a database through the generic DBI layer and checks a query result.",
-    "check_dhcp": "Tests whether a DHCP server answers requests on the network.",
-    "check_dig": "Looks up a DNS record with dig and checks the answer and response time.",
-    "check_disk": "Checks free disk space and inodes on a local filesystem.",
-    "check_disk_smb": "Checks free space on a Windows/SMB network share.",
-    "check_dns": "Checks that a DNS server resolves a name and how fast it responds.",
-    "check_dummy": "Returns a fixed status and message; used for testing and passive checks.",
-    "check_file_age": "Checks how old a file is and, optionally, how large it is.",
-    "check_flexlm": "Checks the status of a FlexLM license server.",
-    "check_fping": "Pings a host quickly with fping and reports packet loss and round-trip time.",
-    "check_game": "Checks whether a game server is up and how many players it has.",
-    "check_hpjd": "Reads the status of an HP JetDirect printer over SNMP (paper, toner, errors).",
-    "check_http": "Checks a web server over HTTP or HTTPS: response, status code, content and certificate expiry.",
-    "check_icmp": "Pings one or more hosts with ICMP and reports packet loss and round-trip time.",
-    "check_ide_smart": "Checks the S.M.A.R.T. health of an IDE/ATA disk.",
-    "check_ifoperstatus": "Checks whether one network interface is up, using SNMP.",
-    "check_ifstatus": "Checks all network interfaces of a device over SNMP and counts those that are down.",
-    "check_ircd": "Checks an IRC server and the number of users connected to it.",
-    "check_ldap": "Connects to an LDAP server and checks that a search works.",
-    "check_ldaps": "Connects to an LDAP server over SSL/TLS and checks that a search works.",
-    "check_load": "Checks the system load averages of the local machine.",
-    "check_log": "Scans a log file for a text pattern and reports new matches since the last run.",
-    "check_mailq": "Checks how many messages are waiting in the local mail queue.",
-    "check_mrtg": "Checks a value recorded in an MRTG log file against thresholds.",
-    "check_mrtgtraf": "Checks network traffic recorded in an MRTG log file.",
-    "check_mysql": "Connects to a MySQL/MariaDB server and checks that it responds.",
-    "check_mysql_query": "Runs an SQL query on a MySQL/MariaDB server and checks the result.",
-    "check_nagios": "Checks that the Nagios process is running and its status log is recent.",
-    "check_ncpa": "Reads CPU, memory, disk, network and process metrics from a device running the NCPA agent.",
-    "check_nt": "Checks a Windows machine through the NSClient service (CPU, memory, disk, services).",
-    "check_ntp": "Checks a machine's clock against an NTP server (offset and jitter).",
-    "check_ntp_peer": "Checks the health of an NTP server as a time source.",
-    "check_ntp_time": "Checks how far a machine's clock differs from an NTP server.",
-    "check_nwstat": "Checks statistics of a Novell NetWare server.",
-    "check_oracle": "Checks the status of an Oracle database.",
-    "check_overcr": "Checks an Over-CR collector daemon.",
-    "check_pgsql": "Connects to a PostgreSQL server and checks that it responds.",
-    "check_ping": "Pings a host and reports packet loss and round-trip time.",
-    "check_procs": "Counts running processes and checks them against thresholds.",
-    "check_radius": "Tests that a RADIUS server accepts an authentication request.",
-    "check_real": "Checks a RealMedia/RTSP streaming server.",
-    "check_rpc": "Checks that an RPC program is registered and available on a host.",
-    "check_sensors": "Reads hardware sensors (temperature, fans, voltage) through lm_sensors.",
-    "check_smtp": "Connects to a mail server over SMTP and checks the response.",
-    "check_snmp": "Reads a value from a device over SNMP and checks it against thresholds.",
-    "check_ssh": "Checks that an SSH server accepts connections.",
-    "check_ssl_validity": "Checks an SSL/TLS certificate: validity, expiry date and revocation.",
-    "check_swap": "Checks swap space usage on the local machine.",
-    "check_tcp": "Checks that a TCP port accepts connections and how fast it answers.",
-    "check_time": "Checks the time difference between this server and a remote host.",
-    "check_ups": "Reads the status of a UPS (battery, load, power) through Network UPS Tools.",
-    "check_uptime": "Checks how long the local machine has been running.",
-    "check_users": "Counts the users logged in to the local machine.",
-    "check_wave": "Reads the signal strength of WaveLAN/Intersil wireless devices over SNMP.",
-}
+"""
+plugin_descriptions.py — Descriptions, categories and documentation links for
+Plugin Manager plugins.
+
+The bundled nagios-plugins set is described by plugin_catalog_data.py, a file
+generated at development time by scripts/build_plugin_descriptions.py. Nothing
+here contacts the internet: the server must not fetch documentation when a page
+loads (offline installs, SSRF surface, latency).
+
+A plugin that is not in the catalog (custom or non-standard) falls back to the
+first descriptive paragraph of its own `--help` output, read at scan time with
+the same safe, bounded invocation the scanner already uses for `--version`.
+
+Fields an administrator or a custom upload already set are never overwritten.
+"""
+import re
+import subprocess
+
+from app.api.plugin.plugin_catalog_data import PLUGIN_CATALOG
+
+HELP_TIMEOUT_SECONDS = 5
+MAX_DESCRIPTION_LENGTH = 500   # PLUGIN.Description column size
+MAX_CATEGORY_LENGTH = 50       # PLUGIN.Category column size
+
+# Paragraphs of `--help` output that are not a description of the plugin.
+_VERSION_HEADER = re.compile(r"^\S+\s+v?\d+\.\d+")
+_BOILERPLATE_PREFIXES = ("copyright", "the nagios plugins come", "this nagios plugin")
+_STOP_PREFIXES = ("usage", "options", "-")
+_CONTROL_CHARACTERS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
 
-def get_default_description(plugin_name):
-    return PLUGIN_DESCRIPTIONS.get(plugin_name)
+def get_catalog_entry(name):
+    """
+    Return the catalog entry for a plugin name as
+    {"description", "category", "documentation_url"}, or None if the plugin is
+    not part of the bundled set. Does not touch the database or filesystem.
+    """
+    return PLUGIN_CATALOG.get(name)
+
+
+def documentation_url(name):
+    """Return the documentation link for a catalogued plugin, or None."""
+    entry = get_catalog_entry(name)
+    return entry["documentation_url"] if entry else None
+
+
+def clean_text(text, limit):
+    """
+    Collapse whitespace, drop control characters and cut text to limit
+    characters (ending in an ellipsis when cut). Returns None if nothing is
+    left.
+    """
+    text = " ".join(_CONTROL_CHARACTERS.sub("", str(text or "")).split())
+    if not text:
+        return None
+    if len(text) > limit:
+        text = text[: limit - 1].rstrip() + "…"
+    return text
+
+
+def parse_help_description(output):
+    """
+    Pick the plugin's description out of its `--help` output: the first
+    paragraph that is not the version/copyright header, the warranty notice or
+    the "Usage:" section. Returns None if there is no such paragraph.
+    """
+    for paragraph in re.split(r"\n\s*\n", str(output or "")):
+        lines = [line.strip() for line in paragraph.splitlines() if line.strip()]
+        if not lines:
+            continue
+
+        first = lines[0].lower()
+        if first.startswith(_STOP_PREFIXES):
+            # Usage and option documentation follow the description.
+            return None
+        if (_VERSION_HEADER.match(lines[0]) or first.startswith(_BOILERPLATE_PREFIXES)
+                or "absolutely no warranty" in paragraph.lower()):
+            continue
+
+        text = clean_text(" ".join(lines), MAX_DESCRIPTION_LENGTH)
+        if text and len(text) >= 10:
+            return text
+    return None
+
+
+def extract_help_description(plugin_path):
+    """
+    Best-effort: run `<plugin_path> --help` locally and return its description
+    paragraph. Never raises; any failure (unsupported flag, timeout, no usable
+    text) returns None. Only call this for files the scanner already accepted
+    as real plugin programs, since it executes the file.
+    """
+    try:
+        result = subprocess.run(
+            [plugin_path, "--help"],
+            capture_output=True,
+            text=True,
+            timeout=HELP_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        return None
+
+    return parse_help_description((result.stdout or "") + "\n\n" + (result.stderr or ""))
+
+
+def fill_missing_metadata(plugin, fallback_description=None):
+    """
+    Fill an empty Description and Category on a Plugin row from the catalog,
+    or (Description only) from fallback_description when the plugin is not
+    catalogued. Values that are already set are left alone. Returns True if
+    anything changed. Does not commit.
+    """
+    changed = False
+    entry = get_catalog_entry(plugin.Name)
+
+    if not plugin.Description:
+        description = entry["description"] if entry else fallback_description
+        description = clean_text(description, MAX_DESCRIPTION_LENGTH)
+        if description:
+            plugin.Description = description
+            changed = True
+
+    if not plugin.Category and entry:
+        plugin.Category = clean_text(entry["category"], MAX_CATEGORY_LENGTH)
+        changed = changed or bool(plugin.Category)
+
+    return changed

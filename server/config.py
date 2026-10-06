@@ -15,6 +15,24 @@ def env_list(name, default):
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def env_positive_float(name, default):
+    """
+    Read a number greater than zero from an environment variable. Returns
+    default when the variable is unset or empty. A value that is not a number
+    or is not above zero stops startup instead of silently changing behaviour.
+    """
+    value = os.environ.get(name)
+    if value is None or not value.strip():
+        return default
+    try:
+        number = float(value)
+    except ValueError:
+        raise ValueError(f"{name} must be a number greater than zero, got {value!r}.") from None
+    if not number > 0 or number == float("inf"):
+        raise ValueError(f"{name} must be a number greater than zero, got {value!r}.")
+    return number
+
+
 class Config:
     # No fallback: a secret committed to source lets anyone forge sessions.
     # app/__init__.py refuses to start without it outside debug mode.
@@ -53,28 +71,23 @@ class Config:
 
     # How a discovered port's service name is decided, strongest first:
     #   1. a name an operator pinned on that device's port (never rescanned)
-    #   2. *_FORCED_SERVICES: "always treat port X as Y" on every device
-    #   3. the service nmap identified by probing the port (fingerprint)
-    #   4. *_SERVICE_OVERRIDES: fallback names, used only when nmap could not
-    #      fingerprint the port and only guessed from its number
-    # Force only ports whose meaning holds on every device. NCPA's port is
-    # forced because deployment configures the agent there, and nmap would
-    # otherwise fingerprint it as plain https.
-    TCP_FORCED_SERVICES = {
-        NCPA_PORT: "ncpa",
-    }
-    UDP_FORCED_SERVICES = {}
-    TCP_SERVICE_OVERRIDES = {
+    #   2. the service nmap identified by probing the port (fingerprint)
+    #   3. *_PORT_SERVICES: the service an admin expects on that port. Used when
+    #      nmap could not fingerprint the port, or fingerprinted the same
+    #      service. If nmap fingerprinted a different one the port is flagged
+    #      "not used as intended" and is not monitored until acknowledged.
+    #   4. nmap's guess from the port number (never trusted on its own)
+    # NCPA_PORT -> ncpa is always part of the TCP table (added when the table is
+    # read), so it cannot drift from NCPA_PORT. Deployment configures the agent
+    # there, so a fingerprint on that port is not treated as a mismatch.
+    TCP_PORT_SERVICES = {
         "5666": "nrpe",
         "22": "ssh",
         "80": "http",
         "443": "https",
     }
-    UDP_SERVICE_OVERRIDES = {
+    UDP_PORT_SERVICES = {
         "5666": "nrpe",
-        "22": "ssh",
-        "80": "http",
-        "443": "https",
         "161": "snmp",
     }
 
@@ -94,10 +107,9 @@ class Config:
     # Consecutive scans a port may be unseen (while its host was seen) before
     # it counts as gone, and days a MONITORED port stays MISSING before archive.
     PORT_MISSING_AFTER_SCANS = 5
-    PORT_ARCHIVE_AFTER_DAYS = 30
-    # Services monitored on first sighting; every other new port is only
-    # SUGGESTED until a user monitors it.
-    AUTO_MONITOR_SERVICES = ["ssh", "http", "https", "snmp", "ncpa"]
+    # PINPOINT_PORT_ARCHIVE_AFTER_DAYS lets a test lab shorten the 30 days
+    # (fractions allowed, e.g. 0.001 is about 90 seconds). Leave it unset in production.
+    PORT_ARCHIVE_AFTER_DAYS = env_positive_float('PINPOINT_PORT_ARCHIVE_AFTER_DAYS', 30)
     # Never suggested automatically (Linux / Windows ephemeral ranges).
     EPHEMERAL_PORT_RANGES = [(32768, 60999), (49152, 65535)]
     # How often the NCPA relocation job looks for NCPA devices that moved.
@@ -189,15 +201,6 @@ class Config:
     # plugin inventory; custom uploads and updates are installed here.
     # Override via env to point at a local folder on a dev machine.
     NAGIOS_PLUGIN_DIR = os.environ.get('NAGIOS_PLUGIN_DIR') or "/usr/local/nagios/libexec/"
-
-    # Nagios config file holding Plugin Manager's generated command and
-    # service objects. Kept separate from NAGIOS_HOST_CFG because
-    # Network Discovery fully regenerates hosts.cfg on every scan.
-    PLUGIN_SERVICE_CFG = Path(os.environ.get('PLUGIN_SERVICE_CFG') or "/usr/local/nagios/etc/objects/plugin-services.cfg")
-
-    # Folders where candidate/backed-up plugin service configs are stored.
-    PLUGIN_SERVICE_STAGING_DIR = Path(basedir) / "plugin-service-config-files"
-    PLUGIN_SERVICE_BACKUP_DIR = Path(basedir) / "running-plugin-service-config-backup"
 
     """
     |------------------------------------------------------------------

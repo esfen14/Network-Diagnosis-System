@@ -1,6 +1,6 @@
 """
-Network Discovery settings: the networks, TCP/UDP ports and port ->
-service name overrides used by the discovery scan.
+Network Discovery settings: the networks, TCP/UDP ports and the Port ->
+Service tables (the service expected on each port) used by the discovery scan.
 
 Defaults come from config.py. Saving here stores them in the
 DiscoverySettings singleton in system.db, which the scan reads on its
@@ -13,7 +13,9 @@ mixes old and new settings.
 Routes
 ------
 GET  /system/discovery-settings
-    Return the effective discovery settings and the config.py defaults.
+    Return the effective discovery settings and the config.py defaults. The TCP
+    table includes NCPA's port (always ncpa), "ncpaPort" names it, and
+    "resolution" says which check each table entry leads to.
 
 PUT  /system/discovery-settings
     Validate and save the discovery settings.
@@ -91,12 +93,13 @@ def update_discovery_settings_route():
     409, as is any save while a discovery scan is running. Networks must
     be IPv4 addresses or CIDR ranges no larger than a /16 (loopback is
     rejected); ports are numbers 1-65535 or "start-end" ranges; service
-    names are lowercase letters, digits, "-" or "_". Forced services
-    ("always treat port as") apply on every device whatever nmap reports;
-    service overrides are fallbacks used only when nmap could not
-    fingerprint a port. Changes take effect
-    on the next scan and are recorded in the Configuration Change log
-    when audit logging is on.
+    names are letters (stored lowercase), digits, "-" or "_". A Port -> Service entry is
+    the service expected on that port: it names a port nmap could not
+    fingerprint, and a port nmap fingerprinted as something else is flagged
+    "not used as intended" instead of being relabelled. NCPA's port is always
+    ncpa; it may be sent back but is not stored, and mapping it to anything
+    else is rejected. Changes take effect on the next scan and are recorded in
+    the Configuration Change log when audit logging is on.
 
     JSON Format
     {
@@ -104,10 +107,8 @@ def update_discovery_settings_route():
         "networks": ["192.168.130.0/24"],
         "tcpPorts": ["1-6000"],
         "udpPorts": [53, 161],
-        "tcpServiceOverrides": {"22": "ssh"},
-        "udpServiceOverrides": {"161": "snmp"},
-        "tcpForcedServices": {"5693": "ncpa"},
-        "udpForcedServices": {}
+        "tcpPortServices": {"22": "ssh"},
+        "udpPortServices": {"161": "snmp"}
     }
     """
     data = request.get_json(silent=True)
@@ -131,7 +132,7 @@ def update_discovery_settings_route():
         if data.get("version") != current_version:
             return error("Discovery settings were updated by someone else. Reload and try again.", 409)
 
-        before = get_discovery_settings()
+        before = get_discovery_settings(include_derived=False)
         if row is None:
             row = DiscoverySettings(Id=1, Version=0)
             db.session.add(row)

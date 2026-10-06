@@ -19,7 +19,25 @@ from pathlib import Path
 import pytest
 
 SERVER_DIR = Path(__file__).resolve().parents[2]
-LATEST_REVISION = "f2b9d6a4c871"
+# The revision the runner upgrades to for its before/after checks, and the single head.
+TARGET_REVISION = "d41f7a2b9e10"
+
+
+def current_head():
+    """
+    The single head of the migration history, read from the migration scripts, so adding a
+    migration does not break this test. Raises if there is more than one head, which is
+    exactly the failure this test exists to catch.
+    """
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    config = Config()
+    config.set_main_option("script_location", str(SERVER_DIR / "migrations"))
+    return ScriptDirectory.from_config(config).get_current_head()
+
+
+HEAD_REVISION = current_head()
 
 
 @pytest.fixture(scope="module")
@@ -34,13 +52,15 @@ def report():
 
 
 def test_upgrade_reaches_the_new_revision(report):
-    assert report["version"] == [[LATEST_REVISION]]
-    assert report["version_after_reupgrade"] == [[LATEST_REVISION]]
+    assert report["version"] == [[TARGET_REVISION]]
+    assert report["version_after_reupgrade"] == [[TARGET_REVISION]]
 
 
 def test_the_chain_reaches_one_head_with_both_branches_applied(report):
-    # Service identification and the NCPA run-history migration are both applied.
-    assert report["version_at_head"] == [["f3b7d2e8a614"]]
+    # Service identification, the NCPA run-history migration and the network profile /
+    # password-change migrations are joined by one merge revision, followed by the plugin
+    # configuration columns, the Port -> Service map and the retired plugin.configure permission.
+    assert report["version_at_head"] == [[HEAD_REVISION]]
     assert "NCPA_DEPLOYMENT_RESULT" in report["tables_at_head"]
 
 
@@ -48,7 +68,9 @@ def test_service_identification_columns_are_added(report):
     # Existing ports have no recorded identification; the lifecycle treats NULL as before.
     assert report["tcp_identified_by"] and {row[0] for row in report["tcp_identified_by"]} == {None}
     assert "Identified_By" in report["udp_columns"]
-    assert {"TCP_Forced_Services", "UDP_Forced_Services"} <= set(report["settings_columns"])
+    # The "always treat port as" columns it added are merged into the Port -> Service map.
+    assert {"TCP_Port_Services", "UDP_Port_Services"} <= set(report["settings_columns"])
+    assert not {"TCP_Forced_Services", "UDP_Forced_Services"} & set(report["settings_columns"])
 
 
 def test_existing_host_names_are_kept_and_made_unique(report):

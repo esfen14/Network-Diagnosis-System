@@ -269,6 +269,17 @@ class PluginConfigurationStatus(Enum):
     FAILED = "Failed"
 
 
+class PluginConfigurationOrigin(Enum):
+    """
+    Who created a PluginConfiguration row. AUTO rows are derived from a
+    discovered port by the plugin reconciler and are the reconciler's to
+    add and remove. MANUAL rows predate the reconciler (admin-picked
+    devices) and are never touched by it.
+    """
+    AUTO = "Auto"
+    MANUAL = "Manual"
+
+
 class PluginConfiguration(db.Model):
     """
     Stores Plugin Manager configuration state (e.g. argument defaults
@@ -287,9 +298,29 @@ class PluginConfiguration(db.Model):
     # Table Name
     __tablename__ = "PLUGIN_CONFIGURATION"
 
+    # One monitored service per plugin, device and Nagios service name
+    # (NULL names, as on legacy manual rows, are not compared).
+    __table_args__ = (
+        sa.UniqueConstraint('PluginID', 'NetDiscoveryID', 'Nagios_Service_Name',
+                            name='uq_plugin_config_service'),
+    )
+
     # Table Fields
     PluginConfigurationID: so.Mapped[int] = so.mapped_column(primary_key=True)
     Service_Description: so.Mapped[Optional[str]] = so.mapped_column(sa.String(200))
+    # Which discovered service this check belongs to. NULL on legacy manual rows.
+    Port_Number: so.Mapped[Optional[int]] = so.mapped_column()
+    Protocol: so.Mapped[Optional[str]] = so.mapped_column(sa.String(3))
+    # SNMP OID / NCPA metric for plugins that expand to several checks.
+    Metric: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
+    # Final Nagios service name, e.g. "ssh-22-tcp".
+    Nagios_Service_Name: so.Mapped[Optional[str]] = so.mapped_column(sa.String(200))
+    # First time this check became active. Unlike Updated_At it is not reset
+    # by a re-apply, so it backs "Running since".
+    Applied_At: so.Mapped[Optional[datetime]] = so.mapped_column()
+    Origin: so.Mapped[PluginConfigurationOrigin] = so.mapped_column(
+        sa.Enum(PluginConfigurationOrigin), default=PluginConfigurationOrigin.MANUAL,
+    )
     Status: so.Mapped[PluginConfigurationStatus] = so.mapped_column(
         sa.Enum(PluginConfigurationStatus), default=PluginConfigurationStatus.PENDING,
     )

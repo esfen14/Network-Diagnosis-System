@@ -18,6 +18,10 @@ class HarnessError(RuntimeError):
     """Raised when a live test cannot proceed safely or deterministically."""
 
 
+class BlockedError(HarnessError):
+    """A prerequisite is missing, so the case cannot run. Recorded as Blocked, never Fail."""
+
+
 @dataclass
 class CaseResult:
     """One compact, serializable live-test outcome."""
@@ -209,6 +213,14 @@ def append_result(run_dir: Path, result: CaseResult) -> None:
     ledger = run_dir / "results.jsonl"
     with ledger.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(asdict(result), sort_keys=True) + "\n")
+
+
+def replace_result(run_dir: Path, result: CaseResult) -> None:
+    """Record a result, dropping any earlier row with the same test id (for guards re-run at finalize)."""
+    kept = [row for row in read_results(run_dir) if row.get("test_id") != result.test_id]
+    ledger = run_dir / "results.jsonl"
+    ledger.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in kept), encoding="utf-8")
+    append_result(run_dir, result)
 
 
 def read_results(run_dir: Path) -> list[dict[str, Any]]:

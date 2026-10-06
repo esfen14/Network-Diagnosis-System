@@ -22,6 +22,7 @@ ENV_VARS = [
     "NAGIOS_PASSWORD",
     "PINPOINT_NETWORKS",
     "PINPOINT_DOMAIN",
+    "PINPOINT_PORT_ARCHIVE_AFTER_DAYS",
 ]
 
 
@@ -95,3 +96,23 @@ class TestNetworkSettings:
     def test_domain(self, monkeypatch):
         assert load_config(monkeypatch).DOMAIN == "test.local"
         assert load_config(monkeypatch, PINPOINT_DOMAIN="pinpoint.lan").DOMAIN == "pinpoint.lan"
+
+
+class TestPortArchiveAfterDays:
+
+    def test_defaults_to_thirty_days(self, monkeypatch):
+        assert load_config(monkeypatch).PORT_ARCHIVE_AFTER_DAYS == 30
+
+    @pytest.mark.parametrize("value, expected", [("1", 1.0), ("0.001", 0.001), (" 7 ", 7.0)])
+    def test_environment_overrides_the_default(self, monkeypatch, value, expected):
+        cfg = load_config(monkeypatch, PINPOINT_PORT_ARCHIVE_AFTER_DAYS=value)
+        assert cfg.PORT_ARCHIVE_AFTER_DAYS == expected
+
+    def test_empty_value_keeps_the_default(self, monkeypatch):
+        cfg = load_config(monkeypatch, PINPOINT_PORT_ARCHIVE_AFTER_DAYS="  ")
+        assert cfg.PORT_ARCHIVE_AFTER_DAYS == 30
+
+    @pytest.mark.parametrize("value", ["0", "-1", "abc", "nan", "inf"])
+    def test_bad_values_stop_startup(self, monkeypatch, value):
+        with pytest.raises(ValueError, match="PINPOINT_PORT_ARCHIVE_AFTER_DAYS"):
+            load_config(monkeypatch, PINPOINT_PORT_ARCHIVE_AFTER_DAYS=value)

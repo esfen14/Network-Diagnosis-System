@@ -17,6 +17,7 @@ from app.network_discovery.create_host_cfg import (
     _create_host_cfg_file,
     _load_monitored_hosts,
     build_host_services,
+    plan_host_services,
     load_host_plugin_facts,
 )
 from app.system_models import (
@@ -410,6 +411,7 @@ class TestLoadHostPluginFacts:
 # FULL CONFIG FILE
 # ==========================================================
 
+@pytest.mark.usefixtures("all_monitoring_plugins")
 class TestCreateHostCfgFile:
 
     def test_each_host_gets_only_its_own_services(self, app, db_session, admin_user, plugin_config, tmp_path):
@@ -555,3 +557,161 @@ class TestServiceStatusCheckCommand:
         row = db_session.session.scalar(db_session.select(ServiceStatus))
         assert row.Hostname == "host-b"
         assert row.Check_Command is None
+
+
+# ==========================================================
+# MONITORING SERVER ADDRESSES
+# ==========================================================
+
+IP_ADDR_OUTPUT = (
+    "1: lo    inet 127.0.0.1/8 scope host lo valid_lft forever preferred_lft forever\n"
+    "2: eth0    inet 192.168.130.5/24 brd 192.168.130.255 scope global eth0 valid_lft forever\n"
+    "3: eth1    inet 10.20.0.7/16 brd 10.20.255.255 scope global eth1 valid_lft forever\n"
+)
+
+
+class TestMonitoringServerAddresses:
+    """The server must be skipped by every interface address, not just its hostname's."""
+
+    def test_every_interface_address_is_read_and_loopback_is_not(self):
+        from unittest.mock import MagicMock, patch
+        from app.network_discovery.create_host_cfg import local_interface_ips
+
+        with patch("app.network_discovery.create_host_cfg.subprocess.run",
+                   return_value=MagicMock(stdout=IP_ADDR_OUTPUT)):
+            assert local_interface_ips() == {"192.168.130.5", "10.20.0.7"}
+
+    def test_a_missing_ip_command_gives_no_addresses(self):
+        from unittest.mock import patch
+        from app.network_discovery.create_host_cfg import local_interface_ips
+
+        with patch("app.network_discovery.create_host_cfg.subprocess.run", side_effect=FileNotFoundError):
+            assert local_interface_ips() == set()
+
+    def test_a_second_network_card_is_included_with_the_hostname_address(self):
+        from unittest.mock import patch
+        from app.network_discovery.create_host_cfg import get_monitoring_server_ips
+
+        resolved = [(2, 1, 6, "", ("192.168.130.5", 0)), (2, 1, 6, "", ("127.0.1.1", 0))]
+        with patch("app.network_discovery.create_host_cfg.local_interface_ips", return_value={"10.20.0.7"}), \
+             patch("app.network_discovery.create_host_cfg.socket.getaddrinfo", return_value=resolved):
+            assert get_monitoring_server_ips() == {"10.20.0.7", "192.168.130.5"}
+
+    def test_an_unresolvable_hostname_does_not_stop_the_scan(self):
+        from unittest.mock import patch
+        from app.network_discovery.create_host_cfg import get_monitoring_server_ips
+
+        with patch("app.network_discovery.create_host_cfg.local_interface_ips", return_value={"10.20.0.7"}), \
+             patch("app.network_discovery.create_host_cfg.socket.getaddrinfo", side_effect=OSError):
+            assert get_monitoring_server_ips() == {"10.20.0.7"}
+
+
+# ==========================================================
+# PLUGIN MANAGER GATES GENERATION
+# ==========================================================
+
+ALL_CHECKS = {"check_tcp", "check_ssh", "check_http", "check_snmp", "check_ncpa", "check_dns", "check_ntp_time"}
+
+
+class TestPluginGate:
+    """A service is generated only when the plugin that checks it is enabled."""
+
+    def test_no_gate_when_no_set_is_given(self, app, plugin_config):
+        host = make_host("web", tcp={"22": "ssh"})
+        with app.app_context():
+            assert as_dict(build_host_services(host, {}, plugin_config)) == {"ssh-22-tcp": "pinpoint_nd_ssh!22!"}
+
+    def test_a_port_whose_plugin_is_off_is_skipped_with_the_reason(self, app, plugin_config):
+        host = make_host("web", tcp={"22": "ssh", "80": "http"})
+        skipped = []
+        with app.app_context():
+            services = as_dict(build_host_services(host, {}, plugin_config, skipped, {"check_http"}))
+
+        assert set(services) == {"http-80-tcp"}
+        assert skipped == [{
+            "hostname": "web", "port": "22", "protocol": "TCP", "service_name": "ssh",
+            "reason": "check_ssh is not enabled in Plugin Manager.",
+        }]
+
+    def test_http_and_https_are_enabled_by_the_same_plugin(self, app, plugin_config):
+        host = make_host("web", tcp={"80": "http", "443": "https"})
+        with app.app_context():
+            services = as_dict(build_host_services(host, {}, plugin_config, None, {"check_http"}))
+        assert set(services) == {"http-80-tcp", "https-443-tcp"}
+
+    def test_nothing_is_generated_when_no_plugin_is_enabled(self, app, plugin_config):
+        host = make_host("web", tcp={"22": "ssh", "9100": "printer"}, udp={"161": "snmp"})
+        skipped = []
+        with app.app_context():
+            assert build_host_services(host, {}, plugin_config, skipped, set()) == []
+        assert {entry["service_name"] for entry in skipped} == {"ssh", "printer", "snmp"}
+
+    def test_the_generic_tcp_check_needs_check_tcp(self, app, plugin_config):
+        host = make_host("printer", tcp={"9100": "printer"})
+        with app.app_context():
+            assert build_host_services(host, {}, plugin_config, None, {"check_ssh"}) == []
+            services = as_dict(build_host_services(host, {}, plugin_config, None, {"check_tcp"}))
+        assert set(services) == {"printer-9100-tcp"}
+
+    def test_fallback_to_the_generic_check_is_refused_when_check_tcp_is_off(self, app, plugin_config):
+        # NCPA with no deployed token cannot be configured, so it would fall back to check_tcp.
+        host = make_host("agent", tcp={"5693": "ncpa"})
+        skipped = []
+        with app.app_context():
+            assert build_host_services(host, {}, plugin_config, skipped, {"check_ncpa"}) == []
+            services = as_dict(build_host_services(host, {}, plugin_config, None, {"check_ncpa", "check_tcp"}))
+        assert "check_tcp is not enabled in Plugin Manager." in skipped[0]["reason"]
+        assert set(services) == {"ncpa-5693-tcp"}
+
+    def test_udp_is_monitored_only_through_its_own_plugin(self, app, plugin_config):
+        host = make_host("dns", udp={"53": "dns", "9999": "mystery"})
+        with app.app_context():
+            services = as_dict(build_host_services(host, {}, plugin_config, None, ALL_CHECKS))
+        assert set(services) == {"dns-53-udp"}
+
+
+class TestPlannedServiceDetails:
+    """The reconciler reads the same plan the generator writes."""
+
+    def test_each_service_carries_its_port_protocol_and_metric(self, app, plugin_config):
+        host = make_host("switch", tcp={"22": "ssh"}, udp={"161": "snmp"})
+        with app.app_context():
+            details = {d["name"]: d for d in plan_host_services(host, {}, plugin_config)}
+
+        assert details["ssh-22-tcp"]["port"] == 22
+        assert details["ssh-22-tcp"]["protocol"] == "tcp"
+        assert details["ssh-22-tcp"]["metric"] is None
+        assert details["ssh-22-tcp"]["plugin"] == "ssh"
+        assert details["snmp-uptime-161-udp"]["metric"] == "uptime"
+        assert details["snmp-uptime-161-udp"]["protocol"] == "udp"
+        assert details["snmp-uptime-161-udp"]["port"] == 161
+
+    def test_the_tuples_and_the_details_describe_the_same_services(self, app, plugin_config):
+        host = make_host("switch", tcp={"22": "ssh"}, udp={"161": "snmp"})
+        with app.app_context():
+            names = [name for name, _, _ in build_host_services(host, {}, plugin_config)]
+            details = [d["name"] for d in plan_host_services(host, {}, plugin_config)]
+        assert names == details
+
+
+@pytest.mark.usefixtures("db_session")
+class TestGeneratedFileFollowsPluginState:
+    def test_a_disabled_plugin_leaves_the_file_and_an_enabled_one_returns(self, app, db_session, admin_user,
+                                                                          all_monitoring_plugins, plugin_config, tmp_path):
+        from app.plugin_models import Plugin, PluginStatus
+        discovered = {"10.0.0.0/24": {"10.0.0.13": make_host("host-c", tcp={"22": "ssh", "80": "http"})}}
+
+        def generated():
+            with patched_config(app, HOST_CONFIG_DIR=tmp_path):
+                return services_by_host(_create_host_cfg_file(discovered).read_text())["host-c"]
+
+        assert set(generated()) == {"ssh-22-tcp", "http-80-tcp"}
+
+        ssh = db_session.session.scalar(db_session.select(Plugin).where(Plugin.Name == "check_ssh"))
+        ssh.Status = PluginStatus.DISABLED
+        db_session.session.commit()
+        assert set(generated()) == {"http-80-tcp"}
+
+        ssh.Status = PluginStatus.ACTIVE
+        db_session.session.commit()
+        assert set(generated()) == {"ssh-22-tcp", "http-80-tcp"}

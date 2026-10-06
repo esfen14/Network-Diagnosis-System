@@ -26,7 +26,7 @@ system.report, system.notifications, system.services, system.network_health
 system.acknowledge_alerts, system.dashboard
 plugin.scan, plugin.view, plugin.enable, plugin.disable
 plugin.command_override, plugin.command_restore, plugin.validate
-plugin.custom_add, plugin.update, plugin.update_rollback, plugin.configure
+plugin.custom_add, plugin.update, plugin.update_rollback
 settings.security, settings.system
 ```
 
@@ -124,8 +124,8 @@ Valid trend windows are `hours=1`, `6`, `24`, or `168`.
 
 | Method and path | Permission | Purpose |
 |---|---|---|
-| `GET /api/system/network-health/hosts` | `system.network_health` | Paginated/filterable latest host snapshot |
-| `GET /api/system/network-health/hosts/<hostname>/detail` | `system.network_health` | Host detail panel data |
+| `GET /api/system/network-health/hosts` | `system.network_health` | Paginated/filterable latest host snapshot; each item carries `device_id` (the discovered device behind the Nagios host name, `null` for a host with no device record such as `localhost`) |
+| `GET /api/system/network-health/hosts/<hostname>/detail` | `system.network_health` | Host detail panel data, including `device_id` |
 | `POST /api/system/network-health/hosts/acknowledge` | `system.acknowledge_alerts` | Acknowledge a host alert |
 | `DELETE /api/system/network-health/hosts/acknowledge` | `system.acknowledge_alerts` | Unacknowledge a host alert |
 
@@ -174,7 +174,7 @@ this is a documented implementation mismatch, not a recommended convention.
 | Method and path | Permission | Purpose |
 |---|---|---|
 | `GET /api/system/discovery-settings` | `settings.discovery` | Effective discovery settings, their `config.py` defaults, and whether a scan is running |
-| `PUT /api/system/discovery-settings` | `settings.discovery` | Save networks, TCP/UDP ports, "always treat port as" rules (`tcpForcedServices`, `udpForcedServices`) and fallback service names (`tcpServiceOverrides`, `udpServiceOverrides`); every field is required, the version must match |
+| `PUT /api/system/discovery-settings` | `settings.discovery` | Save networks, TCP/UDP ports and the Port -> Service tables (`tcpPortServices`, `udpPortServices`: the service expected on each port); every field is required, the version must match. GET also returns `ncpaPort`, the derived NCPA entry in the TCP table (accepted back but never stored; mapping that port to anything but `ncpa` is a 400) and `resolution` (which check each entry leads to) |
 
 ### `app/api/system/device_identity.py`
 
@@ -185,7 +185,8 @@ this is a documented implementation mismatch, not a recommended convention.
 | `PUT /api/system/hosts/<id>` | `system.hosts.edit` | Change display name and/or addressing mode |
 | `POST /api/system/hosts/<id>/merge` | `system.hosts.edit` | Merge the device into another |
 | `POST /api/system/hosts/<id>/retire` | `system.hosts.edit` | Retire the device |
-| `PUT /api/system/hosts/<id>/ports/<proto>/<port>` | `system.hosts.edit` | Body `{"state"?, "service_name"?}`: change a port's state, pin its service on this device (never renamed by a scan; a monitored port's plugin is re-frozen), or add a port by hand (`state` MONITORED plus `service_name`); response includes `identified_by` |
+| `GET /api/system/hosts/<id>/ports` | `system.hosts` | Every port of a device, ordered by state (Monitored, Missing, Suggested, Ignored, Archived), protocol and number. Per port: `state`, `source`, `service_name`, `observed_service_name`, `identified_by`, `pinned`, `plugin_name` (frozen), `check_plugin` and `plugin_enabled`, `expected_service_name`, `mismatch_acknowledged`, `promotion_held`, `managed_by_ncpa` (the NCPA port of a deployed agent), first/last seen, `missed_scans`, and `reason` (`code` and `text`: for Suggested and Ignored ports `not_used_as_intended`, `held`, `guessed`, `no_udp_plugin`, `plugin_not_enabled`, `device_excluded`, `pending` or `stopped`, first match wins; `missing` for a Missing port; `monitoring_inactive` for a Monitored port whose check plugin is off; `service_missing` for a Monitored port whose plugin is on but has no Applied service (a configuration problem); null otherwise). Also `device`, `counts` per state and `service_options` (known service names and aliases with the check plugin and protocols they lead to, for the pin dialog) |
+| `PUT /api/system/hosts/<id>/ports/<proto>/<port>` | `system.hosts.edit` | Body `{"state"?, "service_name"?, "acknowledge_mismatch"?, "unpin"?}`: change a port's state, pin its service on this device (never renamed by a scan; a monitored port's plugin is re-frozen), acknowledge a port flagged "not used as intended" (accepts the service nmap found; 400 if the port is not flagged), `unpin: true` lets scans decide the service again (a Suggested, Ignored or Archived port returns to the service the last scan saw; a Monitored or Missing port keeps its service and its Nagios service; refused with 400 for a port that is not pinned or for the NCPA port of a deployed agent; never changes state or hold), or add a port by hand (`state` MONITORED plus `service_name`); response includes `identified_by`, `expected_service_name`, `mismatch_acknowledged`, `promotion_held` and `pinned`, plus `config_applied` (a new config went live), `config_ok` (false only when the change was saved but Nagios was not brought up to date) and `config_message`. Setting `state` to SUGGESTED holds the port (no plugin promotes it); MONITORED releases it |
 | `GET /api/system/discover/review` | `system.discover` | Unresolved review items, including `SERVICE_CHANGED` |
 | `POST /api/system/discover/review/<id>/resolve` | `system.hosts.edit` | Mark a review item as dealt with |
 
@@ -235,22 +236,27 @@ accepts an optional `data` argument for errors the client must act on.
 ## Plugin API
 
 All routes are implemented in `app/api/plugin/manager.py`; supporting logic is
-split across `scanner.py`, `service.py`, `monitoring_config.py`, validators,
-command defaults, and update/custom-plugin modules.
+split across `scanner.py`, `service.py`, `reconcile.py` (the plugin reconciler), validators,
+command defaults, `plugin_descriptions.py` (description/category/documentation
+lookups, backed by the generated `plugin_catalog_data.py`), and
+update/custom-plugin modules.
 
 | Method and path | Permission | Purpose |
 |---|---|---|
 | `POST /api/plugin/scan` | `plugin.scan` | Start plugin-directory scan |
 | `GET /api/plugin/scan/status` | `plugin.scan` | Read latest scan status |
 | `GET /api/plugin` | `plugin.view` | Paginated plugin inventory |
-| `GET /api/plugin/running` | `plugin.view` | Checks currently configured in Nagios |
-| `GET /api/plugin/summary` | `plugin.view` | Plugin-manager summary counts |
+| `GET /api/plugin/summary` | `plugin.view` | Plugin-manager summary counts, including `enabled_plugins` (Enabled or Active; zero drives the "no plugins enabled" banner) |
 | `GET /api/plugin/history` | `plugin.view` | Plugin audit/history records |
-| `GET /api/plugin/<plugin_id>` | `plugin.view` | Plugin detail |
+| `GET /api/plugin/<plugin_id>` | `plugin.view` | Plugin detail, including `description`, `category` and `documentation_url` (null for plugins outside the bundled catalog) |
 | `GET /api/plugin/<plugin_id>/commands` | `plugin.view` | Commands and active overrides |
 | `GET /api/plugin/<plugin_id>/dependencies` | `plugin.view` | Dependency status |
-| `POST /api/plugin/<plugin_id>/enable` | `plugin.enable` | Enable a plugin, then apply it to every monitoring target (`apply_running_plugins_to_all_targets`: one rebuild of `plugin-services.cfg`, status becomes Active). The same sync runs after every successful network discovery so new hosts pick up running plugins. A failed auto-apply does not undo the enable; the response carries `auto_apply` |
-| `POST /api/plugin/<plugin_id>/disable` | `plugin.disable` | Disable a plugin |
+| `GET /api/plugin/<plugin_id>/enable-preview` | `plugin.view` | What enabling would monitor, without changing anything: `matched_services`, `matched_devices`, `held_ports`, `service_driven`, `already_enabled`, `message`. Counts monitored ports plus identified suggestions the plugin would promote; `held_ports` are identified ports held back and not attached |
+| `GET /api/plugin/<plugin_id>/services` | `plugin.view` | What the plugin monitors, one row per Nagios service (`page`, `per_page`, `search`): `service`, `device`, `port`, `protocol`, `metric`, `monitored`, `running_since`, and `status` read from the latest `ServiceStatus` in history.db (`kind` is ok, warning, critical, unknown, waiting for the first check, stale after three check intervals, or stopped). Ports an admin stopped are listed with `monitored` false |
+| `POST /api/plugin/<plugin_id>/services/stop` | `plugin.disable` | Body `{device_id, protocol, port}`: stop monitoring one port on one device. The port becomes Ignored, the service leaves Nagios, a history row is written; 409 if Nagios rejects it (the port goes back) or the port is protected (NCPA port of a deployed agent) |
+| `POST /api/plugin/<plugin_id>/services/resume` | `plugin.enable` | Same body: resume a stopped port; its frozen plugin is kept |
+| `POST /api/plugin/<plugin_id>/enable` | `plugin.enable` | Enable a plugin, then run the plugin reconciler (`reconcile_plugin_monitoring`): identified ports whose plugin is now enabled are promoted and attached, hosts.cfg is regenerated once through the shared writer, and the plugin becomes Active if anything is attached. No device is picked by hand. The same reconcile runs after every network discovery, port edit, merge or retire, NCPA deployment and NCPA disk refresh. Only service-driven plugins (those a registry definition uses: `check_ssh`, `check_http`, `check_snmp`, `check_ncpa`, `check_tcp`, ...) can be enabled; any other returns 409. A failed attach does not undo the enable; the response carries `auto_apply` (`success`, `changed`, `applied`, `removed`, `promoted`, `message`) |
+| `POST /api/plugin/<plugin_id>/disable` | `plugin.disable` | Disable a plugin, then reconcile: its services leave Nagios, its ports keep their state and frozen plugin so enabling restores them. If Nagios rejects the change the plugin goes back to its previous state, a failed history row is written and the route returns 409. A plugin enabled before the service-driven rule can still be disabled. The response carries `auto_apply` |
 | `POST /api/plugin/<plugin_id>/commands/<command_id>/override` | `plugin.command_override` | Save a command override |
 | `POST /api/plugin/<plugin_id>/commands/<command_id>/restore-default` | `plugin.command_restore` | Disable the active override |
 | `GET /api/system/network-profile` | `system.network_health` | Editable network name, reference tag and detail rows for the Network Health card (defaults until saved) |
@@ -259,8 +265,6 @@ command defaults, and update/custom-plugin modules.
 | ~~`POST /api/plugin/custom`~~ | `plugin.custom_add` | **Disabled** — route commented out in `manager.py` (and the client call in `pluginApi.ts`); not part of the current release |
 | `POST /api/plugin/<plugin_id>/update` | `plugin.update` | Update from an archive |
 | `POST /api/plugin/<plugin_id>/update/rollback` | `plugin.update_rollback` | Restore the backed-up version |
-| `GET /api/plugin/<plugin_id>/configurations` | `plugin.view` | List monitoring targets/configurations |
-| `POST /api/plugin/<plugin_id>/configurations` | `plugin.configure` | Validate and apply a target configuration to Nagios |
 
 ## Non-route backend modules
 

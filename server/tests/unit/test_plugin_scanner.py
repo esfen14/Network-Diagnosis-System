@@ -167,6 +167,7 @@ class TestScanPluginDirectory:
         _write_fake_plugin(tmp_path, "check_ping")
         _write_fake_plugin(tmp_path, "NP-VERSION-GEN")
         _write_fake_plugin(tmp_path, "configure")
+        _write_fake_plugin(tmp_path, "utils.sh")     # shared library the shell plugins source
 
         with _ALWAYS_EXECUTABLE, \
              patch("app.api.plugin.scanner.subprocess.run",
@@ -394,9 +395,9 @@ class TestPluginDescriptions:
 
     def test_every_catalog_plugin_has_a_short_description(self):
         from app.api.plugin.plugin_command_defaults import PLUGIN_COMMAND_DEFAULTS
-        from app.api.plugin.plugin_descriptions import PLUGIN_DESCRIPTIONS
-        assert set(PLUGIN_COMMAND_DEFAULTS) <= set(PLUGIN_DESCRIPTIONS)
-        assert all(0 < len(d) <= 500 for d in PLUGIN_DESCRIPTIONS.values())
+        from app.api.plugin.plugin_catalog_data import PLUGIN_CATALOG
+        assert set(PLUGIN_COMMAND_DEFAULTS) <= set(PLUGIN_CATALOG)
+        assert all(0 < len(entry["description"]) <= 500 for entry in PLUGIN_CATALOG.values())
 
 
 # ─── is_executable: real permission bits, Linux only ─────────────────────────

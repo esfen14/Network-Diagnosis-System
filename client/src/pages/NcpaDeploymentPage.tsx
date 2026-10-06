@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { CheckCircle2, KeyRound, Power, ServerCog, XCircle } from 'lucide-react'
 import { PageHeader } from '../components/shared/PageHeader'
 import { SummaryStatCard } from '../components/shared/SummaryStatCard'
@@ -9,6 +9,7 @@ import { DeploymentRunBanner } from '../components/ncpa-deployment/DeploymentRun
 import { DeploymentRunDrawer } from '../components/ncpa-deployment/DeploymentRunDrawer'
 import { DeployWizard, type WizardStep } from '../components/ncpa-deployment/DeployWizard'
 import { useNcpaDeploymentStatus } from '../hooks/useNcpaDeploymentStatus'
+import { useNcpaPluginState } from '../hooks/useNcpaPluginState'
 import { errorMessage } from '../lib/api'
 import { getNcpaDevices, getRuns } from '../lib/ncpaDeploymentApi'
 import type { NcpaDevice, StartResult } from '../types/ncpaDeployment'
@@ -22,6 +23,7 @@ type WizardOptions = {
 }
 
 export function NcpaDeploymentPage() {
+  const ncpaPlugin = useNcpaPluginState()
   const [searchParams, setSearchParams] = useSearchParams()
   const tab: Tab = searchParams.get('tab') === 'history' ? 'history' : 'devices'
   const openRunId = Number(searchParams.get('run')) || null
@@ -167,6 +169,13 @@ export function NcpaDeploymentPage() {
       {loadError && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
           {loadError}
+        </div>
+      )}
+      {ncpaPlugin === 'not-enabled' && (
+        <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+          The check_ncpa plugin is not enabled in Plugin Manager. The agent can still be installed, but its CPU, memory
+          and disk checks will not be monitored until you{' '}
+          <Link to="/plugins" className="font-semibold underline">enable check_ncpa</Link>.
         </div>
       )}
       {notice && (

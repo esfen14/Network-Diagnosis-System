@@ -15,16 +15,29 @@ const values = {
   networks: ['192.168.130.0/24'],
   tcpPorts: ['1-6000'],
   udpPorts: [53, 161],
-  tcpServiceOverrides: { '22': 'ssh' },
-  udpServiceOverrides: { '161': 'snmp' },
-  tcpForcedServices: { '5693': 'ncpa' },
-  udpForcedServices: {},
+  tcpPortServices: { '22': 'ssh', '5666': 'nrpe', '5693': 'ncpa' },
+  udpPortServices: { '161': 'snmp', '5666': 'nrpe' },
+}
+
+const derived = {
+  ncpaPort: 5693,
+  resolution: {
+    tcp: {
+      '22': { plugin: 'check_ssh', kind: 'plugin' },
+      '5666': { plugin: 'check_tcp', kind: 'generic' },
+      '5693': { plugin: 'check_ncpa', kind: 'plugin' },
+    },
+    udp: {
+      '161': { plugin: 'check_snmp', kind: 'plugin' },
+      '5666': { plugin: null, kind: 'skipped' },
+    },
+  },
 }
 
 function loaded(overrides: Record<string, unknown> = {}) {
   return {
-    settings: { ...values, version: 0, updatedAt: null },
-    defaults: values,
+    settings: { ...values, ...derived, version: 0, updatedAt: null },
+    defaults: { ...values, ...derived },
     scanRunning: false,
     ...overrides,
   }
@@ -36,7 +49,7 @@ describe('DiscoverySettings', () => {
     saveDiscoverySettings.mockReset()
   })
 
-  it('shows the current networks, ports and overrides', async () => {
+  it('shows the current networks, ports and expected services', async () => {
     render(<DiscoverySettings />)
 
     expect(await screen.findByText('192.168.130.0/24')).toBeInTheDocument()
@@ -46,9 +59,56 @@ describe('DiscoverySettings', () => {
     expect(screen.getByRole('button', { name: /Save Changes/ })).toBeDisabled()
   })
 
+  it('has one Port to Service section instead of two separate tables', async () => {
+    render(<DiscoverySettings />)
+
+    expect(await screen.findByText('Port → Service')).toBeInTheDocument()
+    expect(screen.queryByText('Always Treat Port As')).not.toBeInTheDocument()
+    expect(screen.queryByText('Fallback Service Names')).not.toBeInTheDocument()
+    expect(screen.getByText(/not relabelled/)).toBeInTheDocument()
+  })
+
+  it('shows which check each entry leads to and warns about generic and skipped ones', async () => {
+    render(<DiscoverySettings />)
+
+    expect(await screen.findByText('check_ssh')).toBeInTheDocument()
+    expect(screen.getByText('check_tcp (generic TCP check)')).toBeInTheDocument()
+    expect(screen.getByText('Skipped (no UDP check for this service)')).toBeInTheDocument()
+  })
+
+  it('shows NCPA\'s port as fixed with no remove button', async () => {
+    render(<DiscoverySettings />)
+
+    await screen.findByText('Port → Service')
+    expect(screen.getByText('Fixed')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Remove TCP service for port 5693')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Remove TCP service for port 22')).toBeInTheDocument()
+  })
+
+  it('refuses to map the NCPA port to another service', async () => {
+    render(<DiscoverySettings />)
+
+    fireEvent.change(await screen.findByLabelText('TCP port'), { target: { value: '5693' } })
+    fireEvent.change(screen.getByLabelText('TCP service name'), { target: { value: 'http' } })
+    fireEvent.click(screen.getByLabelText('Add TCP service'))
+
+    expect(screen.getByText(/NCPA's port and always maps to ncpa/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Save Changes/ })).toBeDisabled()
+  })
+
+  it('says a new entry is checked after it is saved', async () => {
+    render(<DiscoverySettings />)
+
+    fireEvent.change(await screen.findByLabelText('TCP port'), { target: { value: '3306' } })
+    fireEvent.change(screen.getByLabelText('TCP service name'), { target: { value: 'mysql' } })
+    fireEvent.click(screen.getByLabelText('Add TCP service'))
+
+    expect(screen.getByText('Known after saving')).toBeInTheDocument()
+  })
+
   it('adds a network and saves with the loaded version', async () => {
     saveDiscoverySettings.mockImplementation((next, version) =>
-      Promise.resolve({ ...next, version: version + 1, updatedAt: '2026-09-30T00:00:00Z' }))
+      Promise.resolve({ ...next, ...derived, version: version + 1, updatedAt: '2026-09-30T00:00:00Z' }))
     render(<DiscoverySettings />)
 
     fireEvent.change(await screen.findByLabelText('Add Networks'), { target: { value: '10.0.5.0/24' } })
@@ -71,44 +131,24 @@ describe('DiscoverySettings', () => {
     expect(screen.getByRole('button', { name: /Save Changes/ })).toBeDisabled()
   })
 
-  it('adds a service override and parses numeric ports', async () => {
+  it('adds and removes expected services and parses numeric ports', async () => {
     saveDiscoverySettings.mockImplementation((next, version) =>
-      Promise.resolve({ ...next, version: version + 1, updatedAt: null }))
+      Promise.resolve({ ...next, ...derived, version: version + 1, updatedAt: null }))
     render(<DiscoverySettings />)
 
-    fireEvent.change(await screen.findByLabelText('TCP port'), { target: { value: '5666' } })
-    fireEvent.change(screen.getByLabelText('TCP service name'), { target: { value: 'nrpe' } })
-    fireEvent.click(screen.getByLabelText('Add TCP override'))
+    fireEvent.change(await screen.findByLabelText('TCP port'), { target: { value: '3306' } })
+    fireEvent.change(screen.getByLabelText('TCP service name'), { target: { value: 'mysql' } })
+    fireEvent.click(screen.getByLabelText('Add TCP service'))
+    fireEvent.click(screen.getByLabelText('Remove UDP service for port 5666'))
     fireEvent.change(screen.getByLabelText('Add UDP Ports'), { target: { value: '123' } })
     fireEvent.click(screen.getByLabelText('Add to UDP Ports'))
     fireEvent.click(screen.getByRole('button', { name: /Save Changes/ }))
 
     await waitFor(() => expect(saveDiscoverySettings).toHaveBeenCalled())
     const [sent] = saveDiscoverySettings.mock.calls[0]
-    expect(sent.tcpServiceOverrides).toEqual({ '22': 'ssh', '5666': 'nrpe' })
-    expect(sent.tcpForcedServices).toEqual({ '5693': 'ncpa' })
+    expect(sent.tcpPortServices).toEqual({ '22': 'ssh', '3306': 'mysql', '5666': 'nrpe', '5693': 'ncpa' })
+    expect(sent.udpPortServices).toEqual({ '161': 'snmp' })
     expect(sent.udpPorts).toEqual([53, 161, 123])
-  })
-
-  it('edits the always-treat-port-as rules separately from the fallback names', async () => {
-    saveDiscoverySettings.mockImplementation((next, version) =>
-      Promise.resolve({ ...next, version: version + 1, updatedAt: null }))
-    render(<DiscoverySettings />)
-
-    expect(await screen.findByText('Always Treat Port As')).toBeInTheDocument()
-    expect(screen.getByText('Fallback Service Names')).toBeInTheDocument()
-
-    fireEvent.change(screen.getByLabelText('UDP always port'), { target: { value: '1161' } })
-    fireEvent.change(screen.getByLabelText('UDP always service name'), { target: { value: 'snmp' } })
-    fireEvent.click(screen.getByLabelText('Add UDP always override'))
-    fireEvent.click(screen.getByLabelText('Remove TCP always override for port 5693'))
-    fireEvent.click(screen.getByRole('button', { name: /Save Changes/ }))
-
-    await waitFor(() => expect(saveDiscoverySettings).toHaveBeenCalled())
-    const [sent] = saveDiscoverySettings.mock.calls[0]
-    expect(sent.udpForcedServices).toEqual({ '1161': 'snmp' })
-    expect(sent.tcpForcedServices).toEqual({})
-    expect(sent.udpServiceOverrides).toEqual({ '161': 'snmp' })
   })
 
   it('shows the server message when a save is rejected', async () => {

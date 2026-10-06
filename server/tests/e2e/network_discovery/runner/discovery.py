@@ -18,8 +18,9 @@ def desired_settings(config: dict[str, Any]) -> dict[str, Any]:
         "networks": [config["lab_network"]],
         "tcpPorts": discovery["tcp_ports"],
         "udpPorts": discovery["udp_ports"],
-        "tcpServiceOverrides": discovery["tcp_service_overrides"],
-        "udpServiceOverrides": discovery["udp_service_overrides"],
+        # lab.json files written before the tables were merged use the old key names.
+        "tcpPortServices": discovery.get("tcp_port_services", discovery.get("tcp_service_overrides")),
+        "udpPortServices": discovery.get("udp_port_services", discovery.get("udp_service_overrides")),
     }
 
 

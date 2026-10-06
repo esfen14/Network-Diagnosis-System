@@ -146,6 +146,22 @@ class TestPluginSummary:
         assert data["updates_available"] == 1
         assert data["validation_issues"] == 1
         assert data["active_capabilities"] == 1
+        assert data["enabled_plugins"] == 1
+
+    def test_enabled_plugins_counts_enabled_and_active_but_not_disabled(self, logged_in_client, db_session):
+        _make_plugin(db_session, "a", status=PluginStatus.ENABLED)
+        _make_plugin(db_session, "b", status=PluginStatus.ACTIVE)
+        _make_plugin(db_session, "c", status=PluginStatus.DISABLED)
+        _make_plugin(db_session, "d", status=PluginStatus.READY)
+        db_session.session.commit()
+
+        data = logged_in_client.get("/api/plugin/summary").get_json()["data"]
+
+        assert data["enabled_plugins"] == 2
+        assert data["active_capabilities"] == 1
+
+    def test_no_plugins_enabled_is_zero(self, logged_in_client, db_session):
+        assert logged_in_client.get("/api/plugin/summary").get_json()["data"]["enabled_plugins"] == 0
 
 
 class TestPluginDetails:

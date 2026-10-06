@@ -26,8 +26,12 @@ POST /system/hosts/<id>/merge
 POST /system/hosts/<id>/retire
     Retire a device (removed from Nagios, record and history kept).
 
+GET  /system/hosts/<id>/ports
+    Every port of a device with why each one is or is not monitored.
+
 PUT  /system/hosts/<id>/ports/<proto>/<port>
-    Change a port's state, pin its service, or add a port by hand.
+    Change a port's state, pin or unpin its service, acknowledge a mismatch,
+    or add a port by hand.
 
 GET  /system/discover/review
     Conflicts and possible duplicates raised by discovery.
@@ -47,20 +51,27 @@ from app.api.helper import error, success, validate_json_data
 from app.api.helper.database_access.permissions import require_permission
 from app.api.system import system_bp
 from app.logging.user_activity import create_user_log
-from app.network_discovery.create_host_cfg import regenerate_and_apply_config
+from app.api.plugin.reconcile import reconcile_plugin_monitoring
 from app.network_discovery.device_identity import (
     close_address,
     nagios_host_name,
     recompute_confidence,
 )
 from app.network_discovery.discovery_settings import SERVICE_NAME_PATTERN
+from app.network_discovery.plugin_registry import plugin_for_definition, resolve_plugin_name, service_options
 from app.network_discovery.port_lifecycle import (
+    acknowledge_port_mismatch,
     add_user_port,
+    enabled_plugin_names,
+    is_protected_ncpa_port,
     pin_port_service,
     port_model,
+    port_reason,
     set_port_state,
+    transport_for,
+    unpin_port_service,
 )
-from app.plugin_models import PluginConfiguration
+from app.plugin_models import PluginConfiguration, PluginConfigurationOrigin, PluginConfigurationStatus
 from app.system_models import (
     AddressingMode,
     DeviceAddressHistory,
@@ -71,6 +82,7 @@ from app.system_models import (
     NCPADeployment,
     NetworkDiscovery,
     PortState,
+    ServiceIdentification,
     SSHCredentials,
 )
 
@@ -96,16 +108,24 @@ def get_device_or_404(id):
 
 def apply_config_change():
     """
-    Regenerate and apply hosts.cfg after a change that affects Nagios. Never
-    raises: returns {"config_applied": bool, "config_message": str} so the
+    Bring Nagios in line after a change that affects it (a port edit, merge or
+    retire): the plugin reconciler promotes and attaches ports, then regenerates
+    and applies hosts.cfg through the shared writer. Never raises: returns
+    {"config_applied": bool, "config_ok": bool, "config_message": str} so the
     caller can report it next to a database change that has already been saved.
+    config_applied is true only when a new config went live; config_ok is false
+    only when Nagios was not brought up to date (the change is saved but is not
+    in Nagios yet), so "nothing needed reloading" is config_ok true, applied false.
     """
     try:
-        changed, message = regenerate_and_apply_config()
+        result = reconcile_plugin_monitoring(current_user.UserID)
     except Exception:
         current_app.logger.exception("Could not regenerate the Nagios config.")
-        return {"config_applied": False, "config_message": "The change was saved but the Nagios config could not be updated."}
-    return {"config_applied": changed, "config_message": message}
+        return {
+            "config_applied": False, "config_ok": False,
+            "config_message": "The change was saved but the Nagios config could not be updated.",
+        }
+    return {"config_applied": result["changed"], "config_ok": result["success"], "config_message": result["message"]}
 
 
 def serialize_device_summary(device):
@@ -414,7 +434,12 @@ def merge_device(id):
     for config in db.session.scalars(
         sa.select(PluginConfiguration).where(PluginConfiguration.NetDiscoveryID == id)
     ).all():
-        config.NetDiscoveryID = target_id
+        if config.Origin is PluginConfigurationOrigin.AUTO:
+            # Derived from ports: the reconciler rebuilds it for the target, and
+            # moving it could collide with the target's own row for that service.
+            db.session.delete(config)
+        else:
+            config.NetDiscoveryID = target_id
 
     # Review items about the duplicate are settled by merging it.
     for item in db.session.scalars(
@@ -439,7 +464,8 @@ def merge_device(id):
 @require_permission('system.hosts.edit')
 def edit_device_port(id, proto, port):
     """
-    Change one of the device's ports: its state, its service, or both.
+    Change one of the device's ports: its state, its service, or both; or let
+    scans decide its service again ("unpin").
 
     "service_name" pins the port's service on this device ("always treat
     this port as ..."): scans never rename it again, and a monitored port is
@@ -450,14 +476,33 @@ def edit_device_port(id, proto, port):
     The NCPA port cannot be ignored or archived while an NCPA token is
     deployed. <proto> is tcp or udp.
 
+    Setting a port to SUGGESTED holds it: no plugin promotes it until an admin
+    makes it MONITORED. Ports Suggested at an upgrade that an enabled plugin
+    would have picked up are held the same way (response "promotion_held").
+
+    A port flagged "not used as intended" (the Port -> Service setting expects
+    another service than nmap found) is not monitored until acknowledged:
+    "acknowledge_mismatch": true accepts it as the service nmap found, and the
+    port is then monitored if that service's plugin is enabled. Pinning a
+    service or choosing MONITORED also settles the flag.
+
     JSON Format
     {
         "state": "MONITORED",
-        "service_name": "http"
+        "service_name": "http",
+        "acknowledge_mismatch": true,
+        "unpin": true
     }
     "state" is one of MONITORED, SUGGESTED, IGNORED, ARCHIVED and may be
-    left out when "service_name" is sent. "service_name" is lowercase
-    letters, digits, "-" or "_".
+    left out when "service_name", "acknowledge_mismatch" or "unpin" is sent.
+    "service_name" is letters (stored in lowercase), digits, "-" or "_".
+
+    "unpin": true undoes a pin: scans decide the port's service again. A
+    Suggested, Ignored or Archived port returns to the service the last scan
+    saw; a Monitored or Missing port keeps its service and Nagios service
+    unchanged. It is refused (400) for a port that is not pinned or for the
+    NCPA port of a deployed agent, and cannot be combined with "service_name".
+    It never changes the port's state or hold.
     """
     if proto.lower() not in ("tcp", "udp"):
         return error("Protocol must be tcp or udp.", 400)
@@ -478,11 +523,21 @@ def edit_device_port(id, proto, port):
     service_name = data.get("service_name")
     if service_name is not None:
         if not isinstance(service_name, str) or not SERVICE_NAME_PATTERN.match(service_name.strip().lower()):
-            return error("service_name must be lowercase letters, digits, '-' or '_'.", 400)
+            return error("service_name must be letters, digits, '-' or '_'.", 400)
         service_name = service_name.strip().lower()
 
-    if state is None and service_name is None:
-        return error("Send a state, a service_name, or both.", 400)
+    acknowledge = data.get("acknowledge_mismatch")
+    if acknowledge is not None and not isinstance(acknowledge, bool):
+        return error("acknowledge_mismatch must be true or false.", 400)
+
+    unpin = data.get("unpin")
+    if unpin is not None and not isinstance(unpin, bool):
+        return error("unpin must be true or false.", 400)
+    if unpin and service_name is not None:
+        return error("unpin cannot be combined with service_name.", 400)
+
+    if state is None and service_name is None and not acknowledge and not unpin:
+        return error("Send a state, a service_name, acknowledge_mismatch, unpin, or a combination.", 400)
 
     device, err = get_device_or_404(id)
     if err is not None:
@@ -501,6 +556,19 @@ def edit_device_port(id, proto, port):
     else:
         # Pin first so a port made MONITORED below freezes the pinned service's plugin.
         port_label = f"{proto.lower()} port {port} on {nagios_host_name(device)}"
+        if acknowledge:
+            expected = port_row.Expected_Service_Name
+            try:
+                acknowledge_port_mismatch(id, proto, port)
+            except ValueError as e:
+                db.session.rollback()
+                return error(str(e), 400)
+        if unpin:
+            try:
+                unpin_port_service(id, proto, port)
+            except ValueError as e:
+                db.session.rollback()
+                return error(str(e), 400)
         if service_name is not None:
             pin_port_service(id, proto, port, service_name)
         if state is not None:
@@ -510,7 +578,13 @@ def edit_device_port(id, proto, port):
                 db.session.rollback()
                 return error(str(e), 400)
 
-        if service_name is None:
+        if acknowledge:
+            action = f"Acknowledged {port_label} as {port_row.Service_Name}, not the expected {expected}"
+        elif unpin and state is None:
+            action = f"Removed the pin on {port_label}; scans decide its service again"
+        elif unpin:
+            action = f"Removed the pin on {port_label} and set it to {state.value}"
+        elif service_name is None:
             action = f"Set {port_label} to {state.value}"
         elif state is None:
             action = f"Pinned {port_label} as {service_name}"
@@ -528,8 +602,114 @@ def edit_device_port(id, proto, port):
         "plugin_name": port_row.Plugin_Name,
         "state": port_row.Port_State.name,
         "identified_by": port_row.Identified_By.name if port_row.Identified_By else None,
+        "pinned": port_row.Identified_By is ServiceIdentification.USER,
+        "expected_service_name": port_row.Expected_Service_Name,
+        "mismatch_acknowledged": port_row.Mismatch_Acknowledged_At is not None,
+        "promotion_held": port_row.Promotion_Held,
     }
     return success(result, message="Port updated.")
+
+
+# ==========================================================
+# PORTS
+# ==========================================================
+
+PORT_STATE_ORDER = ["MONITORED", "MISSING", "SUGGESTED", "IGNORED", "ARCHIVED"]
+
+
+def serialize_port(port, protocol, device, enabled_plugins, applied_services=None):
+    """
+    One port as the Device Inventory shows it: its state, how its service was decided, the
+    check plugin and whether that plugin is enabled, the flags (not used as intended, held,
+    pinned) and, for Suggested and Ignored ports, why it is not monitored (port_reason).
+    "managed_by_ncpa" is true for the NCPA port of a device with a deployed agent, which must not
+    be stopped or re-pinned.
+    """
+    transport = transport_for(protocol)
+    definition_name = port.Plugin_Name or resolve_plugin_name(port.Service_Name, transport)
+    check_plugin = None if (protocol == "udp" and definition_name == "udp") else plugin_for_definition(definition_name)
+
+    return {
+        "protocol": protocol,
+        "number": port.Port_Number,
+        "service_name": port.Service_Name,
+        "observed_service_name": port.Observed_Service_Name,
+        "state": port.Port_State.name,
+        "source": port.Source.name,
+        "identified_by": port.Identified_By.name if port.Identified_By else None,
+        "pinned": port.Identified_By is ServiceIdentification.USER,
+        "plugin_name": port.Plugin_Name,
+        "check_plugin": check_plugin,
+        "plugin_enabled": check_plugin in enabled_plugins,
+        "expected_service_name": port.Expected_Service_Name,
+        "mismatch_acknowledged": port.Mismatch_Acknowledged_At is not None,
+        "promotion_held": port.Promotion_Held,
+        "managed_by_ncpa": is_protected_ncpa_port(port, device.NetDiscoveryID),
+        "first_seen_at": port.First_Seen_At.isoformat() if port.First_Seen_At else None,
+        "last_seen_at": port.Last_Seen_At.isoformat() if port.Last_Seen_At else None,
+        "missed_scans": port.Missed_Scans or 0,
+        "reason": port_reason(port, protocol, device, enabled_plugins, applied_services),
+    }
+
+
+@system_bp.get('/hosts/<int:id>/ports')
+@login_required
+@require_permission('system.hosts')
+def get_device_ports(id):
+    """
+    Return every port of a device, grouped by state (Monitored, Missing, Suggested, Ignored,
+    Archived) and then by protocol and port number, with why each Suggested or Ignored port is
+    not monitored. Also returns the count per state and the service names the pin dialog can
+    suggest, each with the check plugin it leads to.
+
+    Response
+    {
+        "device": {"id", "nagios_host_name", "ip_address", "state", "scanned"},
+        "ports": [{"protocol", "number", "service_name", "observed_service_name", "state",
+                   "source", "identified_by", "pinned", "plugin_name", "check_plugin",
+                   "plugin_enabled", "expected_service_name", "mismatch_acknowledged",
+                   "promotion_held", "managed_by_ncpa", "first_seen_at", "last_seen_at",
+                   "missed_scans", "reason": null | {"code", "text"}}],
+        "counts": {"MONITORED": n, "MISSING": n, "SUGGESTED": n, "IGNORED": n, "ARCHIVED": n},
+        "service_options": [{"name", "plugin", "protocols"}]
+    }
+    """
+    device, err = get_device_or_404(id)
+    if err is not None:
+        return err
+
+    try:
+        enabled_plugins = enabled_plugin_names()
+        applied_services = set()
+        for protocol, number in db.session.execute(
+            sa.select(PluginConfiguration.Protocol, PluginConfiguration.Port_Number).where(
+                PluginConfiguration.NetDiscoveryID == id,
+                PluginConfiguration.Status == PluginConfigurationStatus.APPLIED,
+            )
+        ):
+            applied_services.add((str(protocol).lower(), number))
+        ports = []
+        for protocol in ("tcp", "udp"):
+            model = port_model(protocol)
+            for port in db.session.scalars(sa.select(model).where(model.NetDiscoveryID == id)).all():
+                ports.append(serialize_port(port, protocol, device, enabled_plugins, applied_services))
+
+        ports.sort(key=lambda p: (PORT_STATE_ORDER.index(p["state"]), p["protocol"] != "tcp", p["number"]))
+        counts = {state: 0 for state in PORT_STATE_ORDER}
+        for port in ports:
+            counts[port["state"]] += 1
+
+        summary = serialize_device_summary(device)
+        summary["scanned"] = bool(device.Include_Device_In_Scanning)
+        return success({
+            "device": {key: summary[key] for key in ("id", "nagios_host_name", "ip_address", "state", "scanned")},
+            "ports": ports,
+            "counts": counts,
+            "service_options": service_options(),
+        })
+    except Exception:
+        current_app.logger.exception("An unexpected error occurred while listing a device's ports.")
+        return error("An unexpected error occurred.", 500)
 
 
 # ==========================================================

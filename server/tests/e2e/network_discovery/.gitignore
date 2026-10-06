@@ -6,3 +6,4 @@ __pycache__/
 *.log
 *.key
 *.pem
+config/plugin-scenarios.json

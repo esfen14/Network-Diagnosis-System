@@ -29,8 +29,8 @@ Resolution order
 Each definition renders its own Nagios `define command` object named
 pinpoint_nd_<plugin>, so generated configs never depend on which commands
 happen to exist in the stock commands.cfg. The pinpoint_nd_ prefix keeps
-them distinct from Plugin Manager's own pinpoint_<plugin> commands (see
-app/api/plugin/monitoring_config.py).
+them distinct from the pinpoint_<plugin> commands the retired manual Plugin
+Manager path generated.
 
 Adding a plugin — including one that produces many services — only means
 adding a PluginDefinition to PLUGIN_DEFINITIONS. Neither the resolver nor
@@ -382,6 +382,51 @@ def resolve_plugin_name(service_name, transport):
     if definition is not None and transport in definition.transports:
         return definition.name
     return GENERIC_PLUGIN_FOR_TRANSPORT[transport]
+
+
+def plugin_for_definition(definition_name):
+    """
+    Return the Plugin Manager plugin (the executable name, e.g. "check_ssh")
+    that checks a registry definition ("ssh"), or None for an unknown name.
+    http and https share check_http. A definition is monitored only while this
+    plugin is Enabled or Active in Plugin Manager.
+    """
+    definition = PLUGIN_DEFINITIONS.get(str(definition_name or "").lower().strip())
+    return definition.check_plugin if definition else None
+
+
+def service_options():
+    """
+    The service names and aliases the registry knows, for suggesting a service when pinning a
+    port: [{"name": "ssh", "plugin": "check_ssh", "protocols": ["tcp"]}, ...] sorted by name.
+    The generic port checks (tcp, udp) are left out because they are what every other name falls
+    back to. Any other valid name is accepted too; it is checked by the generic TCP plugin (TCP)
+    or skipped (UDP).
+    """
+    generic = set(GENERIC_PLUGIN_FOR_TRANSPORT.values())
+    options = []
+    for definition in PLUGIN_DEFINITIONS.values():
+        if definition.name in generic:
+            continue
+        protocols = [transport.value.lower() for transport in definition.transports]
+        for name in (definition.name, *definition.aliases):
+            options.append({"name": name, "plugin": definition.check_plugin, "protocols": protocols})
+    return sorted(options, key=lambda option: option["name"])
+
+
+def service_driven_plugin_names():
+    """
+    The Plugin Manager plugins that check a discovered service, i.e. every
+    check plugin some registry definition uses (check_ssh, check_http, ...).
+    Only these can be enabled and disabled: enabling one attaches it to the
+    discovered ports it can check. Any other plugin is "not service-driven".
+    """
+    return frozenset(definition.check_plugin for definition in PLUGIN_DEFINITIONS.values())
+
+
+def is_service_driven(plugin_name):
+    """True if a Plugin Manager plugin name is in service_driven_plugin_names()."""
+    return plugin_name in service_driven_plugin_names()
 
 
 def plugin_for_command(command_name):

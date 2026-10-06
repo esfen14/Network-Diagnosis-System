@@ -9,7 +9,10 @@ import threading
 from app.network_discovery.network_discovery import discover_network
 from app.network_discovery.device_identity import nagios_host_name, reconcile_scan
 from app.network_discovery.identity_probes import collect_identifiers
-from app.network_discovery.port_lifecycle import CONFIG_STATES, mark_ncpa_port, process_device_ports
+from app.network_discovery.port_lifecycle import (
+    CONFIG_STATES, enable_plugins_backing_monitored_ports, enabled_plugin_names, mark_ncpa_port,
+    process_device_ports, promote_identified_ports,
+)
 from app.network_discovery.host_config_templates import *
 from app.network_discovery.service_name_migration import migrate_legacy_service_history
 from app.network_discovery.plugin_registry import (
@@ -17,6 +20,8 @@ from app.network_discovery.plugin_registry import (
     PluginConfigurationError,
     Transport,
     build_service_checks,
+    find_plugin_by_name_or_alias,
+    plugin_for_definition,
     render_command_definition,
     resolve_plugin_command,
     resolve_plugin_name,
@@ -42,7 +47,7 @@ from app.system_models import \
 from app.logging import create_network_discovery_status, update_network_discovery_status, calculate_progress, create_skipped_service_logs
 from app.logging.deployment_history import update_ncpa_deployment_status
 from app.system_models import DiscoveryStatus, DeploymentStatus, NetworkDiscoveryStatus, ServiceIdentification
-from app.network_discovery.discovery_settings import get_discovery_setting
+from app.network_discovery.discovery_settings import get_port_services, ncpa_port_key
 import socket
 import ipaddress
 import tempfile
@@ -52,10 +57,9 @@ import tempfile
 # (NAGIOS_HOST_CFG, NAGIOS_BIN, NAGIOS_MAIN_CFG) live in server/config.py's
 # Config class. Each function below that needs one reads it from
 # current_app.config into a same-named local at the top of the function.
-# The forced service lists and fallback service overrides
-# (TCP_/UDP_FORCED_SERVICES, TCP_/UDP_SERVICE_OVERRIDES) are editable from the
-# Settings page, so they are read through get_discovery_setting() instead,
-# which falls back to config.py when nothing has been saved.
+# The Port -> Service tables (TCP_/UDP_PORT_SERVICES) are editable from the
+# Settings page, so they are read through get_port_services() instead, which
+# falls back to config.py when nothing has been saved and adds NCPA's port.
 
 PROGRESS_WEIGHT = [40,50,55,60,70,80,90,95,100]
 
@@ -128,8 +132,10 @@ def plan_plugin_services(plugin_name, service_label, port, transport, facts, ove
     it — one per metric for multi-check plugins such as SNMP and NCPA.
 
     Returns a list of dicts with base_name ("<label>[-<metric>]-<port>"; the
-    protocol is appended by finalize_service_names), transport, check_command and plugin. Raises PluginConfigurationError if
-    the plugin cannot be configured for this host.
+    protocol is appended by finalize_service_names), transport, check_command,
+    plugin, port (the port the check uses) and metric (None for single-check
+    plugins). Raises PluginConfigurationError if the plugin cannot be
+    configured for this host.
     """
     variables = resolve_plugin_variables(
         plugin_name,
@@ -150,13 +156,16 @@ def plan_plugin_services(plugin_name, service_label, port, transport, facts, ove
             "transport": transport,
             "check_command": resolve_plugin_command(plugin_name, service_variables, transport),
             "plugin": plugin_name,
+            "port": int(service_variables.get("port", port)),
+            "metric": check.metric,
         })
     return planned
 
 
-def finalize_service_names(planned):
+def finalize_service_details(planned):
     """
-    Turn planned services into (service_name, check_command, plugin) tuples.
+    Turn planned services into dicts with name, check_command, plugin, port,
+    protocol ("tcp" / "udp") and metric.
 
     Every service is named "{service}[-{metric}]-{port}-{protocol}" in
     lowercase, e.g. "ssh-22-tcp", "dns-53-udp", "ncpa-cpu-5693-tcp". The port
@@ -177,15 +186,48 @@ def finalize_service_names(planned):
             continue
 
         used_names.add(name)
-        services.append((name, service["check_command"], service["plugin"]))
+        services.append({
+            "name": name,
+            "check_command": service["check_command"],
+            "plugin": service["plugin"],
+            "port": service["port"],
+            "protocol": service["transport"].value.lower(),
+            "metric": service["metric"],
+        })
     return services
 
 
-def build_host_services(host_data, facts, app_config, skipped=None):
+def finalize_service_names(planned):
+    """
+    Turn planned services into (service_name, check_command, plugin) tuples;
+    see finalize_service_details for the naming rules.
+    """
+    return [
+        (service["name"], service["check_command"], service["plugin"])
+        for service in finalize_service_details(planned)
+    ]
+
+
+def build_host_services(host_data, facts, app_config, skipped=None, enabled_plugins=None):
+    """
+    Plan every Nagios service for one host as (service_name, check_command,
+    plugin) tuples; see plan_host_services, which this wraps.
+    """
+    planned = plan_host_services(host_data, facts, app_config, skipped, enabled_plugins)
+    return [(service["name"], service["check_command"], service["plugin"]) for service in planned]
+
+
+def plan_host_services(host_data, facts, app_config, skipped=None, enabled_plugins=None):
     """
     Plan every Nagios service for one host from its discovered TCP and UDP
     services. Each port resolves to a plugin by its service NAME; the port
     is only passed along as that plugin's "port" variable.
+
+    Plugin Manager is the switch: when enabled_plugins (a set of Plugin
+    Manager names such as "check_ssh", from port_lifecycle.enabled_plugin_names)
+    is given, a port whose plugin is not in it is skipped with a reason, and the
+    generic TCP fallback needs check_tcp to be enabled too. None means no
+    gating, for callers that only plan.
 
     If the matched TCP plugin cannot be configured for this host (e.g. NCPA
     with no deployed token, MySQL with no user) the port falls back to the
@@ -201,8 +243,7 @@ def build_host_services(host_data, facts, app_config, skipped=None):
     contain variable values, so secrets are not leaked into the log.
 
     Expects host_data in _load_monitored_hosts()'s shape and facts from
-    load_host_plugin_facts(). Returns (service_name, check_command, plugin)
-    tuples.
+    load_host_plugin_facts(). Returns the dicts of finalize_service_details.
     """
     hostname = host_data["data"]["hostname"]
     overrides = host_data["data"].get("plugin_variables")
@@ -223,6 +264,12 @@ def build_host_services(host_data, facts, app_config, skipped=None):
                 "reason": reason,
             })
 
+    def is_enabled(definition_name):
+        return enabled_plugins is None or plugin_for_definition(definition_name) in enabled_plugins
+
+    def not_enabled_reason(definition_name):
+        return f"{plugin_for_definition(definition_name)} is not enabled in Plugin Manager."
+
     planned = []
     for transport in Transport:
         discovered_services = host_data["services"].get(transport.value.lower(), {})
@@ -242,6 +289,10 @@ def build_host_services(host_data, facts, app_config, skipped=None):
                      "No plugin can check this UDP service.")
                 continue
 
+            if not is_enabled(plugin_name):
+                skip(discovered_name, port, transport, not_enabled_reason(plugin_name))
+                continue
+
             try:
                 planned.extend(plan_plugin_services(
                     plugin_name, service_label, port, transport, host_facts, overrides, app_config
@@ -255,6 +306,10 @@ def build_host_services(host_data, facts, app_config, skipped=None):
                     f"{hostname} {discovered_name} {port}/{transport.value}: {e} "
                     f"Falling back to the generic {generic_plugin} check."
                 )
+                if not is_enabled(generic_plugin):
+                    skip(discovered_name, port, transport,
+                         f"{e} {not_enabled_reason(generic_plugin)}")
+                    continue
                 # Show the downgrade to the user too, not only in the log.
                 if skipped is not None:
                     skipped.append({
@@ -273,7 +328,7 @@ def build_host_services(host_data, facts, app_config, skipped=None):
             except PluginConfigurationError as e:
                 skip(discovered_name, port, transport, str(e))
 
-    return finalize_service_names(planned)
+    return finalize_service_details(planned)
 
 # Service names of the most recently generated candidate, {hostname: [names]}.
 # Only read under config_write_lock, right after that candidate is applied.
@@ -437,6 +492,7 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
     # System-derived plugin variables (e.g. NCPA tokens and partitions),
     # fetched once for all hosts rather than once per host.
     plugin_facts = load_host_plugin_facts()
+    enabled_plugins = enabled_plugin_names()
 
     # Plugins actually used by at least one service - each needs its own
     # `define command` object, rendered once at the end of the file.
@@ -494,7 +550,9 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
             # (one per SNMP OID, one per NCPA metric/partition), all bound to
             # this host only.
             host_skipped = []
-            host_services = build_host_services(host_data, plugin_facts, current_app.config, host_skipped)
+            host_services = build_host_services(
+                host_data, plugin_facts, current_app.config, host_skipped, enabled_plugins
+            )
             if skipped is not None:
                 for entry in host_skipped:
                     skipped.append({**entry, "ip_address": ip})
@@ -580,10 +638,48 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
         f.write("".join(host_config))
     return cfg_path
 
-def get_monitoring_server_ips():
+def local_interface_ips():
+    """
+    Every non-loopback IPv4 address on this machine's network interfaces, read
+    from "ip -4 -o addr" (no shell). Returns an empty set if that command is
+    unavailable or fails, so the caller still has the hostname lookup.
+    """
     ips = set()
+    try:
+        output = subprocess.run(
+            ["ip", "-4", "-o", "addr", "show"], capture_output=True, text=True, timeout=5, check=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ips
 
-    for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+    for line in output.splitlines():
+        fields = line.split()
+        if "inet" not in fields:
+            continue
+        candidate = fields[fields.index("inet") + 1].split("/")[0]
+        try:
+            address = ipaddress.ip_address(candidate)
+        except ValueError:
+            continue
+        if not address.is_loopback:
+            ips.add(candidate)
+    return ips
+
+
+def get_monitoring_server_ips():
+    """
+    The IPv4 addresses of the monitoring server itself, so a scan never saves
+    it as a device: every non-loopback address on any local interface (a second
+    network card included) plus the addresses its hostname resolves to.
+    """
+    ips = local_interface_ips()
+
+    try:
+        infos = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
+    except OSError:
+        infos = []
+
+    for info in infos:
         ip = info[4][0]
         address = ipaddress.ip_address(ip)
 
@@ -600,7 +696,7 @@ def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weig
     record is never reused for another. Ports go through the port lifecycle
     (port_lifecycle.py): nothing is deleted, a missed port only counts while
     its device was seen, and new ports start as suggestions unless their
-    service is auto-monitored.
+    service is identified and its plugin is enabled in Plugin Manager.
 
     Everything is committed at once; on any error the whole save is rolled
     back and logged. Returns {(network, ip): NetworkDiscovery} for the saved
@@ -637,6 +733,10 @@ def _save_discovered_hosts(discovered_hosts, network_discovery_id, progress_weig
                     progress,
                     "Saving hosts to database."
                 )
+
+        # Ports of plugins enabled since the last scan, and of devices found
+        # now, start being monitored (Plugin Manager is the switch).
+        promote_identified_ports()
 
         # Save everything at once
         db.session.commit()
@@ -845,14 +945,49 @@ def _run_nagios_verify(main_cfg_path):
         return False, f"Nagios binary not found at {NAGIOS_BIN}."
 
 def _sync_running_plugins(app, user_id):
+    """
+    After a scan, attach the discovered ports of every enabled plugin and drop
+    the ones that no longer apply (the plugin reconciler). Never raises: a
+    failure is logged and leaves the scan's own result alone.
+    """
     try:
-        from app.api.plugin.service import apply_running_plugins_to_all_targets
-        result = apply_running_plugins_to_all_targets(user_id)
+        from app.api.plugin.reconcile import reconcile_plugin_monitoring
+        result = reconcile_plugin_monitoring(user_id)
         if not result["success"]:
-            app.logger.warning("Running plugins were not applied after discovery: %s", result["message"])
+            app.logger.warning("Plugin monitoring was not reconciled after discovery: %s", result["message"])
     except Exception:
         db.session.rollback()
-        app.logger.exception("Applying running plugins after discovery failed.")
+        app.logger.exception("Reconciling plugin monitoring after discovery failed.")
+
+
+def ensure_plugin_inventory(app):
+    """
+    Scan the Nagios plugin directory when Plugin Manager has no plugins yet, so a
+    fresh install has an inventory to enable before the first scan finishes.
+    A fresh install enables nothing: monitoring starts only when an admin enables a
+    plugin. An install that was already monitoring ports before generation followed
+    Plugin Manager (it upgraded without ever scanning plugins) has its backing plugins
+    enabled here, because the upgrade migration could not enable plugins that did not
+    exist yet and its services would otherwise drop out of Nagios. Never raises; a
+    failure is logged and the scan carries on.
+    """
+    try:
+        from app.api.plugin.scanner import scan_plugin_directory, sync_plugin_inventory
+        from app.plugin_models import Plugin
+
+        if db.session.scalar(sa.select(sa.func.count()).select_from(Plugin)):
+            return False
+        summary = sync_plugin_inventory(scan_plugin_directory())
+        kept = enable_plugins_backing_monitored_ports()
+        db.session.commit()
+        app.logger.info("Plugin inventory was empty; scanned it before discovery: %s", summary)
+        if kept:
+            app.logger.info("Enabled the plugins behind already-monitored ports so they keep running: %s", ", ".join(kept))
+        return True
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Scanning the plugin inventory before discovery failed.")
+        return False
 
 
 def _validate_config(cfg_path):
@@ -1036,28 +1171,58 @@ def _collect_identifiers(network_discovery_id, discovered_hosts, progress_weight
 
     return discovered_hosts
 
-def apply_service_rules(service_data, port_id, forced_services, fallback_services):
+def same_service(first, second):
+    """
+    True if two service names mean the same service: equal after lowercasing,
+    or both naming the same plugin definition (e.g. an alias and its name).
+    """
+    first = str(first or "").strip().lower()
+    second = str(second or "").strip().lower()
+    if first == second:
+        return True
+    first_definition = find_plugin_by_name_or_alias(first)
+    return first_definition is not None and first_definition is find_plugin_by_name_or_alias(second)
+
+
+def apply_service_rules(service_data, port_id, port_services, always_ports=()):
     """
     Decide one scanned port's service name from nmap's result
     ({"service_name", "identified_by"}, see network_discovery.service_from_nmap)
-    and the configured port rules, in place. An "always treat port as" rule
-    wins over everything nmap reported (PORT_RULE). A fallback name only
-    replaces a guess nmap made from the port number; a fingerprinted service
-    keeps nmap's name. A port pinned by an operator is handled later by the
-    port lifecycle, which never renames it.
+    and the Port -> Service table, in place. The table says what an admin
+    expects on a port:
+
+    - nmap only guessed from the port number, or fingerprinted the same
+      service: the port takes the table's service (PORT_RULE);
+    - nmap fingerprinted a different service: the port keeps what nmap saw and
+      "expected_service" records the table's entry, so the port is flagged
+      "not used as intended" instead of being relabelled;
+    - a port in always_ports (NCPA's, which deployment configures) always takes
+      the table's service, because nmap would otherwise call it plain https.
+
+    A port pinned by an operator is handled later by the port lifecycle, which
+    never renames it.
     """
     identified_by = service_data.get("identified_by") or ServiceIdentification.PORT_HINT.name
     service_data["identified_by"] = identified_by
 
-    if port_id in forced_services:
-        service_data["service_name"] = forced_services[port_id]
+    expected = port_services.get(port_id)
+    if expected is None:
+        return service_data
+
+    contradicted = (
+        identified_by == ServiceIdentification.FINGERPRINT.name
+        and port_id not in always_ports
+        and not same_service(service_data.get("service_name"), expected)
+    )
+    if contradicted:
+        service_data["expected_service"] = expected
+    else:
+        service_data["service_name"] = expected
         service_data["identified_by"] = ServiceIdentification.PORT_RULE.name
-    elif identified_by == ServiceIdentification.PORT_HINT.name and port_id in fallback_services:
-        service_data["service_name"] = fallback_services[port_id]
     return service_data
 
 
-def _apply_service_rules(network_discovery_id, discovered_hosts, protocol, forced_services, fallback_services, progress_weight):
+def _apply_service_rules(network_discovery_id, discovered_hosts, protocol, port_services, progress_weight):
     """
     Apply apply_service_rules() to every scanned port of one protocol and
     report progress. Returns discovered_hosts, changed in place.
@@ -1077,6 +1242,7 @@ def _apply_service_rules(network_discovery_id, discovered_hosts, protocol, force
         )
         return discovered_hosts
 
+    always_ports = {ncpa_port_key()} if protocol == "tcp" else set()
     processed_services = 0
 
     for hosts in discovered_hosts.values():
@@ -1087,7 +1253,7 @@ def _apply_service_rules(network_discovery_id, discovered_hosts, protocol, force
 
             for port_id, service_data in services.items():
 
-                apply_service_rules(service_data, port_id, forced_services, fallback_services)
+                apply_service_rules(service_data, port_id, port_services, always_ports)
 
                 processed_services += 1
 
@@ -1131,13 +1297,12 @@ def discover_network_create_hosts(app, user_id, stop_event):
    
     with app.app_context():
         try:
-            TCP_SERVICE_OVERRIDES = get_discovery_setting('TCP_SERVICE_OVERRIDES')
-            UDP_SERVICE_OVERRIDES = get_discovery_setting('UDP_SERVICE_OVERRIDES')
-            TCP_FORCED_SERVICES = get_discovery_setting('TCP_FORCED_SERVICES')
-            UDP_FORCED_SERVICES = get_discovery_setting('UDP_FORCED_SERVICES')
+            TCP_PORT_SERVICES = get_port_services('tcp')
+            UDP_PORT_SERVICES = get_port_services('udp')
 
             print("Created Log")
             network_discovery_id = create_network_discovery_status(user_id).DiscoveryStatusID
+            ensure_plugin_inventory(app)
 
             if stop_event.is_set():
                 mark_discovery_interrupted(network_discovery_id)
@@ -1162,10 +1327,10 @@ def discover_network_create_hosts(app, user_id, stop_event):
                 mark_discovery_interrupted(network_discovery_id)
                 return
             
-            # Port rules: "always treat port as" wins; fallback names only
-            # replace a service nmap guessed from the port number.
-            discovered_hosts = _apply_service_rules(network_discovery_id, discovered_hosts, "tcp", TCP_FORCED_SERVICES, TCP_SERVICE_OVERRIDES, PROGRESS_WEIGHT[2])
-            discovered_hosts = _apply_service_rules(network_discovery_id, discovered_hosts, "udp", UDP_FORCED_SERVICES, UDP_SERVICE_OVERRIDES, PROGRESS_WEIGHT[3])
+            # Port -> Service tables: the expected service takes a port nmap
+            # could not fingerprint; a contradicting fingerprint is flagged.
+            discovered_hosts = _apply_service_rules(network_discovery_id, discovered_hosts, "tcp", TCP_PORT_SERVICES, PROGRESS_WEIGHT[2])
+            discovered_hosts = _apply_service_rules(network_discovery_id, discovered_hosts, "udp", UDP_PORT_SERVICES, PROGRESS_WEIGHT[3])
 
             if stop_event.is_set():
                 mark_discovery_interrupted(network_discovery_id)
@@ -1403,6 +1568,9 @@ def add_ncpa_port(app, successful_device, ncpa_deployment_status_id, stop_event)
                             "New host.cfg successfully applied.",
                             datetime.now(timezone.utc)
                         )
+                        # The agent's checks are attached to check_ncpa like any other
+                        # plugin-driven service, and only while that plugin is enabled.
+                        _sync_running_plugins(app, None)
                     else:
                         update_ncpa_deployment_status(
                             ncpa_deployment_status_id,
@@ -1436,28 +1604,40 @@ def add_ncpa_port(app, successful_device, ncpa_deployment_status_id, stop_event)
                 str(e)
             )
 
-def regenerate_and_apply_config():
+def regenerate_and_apply_config_status():
     """
     Rebuild hosts.cfg from the database and, if it really changed, validate
     and apply it. The single entry point for everything that is not a full
-    scan: NCPA relocation and user edits (merge, retire, port changes).
+    scan: NCPA relocation, user edits (merge, retire, port changes) and the
+    plugin reconciler.
 
     Runs under config_write_lock so it cannot interleave with discovery or
-    add_ncpa_port(). Returns (changed, message): changed is True only when a
-    new config was applied; when nothing changed or the config could not be
-    applied the message says why. Does not touch the database session beyond
-    reading.
+    add_ncpa_port(). Returns (status, message) where status is "applied" (a new
+    config is live), "unchanged" (nothing differed, Nagios was not reloaded) or
+    "failed" (validation or apply failed and the running config is intact).
+    Does not touch the database session beyond reading.
     """
     with config_write_lock:
         new_cfg = _create_host_cfg_file(_load_monitored_hosts())
 
         if config_unchanged(new_cfg):
             new_cfg.unlink(missing_ok=True)
-            return False, "Host configuration unchanged; Nagios was not reloaded."
+            return "unchanged", "Host configuration unchanged; Nagios was not reloaded."
 
         is_valid, result = _validate_config(new_cfg)
         if not is_valid:
-            return False, f"Config failed to validate: {result}"
+            return "failed", f"Config failed to validate: {result}"
 
         applied, message = _apply_new_host_cfg(new_cfg)
-        return applied, message
+        return ("applied" if applied else "failed"), message
+
+
+def regenerate_and_apply_config():
+    """
+    regenerate_and_apply_config_status() for callers that only need to know
+    whether a new config went live. Returns (changed, message): changed is True
+    only when a new config was applied; when nothing changed or the config
+    could not be applied the message says why.
+    """
+    status, message = regenerate_and_apply_config_status()
+    return status == "applied", message

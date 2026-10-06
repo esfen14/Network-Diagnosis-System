@@ -29,7 +29,7 @@
   "discovery": {
     "tcp_ports": [21, 22, 25, 53, 80, 443, 3306, 5693, 9000],
     "udp_ports": [53, 69, 123, 161],
-    "tcp_service_overrides": {
+    "tcp_port_services": {
       "21": "ftp",
       "22": "ssh",
       "25": "smtp",
@@ -40,7 +40,7 @@
       "5693": "ncpa",
       "9000": "testtcp"
     },
-    "udp_service_overrides": {
+    "udp_port_services": {
       "53": "dns",
       "123": "ntp",
       "161": "snmp"
@@ -51,7 +51,9 @@
   "nagios": {
     "binary": "/usr/local/nagios/bin/nagios",
     "main_config": "/usr/local/nagios/etc/nagios.cfg",
-    "service_name": "nagios"
+    "service_name": "nagios",
+    "host_config": "/usr/local/nagios/etc/objects/hosts.cfg",
+    "localhost_config": "/usr/local/nagios/etc/objects/localhost.cfg"
   },
   "databases": {
     "system": "/opt/pinpoint/Network-Diagnosis-System/server/system.db"

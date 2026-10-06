@@ -3,6 +3,7 @@ import { ArrowLeft, X } from 'lucide-react'
 
 import { apiDelete, apiGet, apiPost, errorMessage } from '../../lib/api'
 import { useCurrentUser } from '../../contexts/CurrentUserContext'
+import { DevicePortsSection } from './DevicePortsSection'
 
 
 type PerfMetric = {
@@ -17,6 +18,8 @@ type PerfMetric = {
 
 type Detail = {
   hostname: string
+  // The discovered device behind this host; null for a host with no device record (e.g. localhost).
+  device_id?: number | null
   service?: string
   state: string
   state_type: string
@@ -303,6 +306,10 @@ export function StatusDetailDrawer({ hostname, onClose }: Props) {
                     </ul>
                   )}
                 </section>
+              )}
+
+              {!service && detail.device_id != null && hasPermission('system.hosts') && (
+                <DevicePortsSection key={detail.device_id} deviceId={detail.device_id} hostname={hostname} />
               )}
             </>
           )}

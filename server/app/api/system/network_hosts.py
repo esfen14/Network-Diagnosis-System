@@ -38,6 +38,7 @@ from app.history_models import (
     HostStateType,
     ServiceStatus,
 )
+from app.network_discovery.device_identity import device_ids_by_host_name
 from app.system_models import AlertAcknowledgement, AckHistory, AckAction
 
 # ---------------------------------------------------------------------------
@@ -161,11 +162,14 @@ def list_hosts():
 
         page_result = db.paginate(query, page=page, per_page=per_page, error_out=False)
 
+        device_ids = device_ids_by_host_name([h.Hostname for h in page_result.items])
+
         items = []
         for h in page_result.items:
             ack = ack_map.get(h.Hostname)
             items.append({
                 "hostname":      h.Hostname,
+                "device_id":     device_ids.get(h.Hostname),
                 "state":         h.Current_State.value,
                 "state_type":    h.State_Type.value,
                 "last_check":    h.Last_Check.isoformat() if h.Last_Check else None,
@@ -214,6 +218,7 @@ def host_detail(hostname: str):
     Response shape:
     {
         "hostname":                 str,
+        "device_id":                int | null,   # null when the host has no device record
         "state":                    str,
         "state_type":               str,
         "plugin_output":            str,
@@ -327,6 +332,7 @@ def host_detail(hostname: str):
 
         return success({
             "hostname":               host.Hostname,
+            "device_id":              device_ids_by_host_name([host.Hostname]).get(host.Hostname),
             "state":                  host.Current_State.value,
             "state_type":             host.State_Type.value,
             "plugin_output":          host.Plugin_Output,

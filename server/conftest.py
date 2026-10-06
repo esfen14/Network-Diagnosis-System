@@ -76,6 +76,40 @@ def db_session(app):
         _db.drop_all()
 
 
+# Plugin Manager plugins that switch monitoring on. A port is monitored only
+# when the plugin that checks its service is Enabled or Active, so tests that
+# expect ports to be monitored on first sighting use this fixture.
+MONITORING_PLUGINS = ("check_ssh", "check_http", "check_snmp", "check_ncpa")
+
+
+ALL_MONITORING_PLUGINS = MONITORING_PLUGINS + (
+    "check_tcp", "check_ftp", "check_smtp", "check_mysql", "check_dns", "check_ntp_time",
+)
+
+
+def _enable_plugins(db_session, names):
+    from app.plugin_models import Plugin, PluginSource, PluginStatus, PluginType
+
+    for name in names:
+        db_session.session.add(Plugin(
+            Name=name, Plugin_Type=PluginType.NAGIOS, Source=PluginSource.BASELINE_ISO,
+            Status=PluginStatus.ENABLED,
+        ))
+    db_session.session.commit()
+
+
+@pytest.fixture()
+def monitoring_plugins(db_session):
+    """Create the check_* plugins in MONITORING_PLUGINS as Enabled in Plugin Manager."""
+    _enable_plugins(db_session, MONITORING_PLUGINS)
+
+
+@pytest.fixture()
+def all_monitoring_plugins(db_session):
+    """Create every plugin discovery can generate (including the generic TCP one) as Enabled."""
+    _enable_plugins(db_session, ALL_MONITORING_PLUGINS)
+
+
 # ─── Seed / helper fixtures ───────────────────────────────────────────────────
 
 PERMISSION_NAMES = [
@@ -115,7 +149,6 @@ PERMISSION_NAMES = [
     "plugin.custom_add",
     "plugin.update",
     "plugin.update_rollback",
-    "plugin.configure",
     "settings.security",
     "settings.system",
     "settings.discovery",

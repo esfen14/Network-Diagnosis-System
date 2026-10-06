@@ -12,6 +12,15 @@ import pytest
 from app.plugin_models import Plugin, PluginType, PluginSource, PluginStatus, PluginHistory
 
 
+@pytest.fixture(autouse=True)
+def reconcile():
+    """Enable and disable reconcile Nagios afterwards; no Nagios config is written here."""
+    with patch("app.api.plugin.reconcile.reconcile_plugin_monitoring",
+               return_value={"success": True, "changed": True, "applied": 0, "removed": 0,
+                             "promoted": 0, "message": "ok"}) as mock:
+        yield mock
+
+
 def _make_plugin(db_session, name, status=PluginStatus.READY):
     plugin = Plugin(
         Name=name, Plugin_Type=PluginType.NAGIOS, Source=PluginSource.BASELINE_ISO,
@@ -38,12 +47,12 @@ def _mock_nagios_invalid():
 
 class TestEnablePlugin:
     def test_requires_login(self, client, db_session):
-        plugin = _make_plugin(db_session, "check_ping")
+        plugin = _make_plugin(db_session, "check_ssh")
         resp = client.post(f"/api/plugin/{plugin.PluginID}/enable")
         assert resp.status_code in (401, 302)
 
     def test_requires_permission(self, limited_client, db_session):
-        plugin = _make_plugin(db_session, "check_ping")
+        plugin = _make_plugin(db_session, "check_ssh")
         resp = limited_client.post(f"/api/plugin/{plugin.PluginID}/enable")
         assert resp.status_code == 403
 
@@ -52,7 +61,7 @@ class TestEnablePlugin:
         assert resp.status_code == 404
 
     def test_enable_success(self, logged_in_client, db_session):
-        plugin = _make_plugin(db_session, "check_ping", status=PluginStatus.READY)
+        plugin = _make_plugin(db_session, "check_ssh", status=PluginStatus.READY)
 
         with _mock_nagios_valid():
             resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/enable")
@@ -66,7 +75,7 @@ class TestEnablePlugin:
         assert plugin.Status == PluginStatus.ENABLED
 
     def test_enable_records_history(self, logged_in_client, db_session):
-        plugin = _make_plugin(db_session, "check_ping", status=PluginStatus.READY)
+        plugin = _make_plugin(db_session, "check_ssh", status=PluginStatus.READY)
 
         with _mock_nagios_valid():
             logged_in_client.post(f"/api/plugin/{plugin.PluginID}/enable")
@@ -80,14 +89,14 @@ class TestEnablePlugin:
         assert history.New_Value == "Enabled"
 
     def test_enable_already_enabled_is_noop(self, logged_in_client, db_session):
-        plugin = _make_plugin(db_session, "check_ping", status=PluginStatus.ENABLED)
+        plugin = _make_plugin(db_session, "check_ssh", status=PluginStatus.ENABLED)
 
         resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/enable")
         assert resp.status_code == 200
         assert resp.get_json()["data"]["changed"] is False
 
     def test_enable_already_active_is_noop_no_downgrade(self, logged_in_client, db_session):
-        plugin = _make_plugin(db_session, "check_ping", status=PluginStatus.ACTIVE)
+        plugin = _make_plugin(db_session, "check_ssh", status=PluginStatus.ACTIVE)
 
         resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/enable")
         assert resp.status_code == 200
@@ -104,7 +113,7 @@ class TestEnablePlugin:
         PluginStatus.ROLLBACK,
     ])
     def test_enable_blocked_statuses_rejected(self, logged_in_client, db_session, blocked_status):
-        plugin = _make_plugin(db_session, "check_ping", status=blocked_status)
+        plugin = _make_plugin(db_session, "check_ssh", status=blocked_status)
 
         resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/enable")
         assert resp.status_code == 409
@@ -113,7 +122,7 @@ class TestEnablePlugin:
         assert plugin.Status == blocked_status  # unchanged
 
     def test_enable_nagios_validation_failure(self, logged_in_client, db_session):
-        plugin = _make_plugin(db_session, "check_ping", status=PluginStatus.READY)
+        plugin = _make_plugin(db_session, "check_ssh", status=PluginStatus.READY)
 
         with _mock_nagios_invalid():
             resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/enable")
@@ -130,7 +139,7 @@ class TestEnablePlugin:
     def test_enable_no_nagios_binary(self, app, logged_in_client, db_session):
         """Simulates a machine without Nagios installed by patching the binary
         path to a nonexistent file. Should fail honestly, not crash."""
-        plugin = _make_plugin(db_session, "check_ping", status=PluginStatus.READY)
+        plugin = _make_plugin(db_session, "check_ssh", status=PluginStatus.READY)
         with patch.dict(app.config, {"NAGIOS_BIN": "/nonexistent/nagios"}):
             resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/enable")
         assert resp.status_code == 502
@@ -138,7 +147,7 @@ class TestEnablePlugin:
 
 class TestDisablePlugin:
     def test_requires_permission(self, limited_client, db_session):
-        plugin = _make_plugin(db_session, "check_ping")
+        plugin = _make_plugin(db_session, "check_ssh")
         resp = limited_client.post(f"/api/plugin/{plugin.PluginID}/disable")
         assert resp.status_code == 403
 
@@ -147,7 +156,7 @@ class TestDisablePlugin:
         assert resp.status_code == 404
 
     def test_disable_success(self, logged_in_client, db_session):
-        plugin = _make_plugin(db_session, "check_ping", status=PluginStatus.ENABLED)
+        plugin = _make_plugin(db_session, "check_ssh", status=PluginStatus.ENABLED)
 
         with _mock_nagios_valid():
             resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/disable")
@@ -159,7 +168,7 @@ class TestDisablePlugin:
 
     def test_disable_from_active(self, logged_in_client, db_session):
         """Unlike Enable, Disable IS reachable from ACTIVE."""
-        plugin = _make_plugin(db_session, "check_ping", status=PluginStatus.ACTIVE)
+        plugin = _make_plugin(db_session, "check_ssh", status=PluginStatus.ACTIVE)
 
         with _mock_nagios_valid():
             resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/disable")
@@ -169,20 +178,20 @@ class TestDisablePlugin:
         assert plugin.Status == PluginStatus.DISABLED
 
     def test_disable_already_disabled_is_noop(self, logged_in_client, db_session):
-        plugin = _make_plugin(db_session, "check_ping", status=PluginStatus.DISABLED)
+        plugin = _make_plugin(db_session, "check_ssh", status=PluginStatus.DISABLED)
 
         resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/disable")
         assert resp.status_code == 200
         assert resp.get_json()["data"]["changed"] is False
 
     def test_disable_blocked_status_rejected(self, logged_in_client, db_session):
-        plugin = _make_plugin(db_session, "check_ping", status=PluginStatus.DEPENDENCY_FAILED)
+        plugin = _make_plugin(db_session, "check_ssh", status=PluginStatus.DEPENDENCY_FAILED)
 
         resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/disable")
         assert resp.status_code == 409
 
     def test_disable_nagios_validation_failure(self, logged_in_client, db_session):
-        plugin = _make_plugin(db_session, "check_ping", status=PluginStatus.ENABLED)
+        plugin = _make_plugin(db_session, "check_ssh", status=PluginStatus.ENABLED)
 
         with _mock_nagios_invalid():
             resp = logged_in_client.post(f"/api/plugin/{plugin.PluginID}/disable")

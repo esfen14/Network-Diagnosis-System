@@ -2,7 +2,7 @@
 
 **Last verified against the repository:** 2026-10-04
 
-**Current isolated collection:** 1,382 collected tests
+**Current isolated collection:** 1,590 collected tests
 
 This directory contains the pytest suite for the Flask backend. It covers API
 authorization and contracts, database models, Nagios parsing and aggregation,
@@ -26,7 +26,7 @@ needed.
 |---|---|
 | `unit/` | Isolated regression suite, including unit tests and mocked Flask API/database integration tests; these are not all pure unit tests |
 | `integration/` | Explicitly selected live Nagios CGI tests; not full end-to-end acceptance |
-| `e2e/network_discovery/` | Opt-in live harness, fixtures, recovery scripts and self-tests; the complete deterministic browser runner remains proposed |
+| `e2e/network_discovery/` | Opt-in live harness, fixtures, recovery scripts and self-tests, including plugin-driven monitoring scenarios (`scenario`, `enable-check`, permission matrix); the complete deterministic browser runner remains proposed |
 | `support/` | Shared isolated builders and migration subprocess helper |
 | `plans/` | Proposed test approach, live test plan and historical findings |
 
@@ -98,6 +98,8 @@ Basenames below live under `unit/`, except `integration/test_live_nagios.py`.
 | `test_dashboard.py` | Dashboard auth guards, monitoring status, summary, active alerts, acknowledgement workflows, and recent notifications |
 | `test_network_health.py` | Summary, trend windows/buckets, plugin grouping, last-scan metadata, and auth guards |
 | `test_network_hosts.py` | Latest-host listing/filtering/pagination, host details, and host acknowledgement |
+| `test_host_device_id.py` | `device_id` on the host list and detail (naming rule, fallback names, retired devices, one lookup per page) and the registry's service options |
+| `test_device_ports_route.py` | `GET /system/hosts/<id>/ports` (shape, ordering, counts, check plugin, flags, every reason and their first-match order, service options) and the `unpin` option of the port-edit route |
 | `test_network_services.py` | Latest-service listing/filtering/pagination, service details, slash-containing names, and service acknowledgement |
 | `test_statistics.py` | Latest-state aggregations, counts, active alerts, ping/NCPA averages, Nagios-server resources, plugin groups, and trends |
 | `test_history.py` | Alert/notification history lists and details, filters, pagination, acknowledgement annotation, and auth guards |
@@ -124,15 +126,20 @@ Basenames below live under `unit/`, except `integration/test_live_nagios.py`.
 |---|---|
 | `test_plugin_models.py` | Plugin, version, command override, dependency, configuration, and history ORM behavior |
 | `test_plugin_command_defaults.py` | Curated defaults for the bundled plugin catalog |
+| `test_plugin_descriptions.py` | Generated description/category/documentation catalog (coverage, limits, generator freshness), `--help` fallback parsing, fill-if-empty rules, scanner backfill, and the plugin detail fields |
 | `test_plugin_scanner.py` | Filesystem scanning, executable detection, inventory synchronization, scan routes/status, and real permission checks where supported |
 | `test_plugin_service.py` | Inventory, summary, details, history, commands, and dependency read APIs |
-| `test_plugin_running.py` | Applied configurations returned by `GET /api/plugin/running` |
 | `test_plugin_enable_disable.py` | Enable/disable transitions, Nagios validation, history, rollback behavior, and permission guards |
 | `test_plugin_command_management.py` | Command override/restore routes, validation, immutable originals, and audit history |
 | `test_plugin_validation.py` | Executable, permission, execution, and dependency checks plus validation-state transitions |
 | `test_plugin_custom.py` | Custom-plugin upload staging, validation, collision handling, install rollback, and atomic registration |
 | `test_plugin_update.py` | Download URL/SSRF protection, safe archive extraction, update workflow, failure state, and manual rollback |
-| `test_plugin_monitoring_config.py` | Command/config generation, Nagios config inclusion and validation, apply rollback, and configuration list/create routes |
+| `test_plugin_reconcile.py` | The plugin reconciler: attaching discovered ports of enabled plugins, idempotence, disable/enable, manual rows untouched, the monitoring server, writer failures and rollback, and the callers that trigger it |
+| `test_upgrade_rehearsal.py` | A populated pre-upgrade database taken through every migration, the first reconcile, a downgrade and an upgrade again: monitoring survives, nothing is duplicated, no look-alike manual rows after a downgrade |
+| `test_plugin_scale.py` | 300 devices / 3,600 services: reconcile and services-list correctness and loose time limits |
+| `test_promotion_hold.py`, `test_promotion_hold_migration.py` | Held ports: an admin's Suggested is respected, an upgrade starts nothing new, how a hold is released, the enable preview's held count, and the migration's data step |
+| `test_plugin_services_api.py` | Service-driven plugins, the enable preview, a plugin's monitored services with live status, stop/resume of one port, disable rollback, and the removed manual routes |
+| `test_plugin_config_migration.py`, `test_port_service_map_migration.py`, `test_retire_permission_migration.py` | Alembic round trips with populated data for the plugin-driven monitoring migrations |
 
 ## Test environment
 

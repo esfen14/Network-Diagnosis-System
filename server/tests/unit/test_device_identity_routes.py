@@ -34,20 +34,24 @@ from app.system_models import (
     PortSource,
     PortState,
     ReviewKind,
+    ServiceIdentification,
 )
 from tests.support.identity_helpers import (
     MAC_1, MAC_2, NET, SSH_1, SSH_2, all_devices, identifier_values, make_status, open_addresses,
     review_items, run_scan, scan, ssh,
 )
 
+# Ports are monitored only when their plugin is enabled in Plugin Manager.
+pytestmark = pytest.mark.usefixtures("monitoring_plugins")
+
 BASE = "/api/system"
 
 
 @pytest.fixture(autouse=True)
 def regenerate():
-    """Every route that touches the Nagios config calls this; no Nagios here."""
-    with patch("app.api.system.device_identity.regenerate_and_apply_config",
-               return_value=(True, "applied")) as mock:
+    """Every route that touches the Nagios config calls the reconciler; no Nagios here."""
+    with patch("app.api.system.device_identity.reconcile_plugin_monitoring",
+               return_value={"success": True, "changed": True, "message": "applied"}) as mock:
         yield mock
 
 
@@ -245,7 +249,7 @@ class TestRetire:
         resp = logged_in_client.post(f"{BASE}/hosts/{device.NetDiscoveryID}/retire")
 
         assert resp.status_code == 200
-        assert resp.get_json()["data"] == {"config_applied": True, "config_message": "applied"}
+        assert resp.get_json()["data"] == {"config_applied": True, "config_ok": True, "config_message": "applied"}
         db_session.session.refresh(device)
         assert device.Device_State is DeviceState.RETIRED
         assert open_addresses(device) == []
@@ -270,8 +274,26 @@ class TestRetire:
 
         assert resp.status_code == 200
         assert resp.get_json()["data"]["config_applied"] is False
+        assert resp.get_json()["data"]["config_ok"] is False         # saved, but Nagios was not updated
         db_session.session.refresh(device)
         assert device.Device_State is DeviceState.RETIRED
+
+    def test_nothing_to_reload_is_ok_but_not_applied(self, logged_in_client, db_session, status, regenerate):
+        device = new_device(db_session, status)
+        regenerate.return_value = {"success": True, "changed": False, "message": "Host configuration unchanged; Nagios was not reloaded."}
+
+        data = logged_in_client.post(f"{BASE}/hosts/{device.NetDiscoveryID}/retire").get_json()["data"]
+
+        assert (data["config_applied"], data["config_ok"]) == (False, True)
+
+    def test_a_config_nagios_rejects_is_not_ok(self, logged_in_client, db_session, status, regenerate):
+        device = new_device(db_session, status)
+        regenerate.return_value = {"success": False, "changed": False, "message": "Config failed to validate: bad directive"}
+
+        data = logged_in_client.post(f"{BASE}/hosts/{device.NetDiscoveryID}/retire").get_json()["data"]
+
+        assert (data["config_applied"], data["config_ok"]) == (False, False)
+        assert "bad directive" in data["config_message"]
 
     def test_retired_device_can_return_through_a_scan(self, logged_in_client, db_session, status):
         device = new_device(db_session, status, mac=MAC_1)
@@ -443,10 +465,66 @@ class TestPortState:
         assert resp.status_code == 200
         data = resp.get_json()["data"]
         assert data["port"] == {"number": 3306, "protocol": "tcp", "service_name": "mysql",
-                                "plugin_name": "mysql", "state": "MONITORED", "identified_by": "FINGERPRINT"}
+                                "plugin_name": "mysql", "state": "MONITORED", "identified_by": "FINGERPRINT",
+                                "pinned": False, "expected_service_name": None, "mismatch_acknowledged": False, "promotion_held": False}
         assert data["config_applied"] is True
         regenerate.assert_called_once()
         assert log_actions()[-1] == f"Set tcp port 3306 on {device.Nagios_Host_Name} to Monitored"
+
+    def flagged_port(self, db_session, status, port=22, found="http", expected="ssh"):
+        """A device whose port 22 answers as http while the table expects ssh."""
+        device = new_device(db_session, status)
+        row = Open_TCP_Services(
+            NetDiscoveryID=device.NetDiscoveryID, Port_Number=port, Service_Name=found,
+            Observed_Service_Name=found, Port_State=PortState.SUGGESTED, Expected_Service_Name=expected,
+            Identified_By=ServiceIdentification.FINGERPRINT,
+        )
+        db_session.session.add(row)
+        db_session.session.commit()
+        return device, row
+
+    def test_acknowledging_a_mismatch_monitors_the_service_nmap_found(self, logged_in_client, db_session, status, regenerate):
+        device, row = self.flagged_port(db_session, status)
+
+        resp = self.put(logged_in_client, device, "tcp", 22, {"acknowledge_mismatch": True})
+
+        assert resp.status_code == 200
+        port = resp.get_json()["data"]["port"]
+        assert port["service_name"] == "http"
+        assert port["state"] == "MONITORED"
+        assert port["expected_service_name"] == "ssh"
+        assert port["mismatch_acknowledged"] is True
+        regenerate.assert_called_once()
+        assert log_actions()[-1] == (
+            f"Acknowledged tcp port 22 on {device.Nagios_Host_Name} as http, not the expected ssh")
+
+    def test_acknowledging_twice_is_refused(self, logged_in_client, db_session, status, regenerate):
+        device, row = self.flagged_port(db_session, status)
+        assert self.put(logged_in_client, device, "tcp", 22, {"acknowledge_mismatch": True}).status_code == 200
+
+        resp = self.put(logged_in_client, device, "tcp", 22, {"acknowledge_mismatch": True})
+
+        assert resp.status_code == 400
+        assert "no unacknowledged mismatch" in resp.get_json()["message"]
+
+    def test_acknowledging_a_port_that_is_not_flagged_is_refused(self, logged_in_client, db_session, status, regenerate):
+        device = new_device(db_session, status, tcp={3306: "mysql"})
+
+        resp = self.put(logged_in_client, device, "tcp", 3306, {"acknowledge_mismatch": True})
+
+        assert resp.status_code == 400
+
+    def test_acknowledge_must_be_a_boolean(self, logged_in_client, db_session, status, regenerate):
+        device, row = self.flagged_port(db_session, status)
+        assert self.put(logged_in_client, device, "tcp", 22, {"acknowledge_mismatch": "yes"}).status_code == 400
+
+    def test_choosing_to_monitor_a_flagged_port_acknowledges_it(self, logged_in_client, db_session, status, regenerate):
+        device, row = self.flagged_port(db_session, status)
+
+        resp = self.put(logged_in_client, device, "tcp", 22, {"state": "MONITORED"})
+
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["port"]["mismatch_acknowledged"] is True
 
     def test_ignoring_and_restoring_a_port(self, logged_in_client, db_session, status):
         device = new_device(db_session, status, tcp={3306: "mysql"})
