@@ -168,7 +168,7 @@ describe('groups and rows', () => {
   })
 
   it.each([
-    'not_used_as_intended', 'held', 'guessed', 'no_udp_plugin', 'plugin_not_enabled', 'device_excluded', 'pending',
+    'not_used_as_intended', 'held', 'guessed', 'no_udp_plugin', 'plugin_not_enabled', 'device_excluded', 'pending', 'missing', 'monitoring_inactive', 'service_missing',
   ] as PortReasonCode[])('shows the server\'s reason text for %s', async (code) => {
     api.getDevicePorts.mockResolvedValue(ports([suggested(code)]))
     renderSection()
@@ -500,21 +500,30 @@ describe('Set service', () => {
     expect(within(dialog).getByText('Skipped: no check exists for this UDP service')).toBeInTheDocument()
   })
 
-  it.each(['SSH', '-ssh', 'has space', 'ssh;rm', 'a'.repeat(33)])('rejects %j and disables Save', async (name) => {
+  it.each(['-ssh', 'has space', 'ssh;rm', 'a'.repeat(33)])('rejects %j and disables Save', async (name) => {
     const dialog = await openDialog()
 
     type(dialog, name)
 
-    expect(within(dialog).getByText(/Use lowercase letters, digits/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/Use letters, digits/)).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled()
     expect(within(dialog).queryByText('check_tcp (generic TCP check)')).not.toBeInTheDocument()
+  })
+
+  it('lowercases a capitalized name instead of rejecting it', async () => {
+    const dialog = await openDialog()
+
+    type(dialog, 'SSH2')
+
+    expect(within(dialog).queryByText(/Use letters, digits/)).not.toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeEnabled()
   })
 
   it('disables Save for an empty name without scolding', async () => {
     const dialog = await openDialog()
     type(dialog, '')
     expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled()
-    expect(within(dialog).queryByText(/Use lowercase letters/)).not.toBeInTheDocument()
+    expect(within(dialog).queryByText(/Use letters/)).not.toBeInTheDocument()
   })
 
   it('disables Save while the name is unchanged', async () => {

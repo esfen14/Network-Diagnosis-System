@@ -71,7 +71,7 @@ from app.network_discovery.port_lifecycle import (
     transport_for,
     unpin_port_service,
 )
-from app.plugin_models import PluginConfiguration, PluginConfigurationOrigin
+from app.plugin_models import PluginConfiguration, PluginConfigurationOrigin, PluginConfigurationStatus
 from app.system_models import (
     AddressingMode,
     DeviceAddressHistory,
@@ -495,7 +495,7 @@ def edit_device_port(id, proto, port):
     }
     "state" is one of MONITORED, SUGGESTED, IGNORED, ARCHIVED and may be
     left out when "service_name", "acknowledge_mismatch" or "unpin" is sent.
-    "service_name" is lowercase letters, digits, "-" or "_".
+    "service_name" is letters (stored in lowercase), digits, "-" or "_".
 
     "unpin": true undoes a pin: scans decide the port's service again. A
     Suggested, Ignored or Archived port returns to the service the last scan
@@ -523,7 +523,7 @@ def edit_device_port(id, proto, port):
     service_name = data.get("service_name")
     if service_name is not None:
         if not isinstance(service_name, str) or not SERVICE_NAME_PATTERN.match(service_name.strip().lower()):
-            return error("service_name must be lowercase letters, digits, '-' or '_'.", 400)
+            return error("service_name must be letters, digits, '-' or '_'.", 400)
         service_name = service_name.strip().lower()
 
     acknowledge = data.get("acknowledge_mismatch")
@@ -617,7 +617,7 @@ def edit_device_port(id, proto, port):
 PORT_STATE_ORDER = ["MONITORED", "MISSING", "SUGGESTED", "IGNORED", "ARCHIVED"]
 
 
-def serialize_port(port, protocol, device, enabled_plugins):
+def serialize_port(port, protocol, device, enabled_plugins, applied_services=None):
     """
     One port as the Device Inventory shows it: its state, how its service was decided, the
     check plugin and whether that plugin is enabled, the flags (not used as intended, held,
@@ -648,7 +648,7 @@ def serialize_port(port, protocol, device, enabled_plugins):
         "first_seen_at": port.First_Seen_At.isoformat() if port.First_Seen_At else None,
         "last_seen_at": port.Last_Seen_At.isoformat() if port.Last_Seen_At else None,
         "missed_scans": port.Missed_Scans or 0,
-        "reason": port_reason(port, protocol, device, enabled_plugins),
+        "reason": port_reason(port, protocol, device, enabled_plugins, applied_services),
     }
 
 
@@ -680,11 +680,19 @@ def get_device_ports(id):
 
     try:
         enabled_plugins = enabled_plugin_names()
+        applied_services = set()
+        for protocol, number in db.session.execute(
+            sa.select(PluginConfiguration.Protocol, PluginConfiguration.Port_Number).where(
+                PluginConfiguration.NetDiscoveryID == id,
+                PluginConfiguration.Status == PluginConfigurationStatus.APPLIED,
+            )
+        ):
+            applied_services.add((str(protocol).lower(), number))
         ports = []
         for protocol in ("tcp", "udp"):
             model = port_model(protocol)
             for port in db.session.scalars(sa.select(model).where(model.NetDiscoveryID == id)).all():
-                ports.append(serialize_port(port, protocol, device, enabled_plugins))
+                ports.append(serialize_port(port, protocol, device, enabled_plugins, applied_services))
 
         ports.sort(key=lambda p: (PORT_STATE_ORDER.index(p["state"]), p["protocol"] != "tcp", p["number"]))
         counts = {state: 0 for state in PORT_STATE_ORDER}

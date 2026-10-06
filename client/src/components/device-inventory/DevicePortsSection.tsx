@@ -305,7 +305,7 @@ function PortRow({ port, host, editable, canViewPlugins, busy, onAction }: RowPr
       {port.reason && (
         <p className="mt-1 text-xs text-[var(--text)]">
           {port.reason.text}
-          {port.reason.code === 'plugin_not_enabled' && canViewPlugins && port.check_plugin && (
+          {(port.reason.code === 'plugin_not_enabled' || port.reason.code === 'monitoring_inactive') && canViewPlugins && port.check_plugin && (
             <>
               {' '}
               <Link to="/plugins" className="font-medium text-[#b37b00] underline dark:text-[#ffb100]">

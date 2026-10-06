@@ -137,7 +137,8 @@ def is_executable(entry, entry_stat):
     return bool(entry_stat.st_mode & stat.S_IXUSR) and os.access(entry.path, os.X_OK)
 
 
-# Build/packaging scripts from the nagios-plugins source tree. They start
+# Build/packaging scripts from the nagios-plugins source tree, plus utils.sh,
+# the shared library the shell plugins source (it checks nothing itself). They start
 # with "#!" like a real plugin script, so is_plugin_program() can't tell
 # them apart by content alone — and running NP-VERSION-GEN with --version
 # writes an NP-VERSION-FILE into the current directory.
@@ -156,6 +157,7 @@ NON_PLUGIN_SCRIPT_NAMES = {
     "missing",
     "mkinstalldirs",
     "test-driver",
+    "utils.sh",
     "ylwrap",
 }
 

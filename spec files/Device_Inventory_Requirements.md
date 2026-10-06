@@ -77,7 +77,7 @@ One row per port:
 | How it was identified | Fingerprint (nmap probed it), Port rule (the Port → Service setting), Pinned (an administrator), Guess (only from the port number) |
 | Check plugin | for example `check_ssh`; "none" when no plugin checks it |
 | Flags | "Not used as intended", "Held" |
-| Reason | the sentence from §4, for Suggested and Ignored ports only |
+| Reason | the sentence from §4, for Suggested and Ignored ports, a Missing port and a Monitored port whose plugin is off, and a Monitored port with no service |
 | Last seen | relative time, with the exact time on hover |
 
 ---
@@ -99,7 +99,7 @@ Inside a group, ports are ordered by protocol (TCP, then UDP) and port number.
 
 ## 4. Reasons
 
-Shown for **Suggested** and **Ignored** ports. Exactly one applies; the first match wins.
+Shown for **Suggested** and **Ignored** ports, plus the three Missing and Monitored cases at the end of the table. Exactly one applies; the first match wins.
 
 | Order | Condition | Text |
 |---|---|---|
@@ -110,6 +110,9 @@ Shown for **Suggested** and **Ignored** ports. Exactly one applies; the first ma
 | 5 | Its check plugin is not enabled | "{check_plugin} is not enabled in Plugin Manager." |
 | 6 | Device is excluded from scanning | "This device is excluded from scanning." |
 | 7 | Ignored | "Monitoring stopped by an administrator." |
+| 8 | Missing | "Not seen lately: no recent scan found this port. Its service stays in Nagios until the port is archived." |
+| 9 | Monitored, but its check plugin is not enabled (the port keeps its frozen plugin) | "{check_plugin} is not enabled in Plugin Manager, so nothing is checking this port." |
+| 10 | Monitored, its plugin is enabled, but no Applied Nagios service exists for the port (a configuration problem, for example a rejected config) | "Marked Monitored, but no Nagios service exists for it. This is a configuration problem: check the activity log for a rejected configuration, then run discovery again." |
 
 A Suggested port that matches none of these is about to be monitored by the next
 reconcile; the reason reads "Will be monitored by the next update."

@@ -59,6 +59,10 @@ Taken from the plan's problem statement (§1) and the Device Inventory requireme
 - Record for every case: result (Pass/Fail/Blocked), the observed value, evidence
   (query output, `nagios -v` output, screenshot), and the defect ID on failure.
 
+### 3.0 Lab credentials
+
+`PINPOINT_TEST_SSH_KEY` in `lab.env` must point to the dedicated test key under `.cache/pinpoint-live-test-access/` (`test_key`), not to `pinpoint_ncpa_deploy`, which the `pinpoint-test` guest account rejects. Confirm with `ssh -i "$PINPOINT_TEST_SSH_KEY" pinpoint-test@10.0.2.2 true` before E-01 (see `e2e/network_discovery/README.md`).
+
 ### 3.1 Fixtures
 
 | Fixture | Host | Setup | Used by |
@@ -219,7 +223,7 @@ Mismatch fixture: sshd on tcp 80 while the table expects http.
 
 After L-03, change what is on port 80 (run nginx instead), rescan.
 
-| Expected | The acknowledgement clears; the port reflects the new service; if it differs from the table again it is flagged again |
+| Expected | The acknowledgement clears. A monitored port keeps its service and frozen plugin, so its Nagios service does not change, and a `SERVICE_CHANGED` review item is raised for the new service (Data Model spec, "monitored port keeps its service"). If what is found differs from the table again, the port is flagged again |
 |---|---|
 
 ### L-05: the admin's "no" sticks (O-7, O-10)
@@ -239,7 +243,8 @@ On port 8080 (nginx, scanned as http).
 |---|---|
 | Set service `ssh` | The dialog's "Checked by" reads `check_ssh`; saving marks the row **Pinned**. If it was monitored, the warning says its Nagios service will be renamed, and after saving the service is renamed (history stays under the old name) |
 | Rescan | The pinned service is **not** changed by the scan |
-| Invalid names (`SSH`, `a b`, 33 characters, empty) | Save disabled, message "Use lowercase letters, digits..." |
+| `SSH` | Accepted and saved as `ssh` (names are lowercased), in the dialog, the port route and Settings |
+| Invalid names (`a b`, 33 characters, empty) | Save disabled, message "Use letters, digits..." |
 | UDP port with a name no plugin speaks | "Checked by: Skipped: no check exists for this UDP service" |
 | Remove pin on a monitored port | Confirmation says the Nagios service is not changed; a later scan that sees a different service keeps the current one and records a review item |
 | Remove pin on a non-monitored port | The service returns to what the last scan saw |
@@ -282,7 +287,9 @@ With the sabotage on, **Stop monitoring** a port from the device drawer.
 
 ### R-02, R-03: rejected enable and disable
 
-Run **lab plan PM-07 and PM-08**. Expected there: disable fails and the plugin stays on; enable leaves the plugin Enabled with no rows or promotions kept; stop restores the port to Monitored.
+Run **lab plan PM-07 and PM-08**. Expected there: disable fails (502 from the pre-check) and the plugin stays on, with a FAILED history row and the live config untouched; stop restores the port to Monitored (409).
+
+Enable depends on what Nagios rejects. If the generated services alone are rejected, the plugin is still Enabled, `auto_apply.success` is false with the reason, no rows are kept, the live config is untouched, and a retry attaches once the config is valid. This is not a blanket `nagios -v` failure.
 
 ### R-04: the agent's port is protected (O-9)
 
@@ -410,7 +417,7 @@ Run these in the stage shown. Each has the steps and the expected output.
 
 | ID | Phase | Stage | Test | Expected output |
 |---|---|---|---|---|
-| C-00 | 0 | 1 | Check what the design relies on. (a) `grep -A3 "command_name.*check-host-alive"` in `commands.cfg`. (b) Enable `check_ssh`, run `nagios -v`. (c) `grep -c 'ARG1\$' hosts.cfg` | (a) `command_line` runs `check_ping`. (b) `nagios -v` ends "Things look okay". (c) 0 unfilled `$ARGn$` placeholders in generated services |
+| C-00 | 0 | 1 | Check what the design relies on. (a) `grep -A3 "command_name.*check-host-alive"` in `commands.cfg`. (b) Enable `check_ssh`, run `nagios -v`. (c) count unfilled placeholders in generated services only: `awk '/^define service/,/^}/' hosts.cfg | grep -c 'ARG[0-9]\$'` (a plain `grep -c` also counts the 3 command templates) | (a) `command_line` runs `check_ping`. (b) `nagios -v` ends "Things look okay". (c) 0 unfilled `$ARGn$` placeholders inside `define service` blocks |
 | C-01 | 1 | 1 | Run a plugin scan on a directory with a plugin the catalog does not know (drop a dummy executable). Open it. Edit nothing, rescan | It is listed with a fallback description, not "No description available." or an error. Known plugins keep their catalog description. A rescan does not blank or change either |
 | C-02 | 2 | 0 | Run discovery twice without changing the lab. Query the AUTO rows (lab plan §3.1) before and after | Same row count; no duplicate (device, service) pair; `Applied_At` is not re-stamped on unchanged rows; Nagios is not reloaded for the second run |
 | C-03 | 2, 4 | 0 | On the upgraded copy with MANUAL rows: enable and disable a plugin, run discovery | MANUAL rows are unchanged and still shown by the query; their `plugin-services.cfg` services keep running; no AUTO row duplicates a MANUAL service name without Nagios reporting it (`nagios -v` has no duplicate-service error) |
@@ -421,7 +428,7 @@ Run these in the stage shown. Each has the steps and the expected output.
 | C-08 | 3 | 2 | Enable `check_ncpa` on target02 with NCPA deployed; enable `check_snmp` with several OIDs configured | NCPA yields CPU, memory and one disk service per mount, each its own service reaching OK. SNMP yields one service per configured OID. A metric that does not exist on the device ends non-OK (not silently dropped) |
 | C-09 | 3 | 2 | With a plugin off, run discovery; open a port it would check | The port keeps its state (Monitored or Suggested as before). It is **not** in `hosts.cfg`. The discovery log or "skipped" record names the port and says the plugin is not enabled. Enabling the plugin then adds it with no rescan needed |
 | C-10 | 3 | 2 | Run discovery three times with no changes. Diff `hosts.cfg` between runs | Identical apart from the header timestamp. No reload is performed when nothing changed, and the reply says nothing needed updating, not an error |
-| C-11 | 3 | 2 | Read one generated service and its command for each enabled plugin | Every command starts with `$USER1$/`, has its arguments filled (host address, port), and no `$ARG1$` left. Running the command by hand on the Nagios server returns the same status Nagios shows |
+| C-11 | 3 | 2 | Read one generated service and its command for each enabled plugin | Every command starts with `$USER1$/`, has its arguments filled (host address, port), and no `$ARG1$` left (check `define service` blocks only; the `define command` templates keep their `$ARGn$`). Running the command by hand on the Nagios server returns the same status Nagios shows |
 | C-12 | 4 | 2 | `POST /api/plugin/<id>/enable` for `check_ping`, `check_load` | 409 and the plugin keeps its status (also NS-01). The UI shows no Enable button |
 | C-13 | 4 | 2 | Call the old routes: `GET /api/plugin/targets`, `GET /api/plugin/running`, `POST /api/plugin/<id>/configurations`. Open Manage Roles | Each returns 404/405. No `plugin.configure` permission is listed. Roles that had it still work |
 | C-14 | 4 | 2 | Enable the same plugin twice in a row (also double-click the Confirm button). Disable twice | The second enable returns without a second set of rows or a second reload (or a clear "already enabled"). Disable twice is safe. History has one row per real change |

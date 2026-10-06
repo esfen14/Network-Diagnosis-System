@@ -113,6 +113,9 @@ class TestValidatePortServices:
     def test_normalizes_keys_to_strings(self):
         assert validate_port_services({22: "ssh", "161": "snmp"}, "UDP") == {"22": "ssh", "161": "snmp"}
 
+    def test_lowercases_and_trims_names(self):
+        assert validate_port_services({22: " SSH ", "80": "Http-Alt"}, "TCP") == {"22": "ssh", "80": "http-alt"}
+
     def test_rejects_the_same_port_twice(self):
         with pytest.raises(DiscoverySettingsError):
             validate_port_services({22: "ssh", "22": "http"}, "TCP")
@@ -120,7 +123,6 @@ class TestValidatePortServices:
     @pytest.mark.parametrize("overrides", [
         {"0": "ssh"},
         {"abc": "ssh"},
-        {"22": "SSH"},
         {"22": "ssh server"},
         {"22": "ssh\ncheck_command evil"},
         {"22": ""},

@@ -140,7 +140,7 @@ function PortServicesEditor({ label, description, services, savedServices, resol
 
   const add = () => {
     const portValue = port.trim()
-    const nameValue = name.trim()
+    const nameValue = name.trim().toLowerCase()
     const portNumber = Number(portValue)
     if (!/^\d+$/.test(portValue) || portNumber < 1 || portNumber > 65535) {
       setError('Port must be a number from 1 to 65535.')
@@ -151,7 +151,7 @@ function PortServicesEditor({ label, description, services, savedServices, resol
       return
     }
     if (!SERVICE_NAME_PATTERN.test(nameValue)) {
-      setError("Service name must be lowercase letters, digits, '-' or '_'.")
+      setError("Service name must be letters, digits, '-' or '_'.")
       return
     }
     onChange({ ...services, [String(portNumber)]: nameValue })

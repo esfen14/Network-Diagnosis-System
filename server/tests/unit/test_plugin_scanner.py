@@ -167,6 +167,7 @@ class TestScanPluginDirectory:
         _write_fake_plugin(tmp_path, "check_ping")
         _write_fake_plugin(tmp_path, "NP-VERSION-GEN")
         _write_fake_plugin(tmp_path, "configure")
+        _write_fake_plugin(tmp_path, "utils.sh")     # shared library the shell plugins source
 
         with _ALWAYS_EXECUTABLE, \
              patch("app.api.plugin.scanner.subprocess.run",
