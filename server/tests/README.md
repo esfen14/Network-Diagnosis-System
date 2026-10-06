@@ -98,6 +98,8 @@ Basenames below live under `unit/`, except `integration/test_live_nagios.py`.
 | `test_dashboard.py` | Dashboard auth guards, monitoring status, summary, active alerts, acknowledgement workflows, and recent notifications |
 | `test_network_health.py` | Summary, trend windows/buckets, plugin grouping, last-scan metadata, and auth guards |
 | `test_network_hosts.py` | Latest-host listing/filtering/pagination, host details, and host acknowledgement |
+| `test_host_device_id.py` | `device_id` on the host list and detail (naming rule, fallback names, retired devices, one lookup per page) and the registry's service options |
+| `test_device_ports_route.py` | `GET /system/hosts/<id>/ports` (shape, ordering, counts, check plugin, flags, every reason and their first-match order, service options) and the `unpin` option of the port-edit route |
 | `test_network_services.py` | Latest-service listing/filtering/pagination, service details, slash-containing names, and service acknowledgement |
 | `test_statistics.py` | Latest-state aggregations, counts, active alerts, ping/NCPA averages, Nagios-server resources, plugin groups, and trends |
 | `test_history.py` | Alert/notification history lists and details, filters, pagination, acknowledgement annotation, and auth guards |

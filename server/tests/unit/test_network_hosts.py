@@ -175,7 +175,7 @@ class TestListHosts:
         _make_host(db_session, "h1")
         db_session.session.commit()
         item = logged_in_client.get("/api/system/network-health/hosts").get_json()["data"]["items"][0]
-        for key in ("hostname", "state", "state_type", "last_check",
+        for key in ("hostname", "device_id", "state", "state_type", "last_check",
                     "check_latency", "plugin_output", "is_flapping",
                     "in_downtime", "nagios_ack", "ack"):
             assert key in item
@@ -273,7 +273,7 @@ class TestHostDetail:
             "/api/system/network-health/hosts/h1/detail"
         ).get_json()["data"]
         for key in (
-            "hostname", "state", "state_type", "plugin_output", "last_check",
+            "hostname", "device_id", "state", "state_type", "plugin_output", "last_check",
             "last_state_change", "last_hard_state_change", "last_time_up",
             "last_time_down", "last_time_unreachable", "check_latency",
             "check_execution_time", "is_flapping", "in_downtime",

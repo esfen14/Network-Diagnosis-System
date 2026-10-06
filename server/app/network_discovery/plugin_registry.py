@@ -395,6 +395,25 @@ def plugin_for_definition(definition_name):
     return definition.check_plugin if definition else None
 
 
+def service_options():
+    """
+    The service names and aliases the registry knows, for suggesting a service when pinning a
+    port: [{"name": "ssh", "plugin": "check_ssh", "protocols": ["tcp"]}, ...] sorted by name.
+    The generic port checks (tcp, udp) are left out because they are what every other name falls
+    back to. Any other valid name is accepted too; it is checked by the generic TCP plugin (TCP)
+    or skipped (UDP).
+    """
+    generic = set(GENERIC_PLUGIN_FOR_TRANSPORT.values())
+    options = []
+    for definition in PLUGIN_DEFINITIONS.values():
+        if definition.name in generic:
+            continue
+        protocols = [transport.value.lower() for transport in definition.transports]
+        for name in (definition.name, *definition.aliases):
+            options.append({"name": name, "plugin": definition.check_plugin, "protocols": protocols})
+    return sorted(options, key=lambda option: option["name"])
+
+
 def service_driven_plugin_names():
     """
     The Plugin Manager plugins that check a discovered service, i.e. every

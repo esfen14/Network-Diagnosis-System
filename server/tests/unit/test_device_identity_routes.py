@@ -448,7 +448,7 @@ class TestPortState:
         data = resp.get_json()["data"]
         assert data["port"] == {"number": 3306, "protocol": "tcp", "service_name": "mysql",
                                 "plugin_name": "mysql", "state": "MONITORED", "identified_by": "FINGERPRINT",
-                                "expected_service_name": None, "mismatch_acknowledged": False, "promotion_held": False}
+                                "pinned": False, "expected_service_name": None, "mismatch_acknowledged": False, "promotion_held": False}
         assert data["config_applied"] is True
         regenerate.assert_called_once()
         assert log_actions()[-1] == f"Set tcp port 3306 on {device.Nagios_Host_Name} to Monitored"
