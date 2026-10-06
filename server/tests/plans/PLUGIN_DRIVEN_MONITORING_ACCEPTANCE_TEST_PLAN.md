@@ -239,7 +239,8 @@ On port 8080 (nginx, scanned as http).
 |---|---|
 | Set service `ssh` | The dialog's "Checked by" reads `check_ssh`; saving marks the row **Pinned**. If it was monitored, the warning says its Nagios service will be renamed, and after saving the service is renamed (history stays under the old name) |
 | Rescan | The pinned service is **not** changed by the scan |
-| Invalid names (`SSH`, `a b`, 33 characters, empty) | Save disabled, message "Use lowercase letters, digits..." |
+| `SSH` | Accepted and saved as `ssh` (names are lowercased), in the dialog, the port route and Settings |
+| Invalid names (`a b`, 33 characters, empty) | Save disabled, message "Use letters, digits..." |
 | UDP port with a name no plugin speaks | "Checked by: Skipped: no check exists for this UDP service" |
 | Remove pin on a monitored port | Confirmation says the Nagios service is not changed; a later scan that sees a different service keeps the current one and records a review item |
 | Remove pin on a non-monitored port | The service returns to what the last scan saw |

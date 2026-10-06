@@ -93,7 +93,7 @@ def update_discovery_settings_route():
     409, as is any save while a discovery scan is running. Networks must
     be IPv4 addresses or CIDR ranges no larger than a /16 (loopback is
     rejected); ports are numbers 1-65535 or "start-end" ranges; service
-    names are lowercase letters, digits, "-" or "_". A Port -> Service entry is
+    names are letters (stored lowercase), digits, "-" or "_". A Port -> Service entry is
     the service expected on that port: it names a port nmap could not
     fingerprint, and a port nmap fingerprinted as something else is flagged
     "not used as intended" instead of being relabelled. NCPA's port is always

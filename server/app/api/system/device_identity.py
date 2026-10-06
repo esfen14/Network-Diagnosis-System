@@ -495,7 +495,7 @@ def edit_device_port(id, proto, port):
     }
     "state" is one of MONITORED, SUGGESTED, IGNORED, ARCHIVED and may be
     left out when "service_name", "acknowledge_mismatch" or "unpin" is sent.
-    "service_name" is lowercase letters, digits, "-" or "_".
+    "service_name" is letters (stored in lowercase), digits, "-" or "_".
 
     "unpin": true undoes a pin: scans decide the port's service again. A
     Suggested, Ignored or Archived port returns to the service the last scan
@@ -523,7 +523,7 @@ def edit_device_port(id, proto, port):
     service_name = data.get("service_name")
     if service_name is not None:
         if not isinstance(service_name, str) or not SERVICE_NAME_PATTERN.match(service_name.strip().lower()):
-            return error("service_name must be lowercase letters, digits, '-' or '_'.", 400)
+            return error("service_name must be letters, digits, '-' or '_'.", 400)
         service_name = service_name.strip().lower()
 
     acknowledge = data.get("acknowledge_mismatch")
