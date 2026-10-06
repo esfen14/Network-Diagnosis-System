@@ -391,16 +391,42 @@ def promote_identified_ports():
     return promoted
 
 
+def _inactive_monitoring_reason(port, protocol, enabled_plugins):
+    """
+    The reason a Monitored port has no running check: its plugin was disabled in Plugin Manager
+    (the port keeps its state and frozen plugin). None when the plugin is enabled or the port is
+    not checked by a plugin.
+    """
+    definition_name = port.Plugin_Name or resolve_plugin_name(port.Service_Name, transport_for(protocol))
+    if protocol == "udp" and definition_name == "udp":
+        return None
+    check_plugin = plugin_for_definition(definition_name)
+    if check_plugin in enabled_plugins:
+        return None
+    return {
+        "code": "monitoring_inactive",
+        "text": f"{check_plugin} is not enabled in Plugin Manager, so nothing is checking this port.",
+    }
+
+
 def port_reason(port, protocol, device, enabled_plugins):
     """
-    Why a Suggested or Ignored port is not monitored, as {"code", "text"} (other states return
-    None). Exactly one reason applies and the first match wins, in the order the Device Inventory
+    Why a port is not (fully) monitored, as {"code", "text"}: Suggested and Ignored ports, a Missing
+    port ("missing") and a Monitored port whose check plugin is off ("monitoring_inactive"). Other
+    states return None. Exactly one reason applies and the first match wins, in the order the Device Inventory
     requirement lists them: not used as intended, held, only guessed, no UDP plugin, plugin not
     enabled, device excluded, and finally "will be monitored by the next update". Uses the same
     helpers as the reconciler so the explanation cannot drift from what it does. Read-only.
     """
     if port.Port_State is PortState.IGNORED:
         return {"code": "stopped", "text": "Monitoring stopped by an administrator."}
+    if port.Port_State is PortState.MISSING:
+        return {
+            "code": "missing",
+            "text": "Not seen lately: no recent scan found this port. Its service stays in Nagios until the port is archived.",
+        }
+    if port.Port_State is PortState.MONITORED:
+        return _inactive_monitoring_reason(port, protocol, enabled_plugins)
     if port.Port_State is not PortState.SUGGESTED:
         return None
 

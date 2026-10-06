@@ -45,7 +45,7 @@ from app.api.plugin.plugin_update import (
     NoBackupAvailableError,
 )
 from app.api.plugin.scanner import extract_version
-from app.api.plugin.plugin_descriptions import documentation_url
+from app.api.plugin.plugin_descriptions import documentation_url, get_catalog_entry
 from app.network_discovery.plugin_registry import is_service_driven, plugin_for_definition
 from app.network_discovery.port_lifecycle import CONFIG_STATES, port_model, set_port_state
 import os
@@ -90,6 +90,18 @@ class InvalidQueryError(ValueError):
     pass
 
 
+def catalog_fallback(plugin, field):
+    """
+    A plugin's Description or Category, falling back to the bundled catalog when the row has none
+    (rows created before descriptions were stored stay empty until a plugin scan fills them).
+    """
+    value = plugin.Description if field == "description" else plugin.Category
+    if value:
+        return value
+    entry = get_catalog_entry(plugin.Name)
+    return entry[field] if entry else None
+
+
 def serialize_plugin_summary_row(plugin, usage=None):
     """
     Shape used by the inventory list (one row per plugin). usage is
@@ -102,8 +114,8 @@ def serialize_plugin_summary_row(plugin, usage=None):
         "id": plugin.PluginID,
         "name": plugin.Name,
         "display_name": plugin.Display_Name,
-        "description": plugin.Description,
-        "category": plugin.Category,
+        "description": catalog_fallback(plugin, "description"),
+        "category": catalog_fallback(plugin, "category"),
         "type": plugin.Plugin_Type.value,
         "source": plugin.Source.value,
         "status": plugin.Status.value,
@@ -252,9 +264,9 @@ def get_plugin_details(plugin_id):
         "id": plugin.PluginID,
         "name": plugin.Name,
         "display_name": plugin.Display_Name,
-        "description": plugin.Description,
+        "description": catalog_fallback(plugin, "description"),
         "author": plugin.Author,
-        "category": plugin.Category,
+        "category": catalog_fallback(plugin, "category"),
         "documentation_url": documentation_url(plugin.Name),
         "service_driven": is_service_driven(plugin.Name),
         "type": plugin.Plugin_Type.value,

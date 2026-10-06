@@ -341,3 +341,21 @@ class TestDetailsRoute:
 
         assert data["documentation_url"] is None
         assert data["description"] is None
+
+
+class TestCatalogFallbackForUnscannedRows:
+    def test_a_row_without_a_description_shows_the_catalog_text(self):
+        from types import SimpleNamespace
+        from app.api.plugin.service import catalog_fallback
+
+        row = SimpleNamespace(Name="check_ssh", Description=None, Category=None)
+
+        assert catalog_fallback(row, "description") == "Check SSH server connection."
+        assert catalog_fallback(row, "category") == "Network Services"
+
+    def test_a_stored_value_wins_and_an_unknown_plugin_stays_empty(self):
+        from types import SimpleNamespace
+        from app.api.plugin.service import catalog_fallback
+
+        assert catalog_fallback(SimpleNamespace(Name="check_ssh", Description="Mine", Category=None), "description") == "Mine"
+        assert catalog_fallback(SimpleNamespace(Name="custom_x", Description=None, Category=None), "description") is None

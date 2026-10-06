@@ -18,6 +18,8 @@ export type PortReasonCode =
   | 'device_excluded'
   | 'pending'
   | 'stopped'
+  | 'missing'
+  | 'monitoring_inactive'
 
 export type PortReason = {
   code: PortReasonCode

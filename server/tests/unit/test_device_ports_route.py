@@ -237,15 +237,35 @@ class TestReasons:
     def reason(self, client, device, number, protocol="tcp"):
         return by_number(listing(client, device), number, protocol)["reason"]
 
-    def test_monitored_missing_and_archived_ports_have_no_reason(self, logged_in_client, db_session, status):
-        device = new_device(status, tcp={22: "ssh", 80: "http", 443: "https"})
+    def test_a_monitored_port_with_its_plugin_on_and_an_archived_port_have_no_reason(self, logged_in_client, db_session, status):
+        enable("check_ssh")
+        device = new_device(status, tcp={22: "ssh", 443: "https"})
         port(device, 22).Port_State = PortState.MONITORED
-        port(device, 80).Port_State = PortState.MISSING
         port(device, 443).Port_State = PortState.ARCHIVED
         db.session.commit()
 
-        for number in (22, 80, 443):
+        for number in (22, 443):
             assert self.reason(logged_in_client, device, number) is None
+
+    def test_a_missing_port_says_it_was_not_seen_lately(self, logged_in_client, db_session, status):
+        device = new_device(status, tcp={80: "http"})
+        port(device, 80).Port_State = PortState.MISSING
+        db.session.commit()
+
+        reason = self.reason(logged_in_client, device, 80)
+
+        assert reason["code"] == "missing"
+        assert reason["text"].startswith("Not seen lately")
+
+    def test_a_monitored_port_whose_plugin_is_off_says_nothing_checks_it(self, logged_in_client, db_session, status):
+        device = new_device(status, tcp={22: "ssh"})
+        port(device, 22).Port_State = PortState.MONITORED
+        db.session.commit()
+
+        assert self.reason(logged_in_client, device, 22) == {
+            "code": "monitoring_inactive",
+            "text": "check_ssh is not enabled in Plugin Manager, so nothing is checking this port.",
+        }
 
     def test_not_used_as_intended(self, logged_in_client, db_session, status):
         device = new_device(status, tcp={22: "http"})
