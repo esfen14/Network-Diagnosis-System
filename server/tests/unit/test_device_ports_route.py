@@ -527,6 +527,22 @@ class TestUnpinRoute:
         assert self.put(logged_in_client, device, 8080, {"service_name": "ssh"}).status_code == 200
         return device
 
+    def test_a_saved_change_nagios_could_not_take_is_reported_as_not_ok(self, logged_in_client, pinned, reconcile):
+        reconcile.return_value = {"success": False, "changed": False, "message": "Config failed to validate: bad directive"}
+
+        data = self.put(logged_in_client, pinned, 8080, {"state": "IGNORED"}).get_json()["data"]
+
+        assert (data["config_applied"], data["config_ok"]) == (False, False)
+        assert "bad directive" in data["config_message"]
+        assert data["port"]["state"] == "IGNORED"            # the change itself is kept
+
+    def test_a_change_that_needed_no_reload_is_ok(self, logged_in_client, pinned, reconcile):
+        reconcile.return_value = {"success": True, "changed": False, "message": "Host configuration unchanged; Nagios was not reloaded."}
+
+        data = self.put(logged_in_client, pinned, 8080, {"unpin": True}).get_json()["data"]
+
+        assert (data["config_applied"], data["config_ok"]) == (False, True)
+
     def test_unpin_returns_the_port_and_says_it_is_no_longer_pinned(self, logged_in_client, pinned, reconcile):
         resp = self.put(logged_in_client, pinned, 8080, {"unpin": True})
 

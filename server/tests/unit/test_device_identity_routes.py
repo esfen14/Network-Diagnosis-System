@@ -249,7 +249,7 @@ class TestRetire:
         resp = logged_in_client.post(f"{BASE}/hosts/{device.NetDiscoveryID}/retire")
 
         assert resp.status_code == 200
-        assert resp.get_json()["data"] == {"config_applied": True, "config_message": "applied"}
+        assert resp.get_json()["data"] == {"config_applied": True, "config_ok": True, "config_message": "applied"}
         db_session.session.refresh(device)
         assert device.Device_State is DeviceState.RETIRED
         assert open_addresses(device) == []
@@ -274,8 +274,26 @@ class TestRetire:
 
         assert resp.status_code == 200
         assert resp.get_json()["data"]["config_applied"] is False
+        assert resp.get_json()["data"]["config_ok"] is False         # saved, but Nagios was not updated
         db_session.session.refresh(device)
         assert device.Device_State is DeviceState.RETIRED
+
+    def test_nothing_to_reload_is_ok_but_not_applied(self, logged_in_client, db_session, status, regenerate):
+        device = new_device(db_session, status)
+        regenerate.return_value = {"success": True, "changed": False, "message": "Host configuration unchanged; Nagios was not reloaded."}
+
+        data = logged_in_client.post(f"{BASE}/hosts/{device.NetDiscoveryID}/retire").get_json()["data"]
+
+        assert (data["config_applied"], data["config_ok"]) == (False, True)
+
+    def test_a_config_nagios_rejects_is_not_ok(self, logged_in_client, db_session, status, regenerate):
+        device = new_device(db_session, status)
+        regenerate.return_value = {"success": False, "changed": False, "message": "Config failed to validate: bad directive"}
+
+        data = logged_in_client.post(f"{BASE}/hosts/{device.NetDiscoveryID}/retire").get_json()["data"]
+
+        assert (data["config_applied"], data["config_ok"]) == (False, False)
+        assert "bad directive" in data["config_message"]
 
     def test_retired_device_can_return_through_a_scan(self, logged_in_client, db_session, status):
         device = new_device(db_session, status, mac=MAC_1)

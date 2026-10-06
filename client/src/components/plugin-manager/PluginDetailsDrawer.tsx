@@ -606,6 +606,9 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
           <div className="w-full max-w-sm space-y-3 rounded-2xl bg-white p-5 shadow-xl dark:bg-[#171B20]">
             <h3 className="text-base font-semibold text-gray-900 dark:text-white">Enable {preview.name}?</h3>
             <p className="text-sm text-gray-600 dark:text-gray-300">{preview.message}</p>
+            {preview.held_ports > 0 && (
+              <p className="text-xs text-gray-500 dark:text-gray-400">Monitor them from each device&apos;s Ports list.</p>
+            )}
             {preview.matched_services > 0 && (
               <dl className="grid grid-cols-2 gap-2 text-sm">
                 <div className="rounded-lg bg-gray-50 px-3 py-2 dark:bg-white/5">

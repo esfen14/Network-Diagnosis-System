@@ -111,15 +111,21 @@ def apply_config_change():
     Bring Nagios in line after a change that affects it (a port edit, merge or
     retire): the plugin reconciler promotes and attaches ports, then regenerates
     and applies hosts.cfg through the shared writer. Never raises: returns
-    {"config_applied": bool, "config_message": str} so the caller can report it
-    next to a database change that has already been saved.
+    {"config_applied": bool, "config_ok": bool, "config_message": str} so the
+    caller can report it next to a database change that has already been saved.
+    config_applied is true only when a new config went live; config_ok is false
+    only when Nagios was not brought up to date (the change is saved but is not
+    in Nagios yet), so "nothing needed reloading" is config_ok true, applied false.
     """
     try:
         result = reconcile_plugin_monitoring(current_user.UserID)
     except Exception:
         current_app.logger.exception("Could not regenerate the Nagios config.")
-        return {"config_applied": False, "config_message": "The change was saved but the Nagios config could not be updated."}
-    return {"config_applied": result["changed"], "config_message": result["message"]}
+        return {
+            "config_applied": False, "config_ok": False,
+            "config_message": "The change was saved but the Nagios config could not be updated.",
+        }
+    return {"config_applied": result["changed"], "config_ok": result["success"], "config_message": result["message"]}
 
 
 def serialize_device_summary(device):

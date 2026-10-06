@@ -151,6 +151,17 @@ describe('PluginDetailsDrawer enable and disable', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Enable check_ssh' })
     expect(within(dialog).getByText(/3 identified port\(s\) are held back/)).toBeInTheDocument()
     expect(within(dialog).getByText(/will not be attached until an admin monitors them/)).toBeInTheDocument()
+    expect(within(dialog).getByText("Monitor them from each device's Ports list.")).toBeInTheDocument()
+  })
+
+  it('has no Ports hint when nothing is held back', async () => {
+    api.getEnablePreview.mockResolvedValue(preview({ held_ports: 0 }))
+    renderDrawer()
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Enable$/ }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Enable check_ssh' })
+    expect(within(dialog).queryByText(/Ports list/)).not.toBeInTheDocument()
   })
 
   it('does not enable when the preview is cancelled', async () => {

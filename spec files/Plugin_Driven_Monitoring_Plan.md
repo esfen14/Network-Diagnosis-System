@@ -738,7 +738,7 @@ the phase can close, re-point what it cannot, and add anything new. Status is
 
 | # | Gap | Found in | Close in | Status |
 |---|---|---|---|---|
-| G1 | The client has no device ports list, so the "Not used as intended" flag and its Acknowledge action exist only in the API (`acknowledge_mismatch` on `PUT /system/hosts/<id>/ports/<proto>/<port>`). The plan had no frontend row for it | 2b | not scheduled: a follow-up change after this PR (needs a ports list on the device page) | Open: planned in `Device_Ports_UI_Plan.md`; decisions made, requirement `Device_Inventory_Requirements.md` written and awaiting approval |
+| G1 | The client had no device ports list, so the "Not used as intended" flag and its Acknowledge action existed only in the API | 2b | with the ports UI | Closed (ports UI P3): the device drawer's Ports section shows flagged ports and acknowledges them |
 | G2 | Generation is not gated by plugin state: a port that is already Monitored keeps its Nagios service when its plugin is off (only promotion follows Plugin Manager) | 2b | 3 | Closed (3) |
 | G3 | Enabling or disabling a plugin does not trigger `promote_identified_ports()`; ports are only promoted at the end of a scan save | 2b | 4 | Closed (3, done early: the enable and disable routes run the reconciler) |
 | G4 | Not verified live: the lab harness was not run; the migrations were rehearsed on a populated synthetic database (`test_upgrade_rehearsal.py`) but not on a copy of a real one; the Settings and Plugin Manager pages were not opened in a browser; the `ip -4 -o addr` parsing was only tested against sample text, not a Linux host | 2, 2b | Lab plan UPG-01, PM-*, UI-01 (`PLUGIN_DRIVEN_MONITORING_LAB_TEST_PLAN.md`) | Open: needs the lab |
@@ -763,7 +763,7 @@ the phase can close, re-point what it cannot, and add anything new. Status is
 | G23 | The Plugin Manager and NCPA pages were tested with Vitest and compiled, but not opened in a browser (dialog layout, the services list in the drawer, dark mode) | 5 | Lab case UI-01 | Open: needs a browser |
 | G24 | The Plugin Manager page does not refresh a plugin's service statuses on a timer; statuses update when the drawer reloads or an action runs | 5 | lab case UI-01 decides whether polling is needed | Open: decision for the owner |
 | G25 | **Upgrade effect on suggested ports.** The upgrade enables `check_tcp` when any port was monitored by the generic check, and an enabled generic plugin attaches every identified port with no plugin of its own, so ports that were only suggested before would have become monitored on the first reconcile. The same rule also re-promoted a port an admin had set back to Suggested | 6 | 6 | Closed (6, option 2 chosen by the owner): `Promotion_Held` (migration `e9b4c2f7a105`). The upgrade holds exactly the Suggested ports the enabled plugins would promote, and setting a port to Suggested holds it; monitoring it by hand or acknowledging a mismatch releases it. Ports whose plugin is not enabled are not held, so enabling that plugin later still attaches them |
-| G26 | A held port has no screen: nothing in the client lists held ports or releases them. They are visible through the enable preview (`held_ports` and the message) and the port-edit API (`promotion_held`), and released with `state: MONITORED`. Same cause as G1 (no device ports list) | 6 | with G1 | Open: planned with G1 in `Device_Ports_UI_Plan.md` |
+| G26 | A held port had no screen | 6 | with G1 | Closed (ports UI P3): held ports are marked Held under Needs attention and released with Monitor |
 
 ## 14. Pull request notes
 
@@ -829,10 +829,10 @@ To revert after merging: revert the merge commit and run flask db downgrade to c
 (history.db is not touched). The only data-changing step is the plugin enable in a8c4e1f6b2d3.
 
 Testing
-- Backend (pytest tests/unit): 1815 passed, 23 skipped, 1 failed. The one failure,
+- Backend (pytest tests/unit): 1892 passed, 23 skipped, 1 failed. The one failure,
   test_automation.py::TestSecurityCheck::test_flags_broken_plugins_and_logs_summary, fails on a
   clean checkout on Windows and is not related.
-- Client: 237 tests passed, npm run build passes. npm run lint was already failing on the base
+- Client: 383 tests passed, npm run build passes. npm run lint was already failing on the base
   (30 errors); this branch adds one of the same kind (gap G22).
 - test_upgrade_rehearsal.py takes a populated pre-upgrade database through every migration, the
   first reconcile, a downgrade and an upgrade again. test_plugin_scale.py reconciles 300 devices.

@@ -1,6 +1,6 @@
 # Device Inventory Requirements — Ports
 **Detech-IT / 4D-G2 Capstone**
-**Status:** Approved by the owner with the answers to O1–O3 (2026-10-06): a **Remove pin** action and route are included. Being built in the order of the plan.
+**Status:** Approved by the owner with the answers to O1–O3 (2026-10-06): a **Remove pin** action and route are included. Built (backend and drawer); the browser check in light and dark mode is still to do on the lab.
 **Companion:** [`Device_Ports_UI_Plan.md`](Device_Ports_UI_Plan.md) (how and in what order it is built)
 
 ---
@@ -124,7 +124,7 @@ once ("You can view ports but not change them.").
 | Port | Action | Effect | Confirmation |
 |---|---|---|---|
 | Suggested, *Not used as intended* | **Acknowledge and monitor** | Accepts the service nmap found and monitors it if its plugin is enabled | none |
-| Suggested (any reason) | **Monitor** | Monitors the port (releases a hold, accepts a flag). If its plugin is not enabled it will produce a service only once the plugin is, and the row says so | none |
+| Suggested (any reason except *Not used as intended*) | **Monitor** | Monitors the port (releases a hold, accepts a flag). If its plugin is not enabled it will produce a service only once the plugin is, and the row says so | none |
 | Suggested, reason *plugin not enabled* | link **Enable {check_plugin}** | Opens Plugin Manager | none |
 | Suggested | **Ignore** | Hides it from "needs attention"; no service | "Ignore {protocol}/{port} on {host}? It will not be monitored." |
 | Monitored or Missing | **Stop monitoring** | Becomes Ignored; its Nagios service is removed | "Stop monitoring {service} on {host}? Its Nagios service is removed; history is kept." |
@@ -132,6 +132,8 @@ once ("You can view ports but not change them.").
 | Ignored | **Resume** | Becomes Monitored again, checked by the plugin for its service | none |
 | Any except Archived | **Set service…** | See §6 | see §6 |
 | Pinned, any except Archived | **Remove pin** | Lets scans decide the service again (§6) | "Let scans decide the service for {protocol}/{port} on {host} again?" plus the sentence for its state from §6 |
+
+For a *Not used as intended* port, **Acknowledge and monitor** is shown instead of Monitor, because both would do the same thing.
 
 Not available:
 

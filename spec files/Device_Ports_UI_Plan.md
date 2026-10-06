@@ -1,6 +1,6 @@
 # Plan: Device Ports UI
 
-Status: **decisions Q1–Q5 made and the requirement approved with changes (2026-10-06); phase P2 (backend) is done; P3 (frontend) is next.** The requirement is
+Status: **decisions Q1–Q5 made and the requirement approved with changes (2026-10-06); phases P2 (backend) and P3 (frontend) are done; P4 (specs and lab) remains the live-lab run.** The requirement is
 [`Device_Inventory_Requirements.md`](Device_Inventory_Requirements.md). That file is the
 authority for what the screen shows, its wording and its acceptance criteria; this plan is
 only how and in what order it is built. If they disagree, the requirement wins.
@@ -143,6 +143,20 @@ would do nothing for such a port), and the response carries `managed_by_ncpa` an
 `pinned` so the screen does not have to derive them. Unpin is refused for the NCPA port of a deployed
 agent; pinning that port is not (that is existing behaviour, left unchanged).
 
+**P3 as built.** `types/devicePorts.ts`, `lib/devicePortsApi.ts`, `hooks/useDevicePorts.ts`,
+`components/device-inventory/{DevicePortsSection, SetServiceDialog, devicePortsLogic}`, wired into
+`StatusDetailDrawer` (shown for `device_id` + `system.hosts`, not inside a service's own view) and a
+hint line in the Plugin Manager enable dialog. Differences and additions:
+
+- The port-edit response gains **`config_ok`** (false only when the change was saved but Nagios was not
+  brought up to date). `config_applied` alone cannot tell "Nagios rejected it" from "nothing needed reloading",
+  so the screen needs it to show "The change was saved but Nagios was not updated: ...".
+- For a flagged port **Acknowledge and monitor replaces Monitor** (both would do the same thing).
+- The hook sets state only when an answer arrives and tags it with the device and load, so a slow
+  answer for another device is ignored, the old list stays while a reload runs, and an error is gone when
+  the next load starts. This also keeps it out of the lint baseline (G22).
+- Not done here: the P4 browser check in light and dark mode (lab case UI-01 and the updated MM-01 and GT-01).
+
 ### 5.2 Device id on the host list and detail (B2)
 
 `GET /system/network-health/hosts` and `/hosts/<hostname>/detail` gain
@@ -231,7 +245,7 @@ the device Ports section ("Monitor them from each device's Ports list"). No new 
 |---|---|---|
 | P1. Requirement | **Written**: `Device_Inventory_Requirements.md`; Q1–Q5 answered (§9). Waiting for the owner to approve it (including O1–O3) | Owner approval of the requirement |
 | P2. Backend | **Done** (see below).  B1 `GET /system/hosts/<id>/ports` with `reason`, `counts` and `service_options`; B2 `device_id` on host list and detail; B3 `unpin` on the port-edit route; module docstring and route tests; spec updates in `Backend_Modules_and_Routes.md` | `pytest tests/unit/` green: every reason code, every state, ordering, permissions (login, `system.hosts`), 404, UDP and TCP, the NCPA port, a device with no ports, `device_id` null for `localhost`, query count does not grow with rows |
-| P3. Frontend | `devicePortsApi.ts`, types with wire conversion, `DevicePortsSection` (groups, rows, actions, confirmations, states) and the Set service dialog, `useDevicePorts` hook; wire into the drawer; the enable-dialog hint | Vitest for every state/reason, every action's request, permission hiding, error/409/`config_applied` false, confirmation flows, no section without `device_id`; `npm run build`; no new lint error |
+| P3. Frontend | **Done** (see below).  `devicePortsApi.ts`, types with wire conversion, `DevicePortsSection` (groups, rows, actions, confirmations, states) and the Set service dialog, `useDevicePorts` hook; wire into the drawer; the enable-dialog hint | Vitest for every state/reason, every action's request, permission hiding, error/409/`config_applied` false, confirmation flows, no section without `device_id`; `npm run build`; no new lint error |
 | P4. Specs and lab | `Frontend_Modules_and_Routes.md`, `Implementation_Status.md` (close both rows), `Plugin_Driven_Monitoring_Plan.md` (G1, G26 closed), `Plugin_Driven_Monitoring_Plan` §7.x notes; lab cases added to `PLUGIN_DRIVEN_MONITORING_LAB_TEST_PLAN.md` (MM-01 and GT-01 become UI steps) | Browser check in light and dark mode on the lab |
 
 Each phase ends with both suites green, `main` fetched and merged, an Alembic head

@@ -14,6 +14,10 @@
   manual live-lab cases for Plugin Manager as the monitoring switch: upgrade of a real database,
   enable/disable/stop/resume against a real Nagios, rejected configs, NCPA with `check_ncpa` off,
   `localhost.cfg` left alone, and the pages in a browser.
+- [Plugin-Driven Monitoring Acceptance Test Plan](PLUGIN_DRIVEN_MONITORING_ACCEPTANCE_TEST_PLAN.md):
+  lab acceptance cases with expected results that judge the monitoring logic, the ports UI,
+  permissions and the system's objectives, with traceability and the e2e harness work still
+  needed. It supersedes the Extended plan's PM-01..PM-05.
 - [Historical test failures](historical/TEST_FAILURES.md): previous findings;
   historical counts are not the current collection inventory.
 

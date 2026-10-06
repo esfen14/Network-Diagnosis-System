@@ -273,16 +273,17 @@ you can restore the live file immediately. Never leave the lab with a broken liv
    monitored as `ssh`; `Mismatch_Acknowledged_At` is set and a log entry names the
    expected and found services.
 4. Make nmap see something else on 80 and rescan: the acknowledgement clears.
-5. The client has no ports list yet (G1); use the API.
+5. Do steps 2 and 3 from the device drawer: the Ports section lists port 80 under "Needs attention" with "Not used as intended: expected http, found ssh", and **Acknowledge and monitor** monitors it. Check the same from the API.
 
 ### GT-01: the generic TCP plugin
 
 1. With `check_tcp` off, a port such as `9100 printer` stays suggested.
 2. The preview for `check_tcp` counts it; enabling attaches it; Stop monitoring one such
    port and confirm it does not come back on the next discovery.
-3. Set a monitored port back to Suggested through the port-edit API. It stays Suggested after
-   the next discovery and after disabling and enabling its plugin, and the enable preview
-   reports it as held. `{"state": "MONITORED"}` releases it and it attaches.
+3. In the device drawer's Ports section use **Leave suggested** on a monitored port. It moves to
+   "Needs attention" marked Held, stays Suggested after the next discovery and after disabling and
+   enabling its plugin, and the enable preview reports it as held. **Monitor** releases it and it
+   attaches. Repeat once with the API (`{"state": "SUGGESTED"}` then `{"state": "MONITORED"}`).
 
 ## 8. NCPA
 
@@ -314,7 +315,10 @@ Check in both light and dark mode, at desktop width and a narrow window:
 - the services list in the drawer: status chips for each state, long service and host
   names wrap, search, paging, Stop and Resume;
 - the NCPA notice;
-- statuses do not refresh by themselves (G24): note whether that is acceptable.
+- statuses do not refresh by themselves (G24): note whether that is acceptable;
+- the device drawer's Ports section: groups and counts, the reason texts, the Nagios-not-updated notice, the
+  confirmation dialogs, the Set service dialog (suggestions, "Checked by" line, warnings) and Remove pin, in light
+  and dark mode and at a narrow width; the section is absent for `localhost`.
 
 Attach screenshots of each state to the report.
 
