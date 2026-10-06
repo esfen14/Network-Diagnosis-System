@@ -15,6 +15,24 @@ def env_list(name, default):
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def env_positive_float(name, default):
+    """
+    Read a number greater than zero from an environment variable. Returns
+    default when the variable is unset or empty. A value that is not a number
+    or is not above zero stops startup instead of silently changing behaviour.
+    """
+    value = os.environ.get(name)
+    if value is None or not value.strip():
+        return default
+    try:
+        number = float(value)
+    except ValueError:
+        raise ValueError(f"{name} must be a number greater than zero, got {value!r}.") from None
+    if not number > 0 or number == float("inf"):
+        raise ValueError(f"{name} must be a number greater than zero, got {value!r}.")
+    return number
+
+
 class Config:
     # No fallback: a secret committed to source lets anyone forge sessions.
     # app/__init__.py refuses to start without it outside debug mode.
@@ -89,7 +107,9 @@ class Config:
     # Consecutive scans a port may be unseen (while its host was seen) before
     # it counts as gone, and days a MONITORED port stays MISSING before archive.
     PORT_MISSING_AFTER_SCANS = 5
-    PORT_ARCHIVE_AFTER_DAYS = 30
+    # PINPOINT_PORT_ARCHIVE_AFTER_DAYS lets a test lab shorten the 30 days
+    # (fractions allowed, e.g. 0.001 is about 90 seconds). Leave it unset in production.
+    PORT_ARCHIVE_AFTER_DAYS = env_positive_float('PINPOINT_PORT_ARCHIVE_AFTER_DAYS', 30)
     # Never suggested automatically (Linux / Windows ephemeral ranges).
     EPHEMERAL_PORT_RANGES = [(32768, 60999), (49152, 65535)]
     # How often the NCPA relocation job looks for NCPA devices that moved.

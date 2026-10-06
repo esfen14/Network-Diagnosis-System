@@ -245,6 +245,14 @@ fingerprints as a service its frozen plugin does not match keeps its service and
 raises a `SERVICE_CHANGED` `DeviceReviewItem`; hints never raise one, and the
 NCPA port of a deployed agent is exempt.
 
+Port lifecycle thresholds live in `config.py`: a monitored port unseen for
+`PORT_MISSING_AFTER_SCANS` (5) scans becomes `MISSING` and stays monitored; after
+`PORT_ARCHIVE_AFTER_DAYS` (30) days as `MISSING` it is archived and its service leaves
+Nagios. `PINPOINT_PORT_ARCHIVE_AFTER_DAYS` overrides the 30 days so a test lab can
+reach the archived state in minutes (fractions allowed, for example `0.001`); it
+must be a number above zero or the application refuses to start, and it is left
+unset in production.
+
 The scan leaves the monitoring server out by every non-loopback IPv4 address of
 its network interfaces (read with `ip -4 -o addr`) as well as the addresses its
 hostname resolves to, so a second network card cannot get the server saved as a

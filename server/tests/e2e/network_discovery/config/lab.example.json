@@ -51,7 +51,9 @@
   "nagios": {
     "binary": "/usr/local/nagios/bin/nagios",
     "main_config": "/usr/local/nagios/etc/nagios.cfg",
-    "service_name": "nagios"
+    "service_name": "nagios",
+    "host_config": "/usr/local/nagios/etc/objects/hosts.cfg",
+    "localhost_config": "/usr/local/nagios/etc/objects/localhost.cfg"
   },
   "databases": {
     "system": "/opt/pinpoint/Network-Diagnosis-System/server/system.db"

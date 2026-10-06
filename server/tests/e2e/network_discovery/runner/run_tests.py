@@ -14,17 +14,17 @@ from pathlib import Path
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from runner import discovery, nagios, report
+    from runner import discovery, guards, nagios, plugins, report, scenarios
     from runner.common import (
-        CaseResult, HarnessError, append_result, existing_run_directory,
+        BlockedError, CaseResult, HarnessError, append_result, existing_run_directory, replace_result,
         load_json, make_run_directory, require_environment, utc_now,
         required_environment_names, validate_lab_config, write_checksums,
     )
     from runner.pinpoint import PinpointClient
 else:
-    from . import discovery, nagios, report
+    from . import discovery, guards, nagios, plugins, report, scenarios
     from .common import (
-        CaseResult, HarnessError, append_result, existing_run_directory,
+        BlockedError, CaseResult, HarnessError, append_result, existing_run_directory, replace_result,
         load_json, make_run_directory, require_environment, utc_now,
         required_environment_names, validate_lab_config, write_checksums,
     )
@@ -82,6 +82,11 @@ def _ssh_keys_work(config: dict) -> bool:
             return False
         checked += 1
     return checked > 0
+
+
+def _readable(path: Path) -> bool:
+    """True when the file exists and this account can read it."""
+    return path.is_file() and os.access(path, os.R_OK)
 
 
 def _network_visible(config: dict) -> bool:
@@ -157,17 +162,36 @@ def cmd_preflight(args, config_path: Path, config: dict) -> int:
     checks["nagios_service_access"] = checks["systemctl"] and _probe(
         ["systemctl", "is-active", config["nagios"]["service_name"]],
     )
+    # The app under test must be the checked-out branch: its database sits at the checkout's migration head.
+    checks["app_revision"] = guards.app_revision_matches(
+        discovery.resolve_config_path(config_path, config["databases"]["system"]),
+    )
+    checks["localhost_cfg_readable"] = _readable(guards.localhost_config_path(config))
     checks["pinpoint_api"] = False
+    checks["status_feed"] = None
     if api_environment:
         try:
             secrets = {name: os.environ[name] for name in api_names}
-            identity = client_from(config, secrets).get_data("/api/user/me")
+            client = client_from(config, secrets)
+            identity = client.get_data("/api/user/me")
             checks["pinpoint_api"] = isinstance(identity, dict)
+            checks["status_feed"] = guards.status_feed_state(client.list_services())
         except HarnessError:
             pass
     checks["missing_environment"] = missing
+    hints = []
+    if not checks["ssh"]:
+        hints.append("SSH failed: PINPOINT_TEST_SSH_KEY must be the dedicated test key, not the NCPA deployment key.")
+    if not checks["nagios_binary"]:
+        hints.append("Nagios binary is not executable by this account: apply the setfacl commands in the README.")
+    if not checks["app_revision"]:
+        hints.append("The app database is not at the checkout's migration head: test the branch app on its own port and database.")
+    if checks["status_feed"] is False:
+        hints.append("Services show no check results: start the app with PINPOINT_SCHEDULER=1 and a Nagios API account; status cases will be Blocked.")
+    checks["hints"] = hints
     print(json.dumps(checks, indent=2, sort_keys=True))
-    required = [value for key, value in checks.items() if key not in {"network", "missing_environment"}]
+    advisory = {"network", "missing_environment", "status_feed", "hints"}
+    required = [value for key, value in checks.items() if key not in advisory]
     return 0 if all(required) else 1
 
 
@@ -175,6 +199,7 @@ def cmd_init(args, config: dict) -> int:
     """Create a new result directory after validating the approved config."""
     validate_lab_config(config)
     run_dir = make_run_directory(config, args.run_id)
+    guards.record_localhost_hash(config, run_dir)
     print(run_dir.name)
     return 0
 
@@ -258,6 +283,82 @@ def cmd_nagios(args, config: dict) -> int:
     return 0
 
 
+def cmd_enable_check(args, config: dict) -> int:
+    """Enable a plugin and prove the preview equals the result (O-2, F-01)."""
+    validate_lab_config(config)
+    secrets = require_environment(config)
+    run_dir = existing_run_directory(config, args.run_id)
+    started = utc_now()
+    client = client_from(config, secrets)
+    case_id = args.case_id or f"PREVIEW-{args.plugin}"
+    evidence_path = run_dir / "evidence" / f"{case_id}.json"
+    evidence: dict = {}
+    try:
+        evidence = plugins.enable_and_verify(client, config, run_dir, args.plugin)
+        guards.assert_localhost_unchanged(config, run_dir)
+        outcome, summary = "Pass", f"Preview matched the result for {args.plugin}."
+    except BlockedError as exc:
+        outcome, summary = "Blocked", str(exc)
+    except HarnessError as exc:
+        outcome, summary = "Fail", str(exc)
+    evidence_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    append_result(run_dir, CaseResult(
+        test_id=case_id, result=outcome, summary=summary, plugin=args.plugin,
+        started_at=started, completed_at=utc_now(), evidence=[str(evidence_path.relative_to(run_dir))],
+    ))
+    print(summary)
+    return 0 if outcome == "Pass" else 1
+
+
+def _find_scenario(manifest: dict, scenario_id: str) -> dict:
+    for item in manifest.get("scenarios", []):
+        if item.get("id") == scenario_id:
+            return item
+    raise HarnessError(f"Unknown scenario: {scenario_id}")
+
+
+def cmd_prepare_rejection(args, config: dict) -> int:
+    """Write the NAGIOS_BIN wrapper the REJECT-CONFIG scenario needs, and print its path."""
+    validate_lab_config(config)
+    run_dir = existing_run_directory(config, args.run_id)
+    nagios_config = config["nagios"]
+    wrapper = scenarios.write_rejection_wrapper(
+        run_dir, scenarios.rejection_flag(run_dir), nagios_config["binary"],
+        nagios_config["main_config"], nagios_config["host_config"],
+    )
+    print(wrapper)
+    return 0
+
+
+def cmd_scenario(args, config_path: Path, config: dict, manifest: dict) -> int:
+    """Run (or, with --dry-run, describe) one reviewed scenario and record its result."""
+    validate_lab_config(config)
+    params = _find_scenario(manifest, args.scenario)
+    if args.scenario not in scenarios.SCENARIOS:
+        raise HarnessError(f"Scenario {args.scenario} has no implementation.")
+    if args.dry_run:
+        print(json.dumps({"scenario": args.scenario, "parameters": params,
+                          "steps": (scenarios.SCENARIOS[args.scenario].__doc__ or "").strip()}, indent=2))
+        return 0
+    secrets = require_environment(config)
+    run_dir = existing_run_directory(config, args.run_id)
+    client = client_from(config, secrets)
+    base_url = config["pinpoint"]["base_url"]
+
+    def login(email: str, password: str) -> PinpointClient:
+        other = PinpointClient(base_url)
+        other.login(email, password)
+        return other
+
+    result = scenarios.run_scenario(
+        args.scenario, params, client, config, run_dir, scenarios.Fixtures(config_path),
+        admin_password=secrets[config["pinpoint"]["password_env"]], login=login,
+    )
+    append_result(run_dir, result)
+    print(f"{result.test_id}: {result.result}: {result.summary}")
+    return 0 if result.result == "Pass" else 1
+
+
 def _find_case(cases: dict, case_id: str) -> dict:
     for case in cases.get("cases", []):
         if case.get("id") == case_id:
@@ -287,19 +388,28 @@ def cmd_service_case(args, config: dict, cases: dict) -> int:
         evidence["plugin_enabling"] = enabling
         client.enable_plugins([case["plugin"]], enabling)
         if case.get("apply_monitoring"):
-            if not service or prefix:
-                raise HarnessError("Plugin Manager application requires an exact service description.")
-            applied = client.apply_monitoring(enabling[0]["id"], target["address"], service)
-            evidence["monitoring_application"] = applied
-            hostname = applied["hostname"]
+            raise HarnessError(
+                "apply_monitoring was removed: monitoring follows from enabling the plugin. "
+                "Delete the key from the case."
+            )
         initial_after = datetime.now(timezone.utc)
         expected_command = case.get("expected_check_command")
         if not expected_command:
             raise HarnessError("Service acceptance requires expected_check_command in the reviewed manifest.")
-        initial = client.wait_for_service(
-            hostname, service, prefix, {"OK"}, timeout, 5,
-            checked_after=initial_after,
+        evidence["plugin_services"] = client.wait_for_plugin_service(
+            enabling[0]["id"], service, prefix, timeout, 5,
         )
+        try:
+            initial = client.wait_for_service(
+                hostname, service, prefix, {"OK"}, timeout, 5,
+                checked_after=initial_after,
+            )
+        except BlockedError:
+            raise
+        except HarnessError:
+            # Timed out: tell "no status feed" (Blocked) apart from a real failure.
+            client.require_status_feed(enabling[0]["id"], service, prefix)
+            raise
         evidence["initial"] = initial
         evidence["nagios_initial"] = nagios.verify_services(config, hostname, initial, expected_command, initial_after)
         if case.get("visibility_only"):
@@ -332,6 +442,7 @@ def cmd_service_case(args, config: dict, cases: dict) -> int:
             evidence["nagios_recovered"] = nagios.verify_services(config, hostname, recovered, expected_command, recovered_after)
             outcome = "Pass"
             summary = "Pinpoint displayed the live failure and recovery."
+        evidence["localhost_cfg_sha256"] = guards.assert_localhost_unchanged(config, run_dir)
         evidence_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         append_result(run_dir, CaseResult(
             test_id=case["id"], result=outcome, summary=summary, plugin=case["plugin"],
@@ -342,7 +453,8 @@ def cmd_service_case(args, config: dict, cases: dict) -> int:
     except HarnessError as exc:
         evidence_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         append_result(run_dir, CaseResult(
-            test_id=case["id"], result="Fail", summary=str(exc), plugin=case.get("plugin", ""),
+            test_id=case["id"], result="Blocked" if isinstance(exc, BlockedError) else "Fail",
+            summary=str(exc), plugin=case.get("plugin", ""),
             target=case.get("target", ""), service=service or prefix or "", started_at=started,
             completed_at=utc_now(), evidence=[str(evidence_path.relative_to(run_dir))],
         ))
@@ -357,7 +469,21 @@ def cmd_finalize(args, config: dict) -> int:
         ["git", "-c", f"safe.directory={repository}", "rev-parse", "HEAD"],
         capture_output=True, text=True, check=False, cwd=repository,
     ).stdout.strip() or "unknown"
-    path = report.write_report(run_dir, config, commit)
+    traceability = load_json(args.traceability) if getattr(args, "traceability", None) else None
+    if (run_dir / "evidence" / "localhost-cfg.sha256").is_file():
+        started = utc_now()
+        try:
+            guards.assert_localhost_unchanged(config, run_dir)
+            outcome, summary = "Pass", "localhost.cfg is identical to the run baseline."
+        except BlockedError as exc:
+            outcome, summary = "Blocked", str(exc)
+        except HarnessError as exc:
+            outcome, summary = "Fail", str(exc)
+        replace_result(run_dir, CaseResult(
+            test_id="O-04", result=outcome, summary=summary, started_at=started, completed_at=utc_now(),
+            evidence=["evidence/localhost-cfg.sha256"],
+        ))
+    path = report.write_report(run_dir, config, commit, traceability)
     write_checksums(run_dir)
     print(path)
     return 0
@@ -368,6 +494,7 @@ def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description=__doc__)
     root.add_argument("--config", required=True, type=Path)
     root.add_argument("--cases", type=Path)
+    root.add_argument("--scenarios", type=Path, help="Reviewed scenario manifest (plugin-scenarios.json).")
     commands = root.add_subparsers(dest="command", required=True)
     commands.add_parser("preflight")
     init = commands.add_parser("init-run")
@@ -382,8 +509,19 @@ def parser() -> argparse.ArgumentParser:
     service.add_argument("--run-id", required=True)
     service.add_argument("--case-id", required=True)
     service.add_argument("--timeout", type=int, default=300)
+    prepare = commands.add_parser("prepare-rejection")
+    prepare.add_argument("--run-id", required=True)
+    scenario_cmd = commands.add_parser("scenario")
+    scenario_cmd.add_argument("--run-id")
+    scenario_cmd.add_argument("--scenario", required=True)
+    scenario_cmd.add_argument("--dry-run", action="store_true")
+    enable_check = commands.add_parser("enable-check")
+    enable_check.add_argument("--run-id", required=True)
+    enable_check.add_argument("--plugin", required=True)
+    enable_check.add_argument("--case-id")
     finalize = commands.add_parser("finalize")
     finalize.add_argument("--run-id", required=True)
+    finalize.add_argument("--traceability", type=Path, help="Objective-to-case manifest to add to the report.")
     return root
 
 
@@ -405,6 +543,16 @@ def main() -> int:
             if not args.cases:
                 raise HarnessError("service-case requires --cases.")
             return cmd_service_case(args, config, cases)
+        if args.command == "prepare-rejection":
+            return cmd_prepare_rejection(args, config)
+        if args.command == "scenario":
+            if not args.scenarios:
+                raise HarnessError("scenario requires --scenarios.")
+            if not args.dry_run and not args.run_id:
+                raise HarnessError("scenario requires --run-id unless --dry-run is given.")
+            return cmd_scenario(args, args.config, config, load_json(args.scenarios))
+        if args.command == "enable-check":
+            return cmd_enable_check(args, config)
         if args.command == "finalize":
             return cmd_finalize(args, config)
         raise HarnessError(f"Unknown command: {args.command}")

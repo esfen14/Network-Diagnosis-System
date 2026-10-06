@@ -344,7 +344,9 @@ cases above.
 | `cleanup/restore_lab.py` | X-01 | Idempotent recovery |
 | `../integration/test_live_nagios.py` | Dashboard/alerts read live Nagios (MON-02 evidence) | Skips itself if Nagios is unreachable; a skip is not a pass |
 
-### 14.1 Gaps in the e2e directory (to build, not done by this plan)
+### 14.1 Gaps in the e2e directory
+
+**Status:** all rows except the browser runner are implemented in the harness (self-tests pass; not yet run live end to end). See the README's "Plugin-driven monitoring runs" and the [adjustment plan](PLUGIN_DRIVEN_MONITORING_HARNESS_ADJUSTMENT_PLAN.md). The `service-case` stale-flow note above no longer applies.
 
 | Needed test | Why | Proposed home |
 |---|---|---|
