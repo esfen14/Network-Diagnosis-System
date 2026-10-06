@@ -168,7 +168,7 @@ describe('groups and rows', () => {
   })
 
   it.each([
-    'not_used_as_intended', 'held', 'guessed', 'no_udp_plugin', 'plugin_not_enabled', 'device_excluded', 'pending', 'missing', 'monitoring_inactive',
+    'not_used_as_intended', 'held', 'guessed', 'no_udp_plugin', 'plugin_not_enabled', 'device_excluded', 'pending', 'missing', 'monitoring_inactive', 'service_missing',
   ] as PortReasonCode[])('shows the server\'s reason text for %s', async (code) => {
     api.getDevicePorts.mockResolvedValue(ports([suggested(code)]))
     renderSection()

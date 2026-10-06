@@ -20,6 +20,7 @@ export type PortReasonCode =
   | 'stopped'
   | 'missing'
   | 'monitoring_inactive'
+  | 'service_missing'
 
 export type PortReason = {
   code: PortReasonCode
