@@ -125,18 +125,3 @@ def fill_missing_metadata(plugin, fallback_description=None):
         changed = changed or bool(plugin.Category)
 
     return changed
-
-
-# ==========================================================
-# COMPATIBILITY
-# ==========================================================
-
-# The team's earlier flat table and lookup, kept as views of the catalog so
-# existing imports keep working. The catalog is the single source of truth.
-PLUGIN_DESCRIPTIONS = {name: entry["description"] for name, entry in PLUGIN_CATALOG.items()}
-
-
-def get_default_description(plugin_name):
-    """Return the catalog description for a bundled plugin, or None."""
-    entry = get_catalog_entry(plugin_name)
-    return entry["description"] if entry else None

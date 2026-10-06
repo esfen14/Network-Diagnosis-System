@@ -117,6 +117,13 @@ except sqlite3.IntegrityError:
 c.rollback()
 c.close()
 
+# Automatic rows exist by the time of a downgrade; they must not outlive the Origin column.
+c = sqlite3.connect(sysdb)
+c.execute("insert into PLUGIN_CONFIGURATION (PluginConfigurationID, Status, Created_At, Updated_At, PluginID, NetDiscoveryID, "
+          "Nagios_Service_Name, Origin) values (10,'APPLIED','2026-04-01','2026-04-01',1,1,'ssh-22-tcp','AUTO')")
+c.commit()
+c.close()
+
 with app.app_context():
     flask_migrate.downgrade(directory="migrations", revision=BEFORE)
 c = sqlite3.connect(sysdb)

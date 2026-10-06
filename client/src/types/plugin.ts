@@ -171,6 +171,8 @@ export type EnablePreview = {
   already_enabled: boolean
   matched_services: number
   matched_devices: number
+  // Identified ports of this plugin that are held back (left Suggested on purpose, or at an upgrade).
+  held_ports: number
   message: string
 }
 

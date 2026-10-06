@@ -58,7 +58,7 @@ function details(overrides: Partial<PluginDetails> = {}): PluginDetails {
 function preview(overrides: Partial<EnablePreview> = {}): EnablePreview {
   return {
     id: 1, name: 'check_ssh', status: 'Ready', service_driven: true, already_enabled: false,
-    matched_services: 12, matched_devices: 5, message: 'Enabling will monitor 12 service(s) on 5 device(s).',
+    matched_services: 12, matched_devices: 5, held_ports: 0, message: 'Enabling will monitor 12 service(s) on 5 device(s).',
     ...overrides,
   }
 }
@@ -136,6 +136,21 @@ describe('PluginDetailsDrawer enable and disable', () => {
     expect(within(dialog).getByText('5')).toBeInTheDocument()
     expect(within(dialog).getByText(/not picked by hand/)).toBeInTheDocument()
     expect(api.enablePlugin).not.toHaveBeenCalled()
+  })
+
+  it('tells the admin how many identified ports are held back and will not be attached', async () => {
+    api.getEnablePreview.mockResolvedValue(preview({
+      held_ports: 3,
+      message: 'Enabling will monitor 12 service(s) on 5 device(s). 3 identified port(s) are held back '
+        + '(left Suggested on purpose or at an upgrade) and will not be attached until an admin monitors them.',
+    }))
+    renderDrawer()
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Enable$/ }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Enable check_ssh' })
+    expect(within(dialog).getByText(/3 identified port\(s\) are held back/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/will not be attached until an admin monitors them/)).toBeInTheDocument()
   })
 
   it('does not enable when the preview is cancelled', async () => {

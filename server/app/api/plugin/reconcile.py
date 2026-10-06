@@ -97,7 +97,10 @@ def preview_enable(plugin_name):
     would monitor on top of what is enabled now: the services the planner would
     generate for it from ports that are monitored or missing, plus identified
     suggestions it would promote. Returns {"matched_services": n,
-    "matched_devices": m}. Read-only: nothing is promoted or saved.
+    "matched_devices": m, "held_ports": k}, where held_ports counts identified
+    suggestions of this plugin that are held back (set to Suggested by an admin, or
+    left Suggested at an upgrade) and so are not attached. Read-only: nothing is
+    promoted or saved.
     """
     enabled_plugins = enabled_plugin_names() | {plugin_name}
 
@@ -125,7 +128,13 @@ def preview_enable(plugin_name):
             if plugin_for_definition(service["plugin"]) == plugin_name:
                 services += 1
                 devices.add(device_id)
-    return {"matched_services": services, "matched_devices": len(devices)}
+    held = 0
+    for protocol, port in promotable_ports(enabled_plugins, include_held=True):
+        if port.Promotion_Held:
+            definition_name = resolve_plugin_name(port.Service_Name, transport_for(protocol))
+            if plugin_for_definition(definition_name) == plugin_name:
+                held += 1
+    return {"matched_services": services, "matched_devices": len(devices), "held_ports": held}
 
 
 # ==========================================================

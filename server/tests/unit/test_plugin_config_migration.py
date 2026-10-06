@@ -73,4 +73,5 @@ def test_the_same_service_cannot_be_recorded_twice_for_a_device(report):
 def test_downgrade_removes_only_the_new_columns(report):
     for column in NEW_COLUMNS:
         assert column not in report["config_columns_after_downgrade"]
+    # The manual rows stay; the automatic row added before the downgrade does not.
     assert report["configs_after_downgrade"] == [[1], [2]]

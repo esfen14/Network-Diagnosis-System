@@ -10,7 +10,8 @@ from app.network_discovery.network_discovery import discover_network
 from app.network_discovery.device_identity import nagios_host_name, reconcile_scan
 from app.network_discovery.identity_probes import collect_identifiers
 from app.network_discovery.port_lifecycle import (
-    CONFIG_STATES, enabled_plugin_names, mark_ncpa_port, process_device_ports, promote_identified_ports,
+    CONFIG_STATES, enable_plugins_backing_monitored_ports, enabled_plugin_names, mark_ncpa_port,
+    process_device_ports, promote_identified_ports,
 )
 from app.network_discovery.host_config_templates import *
 from app.network_discovery.service_name_migration import migrate_legacy_service_history
@@ -963,8 +964,12 @@ def ensure_plugin_inventory(app):
     """
     Scan the Nagios plugin directory when Plugin Manager has no plugins yet, so a
     fresh install has an inventory to enable before the first scan finishes.
-    Nothing is enabled by this: monitoring starts only when an admin enables a
-    plugin. Never raises; a failure is logged and the scan carries on.
+    A fresh install enables nothing: monitoring starts only when an admin enables a
+    plugin. An install that was already monitoring ports before generation followed
+    Plugin Manager (it upgraded without ever scanning plugins) has its backing plugins
+    enabled here, because the upgrade migration could not enable plugins that did not
+    exist yet and its services would otherwise drop out of Nagios. Never raises; a
+    failure is logged and the scan carries on.
     """
     try:
         from app.api.plugin.scanner import scan_plugin_directory, sync_plugin_inventory
@@ -973,8 +978,11 @@ def ensure_plugin_inventory(app):
         if db.session.scalar(sa.select(sa.func.count()).select_from(Plugin)):
             return False
         summary = sync_plugin_inventory(scan_plugin_directory())
+        kept = enable_plugins_backing_monitored_ports()
         db.session.commit()
         app.logger.info("Plugin inventory was empty; scanned it before discovery: %s", summary)
+        if kept:
+            app.logger.info("Enabled the plugins behind already-monitored ports so they keep running: %s", ", ".join(kept))
         return True
     except Exception:
         db.session.rollback()

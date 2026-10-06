@@ -458,6 +458,10 @@ def edit_device_port(id, proto, port):
     The NCPA port cannot be ignored or archived while an NCPA token is
     deployed. <proto> is tcp or udp.
 
+    Setting a port to SUGGESTED holds it: no plugin promotes it until an admin
+    makes it MONITORED. Ports Suggested at an upgrade that an enabled plugin
+    would have picked up are held the same way (response "promotion_held").
+
     A port flagged "not used as intended" (the Port -> Service setting expects
     another service than nmap found) is not monitored until acknowledged:
     "acknowledge_mismatch": true accepts it as the service nmap found, and the
@@ -558,6 +562,7 @@ def edit_device_port(id, proto, port):
         "identified_by": port_row.Identified_By.name if port_row.Identified_By else None,
         "expected_service_name": port_row.Expected_Service_Name,
         "mismatch_acknowledged": port_row.Mismatch_Acknowledged_At is not None,
+        "promotion_held": port_row.Promotion_Held,
     }
     return success(result, message="Port updated.")
 

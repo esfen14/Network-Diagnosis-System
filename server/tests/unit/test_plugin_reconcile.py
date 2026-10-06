@@ -497,3 +497,127 @@ class TestNcpaAndInventory:
         from app.network_discovery import create_host_cfg
         with patch("app.api.plugin.scanner.scan_plugin_directory", side_effect=OSError("no such directory")):
             assert create_host_cfg.ensure_plugin_inventory(app) is False
+
+
+# ==========================================================
+# AN INSTALL THAT WAS MONITORING BEFORE ITS PLUGINS WERE SCANNED
+# ==========================================================
+
+def scanned(*names):
+    from datetime import datetime, timezone
+    from app.api.plugin.scanner import ScannedPlugin
+    return [ScannedPlugin(name=n, path=f"/usr/local/nagios/libexec/{n}", size=1,
+                          modified_at=datetime.now(timezone.utc), is_executable=True, version="2.4.12",
+                          version_raw_output=None) for n in names]
+
+
+class TestContinuityWhenTheInventoryIsFirstCreated:
+    """
+    The upgrade migration cannot enable plugins that do not exist yet. An install that never
+    scanned its plugins but already monitors ports gets them enabled by the first scan, so its
+    services do not silently drop out of Nagios; a fresh install enables nothing.
+    """
+
+    ALL = ("check_ssh", "check_http", "check_tcp", "check_snmp", "check_ping", "check_mysql")
+
+    def first_scan(self, app):
+        from app.network_discovery import create_host_cfg
+        with patch("app.api.plugin.scanner.scan_plugin_directory", return_value=scanned(*self.ALL)):
+            return create_host_cfg.ensure_plugin_inventory(app)
+
+    def statuses(self, db_session):
+        return {p.Name: p.Status for p in db_session.session.scalars(sa.select(Plugin)).all()}
+
+    def test_plugins_behind_monitored_ports_are_enabled_so_the_services_keep_running(self, app, db_session, admin_user, status):
+        device = new_device(status, tcp={22: "ssh", 80: "http", 3306: "mysql"}, udp={161: "snmp"})
+        for number in (22, 80):
+            port(device, number).Port_State = PortState.MONITORED
+            port(device, number).Plugin_Name = "ssh" if number == 22 else "http"
+        from app.system_models import Open_UDP_Services
+        snmp = db_session.session.scalars(sa.select(Open_UDP_Services)).one()
+        snmp.Port_State, snmp.Plugin_Name = PortState.MONITORED, "snmp"
+        db_session.session.commit()
+
+        assert self.first_scan(app) is True
+
+        statuses = self.statuses(db_session)
+        assert statuses["check_ssh"] is PluginStatus.ENABLED
+        assert statuses["check_http"] is PluginStatus.ENABLED
+        assert statuses["check_snmp"] is PluginStatus.ENABLED
+        assert statuses["check_mysql"] is PluginStatus.READY       # only a suggested port
+        assert statuses["check_ping"] is PluginStatus.READY        # checks no port
+        assert statuses["check_tcp"] is PluginStatus.READY         # nothing is monitored generically
+
+    def test_a_port_monitored_by_the_generic_check_enables_check_tcp(self, app, db_session, admin_user, status):
+        device = new_device(status, tcp={9100: "printer"})
+        port(device, 9100).Port_State = PortState.MONITORED
+        port(device, 9100).Plugin_Name = "tcp"
+        db_session.session.commit()
+
+        self.first_scan(app)
+
+        assert self.statuses(db_session)["check_tcp"] is PluginStatus.ENABLED
+
+    def test_a_missing_port_still_counts_because_nagios_is_still_checking_it(self, app, db_session, admin_user, status):
+        device = new_device(status, tcp={22: "ssh"})
+        port(device, 22).Port_State = PortState.MISSING
+        port(device, 22).Plugin_Name = "ssh"
+        db_session.session.commit()
+
+        self.first_scan(app)
+
+        assert self.statuses(db_session)["check_ssh"] is PluginStatus.ENABLED
+
+    def test_a_port_without_a_frozen_plugin_is_resolved_from_its_service_name(self, app, db_session, admin_user, status):
+        device = new_device(status, tcp={80: "http"})
+        port(device, 80).Port_State = PortState.MONITORED
+        port(device, 80).Plugin_Name = None
+        db_session.session.commit()
+
+        self.first_scan(app)
+
+        assert self.statuses(db_session)["check_http"] is PluginStatus.ENABLED
+
+    def test_a_fresh_install_enables_nothing(self, app, db_session, admin_user, status):
+        new_device(status, tcp={22: "ssh", 80: "http"})        # discovered, only suggested
+
+        assert self.first_scan(app) is True
+
+        assert set(self.statuses(db_session).values()) == {PluginStatus.READY}
+
+    def test_an_empty_network_enables_nothing(self, app, db_session):
+        self.first_scan(app)
+        assert set(self.statuses(db_session).values()) == {PluginStatus.READY}
+
+    def test_an_existing_inventory_is_never_touched(self, app, db_session, admin_user, status):
+        device = new_device(status, tcp={22: "ssh"})
+        port(device, 22).Port_State = PortState.MONITORED
+        port(device, 22).Plugin_Name = "ssh"
+        add_plugin("check_ssh", PluginStatus.DISABLED)        # an admin switched it off on purpose
+        db_session.session.commit()
+
+        from app.network_discovery import create_host_cfg
+        assert create_host_cfg.ensure_plugin_inventory(app) is False
+
+        assert self.statuses(db_session)["check_ssh"] is PluginStatus.DISABLED
+
+    def test_a_plugin_in_a_failure_state_is_not_switched_on(self, db_session, admin_user, status):
+        from app.network_discovery.port_lifecycle import enable_plugins_backing_monitored_ports
+        device = new_device(status, tcp={22: "ssh"})
+        port(device, 22).Port_State = PortState.MONITORED
+        port(device, 22).Plugin_Name = "ssh"
+        add_plugin("check_ssh", PluginStatus.VALIDATION_FAILED)
+        db_session.session.commit()
+
+        assert enable_plugins_backing_monitored_ports() == []
+        assert self.statuses(db_session)["check_ssh"] is PluginStatus.VALIDATION_FAILED
+
+    def test_an_unmatched_udp_port_backs_no_plugin(self, db_session, admin_user, status):
+        from app.network_discovery.port_lifecycle import plugins_backing_monitored_ports
+        from app.system_models import Open_UDP_Services
+        device = new_device(status, udp={9999: "mystery"})
+        row = db_session.session.scalars(sa.select(Open_UDP_Services)).one()
+        row.Port_State = PortState.MONITORED
+        db_session.session.commit()
+
+        assert plugins_backing_monitored_ports() == set()

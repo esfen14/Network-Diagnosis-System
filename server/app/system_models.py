@@ -497,6 +497,10 @@ class Open_TCP_Services(db.Model):
     # acknowledgement.
     Expected_Service_Name: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
     Mismatch_Acknowledged_At: so.Mapped[Optional[datetime]] = so.mapped_column()
+    # An admin chose to leave this port Suggested, or it was Suggested at an upgrade and an
+    # enabled plugin would have started monitoring it. While True no plugin promotes it;
+    # promoting it by hand (state MONITORED, or acknowledging a mismatch) clears it.
+    Promotion_Held: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False, server_default=sa.false())
     First_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Last_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Closed_At: so.Mapped[Optional[datetime]] = so.mapped_column()
@@ -531,6 +535,10 @@ class Open_UDP_Services(db.Model):
     # acknowledgement.
     Expected_Service_Name: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
     Mismatch_Acknowledged_At: so.Mapped[Optional[datetime]] = so.mapped_column()
+    # An admin chose to leave this port Suggested, or it was Suggested at an upgrade and an
+    # enabled plugin would have started monitoring it. While True no plugin promotes it;
+    # promoting it by hand (state MONITORED, or acknowledging a mismatch) clears it.
+    Promotion_Held: so.Mapped[bool] = so.mapped_column(sa.Boolean(), default=False, server_default=sa.false())
     First_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Last_Seen_At: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Closed_At: so.Mapped[Optional[datetime]] = so.mapped_column()

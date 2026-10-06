@@ -133,6 +133,9 @@ Basenames below live under `unit/`, except `integration/test_live_nagios.py`.
 | `test_plugin_custom.py` | Custom-plugin upload staging, validation, collision handling, install rollback, and atomic registration |
 | `test_plugin_update.py` | Download URL/SSRF protection, safe archive extraction, update workflow, failure state, and manual rollback |
 | `test_plugin_reconcile.py` | The plugin reconciler: attaching discovered ports of enabled plugins, idempotence, disable/enable, manual rows untouched, the monitoring server, writer failures and rollback, and the callers that trigger it |
+| `test_upgrade_rehearsal.py` | A populated pre-upgrade database taken through every migration, the first reconcile, a downgrade and an upgrade again: monitoring survives, nothing is duplicated, no look-alike manual rows after a downgrade |
+| `test_plugin_scale.py` | 300 devices / 3,600 services: reconcile and services-list correctness and loose time limits |
+| `test_promotion_hold.py`, `test_promotion_hold_migration.py` | Held ports: an admin's Suggested is respected, an upgrade starts nothing new, how a hold is released, the enable preview's held count, and the migration's data step |
 | `test_plugin_services_api.py` | Service-driven plugins, the enable preview, a plugin's monitored services with live status, stop/resume of one port, disable rollback, and the removed manual routes |
 | `test_plugin_config_migration.py`, `test_port_service_map_migration.py`, `test_retire_permission_migration.py` | Alembic round trips with populated data for the plugin-driven monitoring migrations |
 

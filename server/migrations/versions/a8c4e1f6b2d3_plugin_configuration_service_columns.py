@@ -16,7 +16,8 @@ registry-definition to Plugin Manager plugin table from the plan (section
 2.2), copied so the migration does not depend on application code. A plugin
 that is not in PLUGIN yet (no plugin scan has run) cannot be enabled here;
 the phase 3 startup ordering runs a plugin scan before discovery for that
-case. Downgrade drops the schema only; it does not put plugin states back.
+case. Downgrade deletes the automatic (Origin AUTO) rows and drops the columns; it does not put plugin
+states back.
 
 history.db is not touched.
 
@@ -119,6 +120,11 @@ def upgrade_():
 
 
 def downgrade_():
+    # Automatic rows are derived from ports and are rebuilt by the reconciler. Without the Origin
+    # column they would look like hand-made rows, and older code would write them to
+    # plugin-services.cfg as well as hosts.cfg, defining each service twice.
+    op.get_bind().execute(sa.text("DELETE FROM PLUGIN_CONFIGURATION WHERE Origin = 'AUTO'"))
+
     with op.batch_alter_table('PLUGIN_CONFIGURATION', schema=None) as batch_op:
         batch_op.drop_constraint(UNIQUE_NAME, type_='unique')
         batch_op.drop_column('Origin')

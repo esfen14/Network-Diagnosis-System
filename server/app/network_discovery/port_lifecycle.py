@@ -121,8 +121,12 @@ def is_protected_ncpa_port(port, device_id):
 
 
 def start_monitoring(port, protocol):
-    """Make a port MONITORED and freeze its plugin from its current service name."""
+    """
+    Make a port MONITORED and freeze its plugin from its current service name. Monitoring a
+    port releases any hold on promoting it.
+    """
     port.Port_State = PortState.MONITORED
+    port.Promotion_Held = False
     port.Closed_At = None
     port.Plugin_Name = resolve_plugin_name(port.Service_Name, transport_for(protocol))
 
@@ -240,18 +244,21 @@ def upsert_scanned_port(model, protocol, device_id, port_number, service_name, n
     return port
 
 
-def should_auto_monitor(service_name, identified_by, protocol="tcp", enabled_plugins=None, port=None):
+def should_auto_monitor(service_name, identified_by, protocol="tcp", enabled_plugins=None, port=None, ignore_hold=False):
     """
     True if a SUGGESTED port should start being monitored without a user
     asking: its service was identified by more than its port number, it is not
-    flagged "not used as intended" (port, when given), and the Plugin Manager
+    flagged "not used as intended" and not held back (port, when given), and the Plugin Manager
     plugin that checks it is Enabled or Active. A TCP service with no plugin
     of its own is checked by the generic TCP plugin; a UDP one is never
-    monitored this way.
+    monitored this way. ignore_hold answers as if the port were not held back
+    (used to count held ports).
     """
     if identified_by not in IDENTIFIED_BY:
         return False
     if port is not None and has_unacknowledged_mismatch(port):
+        return False
+    if port is not None and port.Promotion_Held and not ignore_hold:
         return False
     transport = transport_for(protocol)
     definition_name = resolve_plugin_name(service_name, transport)
@@ -262,13 +269,70 @@ def should_auto_monitor(service_name, identified_by, protocol="tcp", enabled_plu
     return plugin_for_definition(definition_name) in enabled_plugins
 
 
-def promotable_ports(enabled_plugins):
+# Plugin states from which "preserve existing monitoring" may switch a plugin on. A plugin in any
+# failure state is left alone because it cannot run until that is fixed.
+ENABLE_FOR_CONTINUITY_FROM = (
+    PluginStatus.AVAILABLE,
+    PluginStatus.READY,
+    PluginStatus.INSTALLED,
+    PluginStatus.DISABLED,
+    PluginStatus.UPDATE_AVAILABLE,
+)
+
+
+def plugins_backing_monitored_ports():
+    """
+    The Plugin Manager plugins (e.g. "check_ssh") behind every Monitored or Missing port: the
+    ones whose services are running in Nagios right now. A port uses its frozen plugin, else
+    the plugin for its service name; a TCP port that matches nothing is checked by the generic
+    TCP plugin, as discovery does, and an unmatched UDP port is skipped by discovery, so it
+    backs nothing. Read-only.
+    """
+    needed = set()
+    for protocol in ("tcp", "udp"):
+        model = port_model(protocol)
+        transport = transport_for(protocol)
+        for port in db.session.scalars(sa.select(model).where(model.Port_State.in_(CONFIG_STATES))).all():
+            definition_name = port.Plugin_Name or resolve_plugin_name(port.Service_Name, transport)
+            plugin = plugin_for_definition(definition_name)
+            if transport is Transport.UDP and definition_name == "udp":
+                continue
+            if plugin is not None:
+                needed.add(plugin)
+    return needed
+
+
+def enable_plugins_backing_monitored_ports():
+    """
+    Switch on every plugin that backs a port already being monitored, so an install that was
+    monitoring before Plugin Manager gated generation keeps its services. Used when the plugin
+    inventory is first created on an install that already has monitored ports; a fresh install
+    has none, so nothing is enabled and monitoring stays opt-in. Ports that were only Suggested
+    and that these plugins would now pick up are held back (hold_promotable_ports), so an upgrade
+    never starts monitoring something nobody chose. Returns the names enabled. Does not commit.
+    """
+    needed = plugins_backing_monitored_ports()
+    if not needed:
+        return []
+
+    enabled = []
+    for plugin in db.session.scalars(sa.select(Plugin).where(Plugin.Name.in_(needed))).all():
+        if plugin.Status in ENABLE_FOR_CONTINUITY_FROM:
+            plugin.Status = PluginStatus.ENABLED
+            enabled.append(plugin.Name)
+    db.session.flush()
+    hold_promotable_ports()
+    return sorted(enabled)
+
+
+def promotable_ports(enabled_plugins, include_held=False):
     """
     The SUGGESTED ports that would start being monitored if exactly these Plugin
     Manager plugins were enabled: identified (pinned, from the table, or
-    fingerprinted), not flagged "not used as intended", and on a device that is
-    scanned and not retired or merged. Returns a list of (protocol, port row).
-    Read-only; this is also what the enable preview counts.
+    fingerprinted), not flagged "not used as intended", not held back, and on a
+    device that is scanned and not retired or merged. With include_held the ports
+    an admin (or an upgrade) is holding back are listed too. Returns a list of
+    (protocol, port row). Read-only; this is also what the enable preview counts.
     """
     if not enabled_plugins:
         return []
@@ -287,9 +351,27 @@ def promotable_ports(enabled_plugins):
             )
         ).all()
         for port in ports:
-            if should_auto_monitor(port.Service_Name, port.Identified_By, protocol, enabled_plugins, port):
+            if should_auto_monitor(
+                port.Service_Name, port.Identified_By, protocol, enabled_plugins, port, ignore_hold=include_held
+            ):
                 found.append((protocol, port))
     return found
+
+
+def hold_promotable_ports(enabled_plugins=None):
+    """
+    Hold back every SUGGESTED port that the enabled plugins would start monitoring, so a plugin
+    that was switched on only to keep existing services running does not also pick up ports
+    nobody chose to monitor. They stay Suggested until an admin promotes them. Returns how many
+    were held. Does not commit.
+    """
+    if enabled_plugins is None:
+        enabled_plugins = enabled_plugin_names()
+    held = 0
+    for _, port in promotable_ports(enabled_plugins):
+        port.Promotion_Held = True
+        held += 1
+    return held
 
 
 def promote_identified_ports():
@@ -327,6 +409,7 @@ def acknowledge_port_mismatch(device_id, protocol, port_number):
         raise ValueError("This port has no unacknowledged mismatch.")
 
     port.Mismatch_Acknowledged_At = utcnow()
+    port.Promotion_Held = False          # accepting the port is consent to monitor it
     if port.Port_State is PortState.SUGGESTED and should_auto_monitor(
         port.Service_Name, port.Identified_By, protocol, port=port
     ):
@@ -599,6 +682,7 @@ def set_port_state(device_id, protocol, port_number, state):
         raise ValueError("The NCPA port cannot be removed while an NCPA token is deployed.")
 
     if state is PortState.MONITORED:
+        port.Promotion_Held = False
         if has_unacknowledged_mismatch(port):
             # Choosing to monitor the port is accepting it as it is.
             port.Mismatch_Acknowledged_At = utcnow()
@@ -612,4 +696,7 @@ def set_port_state(device_id, protocol, port_number, state):
     else:
         port.Port_State = state
         port.Closed_At = utcnow() if state is PortState.ARCHIVED else None
+        if state is PortState.SUGGESTED:
+            # An admin leaving a port Suggested is a decision: no plugin may promote it behind their back.
+            port.Promotion_Held = True
     return port

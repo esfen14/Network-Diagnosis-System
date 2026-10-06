@@ -21,7 +21,23 @@ import pytest
 SERVER_DIR = Path(__file__).resolve().parents[2]
 # The revision the runner upgrades to for its before/after checks, and the single head.
 TARGET_REVISION = "d41f7a2b9e10"
-HEAD_REVISION = "d2f6a1c8e507"
+
+
+def current_head():
+    """
+    The single head of the migration history, read from the migration scripts, so adding a
+    migration does not break this test. Raises if there is more than one head, which is
+    exactly the failure this test exists to catch.
+    """
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    config = Config()
+    config.set_main_option("script_location", str(SERVER_DIR / "migrations"))
+    return ScriptDirectory.from_config(config).get_current_head()
+
+
+HEAD_REVISION = current_head()
 
 
 @pytest.fixture(scope="module")

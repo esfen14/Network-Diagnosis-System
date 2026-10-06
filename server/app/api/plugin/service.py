@@ -1352,7 +1352,7 @@ def preview_enable(plugin_id):
 
     service_driven = is_service_driven(plugin.Name)
     matches = reconcile.preview_enable(plugin.Name) if service_driven else {
-        "matched_services": 0, "matched_devices": 0,
+        "matched_services": 0, "matched_devices": 0, "held_ports": 0,
     }
     if not service_driven:
         message = f"{plugin.Name} does not check a discovered service."
@@ -1362,6 +1362,11 @@ def preview_enable(plugin_id):
         message = (
             f"Enabling will monitor {matches['matched_services']} service(s) "
             f"on {matches['matched_devices']} device(s)."
+        )
+    if matches["held_ports"]:
+        message += (
+            f" {matches['held_ports']} identified port(s) are held back (left Suggested on purpose or at an "
+            f"upgrade) and will not be attached until an admin monitors them."
         )
     return {
         "id": plugin.PluginID,
