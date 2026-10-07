@@ -23,6 +23,10 @@
   plugins and per-device custom checks (add, run, change, pause, remove, merge, retire, rejection,
   permissions, browser). Its two key cases, N-04 and C-02, check that Nagios accepts and runs what
   the code generates.
+- [Plugin Manager End-to-End Test Plan](PLUGIN_MANAGER_E2E_TEST_PLAN.md): layered plan for custom
+  checks, server checks, passwords, the new registry plugins, the `check_ncpa.py` name fix and the plugin classes,
+  with harness scenarios `CUSTOM-*`, `REGISTRY-ENABLE`, `NCPA-NAME` and `PLUGIN-CLASSES` (cases `CK-01` to `CK-75`),
+  scripted self-tests, a run of the same scenarios against the real app, and the live-lab commands.
 - [Plugin-Driven Monitoring E2E Harness Adjustment Plan](PLUGIN_DRIVEN_MONITORING_HARNESS_ADJUSTMENT_PLAN.md):
   proposed changes to `e2e/network_discovery/` so the acceptance cases run without hand steps: drop the
   removed apply flow, add the new route calls, localhost/preview guards, scenario runner, permission

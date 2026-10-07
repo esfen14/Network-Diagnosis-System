@@ -75,6 +75,115 @@
       "target": "target01",
       "port": 22,
       "plugin": "check_ssh"
+    },
+    {
+      "id": "CUSTOM-DEVICE",
+      "case_id": "CK-01",
+      "target": "target01",
+      "plugin": "check_by_ssh",
+      "name": "e2e ssh true",
+      "variables": {
+        "command": "/bin/true",
+        "user": "pinpoint-test",
+        "identity": "/home/nagios/.ssh/pinpoint_e2e"
+      },
+      "expect_state": "ok",
+      "status_timeout": 420,
+      "status_interval": 15
+    },
+    {
+      "id": "CUSTOM-SURVIVES",
+      "case_id": "CK-06",
+      "target": "target01",
+      "plugin": "check_by_ssh",
+      "name": "e2e ssh survives",
+      "variables": {
+        "command": "/bin/true",
+        "user": "pinpoint-test",
+        "identity": "/home/nagios/.ssh/pinpoint_e2e"
+      },
+      "port_plugin": "check_ssh"
+    },
+    {
+      "id": "CUSTOM-SERVER",
+      "case_id": "CK-10",
+      "target": "target01",
+      "plugin": "check_uptime",
+      "name": "e2e uptime",
+      "variables": {},
+      "expect_state": "ok",
+      "status_timeout": 420,
+      "status_interval": 15
+    },
+    {
+      "id": "CUSTOM-RULES",
+      "case_id": "CK-20",
+      "target": "target01",
+      "device_plugin": "check_by_ssh",
+      "server_plugin": "check_uptime",
+      "unsupported_plugin": "check_load",
+      "variables": {
+        "command": "/bin/true"
+      },
+      "name": "e2e duplicate"
+    },
+    {
+      "id": "CUSTOM-PERMISSIONS",
+      "case_id": "CK-30",
+      "plugin": "check_by_ssh"
+    },
+    {
+      "id": "CUSTOM-PASSWORD",
+      "case_id": "CK-40",
+      "target": "target01",
+      "plugin": "check_mysql_query",
+      "name": "e2e password",
+      "password_env": "E2E_CHECK_PASSWORD",
+      "password_field": "password",
+      "password_required": false,
+      "variables": {
+        "query": "SELECT 1",
+        "warning": "1",
+        "critical": "2",
+        "user": "pinpoint_e2e"
+      }
+    },
+    {
+      "id": "REGISTRY-ENABLE",
+      "case_id": "CK-50",
+      "plugins": [
+        "check_pgsql",
+        "check_ldap",
+        "check_ldaps",
+        "check_rpc",
+        "check_ircd",
+        "check_time",
+        "check_ntp_peer"
+      ]
+    },
+    {
+      "id": "NCPA-NAME",
+      "case_id": "CK-51",
+      "plugin": "check_ncpa",
+      "expect_services": false
+    },
+    {
+      "id": "PLUGIN-CLASSES",
+      "case_id": "CK-60",
+      "classes": {
+        "check_ssh": "service",
+        "check_ncpa": "service",
+        "check_by_ssh": "custom",
+        "check_ping": "custom",
+        "check_radius": "custom",
+        "check_apt": "server",
+        "check_uptime": "server",
+        "check_load": "stock",
+        "check_dhcp": "advanced",
+        "check_dbi": "credentials",
+        "check_cluster": "unsupported",
+        "check_ntp": "replaced"
+      }
     }
   ]
 }

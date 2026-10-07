@@ -483,7 +483,10 @@ python runner/run_tests.py --config config/lab.json finalize --run-id quick-1 --
 
 Scenarios: `PORT-FLAG` (L-03/L-04), `PORT-HELD` (L-05), `PORT-GUESS` (L-01/L-02/L-07), `PORT-PIN` (L-06),
 `STOP-RESUME` (F-06/C-14), `LOCALHOST` (O-04/C-12/C-13), `REJECT-CONFIG` (R-01 to R-03, PM-07/PM-08),
-`PORT-LIFECYCLE` (L-08) and `PERMISSIONS` (P-01 to P-06). Each starts only allow-listed fixtures
+`PORT-LIFECYCLE` (L-08) and `PERMISSIONS` (P-01 to P-06). The Plugin Manager scenarios
+([`PLUGIN_MANAGER_E2E_TEST_PLAN.md`](../../plans/PLUGIN_MANAGER_E2E_TEST_PLAN.md)) are `CUSTOM-DEVICE` (CK-01),
+`CUSTOM-SURVIVES` (CK-06), `CUSTOM-SERVER` (CK-10), `CUSTOM-RULES` (CK-20), `CUSTOM-PERMISSIONS` (CK-30),
+`CUSTOM-PASSWORD` (CK-40), `REGISTRY-ENABLE` (CK-50), `NCPA-NAME` (CK-51) and `PLUGIN-CLASSES` (CK-60). Each starts only allow-listed fixtures
 (`services/remote_service.py --fixture`), restores what it changed in a `finally`, and records Pass, Fail
 or Blocked. `finalize` also records the `localhost.cfg` guard as case `O-04`.
 
@@ -497,6 +500,14 @@ use it the scenario is Blocked.
 later runs. The API cannot delete roles or accounts, so teardown empties the roles and deactivates the
 accounts; the lab database keeps these four inactive rows. Passwords are derived from the admin password
 and are never written to evidence.
+
+The custom check scenarios need a few things the port scenarios do not: `databases.system` (the password case
+reads the stored value), an `E2E_CHECK_PASSWORD` variable for `CUSTOM-PASSWORD`, an SSH key the **Nagios user** can read
+for `CUSTOM-DEVICE` (set `variables.identity` in your private `plugin-scenarios.json`), and `plugin.custom_check`
+synced into the app's database. The case `CUSTOM-PERMISSIONS` creates two more `e2e-pdm-custom-*` roles and accounts
+and deactivates them afterwards, like `PERMISSIONS`. Their self-tests run with
+`python tests/e2e/network_discovery/harness_plugin_manager_tests.py -v`; `tests/unit/test_plugin_manager_scenarios_live_app.py`
+runs the same scenarios against the real app.
 
 `cleanup/restore_lab.py` also stops every scenario fixture on every target (idempotent; use `--no-fixtures` to skip).
 

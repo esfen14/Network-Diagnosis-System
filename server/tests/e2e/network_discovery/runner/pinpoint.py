@@ -162,6 +162,103 @@ class PinpointClient:
         data = self.request("POST", f"/api/plugin/{plugin_id}/services/resume", body).get("data")
         return data if isinstance(data, dict) else {}
 
+    def plugin_matching(self, name: str) -> dict[str, Any]:
+        """
+        Return the inventory entry whose name equals `name` once a script extension is ignored
+        (check_ncpa.py matches check_ncpa), so a plugin stored under its filename is found.
+        """
+        wanted = _without_extension(name)
+        page = 1
+        while True:
+            data = self.get_data(f"/api/plugin?page={page}&per_page=100")
+            if not isinstance(data, dict):
+                raise HarnessError("Plugin inventory response is missing data.")
+            for item in data.get("items", []):
+                if _without_extension(str(item.get("name", ""))) == wanted:
+                    return item
+            if page >= int(data.get("pages", 1)):
+                raise HarnessError(f"Required plugin {name} must have exactly one inventory entry.")
+            page += 1
+
+    def plugin_details(self, plugin_id: int) -> dict[str, Any]:
+        """Return one plugin's details (service_driven, status, custom_checks)."""
+        data = self.get_data(f"/api/plugin/{plugin_id}")
+        if not isinstance(data, dict):
+            raise HarnessError("Plugin details response is missing data.")
+        return data
+
+    def custom_checks(self, plugin_id: int, search: str = "") -> list[dict[str, Any]]:
+        """Return every custom check of a plugin, across all pages, with live status."""
+        items: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            query = {"page": page, "per_page": 100}
+            if search:
+                query["search"] = search
+            data = self.get_data(f"/api/plugin/{plugin_id}/custom-checks?{urlencode(query)}")
+            if not isinstance(data, dict):
+                raise HarnessError("Custom checks response is missing data.")
+            items.extend(data.get("items", []))
+            if page >= int(data.get("pages", 1)):
+                return items
+            page += 1
+
+    def add_custom_check(
+        self, plugin_id: int, name: str, variables: dict[str, Any], device_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Add a custom check (a device check with device_id, a server check without)."""
+        body: dict[str, Any] = {"name": name, "variables": variables}
+        if device_id is not None:
+            body["device_id"] = device_id
+        data = self.request("POST", f"/api/plugin/{plugin_id}/custom-checks", body).get("data")
+        return data if isinstance(data, dict) else {}
+
+    def change_custom_check(
+        self, plugin_id: int, check_id: int, name: str, variables: dict[str, Any],
+        clear_secrets: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Rename a custom check and replace its arguments; a blank password keeps the stored one."""
+        body: dict[str, Any] = {"name": name, "variables": variables}
+        if clear_secrets:
+            body["clear_secrets"] = clear_secrets
+        data = self.request("PUT", f"/api/plugin/{plugin_id}/custom-checks/{check_id}", body).get("data")
+        return data if isinstance(data, dict) else {}
+
+    def pause_custom_check(self, plugin_id: int, check_id: int) -> dict[str, Any]:
+        """Pause a custom check: its service leaves Nagios, the check stays listed."""
+        data = self.request("POST", f"/api/plugin/{plugin_id}/custom-checks/{check_id}/pause").get("data")
+        return data if isinstance(data, dict) else {}
+
+    def resume_custom_check(self, plugin_id: int, check_id: int) -> dict[str, Any]:
+        """Resume a paused custom check."""
+        data = self.request("POST", f"/api/plugin/{plugin_id}/custom-checks/{check_id}/resume").get("data")
+        return data if isinstance(data, dict) else {}
+
+    def remove_custom_check(self, plugin_id: int, check_id: int) -> dict[str, Any]:
+        """Remove a custom check and its service."""
+        data = self.request("DELETE", f"/api/plugin/{plugin_id}/custom-checks/{check_id}").get("data")
+        return data if isinstance(data, dict) else {}
+
+    def wait_for_custom_check_status(
+        self, plugin_id: int, check_id: int, timeout: int = 420, interval: int = 15,
+    ) -> dict[str, Any]:
+        """
+        Poll until Nagios has run the check (its status is no longer "waiting") and return the
+        item, or return the last item when the timeout passes so the caller can report it.
+        """
+        deadline = time.monotonic() + timeout
+        item: dict[str, Any] = {}
+        while True:
+            matches = [entry for entry in self.custom_checks(plugin_id) if entry.get("id") == check_id]
+            if not matches:
+                raise HarnessError(f"Custom check {check_id} is no longer listed.")
+            item = matches[0]
+            if (item.get("status") or {}).get("kind") not in {"waiting", "stale"}:
+                return item
+            if time.monotonic() >= deadline:
+                return item
+            time.sleep(interval)
+
     def device_id(self, address: str, search_limit: int = 64) -> int:
         """
         Return the device id of the host at a lab address. No route lists
@@ -320,6 +417,15 @@ class PinpointClient:
             time.sleep(interval)
         wanted = service or f"prefix {service_prefix}"
         raise HarnessError(f"Service {hostname}/{wanted} did not reach {sorted(expected_states)}.")
+
+
+def _without_extension(name: str) -> str:
+    """The plugin name lowercased with a script extension removed (check_ncpa.py -> check_ncpa)."""
+    lowered = name.strip().lower()
+    for extension in (".py", ".pl", ".sh"):
+        if lowered.endswith(extension):
+            return lowered[: -len(extension)]
+    return lowered
 
 
 def executed_check(value: Any, checked_after: datetime | None = None) -> bool:

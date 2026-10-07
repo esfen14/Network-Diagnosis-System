@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import sqlite3
 import subprocess
 import sys
 import time
@@ -430,11 +433,392 @@ def _raise_problems(problems: list[str]) -> None:
         raise HarnessError("; ".join(problems))
 
 
+# ---------------------------------------------------------------- Plugin Manager: custom checks, server checks, registry
+
+CUSTOM_ROLES = {
+    "custom-viewer": MATRIX_VIEW,
+    "custom-admin": MATRIX_VIEW + ["plugin.custom_check"],
+}
+
+
+def hosts_text(ctx: Context) -> str:
+    """The live hosts.cfg Nagios reads (config nagios.host_config)."""
+    path = Path(ctx.config["nagios"]["host_config"])
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise BlockedError(f"Cannot read {path}: {exc.strerror}") from exc
+
+
+def service_block(text: str, service: str) -> str | None:
+    """The `define service` block whose service_description is `service`, or None."""
+    for block in re.findall(r"define service\s*\{(.*?)\n\s*\}", text, flags=re.S):
+        match = re.search(r"^\s*service_description\s+(.+?)\s*$", block, flags=re.M)
+        if match and match.group(1) == service:
+            return block
+    return None
+
+
+def command_line(text: str, command: str) -> str | None:
+    """The command_line of the `define command` block named `command`, or None."""
+    for block in re.findall(r"define command\s*\{(.*?)\n\s*\}", text, flags=re.S):
+        name = re.search(r"^\s*command_name\s+(\S+)", block, flags=re.M)
+        if name and name.group(1) == command:
+            line = re.search(r"^\s*command_line\s+(.+?)\s*$", block, flags=re.M)
+            return line.group(1) if line else ""
+    return None
+
+
+def field_of(block: str, key: str) -> str:
+    match = re.search(rf"^\s*{key}\s+(.+?)\s*$", block, flags=re.M)
+    return match.group(1) if match else ""
+
+
+def remove_check_named(ctx: Context, plugin_id: int, name: str) -> None:
+    """Remove a leftover check with this name (an earlier run that did not finish) so a run starts clean."""
+    for item in ctx.client.custom_checks(plugin_id):
+        if item.get("name") == name:
+            ctx.client.remove_custom_check(plugin_id, int(item["id"]))
+
+
+def listed_check(ctx: Context, plugin_id: int, name: str) -> dict[str, Any] | None:
+    return next((item for item in ctx.client.custom_checks(plugin_id) if item.get("name") == name), None)
+
+
+def run_check_lifecycle(ctx: Context, plugin_name: str, device_id: int | None, label: str) -> dict[str, Any]:
+    """
+    Add one check, prove it reached hosts.cfg and Nagios, wait for a real state, then pause, resume
+    and remove it. Used by the device and the server scenarios. Returns the added check.
+    """
+    p = ctx.params
+    plugin = ctx.client.plugin_by_name(plugin_name)
+    plugin_id = int(plugin["id"])
+    name, variables = p["name"], dict(p.get("variables", {}))
+    remove_check_named(ctx, plugin_id, name)
+    created: dict[str, Any] = {}
+
+    def cleanup() -> None:
+        if created.get("id") is not None and listed_check(ctx, plugin_id, name):
+            ctx.client.remove_custom_check(plugin_id, int(created["id"]))
+
+    ctx.on_cleanup(f"remove {label} check", cleanup)
+    created.update(ctx.client.add_custom_check(plugin_id, name, variables, device_id))
+    ctx.check(created.get("id") is not None, "the add reply has no check id")
+    ctx.check(created.get("paused") is False, "a new check is paused")
+    service = str(created.get("service", ""))
+    block = service_block(hosts_text(ctx), service)
+    ctx.check(block is not None, f"{service} is not in hosts.cfg after adding it")
+    if block is not None:
+        expected_host = "localhost" if device_id is None else (created.get("device") or {}).get("hostname")
+        ctx.check(field_of(block, "host_name") == expected_host,
+                  f"{service} is on host {field_of(block, 'host_name')!r}, expected {expected_host!r}")
+        ctx.check(field_of(block, "check_command").startswith(f"pinpoint_custom_{plugin_name}"),
+                  f"{service} does not use the pinpoint_custom command")
+    ctx.validate_nagios(f"{label}-added")
+
+    waited = ctx.client.wait_for_custom_check_status(
+        plugin_id, int(created["id"]), int(p.get("status_timeout", 420)), int(p.get("status_interval", 15)))
+    kind = (waited.get("status") or {}).get("kind")
+    ctx.evidence[f"{label}_status"] = {"kind": kind, "output": (waited.get("status") or {}).get("output")}
+    ctx.check(kind == p.get("expect_state", "ok"),
+              f"{label} check is {kind}, expected {p.get('expect_state', 'ok')}: {(waited.get('status') or {}).get('output')}")
+
+    paused = ctx.client.pause_custom_check(plugin_id, int(created["id"]))
+    ctx.check(paused.get("paused") is True, "pause did not pause the check")
+    ctx.check(service_block(hosts_text(ctx), service) is None, "a paused check is still in hosts.cfg")
+    ctx.check(ctx.client.pause_custom_check(plugin_id, int(created["id"])).get("changed") is False,
+              "pausing twice reported a change")
+    resumed = ctx.client.resume_custom_check(plugin_id, int(created["id"]))
+    ctx.check(resumed.get("paused") is False, "resume did not resume the check")
+    ctx.check(service_block(hosts_text(ctx), service) is not None, "a resumed check is missing from hosts.cfg")
+    ctx.validate_nagios(f"{label}-resumed")
+
+    ctx.client.remove_custom_check(plugin_id, int(created["id"]))
+    ctx.check(listed_check(ctx, plugin_id, name) is None, "a removed check is still listed")
+    ctx.check(service_block(hosts_text(ctx), service) is None, "a removed check is still in hosts.cfg")
+    ctx.validate_nagios(f"{label}-removed")
+    return created
+
+
+def custom_device(ctx: Context) -> None:
+    """CK-01..CK-05: a device check is added, written to hosts.cfg, run by Nagios, paused, resumed and removed."""
+    p = ctx.params
+    plugin_name = p["plugin"]
+    plugin = ctx.client.plugin_by_name(plugin_name)
+    details = ctx.client.plugin_details(int(plugin["id"]))
+    support = details.get("custom_checks") or {}
+    ctx.check(details.get("service_driven") is False, f"{plugin_name} is service-driven")
+    if not (support.get("supported") is True and support.get("target") == "device"):
+        raise HarnessError(f"{plugin_name} does not offer device checks: {support}")
+    status, _ = ctx.client.call("POST", f"/api/plugin/{plugin['id']}/enable")
+    ctx.check(status == 409, f"enabling {plugin_name} returned HTTP {status}, expected 409")
+    device = ctx.device(p["target"])
+    created = run_check_lifecycle(ctx, plugin_name, device, "device")
+    ctx.check((created.get("device") or {}).get("id") == device, "the check is on another device")
+
+
+def custom_survives(ctx: Context) -> None:
+    """CK-06: a rescan, enabling and disabling a port plugin, and a port edit leave a custom check alone."""
+    p = ctx.params
+    plugin = ctx.client.plugin_by_name(p["plugin"])
+    plugin_id = int(plugin["id"])
+    device = ctx.device(p["target"])
+    remove_check_named(ctx, plugin_id, p["name"])
+    created = ctx.client.add_custom_check(plugin_id, p["name"], dict(p.get("variables", {})), device)
+    ctx.on_cleanup("remove surviving check", lambda: ctx.client.remove_custom_check(plugin_id, int(created["id"]))
+                   if listed_check(ctx, plugin_id, p["name"]) else None)
+    service = created["service"]
+    ctx.discover()
+    ctx.check(listed_check(ctx, plugin_id, p["name"]) is not None, "a rescan removed the custom check")
+    ctx.check(service_block(hosts_text(ctx), service) is not None, "a rescan removed the service from hosts.cfg")
+    other_id = ctx.enable(p["port_plugin"])
+    ctx.check(service_block(hosts_text(ctx), service) is not None, "enabling a port plugin removed the custom check")
+    ctx.client.disable_plugin(other_id)
+    ctx.client.enable_plugin(other_id)
+    ctx.check(service_block(hosts_text(ctx), service) is not None, "disabling a port plugin removed the custom check")
+    ctx.validate_nagios("custom-survives")
+
+
+def custom_server(ctx: Context) -> None:
+    """CK-10..CK-13: a server check needs no device, is written on localhost, and never touches localhost.cfg."""
+    p = ctx.params
+    plugin_name = p["plugin"]
+    plugin = ctx.client.plugin_by_name(plugin_name)
+    plugin_id = int(plugin["id"])
+    support = ctx.client.plugin_details(plugin_id).get("custom_checks") or {}
+    ctx.check(support.get("supported") is True and support.get("target") == "server",
+              f"{plugin_name} does not offer server checks: {support}")
+    status, _ = ctx.client.call("POST", f"/api/plugin/{plugin_id}/custom-checks",
+                                {"name": "e2e with device", "variables": {}, "device_id": ctx.device(p["target"])})
+    ctx.check(status == 400, f"a server check with a device returned HTTP {status}, expected 400")
+    created = run_check_lifecycle(ctx, plugin_name, None, "server")
+    ctx.check((created.get("device") or {}).get("id") is None, "a server check shows a device")
+    ctx.check(str(created.get("service", "")).startswith("server-"), f"service name is {created.get('service')}")
+
+
+def custom_rules(ctx: Context) -> None:
+    """CK-20..CK-27: bad requests are refused with a clear message, nothing is saved and hosts.cfg does not change."""
+    p = ctx.params
+    hosts_config = Path(ctx.config["nagios"]["host_config"])
+    before = guards.sha256_of(hosts_config)
+    device_plugin = ctx.client.plugin_by_name(p["device_plugin"])
+    server_plugin = ctx.client.plugin_by_name(p["server_plugin"])
+    stock_plugin = ctx.client.plugin_by_name(p["unsupported_plugin"])
+    device = ctx.device(p["target"])
+    dp, sp = device_plugin["id"], server_plugin["id"]
+    count_before = len(ctx.client.custom_checks(int(dp))) + len(ctx.client.custom_checks(int(sp)))
+
+    def refuse(label: str, plugin_id: int, body: dict[str, Any], must_not_echo: str | None = None) -> None:
+        status, reply = ctx.client.call("POST", f"/api/plugin/{plugin_id}/custom-checks", body)
+        ctx.check(status == 400, f"{label}: HTTP {status}, expected 400")
+        if must_not_echo:
+            ctx.check(must_not_echo not in json.dumps(reply), f"{label}: the reply repeats the rejected value")
+
+    good = dict(p.get("variables", {"command": "/bin/true"}))
+    refuse("unsupported plugin", stock_plugin["id"], {"name": "x", "variables": {}, "device_id": device})
+    refuse("missing required argument", dp, {"name": "x", "variables": {}, "device_id": device})
+    refuse("forbidden character", dp, {"name": "x", "variables": {**good, "command": "a'b"}, "device_id": device}, "a'b")
+    refuse("unknown argument", dp, {"name": "x", "variables": {**good, "password": "p"}, "device_id": device})
+    refuse("device plugin without a device", dp, {"name": "x", "variables": good})
+    refuse("server plugin with a device", sp, {"name": "x", "variables": {}, "device_id": device})
+    refuse("unknown device", dp, {"name": "x", "variables": good, "device_id": 99999999})
+    refuse("name with a slash", dp, {"name": "no/slash", "variables": good, "device_id": device})
+    refuse("name too long", dp, {"name": "n" * 61, "variables": good, "device_id": device})
+    refuse("empty name", dp, {"name": "", "variables": good, "device_id": device})
+    status, _ = ctx.client.call("GET", f"/api/plugin/{dp}/custom-checks?page=0")
+    ctx.check(status == 400, f"page=0 returned HTTP {status}, expected 400")
+    status, _ = ctx.client.call("PUT", f"/api/plugin/{dp}/custom-checks/99999999", {"name": "x", "variables": good})
+    ctx.check(status == 404, f"changing an unknown check returned HTTP {status}, expected 404")
+    status, _ = ctx.client.call("DELETE", f"/api/plugin/{dp}/custom-checks/99999999")
+    ctx.check(status == 404, f"removing an unknown check returned HTTP {status}, expected 404")
+    # A name is unique per device.
+    name = p.get("name", "e2e duplicate")
+    remove_check_named(ctx, int(dp), name)
+    first = ctx.client.add_custom_check(int(dp), name, good, device)
+    ctx.on_cleanup("remove duplicate-test check", lambda: ctx.client.remove_custom_check(int(dp), int(first["id"]))
+                   if listed_check(ctx, int(dp), name) else None)
+    refuse("duplicate name", dp, {"name": name, "variables": good, "device_id": device})
+    ctx.client.remove_custom_check(int(dp), int(first["id"]))
+    after_sha = guards.sha256_of(hosts_config)
+    ctx.check(after_sha == before, "hosts.cfg differs after adding and removing one check and refusing the rest")
+    ctx.check(len(ctx.client.custom_checks(int(dp))) + len(ctx.client.custom_checks(int(sp))) == count_before,
+              "a refused request left a check behind")
+
+
+def custom_permissions(ctx: Context) -> None:
+    """CK-30..CK-32: only plugin.custom_check opens the routes; plugin.view does not, and it grants no right to enable."""
+    p = ctx.params
+    if not ctx.admin_password or ctx.login is None:
+        raise BlockedError("The custom check permission case needs the admin password and a login factory.")
+    manager = accounts.AccountManager(ctx.client, p.get("domain", "example.com"))
+    ctx.on_cleanup("deactivate custom-check accounts", lambda: _raise_problems(manager.deactivate()))
+    for key, permissions in CUSTOM_ROLES.items():
+        manager.ensure_role(key, permissions)
+        manager.ensure_account(key, ctx.admin_password)
+    plugin_id = ctx.client.plugin_by_name(p["plugin"])["id"]
+    base = f"/api/plugin/{plugin_id}/custom-checks"
+
+    def session(key: str) -> PinpointClient:
+        email = manager.email(key)
+        return ctx.login(email, accounts.derived_password(ctx.admin_password, email))
+
+    viewer = session("custom-viewer")
+    ctx.check(viewer.call("GET", base)[0] == 403, "CK-30 a viewer listed custom checks")
+    ctx.check(viewer.call("POST", base, {"name": "x", "variables": {}})[0] == 403, "CK-30 a viewer added a custom check")
+    ctx.check(viewer.call("GET", "/api/plugin/custom-check-devices")[0] == 403, "CK-30 a viewer searched devices")
+    ctx.check(viewer.call("DELETE", f"{base}/1")[0] == 403, "CK-30 a viewer removed a custom check")
+    ctx.check(viewer.call("GET", f"/api/plugin/{plugin_id}")[0] == 200, "CK-30 plugin.view no longer shows the plugin")
+    admin = session("custom-admin")
+    ctx.check(admin.call("GET", base)[0] == 200, "CK-31 the permission holder cannot list custom checks")
+    ctx.check(admin.call("GET", "/api/plugin/custom-check-devices")[0] == 200, "CK-31 the permission holder cannot search devices")
+    ctx.check(admin.call("POST", base, {"name": "x", "variables": {}})[0] == 400,
+              "CK-31 a bad request from the permission holder was not refused with 400")
+    ctx.check(admin.call("POST", f"/api/plugin/{plugin_id}/enable")[0] == 403,
+              "CK-32 plugin.custom_check alone allows enabling a plugin (it must not grant plugin.enable)")
+    ctx.evidence["accounts"] = sorted(manager.accounts)
+
+
+def custom_password(ctx: Context) -> None:
+    """CK-40..CK-45: a password is encrypted at rest, never returned, kept on a blank change, and removed with the check."""
+    p = ctx.params
+    password = os.environ.get(p["password_env"], "")
+    if not password:
+        raise BlockedError(f"Set the environment variable {p['password_env']} to a throwaway password for this case.")
+    field_name = p.get("password_field", "password")
+    plugin = ctx.client.plugin_by_name(p["plugin"])
+    plugin_id = int(plugin["id"])
+    support = ctx.client.plugin_details(plugin_id).get("custom_checks") or {}
+    ctx.check(any(f.get("name") == field_name and f.get("secret") for f in support.get("fields", [])),
+              f"{p['plugin']} has no password field named {field_name}")
+    device = ctx.device(p["target"])
+    name = p["name"]
+    remove_check_named(ctx, plugin_id, name)
+    variables = {**p.get("variables", {}), field_name: password}
+    created: dict[str, Any] = {}
+    ctx.on_cleanup("remove password check", lambda: ctx.client.remove_custom_check(plugin_id, int(created["id"]))
+                   if created.get("id") is not None and listed_check(ctx, plugin_id, name) else None)
+    reply = ctx.client.add_custom_check(plugin_id, name, variables, device)
+    created.update(reply)
+    listing = json.dumps(ctx.client.custom_checks(plugin_id))
+    ctx.check(password not in json.dumps(reply), "the add reply repeats the password")
+    ctx.check(password not in listing, "the list repeats the password")
+    ctx.check(reply.get("secrets_set") == [field_name], f"secrets_set is {reply.get('secrets_set')}")
+    ctx.check(reply.get("secrets_readable") is True, "the stored password cannot be read back")
+    stored = _stored_configuration(ctx, str(reply.get("service", "")))
+    ctx.check(stored is not None, "the check is not in the database")
+    if stored is not None:
+        ctx.check(password not in stored, "the database holds the password in plain text")
+        ctx.check('"v1:' in stored or "v1:" in stored, "the database does not hold an encrypted value")
+    block = service_block(hosts_text(ctx), str(reply.get("service", "")))
+    ctx.check(block is not None and password in field_of(block, "check_command"),
+              "hosts.cfg does not carry the password Nagios needs (documented trade-off)")
+    if os.name == "posix":
+        mode = Path(ctx.config["nagios"]["host_config"]).stat().st_mode & 0o777
+        ctx.evidence["hosts_cfg_mode"] = oct(mode)
+        ctx.check(not mode & 0o004, f"hosts.cfg is readable by every user (mode {oct(mode)}) while it holds a password")
+    ctx.validate_nagios("password-added")
+
+    kept = ctx.client.change_custom_check(plugin_id, int(created["id"]), name, p.get("variables", {}))
+    ctx.check(kept.get("secrets_set") == [field_name], "a blank password on a change dropped the stored one")
+    ctx.check(password in field_of(service_block(hosts_text(ctx), str(kept.get("service"))) or "", "check_command"),
+              "a blank password on a change removed it from the command")
+    if p.get("password_required", True):
+        status, _ = ctx.client.call("PUT", f"/api/plugin/{plugin_id}/custom-checks/{created['id']}",
+                                    {"name": name, "variables": p.get("variables", {}), "clear_secrets": [field_name]})
+        ctx.check(status == 400, f"clearing a required password returned HTTP {status}, expected 400")
+    ctx.client.remove_custom_check(plugin_id, int(created["id"]))
+    ctx.check(_stored_configuration(ctx, str(reply.get("service", ""))) is None, "a removed check is still in the database")
+    ctx.check(password not in hosts_text(ctx), "the password is still in hosts.cfg after removing the check")
+    ctx.validate_nagios("password-removed")
+
+
+def _stored_configuration(ctx: Context, service: str) -> str | None:
+    """The stored Configuration_Data of a custom check read straight from the system database."""
+    database = ctx.config.get("databases", {}).get("system")
+    if not database:
+        raise BlockedError("config databases.system is not set, so the stored value cannot be inspected.")
+    try:
+        connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+    except sqlite3.Error as exc:
+        raise BlockedError(f"Cannot open {database}: {exc}") from exc
+    try:
+        row = connection.execute(
+            "select Configuration_Data from PLUGIN_CONFIGURATION where Nagios_Service_Name = ? and Origin = 'CUSTOM'",
+            (service,)).fetchone()
+    finally:
+        connection.close()
+    return None if row is None else str(row[0])
+
+
+def registry_enable(ctx: Context) -> None:
+    """CK-50: the plugins added to the registry are recognised, previewed, enabled and disabled."""
+    for name in ctx.params["plugins"]:
+        plugin = ctx.client.plugin_matching(name)
+        plugin_id = int(plugin["id"])
+        details = ctx.client.plugin_details(plugin_id)
+        ctx.check(details.get("service_driven") is True, f"{name} is not service-driven")
+        preview = ctx.client.enable_preview(plugin_id)
+        ctx.check(preview.get("service_driven") is True, f"{name}: the enable preview says it is not service-driven")
+        ctx.enable(plugin["name"])
+        status = ctx.client.plugin_details(plugin_id).get("status")
+        ctx.check(status in {"Enabled", "Active"}, f"{name} is {status} after enabling")
+    ctx.validate_nagios("registry-enable")
+
+
+def ncpa_name(ctx: Context) -> None:
+    """CK-51: check_ncpa stored under its filename is recognised, enabled, disabled and runs the .py file."""
+    p = ctx.params
+    plugin = ctx.client.plugin_matching(p.get("plugin", "check_ncpa"))
+    plugin_id = int(plugin["id"])
+    details = ctx.client.plugin_details(plugin_id)
+    ctx.check(details.get("service_driven") is True, f"{plugin['name']} shows as not service-driven")
+    ctx.check((details.get("custom_checks") or {}).get("class") == "service",
+              f"{plugin['name']} is class {(details.get('custom_checks') or {}).get('class')}, expected service")
+    ctx.check(bool(details.get("category")), "the plugin has no category (catalog lookup missed the filename)")
+    was_on = plugin.get("status") in {"Enabled", "Active"}
+    outcome = ctx.client.enable_plugin(plugin_id)
+    apply = outcome.get("auto_apply") or {}
+    ctx.check(apply.get("success") is not False, f"Nagios was not updated after enabling: {apply.get('message')}")
+    if not was_on:
+        ctx.on_cleanup(f"disable {plugin['name']}", lambda: ctx.client.disable_plugin(plugin_id))
+    ctx.check(ctx.client.plugin_details(plugin_id).get("status") in {"Enabled", "Active"}, "check_ncpa did not become enabled")
+    services = ctx.client.plugin_services(plugin_id)
+    if p.get("expect_services"):
+        ctx.check(bool(services), "no NCPA services were attached (is an agent deployed?)")
+        ctx.check(all(str(item.get("service", "")).startswith("ncpa-") for item in services), "an NCPA service is misnamed")
+        line = command_line(hosts_text(ctx), "pinpoint_nd_ncpa")
+        ctx.check(line is not None and "check_ncpa.py" in line, f"the NCPA command does not run check_ncpa.py: {line}")
+    ctx.validate_nagios("ncpa-enabled")
+
+
+def plugin_classes(ctx: Context) -> None:
+    """CK-60: every plugin kind reports the class and note the drawer shows."""
+    for name, expected in ctx.params["classes"].items():
+        plugin = ctx.client.plugin_matching(name)
+        details = ctx.client.plugin_details(int(plugin["id"]))
+        support = details.get("custom_checks") or {}
+        ctx.check(support.get("class") == expected, f"{name} is class {support.get('class')}, expected {expected}")
+        ctx.check(support.get("supported") is (expected in {"custom", "server"}), f"{name}: supported is {support.get('supported')}")
+        if expected == "service":
+            ctx.check(details.get("service_driven") is True, f"{name} is not service-driven")
+        else:
+            ctx.check(details.get("service_driven") is False, f"{name} is service-driven")
+        if expected in {"stock", "advanced", "credentials", "unsupported", "replaced"}:
+            ctx.check(bool(support.get("note")), f"{name} has no explanation")
+        if expected == "custom":
+            ctx.check(support.get("target") == "device" and bool(support.get("fields")), f"{name} lists no device fields")
+        if expected == "server":
+            ctx.check(support.get("target") == "server", f"{name} does not target the server")
+
+
 SCENARIOS: dict[str, Callable[[Context], None]] = {
     "PERMISSIONS": permissions_matrix,
     "PORT-FLAG": port_flag, "PORT-HELD": port_held, "PORT-GUESS": port_guess, "PORT-PIN": port_pin,
     "STOP-RESUME": stop_resume, "LOCALHOST": localhost_scope, "REJECT-CONFIG": reject_config,
     "PORT-LIFECYCLE": port_lifecycle,
+    "CUSTOM-DEVICE": custom_device, "CUSTOM-SURVIVES": custom_survives, "CUSTOM-SERVER": custom_server,
+    "CUSTOM-RULES": custom_rules, "CUSTOM-PERMISSIONS": custom_permissions, "CUSTOM-PASSWORD": custom_password,
+    "REGISTRY-ENABLE": registry_enable, "NCPA-NAME": ncpa_name, "PLUGIN-CLASSES": plugin_classes,
 }
 
 

@@ -110,6 +110,42 @@
         "C-04",
         "C-13"
       ]
+    },
+    "CK-1": {
+      "title": "A plugin discovery cannot attach to a port can still be used",
+      "cases": [
+        "CK-01",
+        "CK-06",
+        "CK-10",
+        "CK-40"
+      ]
+    },
+    "CK-2": {
+      "title": "Server checks never touch Nagios Core's own config",
+      "cases": [
+        "CK-10"
+      ]
+    },
+    "CK-3": {
+      "title": "Bad input is refused and nothing changes",
+      "cases": [
+        "CK-20",
+        "CK-40"
+      ]
+    },
+    "CK-4": {
+      "title": "Custom checks need their own permission",
+      "cases": [
+        "CK-30"
+      ]
+    },
+    "CK-5": {
+      "title": "Registry additions, the check_ncpa.py name fix and the plugin classes",
+      "cases": [
+        "CK-50",
+        "CK-51",
+        "CK-60"
+      ]
     }
   },
   "blocking": [
@@ -125,6 +161,11 @@
     "C-03",
     "C-07",
     "C-11",
-    "C-17"
+    "C-17",
+    "CK-01",
+    "CK-10",
+    "CK-20",
+    "CK-30",
+    "CK-51"
   ]
 }

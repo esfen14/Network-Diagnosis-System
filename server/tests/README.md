@@ -138,6 +138,7 @@ Basenames below live under `unit/`, except `integration/test_live_nagios.py`.
 | `test_upgrade_rehearsal.py` | A populated pre-upgrade database taken through every migration, the first reconcile, a downgrade and an upgrade again: monitoring survives, nothing is duplicated, no look-alike manual rows after a downgrade |
 | `test_plugin_scale.py` | 300 devices / 3,600 services: reconcile and services-list correctness and loose time limits |
 | `test_promotion_hold.py`, `test_promotion_hold_migration.py` | Held ports: an admin's Suggested is respected, an upgrade starts nothing new, how a hold is released, the enable preview's held count, and the migration's data step |
+| `test_plugin_manager_scenarios_live_app.py` | The e2e Plugin Manager scenarios (custom checks, server checks, passwords, registry, `check_ncpa.py`, plugin classes) run against the real app over HTTP |
 | `test_custom_checks.py`, `test_custom_check_migration.py` | Custom checks: plugin classes and argument validation, the add/change/pause/remove routes and their rollback, the hosts.cfg output, device search, merges, and the Origin migration |
 | `test_plugin_services_api.py` | Service-driven plugins, the enable preview, a plugin's monitored services with live status, stop/resume of one port, disable rollback, and the removed manual routes |
 | `test_plugin_config_migration.py`, `test_port_service_map_migration.py`, `test_retire_permission_migration.py` | Alembic round trips with populated data for the plugin-driven monitoring migrations |
