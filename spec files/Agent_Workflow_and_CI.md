@@ -17,6 +17,11 @@ agents; loop engineering; last-mile checks in CI; reproducible environments).
 
 ## The agent loop
 
+The executable version is the `work-issue` skill
+(`.claude/skills/work-issue/SKILL.md`, run as `/work-issue <issue number>`).
+It carries the loop, the 5-round limit and the stop conditions below; keep the
+two in sync.
+
 For every task, an agent repeats until the finish condition holds:
 
 1. **Read** the issue, then the **Required** documents for the area (`AGENTS.md`)
