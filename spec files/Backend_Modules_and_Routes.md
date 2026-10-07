@@ -27,7 +27,7 @@ system.acknowledge_alerts, system.dashboard
 plugin.scan, plugin.view, plugin.enable, plugin.disable
 plugin.command_override, plugin.command_restore, plugin.validate
 plugin.custom_add, plugin.update, plugin.update_rollback
-settings.security, settings.system
+settings.security, settings.system, settings.discovery, settings.plugins
 ```
 
 Some seeded permissions are not attached to a current route, and the history
@@ -124,8 +124,8 @@ Valid trend windows are `hours=1`, `6`, `24`, or `168`.
 
 | Method and path | Permission | Purpose |
 |---|---|---|
-| `GET /api/system/network-health/hosts` | `system.network_health` | Paginated/filterable latest host snapshot; each item carries `device_id` (the discovered device behind the Nagios host name, `null` for a host with no device record such as `localhost`) |
-| `GET /api/system/network-health/hosts/<hostname>/detail` | `system.network_health` | Host detail panel data, including `device_id` |
+| `GET /api/system/network-health/hosts` | `system.network_health` | Paginated/filterable latest host snapshot; each item carries `device_id` (the discovered device behind the Nagios host name, `null` for a host with no device record such as `localhost`) and `ip_address` (that device's current IP, `null` in the same case), and `monitoring_state` / `monitored` (the device's monitoring label and whether Nagios fully checks it; both `null` in the same case). Optional `monitoring` filter: `all`, `not_monitored`, `monitored`, `missing`, `address_unknown`, `paused`, `retired` or `merged` (400 otherwise); a host with no device counts as monitored |
+| `GET /api/system/network-health/hosts/<hostname>/detail` | `system.network_health` | Host detail panel data, including `device_id`, `monitoring_state` and `monitored` |
 | `POST /api/system/network-health/hosts/acknowledge` | `system.acknowledge_alerts` | Acknowledge a host alert |
 | `DELETE /api/system/network-health/hosts/acknowledge` | `system.acknowledge_alerts` | Unacknowledge a host alert |
 
@@ -154,8 +154,8 @@ in the seed permission list. This is tracked in `Implementation_Status.md`.
 
 | Method and path | Permission | Purpose |
 |---|---|---|
-| `GET /api/system/notifications` | `system.notifications` | Recent notifications from Nagios (`source: nagios`) and Pinpoint itself (`source: pinpoint`, network scan results) annotated with per-user read state |
-| `GET /api/system/notifications/unread-count` | `system.notifications` | Count events after the user's cursor |
+| `GET /api/system/notifications` | `system.notifications` | Recent notifications from Nagios (`source: nagios`) and Pinpoint itself (`source: pinpoint`, network scan results) annotated with per-user read state. Nagios field names are normalized (`normalize_notification`) and repeats of the same host/service in the same state are collapsed into one entry with `repeat_count` and `first_timestamp` (`collapse_repeats`); the history routes are not collapsed |
+| `GET /api/system/notifications/unread-count` | `system.notifications` | Count collapsed entries after the user's cursor (matches the panel list) |
 | `POST /api/system/notifications/mark-read` | `system.notifications` | Advance the user's notification cursor |
 
 ### `app/api/system/network_discovery.py`
@@ -176,6 +176,13 @@ this is a documented implementation mismatch, not a recommended convention.
 | `GET /api/system/discovery-settings` | `settings.discovery` | Effective discovery settings, their `config.py` defaults, and whether a scan is running |
 | `PUT /api/system/discovery-settings` | `settings.discovery` | Save networks, TCP/UDP ports and the Port -> Service tables (`tcpPortServices`, `udpPortServices`: the service expected on each port); every field is required, the version must match. GET also returns `ncpaPort`, the derived NCPA entry in the TCP table (accepted back but never stored; mapping that port to anything but `ncpa` is a 400) and `resolution` (which check each entry leads to) |
 
+### `app/api/system/plugin_settings.py`
+
+| Method and path | Permission | Purpose |
+|---|---|---|
+| `GET /api/system/plugin-settings` | `settings.plugins` | Each editable plugin's section keyed by definition name (`snmp`, `ncpa`): `plugin` (`check_snmp`, `check_ncpa`), `installed` (it has a Plugin Manager row), `status`, `settings` (effective values), `defaults` (`config.py`) and `version` (0 until first saved) |
+| `PUT /api/system/plugin-settings/<plugin>` | `settings.plugins` | Save one plugin's table; `<plugin>` is `snmp` or `ncpa` (404 otherwise). SNMP: `{"version", "oids": [{"metric", "oid"}]}`, `oid` numeric and dotted, unique. NCPA: `{"version", "metrics": [{"metric", "path", "warning"?, "critical"?, "units"?, "queryargs"?}]}`; `path` is an NCPA API path (segments of letters, digits, `_ - . |`, or `{partition}`, which expands to one service per partition), thresholds use Nagios range syntax, units up to 8 letters or `%`, query args `name=value` pairs joined by `,`; empty options are dropped. For both, `metric` is the description (lowercase letters, digits, `_`, at most 32, unique) and names the service `<plugin>-<metric>-<port>-<protocol>`; 1 to 50 entries. 400 when the plugin is not installed or an entry is invalid, 409 on a stale version. Writes a Configuration Change entry (`<plugin>_<variable>`, when audit logging is on), then rebuilds the Nagios config; returns the section plus `config_applied`, `config_ok`, `config_message` |
+
 ### `app/api/system/device_identity.py`
 
 | Method and path | Permission | Purpose |
@@ -185,7 +192,9 @@ this is a documented implementation mismatch, not a recommended convention.
 | `PUT /api/system/hosts/<id>` | `system.hosts.edit` | Change display name and/or addressing mode |
 | `POST /api/system/hosts/<id>/merge` | `system.hosts.edit` | Merge the device into another |
 | `POST /api/system/hosts/<id>/retire` | `system.hosts.edit` | Retire the device |
-| `GET /api/system/hosts/<id>/ports` | `system.hosts` | Every port of a device, ordered by state (Monitored, Missing, Suggested, Ignored, Archived), protocol and number. Per port: `state`, `source`, `service_name`, `observed_service_name`, `identified_by`, `pinned`, `plugin_name` (frozen), `check_plugin` and `plugin_enabled`, `expected_service_name`, `mismatch_acknowledged`, `promotion_held`, `managed_by_ncpa` (the NCPA port of a deployed agent), first/last seen, `missed_scans`, and `reason` (`code` and `text`, for Suggested and Ignored ports only: `not_used_as_intended`, `held`, `guessed`, `no_udp_plugin`, `plugin_not_enabled`, `device_excluded`, `pending` or `stopped`; first match wins). Also `device`, `counts` per state and `service_options` (known service names and aliases with the check plugin and protocols they lead to, for the pin dialog) |
+| `POST /api/system/hosts/<id>/pause` | `system.hosts.edit` | Pause monitoring: clears `Include_Device_In_Scanning`, so the device leaves the Nagios config while scans still track it. 400 if the device is retired, merged or already paused. Returns `config_applied`, `config_ok`, `config_message` and the `device` summary (which now carries `monitoring_state` and `monitored`) |
+| `POST /api/system/hosts/<id>/resume` | `system.hosts.edit` | Resume monitoring of a paused device (400 if it is not paused); same response as pause |
+| `GET /api/system/hosts/<id>/ports` | `system.hosts` | Every port of a device, ordered by state (Monitored, Missing, Suggested, Ignored, Archived), protocol and number. Per port: `state`, `source`, `service_name`, `observed_service_name`, `identified_by`, `pinned`, `plugin_name` (frozen), `check_plugin` and `plugin_enabled`, `expected_service_name`, `mismatch_acknowledged`, `promotion_held`, `managed_by_ncpa` (the NCPA port of a deployed agent), first/last seen, `missed_scans`, and `reason` (`code` and `text`: for Suggested and Ignored ports `not_used_as_intended`, `held`, `guessed`, `no_udp_plugin`, `plugin_not_enabled`, `device_excluded`, `pending` or `stopped`, first match wins; `missing` for a Missing port; `monitoring_inactive` for a Monitored port whose check plugin is off; `service_missing` for a Monitored port whose plugin is on but has no Applied service (a configuration problem); null otherwise). Also `device`, `counts` per state and `service_options` (known service names and aliases with the check plugin and protocols they lead to, for the pin dialog) |
 | `PUT /api/system/hosts/<id>/ports/<proto>/<port>` | `system.hosts.edit` | Body `{"state"?, "service_name"?, "acknowledge_mismatch"?, "unpin"?}`: change a port's state, pin its service on this device (never renamed by a scan; a monitored port's plugin is re-frozen), acknowledge a port flagged "not used as intended" (accepts the service nmap found; 400 if the port is not flagged), `unpin: true` lets scans decide the service again (a Suggested, Ignored or Archived port returns to the service the last scan saw; a Monitored or Missing port keeps its service and its Nagios service; refused with 400 for a port that is not pinned or for the NCPA port of a deployed agent; never changes state or hold), or add a port by hand (`state` MONITORED plus `service_name`); response includes `identified_by`, `expected_service_name`, `mismatch_acknowledged`, `promotion_held` and `pinned`, plus `config_applied` (a new config went live), `config_ok` (false only when the change was saved but Nagios was not brought up to date) and `config_message`. Setting `state` to SUGGESTED holds the port (no plugin promotes it); MONITORED releases it |
 | `GET /api/system/discover/review` | `system.discover` | Unresolved review items, including `SERVICE_CHANGED` |
 | `POST /api/system/discover/review/<id>/resolve` | `system.hosts.edit` | Mark a review item as dealt with |

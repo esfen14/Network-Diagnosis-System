@@ -11,7 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
-from .common import HarnessError
+from .common import BlockedError, HarnessError
 
 
 class PinpointClient:
@@ -80,39 +80,164 @@ class PinpointClient:
             if record["after"] not in {"Enabled", "Active"}:
                 raise HarnessError(f"Plugin {plugin['name']} did not become enabled.")
 
-    def apply_monitoring(self, plugin_id: int, address: str, service: str) -> dict[str, Any]:
-        """Apply to an existing API target and verify the running configuration."""
-        targets = self.get_data("/api/plugin/targets")
-        if not isinstance(targets, list):
-            raise HarnessError("Monitoring targets response is missing data.")
-        matches = [target for target in targets if target.get("ip_address") == address]
-        if len(matches) != 1:
-            raise HarnessError("Monitoring requires exactly one existing target at the lab address.")
-        target_id = matches[0]["id"]
-        result = self.request("POST", f"/api/plugin/{plugin_id}/configurations", {
-            "net_discovery_id": target_id, "service_description": service,
-        }).get("data", {})
-        if result.get("success") is not True or result.get("status") != "Applied":
-            raise HarnessError("Plugin monitoring configuration was not applied.")
-        configurations = self.get_data(f"/api/plugin/{plugin_id}/configurations")
-        applied = [item for item in configurations if item.get("id") == result.get("configuration_id")
-                   and item.get("status") == "Applied" and item.get("target", {}).get("id") == target_id
-                   and item.get("service_description") == service]
-        if len(applied) != 1:
-            raise HarnessError("Applied monitoring configuration could not be verified.")
+    def call(self, method: str, path: str, payload: Any = None) -> tuple[int, Any]:
+        """
+        Send a request and return (HTTP status, decoded JSON) without raising on
+        a 4xx/5xx reply, so permission and rejection cases can assert the status.
+        Only an unreachable server raises.
+        """
+        data = None if payload is None else json.dumps(payload).encode("utf-8")
+        headers = {"Accept": "application/json"}
+        if data is not None:
+            headers["Content-Type"] = "application/json"
+        request = Request(f"{self.base_url}{path}", data=data, headers=headers, method=method)
+        try:
+            with self.opener.open(request, timeout=self.timeout) as response:
+                status, body = response.status, response.read().decode("utf-8")
+        except HTTPError as exc:
+            status, body = exc.code, exc.read().decode("utf-8", errors="replace")
+        except URLError as exc:
+            raise HarnessError(f"Cannot reach Pinpoint API at {self.base_url}: {exc.reason}") from exc
+        try:
+            return status, (json.loads(body) if body else {})
+        except json.JSONDecodeError:
+            return status, {}
+
+    def plugin_by_name(self, name: str) -> dict[str, Any]:
+        """Return the single inventory entry for an exact plugin name."""
         page = 1
         while True:
-            running = self.get_data(f"/api/plugin/running?page={page}&per_page=100")
-            for item in running.get("items", []):
-                if (item.get("id") == result["configuration_id"]
-                    and item.get("plugin", {}).get("id") == plugin_id
-                    and item.get("target", {}).get("id") == target_id
-                    and item.get("service_description") == service):
-                    return {"configuration_id": item["id"], "target_id": target_id,
-                            "hostname": item["target"]["hostname"], "service": service, "status": "Applied"}
-            if page >= int(running.get("pages", 1)):
-                raise HarnessError("Applied configuration is missing from running monitoring.")
+            data = self.get_data(f"/api/plugin?page={page}&per_page=100")
+            if not isinstance(data, dict):
+                raise HarnessError("Plugin inventory response is missing data.")
+            for item in data.get("items", []):
+                if item.get("name") == name:
+                    return item
+            if page >= int(data.get("pages", 1)):
+                raise HarnessError(f"Required plugin {name} must have exactly one inventory entry.")
             page += 1
+
+    def enable_preview(self, plugin_id: int) -> dict[str, Any]:
+        """Return what enabling would monitor, without changing anything."""
+        data = self.get_data(f"/api/plugin/{plugin_id}/enable-preview")
+        if not isinstance(data, dict):
+            raise HarnessError("Enable preview response is missing data.")
+        return data
+
+    def enable_plugin(self, plugin_id: int) -> dict[str, Any]:
+        """Enable one plugin; the response carries auto_apply with the Nagios outcome."""
+        data = self.request("POST", f"/api/plugin/{plugin_id}/enable").get("data")
+        return data if isinstance(data, dict) else {}
+
+    def disable_plugin(self, plugin_id: int) -> dict[str, Any]:
+        """Disable one plugin; a Nagios rejection raises HarnessError (502)."""
+        data = self.request("POST", f"/api/plugin/{plugin_id}/disable").get("data")
+        return data if isinstance(data, dict) else {}
+
+    def plugin_services(self, plugin_id: int, search: str = "") -> list[dict[str, Any]]:
+        """Return every service a plugin monitors, across all pages."""
+        items: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            query = {"page": page, "per_page": 100}
+            if search:
+                query["search"] = search
+            data = self.get_data(f"/api/plugin/{plugin_id}/services?{urlencode(query)}")
+            if not isinstance(data, dict):
+                raise HarnessError("Plugin services response is missing data.")
+            items.extend(data.get("items", []))
+            if page >= int(data.get("pages", 1)):
+                return items
+            page += 1
+
+    def stop_service(self, plugin_id: int, device_id: int, protocol: str, port: int) -> dict[str, Any]:
+        """Stop monitoring one port on one device through its plugin."""
+        body = {"device_id": device_id, "protocol": protocol, "port": port}
+        data = self.request("POST", f"/api/plugin/{plugin_id}/services/stop", body).get("data")
+        return data if isinstance(data, dict) else {}
+
+    def resume_service(self, plugin_id: int, device_id: int, protocol: str, port: int) -> dict[str, Any]:
+        """Resume a stopped port; its frozen plugin is kept."""
+        body = {"device_id": device_id, "protocol": protocol, "port": port}
+        data = self.request("POST", f"/api/plugin/{plugin_id}/services/resume", body).get("data")
+        return data if isinstance(data, dict) else {}
+
+    def device_id(self, address: str, search_limit: int = 64) -> int:
+        """
+        Return the device id of the host at a lab address. No route lists
+        devices with their IPs, so probe ids from 1 and match the address the
+        ports route reports; a missing id (404) is skipped.
+        """
+        for candidate in range(1, search_limit + 1):
+            status, body = self.call("GET", f"/api/system/hosts/{candidate}/ports")
+            if status == 200 and ((body.get("data") or {}).get("device") or {}).get("ip_address") == address:
+                return candidate
+        raise HarnessError(f"No device record for {address}; run discovery first.")
+
+    def device_ports(self, device_id: int) -> dict[str, Any]:
+        """Return a device's ports grouped by state, with the reason for each."""
+        data = self.get_data(f"/api/system/hosts/{device_id}/ports")
+        if not isinstance(data, dict):
+            raise HarnessError("Device ports response is missing data.")
+        return data
+
+    def port(self, device_id: int, protocol: str, number: int) -> dict[str, Any]:
+        """Return one port row or raise when the device has no such port."""
+        for item in self.device_ports(device_id).get("ports", []):
+            if item.get("protocol") == protocol and item.get("number") == number:
+                return item
+        raise HarnessError(f"Device {device_id} has no {protocol}/{number} port.")
+
+    def set_port(self, device_id: int, protocol: str, number: int, body: dict[str, Any]) -> dict[str, Any]:
+        """Change a port (state, pin, acknowledge); the reply says whether Nagios was updated."""
+        data = self.request("PUT", f"/api/system/hosts/{device_id}/ports/{protocol}/{number}", body).get("data")
+        return data if isinstance(data, dict) else {}
+
+    def review_items(self) -> list[dict[str, Any]]:
+        """Return unresolved discovery review items (SERVICE_CHANGED, duplicates)."""
+        data = self.get_data("/api/system/discover/review")
+        if isinstance(data, dict):
+            data = data.get("items", [])
+        if not isinstance(data, list):
+            raise HarnessError("Discovery review response is missing data.")
+        return data
+
+    def wait_for_plugin_service(
+        self, plugin_id: int, service: str | None, service_prefix: str | None,
+        timeout: int, interval: int,
+    ) -> list[dict[str, Any]]:
+        """Wait until a plugin lists the monitored service (not necessarily checked yet)."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            matches = [
+                item for item in self.plugin_services(plugin_id)
+                if item.get("monitored") and (
+                    (service is not None and item.get("service") == service)
+                    or (service_prefix is not None and str(item.get("service", "")).startswith(service_prefix))
+                )
+            ]
+            if matches:
+                return matches
+            time.sleep(interval)
+        wanted = service or f"prefix {service_prefix}"
+        raise HarnessError(f"Plugin {plugin_id} did not list service {wanted} within {timeout} seconds.")
+
+    def require_status_feed(self, plugin_id: int, service: str | None, service_prefix: str | None) -> None:
+        """
+        Raise BlockedError when every matching service is still "waiting" (no check
+        result has reached Pinpoint), which means the scheduler or the Nagios API
+        account is not set up, not that the service is broken.
+        """
+        matches = [
+            item for item in self.plugin_services(plugin_id)
+            if item.get("service") == service or (
+                service_prefix is not None and str(item.get("service", "")).startswith(service_prefix))
+        ]
+        if matches and all((item.get("status") or {}).get("kind") == "waiting" for item in matches):
+            raise BlockedError(
+                "Pinpoint shows every matching service as waiting for its first check. "
+                "Run the app with PINPOINT_SCHEDULER=1 and a Nagios API account (see README)."
+            )
 
     def discovery_settings(self) -> dict[str, Any]:
         """Return current/default discovery settings and scan state."""

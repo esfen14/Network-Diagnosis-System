@@ -190,7 +190,8 @@ function SourceBadge({ source }: { source: NotificationItem['source'] }) {
 
 function notificationTitle(n: NotificationItem) {
   if (n.source === 'pinpoint') return n.serviceName ?? 'Pinpoint notification'
-  return `${n.type} ${n.hostname}${n.serviceName ? ` / ${n.serviceName}` : ''}`.trim()
+  const title = `${n.type} ${n.hostname || 'Unknown host'}${n.serviceName ? ` / ${n.serviceName}` : ''}`.trim()
+  return n.repeatCount > 1 ? `${title} (×${n.repeatCount})` : title
 }
 
 function NotificationDetailModal({

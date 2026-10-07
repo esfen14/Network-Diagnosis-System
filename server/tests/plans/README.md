@@ -18,6 +18,10 @@
   lab acceptance cases with expected results that judge the monitoring logic, the ports UI,
   permissions and the system's objectives, with traceability and the e2e harness work still
   needed. It supersedes the Extended plan's PM-01..PM-05.
+- [Plugin-Driven Monitoring E2E Harness Adjustment Plan](PLUGIN_DRIVEN_MONITORING_HARNESS_ADJUSTMENT_PLAN.md):
+  proposed changes to `e2e/network_discovery/` so the acceptance cases run without hand steps: drop the
+  removed apply flow, add the new route calls, localhost/preview guards, scenario runner, permission
+  matrix and traceability reporting. Nothing in it is implemented yet.
 - [Historical test failures](historical/TEST_FAILURES.md): previous findings;
   historical counts are not the current collection inventory.
 

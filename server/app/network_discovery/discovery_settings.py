@@ -13,7 +13,7 @@ config.py from the next scan on — no restart needed.
 Every value here ends up on the nmap command line or in generated Nagios
 config, so the validators below are strict: networks must parse as IPv4
 networks, ports must be plain integers or "a-b" ranges, and service names
-are limited to lowercase letters, digits, "-" and "_". Anything else is
+are limited to letters (stored lowercase), digits, "-" and "_". Anything else is
 rejected before it is stored.
 """
 import ipaddress
@@ -272,8 +272,9 @@ def validate_ports(ports, label):
 def validate_port_services(port_services, label):
     """
     Validate a {port: service name} table. Ports must be 1-65535 and names
-    must be lowercase letters, digits, "-" or "_" (max 32 chars), since they
-    are written into Nagios config. Keys are normalized to strings, matching
+    must be letters, digits, "-" or "_" (max 32 chars), since they are
+    written into Nagios config; names are lowercased, as the device port
+    route does. Keys are normalized to strings, matching
     how create_host_cfg looks them up. Raises DiscoverySettingsError on bad
     input.
     """
@@ -287,14 +288,15 @@ def validate_port_services(port_services, label):
         parsed_port = parse_port(port)
         if parsed_port is None:
             raise DiscoverySettingsError(f"'{port}' is not a valid {label} port.")
-        if not isinstance(name, str) or not SERVICE_NAME_PATTERN.match(name.strip()):
+        name = name.strip().lower() if isinstance(name, str) else name
+        if not isinstance(name, str) or not SERVICE_NAME_PATTERN.match(name):
             raise DiscoverySettingsError(
-                f"Service name for {label} port {parsed_port} must be lowercase letters, digits, '-' or '_'."
+                f"Service name for {label} port {parsed_port} must be letters, digits, '-' or '_'."
             )
         key = str(parsed_port)
         if key in normalized:
             raise DiscoverySettingsError(f"{label} port {key} is listed more than once.")
-        normalized[key] = name.strip()
+        normalized[key] = name
 
     return normalized
 

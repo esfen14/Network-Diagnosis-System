@@ -46,6 +46,7 @@ from app.system_models import AckHistory, AckAction, User
 from app.nagios.notifications import (
     request_alerts_range,
     request_notifications_range,
+    normalize_notification,
 )
 from app.nagios.pinpoint_events import (
     SOURCE_NAGIOS,
@@ -492,14 +493,15 @@ def notifications_history():
 
         items = []
         for notif in notifications:
-            hostname  = notif.get("hostname", "")
-            service   = notif.get("service_description") or None
+            notif     = normalize_notification(notif)
+            hostname  = notif["hostname"]
+            service   = notif["servicedesc"]
             notif_type= "service" if service else "host"
-            state     = (notif.get("notification_reason") or notif.get("state") or "").upper()
-            contact   = notif.get("contact") or ""
+            state     = notif["state"]
+            contact   = notif["contact"]
             timestamp = notif.get("timestamp", 0)
-            message   = notif.get("output") or ""
-            method    = notif.get("notificationmethod") or ""
+            message   = notif["output"]
+            method    = notif["notificationmethod"]
 
             if type_f and notif_type != type_f:
                 continue
@@ -624,10 +626,11 @@ def notifications_history_detail():
         if notif is None:
             return error("Notification event not found.", 404)
 
-        state   = (notif.get("notification_reason") or notif.get("state") or "").upper()
-        contact = notif.get("contact") or ""
-        message = notif.get("output") or ""
-        method  = notif.get("notificationmethod") or ""
+        notif   = normalize_notification(notif)
+        state   = notif["state"]
+        contact = notif["contact"]
+        message = notif["output"]
+        method  = notif["notificationmethod"]
 
         # All contacts — Nagios may list multiple separated by commas.
         contacts = [c.strip() for c in contact.split(",") if c.strip()]

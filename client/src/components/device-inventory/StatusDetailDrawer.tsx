@@ -3,7 +3,9 @@ import { ArrowLeft, X } from 'lucide-react'
 
 import { apiDelete, apiGet, apiPost, errorMessage } from '../../lib/api'
 import { useCurrentUser } from '../../contexts/CurrentUserContext'
+import { DeviceMonitoringSection } from './DeviceMonitoringSection'
 import { DevicePortsSection } from './DevicePortsSection'
+import type { MonitoringState } from '../../types/host'
 
 
 type PerfMetric = {
@@ -20,6 +22,7 @@ type Detail = {
   hostname: string
   // The discovered device behind this host; null for a host with no device record (e.g. localhost).
   device_id?: number | null
+  monitoring_state?: MonitoringState | null
   service?: string
   state: string
   state_type: string
@@ -37,6 +40,8 @@ type Detail = {
 type Props = {
   hostname: string
   onClose: () => void
+  // Called after the device was paused or resumed, so the host table can load again.
+  onMonitoringChanged?: () => void
 }
 
 const TIMESTAMP_LABELS: Record<string, string> = {
@@ -72,7 +77,7 @@ function threshold(value: number | null, unit: string | null) {
   return value == null ? '—' : `${value}${unit ?? ''}`
 }
 
-export function StatusDetailDrawer({ hostname, onClose }: Props) {
+export function StatusDetailDrawer({ hostname, onClose, onMonitoringChanged }: Props) {
   const [service, setService] = useState<string | null>(null)
   const [detail, setDetail] = useState<Detail | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -200,6 +205,19 @@ export function StatusDetailDrawer({ hostname, onClose }: Props) {
                   </p>
                 )}
               </section>
+
+              {!service && detail.device_id != null && detail.monitoring_state && (
+                <DeviceMonitoringSection
+                  key={detail.device_id}
+                  deviceId={detail.device_id}
+                  hostname={hostname}
+                  state={detail.monitoring_state}
+                  onChanged={() => {
+                    setReloadKey((k) => k + 1)
+                    onMonitoringChanged?.()
+                  }}
+                />
+              )}
 
               {service && hasPermission('system.acknowledge_alerts') && (
                 <section>

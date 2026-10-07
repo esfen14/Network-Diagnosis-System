@@ -197,25 +197,69 @@ def final_device(device):
     return device
 
 
-def device_ids_by_host_name(names):
+def devices_by_host_name(names=None):
     """
-    Return {Nagios host name: device id} for the given host names, using the same naming rule as
-    nagios_host_name(). The Device Inventory host list is keyed by that name, so this is how it
-    reaches a device's id. A name with no device (for example "localhost") is simply absent. If a
-    retired or merged device once had the same name as a current one, the current device wins.
+    Return {Nagios host name: NetworkDiscovery row} for the given host names, using the same naming
+    rule as nagios_host_name(). A name with no device (for example "localhost") is simply absent. If
+    a retired or merged device once had the same name as a current one, the current device wins.
+    names=None returns every device, for callers that filter on a device property.
     """
-    wanted = set(names)
-    if not wanted:
+    wanted = None if names is None else set(names)
+    if wanted is not None and not wanted:
         return {}
 
-    ids = {}
+    found = {}
     ended = (DeviceState.RETIRED, DeviceState.MERGED)
     devices = db.session.scalars(sa.select(NetworkDiscovery).order_by(NetworkDiscovery.NetDiscoveryID)).all()
     for device in sorted(devices, key=lambda d: d.Device_State in ended, reverse=True):
         name = nagios_host_name(device)
-        if name in wanted:
-            ids[name] = device.NetDiscoveryID
-    return ids
+        if wanted is None or name in wanted:
+            found[name] = device
+    return found
+
+
+def device_ids_by_host_name(names):
+    """
+    Return {Nagios host name: device id} for the given host names. The Device Inventory host list is
+    keyed by that name, so this is how it reaches a device's id. See devices_by_host_name().
+    """
+    return {name: device.NetDiscoveryID for name, device in devices_by_host_name(names).items()}
+
+
+# One label per device saying whether Nagios is checking it and, if not, why. The first match wins,
+# so a paused device that is also missing is "paused". See Device_Monitoring_State_Plan.md.
+MONITORING_STATES = ("monitored", "missing", "address_unknown", "paused", "retired", "merged")
+
+
+def monitoring_state(device):
+    """The device's monitoring label, one of MONITORING_STATES."""
+    if device.Device_State is DeviceState.MERGED:
+        return "merged"
+    if device.Device_State is DeviceState.RETIRED:
+        return "retired"
+    if not device.Include_Device_In_Scanning:
+        return "paused"
+    if device.Device_State is DeviceState.ADDRESS_UNKNOWN:
+        return "address_unknown"
+    if device.Device_State is DeviceState.MISSING:
+        return "missing"
+    return "monitored"
+
+
+# Labels of devices that are out of the Nagios config. Their last history.db snapshot is stale and
+# must not count as a live host or service.
+UNCHECKED_STATES = ("paused", "retired", "merged")
+
+
+def unchecked_host_names():
+    """
+    Return the set of Nagios host names whose device is paused, retired or merged, so it is not in
+    the Nagios config. Hosts with no device record (for example localhost) are never included.
+    """
+    return {
+        name for name, device in devices_by_host_name().items()
+        if monitoring_state(device) in UNCHECKED_STATES
+    }
 
 
 def nagios_host_name(device):

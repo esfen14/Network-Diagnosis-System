@@ -15,6 +15,24 @@ def env_list(name, default):
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def env_positive_float(name, default):
+    """
+    Read a number greater than zero from an environment variable. Returns
+    default when the variable is unset or empty. A value that is not a number
+    or is not above zero stops startup instead of silently changing behaviour.
+    """
+    value = os.environ.get(name)
+    if value is None or not value.strip():
+        return default
+    try:
+        number = float(value)
+    except ValueError:
+        raise ValueError(f"{name} must be a number greater than zero, got {value!r}.") from None
+    if not number > 0 or number == float("inf"):
+        raise ValueError(f"{name} must be a number greater than zero, got {value!r}.")
+    return number
+
+
 class Config:
     # No fallback: a secret committed to source lets anyone forge sessions.
     # app/__init__.py refuses to start without it outside debug mode.
@@ -89,7 +107,9 @@ class Config:
     # Consecutive scans a port may be unseen (while its host was seen) before
     # it counts as gone, and days a MONITORED port stays MISSING before archive.
     PORT_MISSING_AFTER_SCANS = 5
-    PORT_ARCHIVE_AFTER_DAYS = 30
+    # PINPOINT_PORT_ARCHIVE_AFTER_DAYS lets a test lab shorten the 30 days
+    # (fractions allowed, e.g. 0.001 is about 90 seconds). Leave it unset in production.
+    PORT_ARCHIVE_AFTER_DAYS = env_positive_float('PINPOINT_PORT_ARCHIVE_AFTER_DAYS', 30)
     # Never suggested automatically (Linux / Windows ephemeral ranges).
     EPHEMERAL_PORT_RANGES = [(32768, 60999), (49152, 65535)]
     # How often the NCPA relocation job looks for NCPA devices that moved.
@@ -100,8 +120,10 @@ class Config:
     # Nagios service ("snmp-<metric>-<port>-<protocol>", e.g.
     # snmp-uptime-161-udp); optional keys warning, critical, label and units
     # are passed to check_snmp for that service.
-    # A host can override any of these (including the whole OID list) via
-    # NetworkDiscovery.Plugin_Variables["snmp"] — see
+    # SNMP_OIDS is only the default: the OID table can be edited from
+    # Settings -> Plugins (PluginSettings, network_discovery/plugin_settings.py),
+    # which then takes precedence. A host can override any of these (including
+    # the whole OID list) via NetworkDiscovery.Plugin_Variables["snmp"] — see
     # network_discovery/plugin_registry.py.
     SNMP_COMMUNITY_STRING = os.environ.get('SNMP_COMMUNITY_STRING') or "public"
     SNMP_PORT = "161"
@@ -120,7 +142,9 @@ class Config:
     # service per partition recorded at install time (NCPADevicePartition); an
     # entry may add a fallback_path used when none were recorded (none is set
     # for disk: NCPA 3.5.0 has no aggregate disk node). NCPA names the disk
-    # node used_percent. Overridable per host via
+    # node used_percent. This is only the default: the metric table can be
+    # edited from Settings -> Plugins (PluginSettings), which then takes
+    # precedence. Overridable per host via
     # NetworkDiscovery.Plugin_Variables["ncpa"].
     NCPA_METRICS = [
         {"metric": "cpu", "path": "cpu/percent", "warning": "50", "critical": "80", "queryargs": "aggregate=avg"},

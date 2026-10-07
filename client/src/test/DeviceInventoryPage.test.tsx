@@ -57,9 +57,11 @@ let tableResponse: unknown
 
 function routeApi(path: string) {
   const params = new URLSearchParams(path.split('?')[1])
-  // Summary-card counts use per_page=1; the table uses per_page=10.
+  // Summary-card counts use per_page=1; the table uses per_page=10. Without the monitored filter
+  // the counts would include a paused host that last reported UP.
   if (params.get('per_page') === '1') {
-    return Promise.resolve(listResponse([], { total: params.get('state') === 'UP' ? 2 : 3 }))
+    const extra = params.get('monitoring') === 'monitored' ? 0 : 1
+    return Promise.resolve(listResponse([], { total: (params.get('state') === 'UP' ? 2 : 3) + extra }))
   }
   return tableResponse instanceof Error ? Promise.reject(tableResponse) : Promise.resolve(tableResponse)
 }
@@ -135,6 +137,11 @@ describe('DeviceInventoryPage', () => {
     expect(params.get('sort_by')).toBe('hostname')
     expect(params.get('order')).toBe('asc')
     expect(params.has('state')).toBe(false)
+  })
+
+  it('shows monitored hosts by default', async () => {
+    await renderLoaded()
+    expect(tableCalls()[0].get('monitoring')).toBe('monitored')
   })
 
   it('offers Acknowledge only for unacknowledged hosts that are not up', async () => {

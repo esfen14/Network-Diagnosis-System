@@ -42,7 +42,8 @@ from app.api.helper.database_access.permissions import require_permission
 from app.system_models import NotificationCursor
 from app.nagios.notifications import (
     request_notifications_range,
-    request_notification_count_range,
+    normalize_notification,
+    collapse_repeats,
 )
 from app.nagios.pinpoint_events import SOURCE_NAGIOS, get_scan_events
 
@@ -141,7 +142,10 @@ def get_notifications():
                 502,
             )
 
-        items = [{**n, "source": SOURCE_NAGIOS} for n in _normalize_nagios_list(raw)]
+        items = collapse_repeats([
+            {**normalize_notification(n), "source": SOURCE_NAGIOS}
+            for n in _normalize_nagios_list(raw)
+        ])
         items.extend(scan_events)
 
         # Sort newest-first, then take only the requested limit
@@ -209,23 +213,25 @@ def get_unread_count():
         else:
             effective_start = last_seen_ts
 
-        count_data = request_notification_count_range(effective_start, now_ts)
+        raw = request_notifications_range(effective_start, now_ts)
 
         scan_count = len(get_scan_events(effective_start + 1, now_ts))
 
-        if count_data is None and not scan_count:
+        if raw is None and not scan_count:
             return error(
                 "Failed to retrieve notification count from Nagios. "
                 "Check server logs for details.",
                 502,
             )
 
-        if count_data is None:
-            unread_count = 0
-        elif isinstance(count_data, dict):
-            unread_count = count_data.get("total", 0)
-        else:
-            unread_count = int(count_data)
+        # Count collapsed entries so the badge matches the panel's list.
+        unread_count = sum(
+            1
+            for n in collapse_repeats(
+                [normalize_notification(n) for n in _normalize_nagios_list(raw)]
+            )
+            if n.get("timestamp", 0) > last_seen_ts
+        )
 
         unread_count += scan_count
 

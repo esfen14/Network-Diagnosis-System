@@ -6,6 +6,7 @@ import { PageHeader } from '../components/shared/PageHeader'
 import { SummaryStatCard } from '../components/shared/SummaryStatCard'
 import { useSystemSettings } from '../contexts/SystemSettingsContext'
 import { apiDelete, apiGet, apiPost, errorMessage } from '../lib/api'
+import type { MonitoringFilter } from '../components/device-inventory/monitoringState'
 import { fromHostRecord, type Host, type HostListResponse, type HostState } from '../types/host'
 
 const PER_PAGE = 10
@@ -25,6 +26,7 @@ export function DeviceInventoryPage() {
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [stateFilter, setStateFilter] = useState<'All' | HostState>('All')
+  const [monitoringFilter, setMonitoringFilter] = useState<MonitoringFilter>('monitored')
   const [showFilter, setShowFilter] = useState(false)
   const [sortAsc, setSortAsc] = useState(true)
   const [page, setPage] = useState(1)
@@ -49,7 +51,7 @@ export function DeviceInventoryPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [stateFilter, sortAsc])
+  }, [stateFilter, monitoringFilter, sortAsc])
 
   async function loadHosts() {
     setIsLoading(true)
@@ -62,6 +64,7 @@ export function DeviceInventoryPage() {
         order: sortAsc ? 'asc' : 'desc',
         search: debouncedQuery,
         state: stateFilter === 'All' ? '' : stateFilter,
+        monitoring: monitoringFilter === 'all' ? '' : monitoringFilter,
       })
       const data = await apiGet<HostListResponse>(`/api/system/network-health/hosts?${qs}`)
       setHosts(data.items.map(fromHostRecord))
@@ -76,8 +79,9 @@ export function DeviceInventoryPage() {
   async function loadCounts() {
     try {
       const [totalRes, upRes] = await Promise.all([
-        apiGet<HostListResponse>(`/api/system/network-health/hosts?${buildQuery({ per_page: 1 })}`),
-        apiGet<HostListResponse>(`/api/system/network-health/hosts?${buildQuery({ per_page: 1, state: 'UP' })}`),
+        // Counts cover monitored hosts only, so a paused device never counts as up (§12).
+        apiGet<HostListResponse>(`/api/system/network-health/hosts?${buildQuery({ per_page: 1, monitoring: 'monitored' })}`),
+        apiGet<HostListResponse>(`/api/system/network-health/hosts?${buildQuery({ per_page: 1, state: 'UP', monitoring: 'monitored' })}`),
       ])
       setCounts({ total: totalRes.total, up: upRes.total })
     } catch {
@@ -88,7 +92,7 @@ export function DeviceInventoryPage() {
   useEffect(() => {
     loadHosts()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, debouncedQuery, stateFilter, sortAsc])
+  }, [page, debouncedQuery, stateFilter, monitoringFilter, sortAsc])
 
   useEffect(() => {
     loadCounts()
@@ -144,7 +148,7 @@ export function DeviceInventoryPage() {
           <SummaryStatCard
             title="Total Hosts"
             value={String(hostTotals.total)}
-            subtitle="Across the network"
+            subtitle="Monitored across the network"
             icon={Activity}
             gradient="linear-gradient(135deg,#FFB100,#F59E0B)"
           />
@@ -174,6 +178,8 @@ export function DeviceInventoryPage() {
           onQueryChange={setQuery}
           stateFilter={stateFilter}
           onStateFilterChange={(s) => { setStateFilter(s); setShowFilter(false) }}
+          monitoringFilter={monitoringFilter}
+          onMonitoringFilterChange={(f) => { setMonitoringFilter(f); setShowFilter(false) }}
           showFilter={showFilter}
           onToggleFilter={() => setShowFilter((v) => !v)}
           sortAsc={sortAsc}
@@ -199,7 +205,11 @@ export function DeviceInventoryPage() {
       )}
 
       {detailHostname && (
-        <StatusDetailDrawer hostname={detailHostname} onClose={() => setDetailHostname(null)} />
+        <StatusDetailDrawer
+          hostname={detailHostname}
+          onClose={() => setDetailHostname(null)}
+          onMonitoringChanged={() => { void Promise.all([loadHosts(), loadCounts()]) }}
+        />
       )}
     </main>
   )

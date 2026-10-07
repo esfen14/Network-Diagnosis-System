@@ -11,7 +11,7 @@ from app.network_discovery.service_name_migration import (
     migrate_legacy_service_history,
 )
 from app.system_models import AlertAcknowledgement
-from tests.seed_helpers import _make_service
+from tests.support.seed_helpers import _make_service
 
 
 class TestLegacyNames:
@@ -50,7 +50,7 @@ class TestMigration:
 
     def test_apply_carries_history_over(self, app, db_session, tmp_path):
         from unittest.mock import MagicMock, patch
-        from tests.test_device_config import patched_config
+        from tests.unit.test_device_config import patched_config
         _make_service(db_session, hostname="h1", service="ssh")
         db.session.commit()
         live = tmp_path / "hosts.cfg"

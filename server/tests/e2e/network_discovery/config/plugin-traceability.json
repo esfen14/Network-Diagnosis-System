@@ -1,0 +1,130 @@
+{
+  "objectives": {
+    "O-1": {
+      "title": "Catalog is independent of monitoring",
+      "cases": [
+        "O-01",
+        "C-02",
+        "C-09",
+        "L-08"
+      ]
+    },
+    "O-2": {
+      "title": "Opt-in monitoring",
+      "cases": [
+        "E-02",
+        "O-01",
+        "O-02",
+        "L-02",
+        "L-07",
+        "C-04",
+        "C-06",
+        "C-09",
+        "C-12"
+      ]
+    },
+    "O-3": {
+      "title": "No manual device picking",
+      "cases": [
+        "F-01",
+        "F-04",
+        "F-06",
+        "C-14"
+      ]
+    },
+    "O-4": {
+      "title": "One inventory with live status",
+      "cases": [
+        "F-02",
+        "F-03",
+        "C-08",
+        "C-11",
+        "C-15"
+      ]
+    },
+    "O-5": {
+      "title": "Plugin descriptions",
+      "cases": [
+        "O-03",
+        "C-01"
+      ]
+    },
+    "O-6": {
+      "title": "Server stats stay in Nagios Core",
+      "cases": [
+        "O-04",
+        "C-07",
+        "C-16"
+      ]
+    },
+    "O-7": {
+      "title": "Safe by default",
+      "cases": [
+        "E-01",
+        "L-01",
+        "L-02",
+        "L-03",
+        "L-04",
+        "L-05",
+        "L-07",
+        "C-06",
+        "C-07"
+      ]
+    },
+    "O-8": {
+      "title": "Honest reasons",
+      "cases": [
+        "F-03",
+        "L-03",
+        "L-08",
+        "R-01",
+        "C-09"
+      ]
+    },
+    "O-9": {
+      "title": "Reversible and safe to fail",
+      "cases": [
+        "F-05",
+        "R-01",
+        "R-02",
+        "R-03",
+        "R-04",
+        "C-03",
+        "C-10",
+        "C-17",
+        "C-19"
+      ]
+    },
+    "O-10": {
+      "title": "Admin control with permissions",
+      "cases": [
+        "F-06",
+        "L-05",
+        "L-06",
+        "P-01",
+        "P-02",
+        "P-03",
+        "P-04",
+        "P-05",
+        "P-06",
+        "C-04",
+        "C-13"
+      ]
+    }
+  },
+  "blocking": [
+    "E-00",
+    "O-01",
+    "O-02",
+    "O-04",
+    "L-03",
+    "L-05",
+    "R-01",
+    "J-02",
+    "C-02",
+    "C-03",
+    "C-07",
+    "C-11",
+    "C-17"
+  ]
+}

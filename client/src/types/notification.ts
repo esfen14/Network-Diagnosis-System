@@ -17,9 +17,10 @@ export type NotificationItem = {
   message: string
   fullMessage: string
   isRead: boolean
+  repeatCount: number
 }
 
-type RawNotification = Record<string, unknown> & { is_read: boolean }
+type RawNotification = Record<string, unknown> & { is_read: boolean; repeat_count?: number }
 
 function str(value: unknown): string {
   return typeof value === 'string' ? value : ''
@@ -44,6 +45,7 @@ export function fromRawNotification(raw: RawNotification, index: number): Notifi
       message: fullMessage.slice(0, 200),
       fullMessage,
       isRead: raw.is_read,
+      repeatCount: 1,
     }
   }
 
@@ -61,6 +63,7 @@ export function fromRawNotification(raw: RawNotification, index: number): Notifi
     message: fullMessage.slice(0, 200),
     fullMessage,
     isRead: raw.is_read,
+    repeatCount: typeof raw.repeat_count === 'number' ? raw.repeat_count : 1,
   }
 }
 

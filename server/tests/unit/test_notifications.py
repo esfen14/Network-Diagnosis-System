@@ -19,9 +19,6 @@ from unittest.mock import patch
 _PATCH_NOTIF_RANGE = (
     "app.api.system.notifications.request_notifications_range"
 )
-_PATCH_COUNT_RANGE = (
-    "app.api.system.notifications.request_notification_count_range"
-)
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -39,11 +36,6 @@ def _sample_notifications(n=3, base_ts=1_000_000):
         }
         for i in range(n)
     ]
-
-
-def _sample_count_data(total=5):
-    """Return a fake Nagios notificationcount response dict."""
-    return {"total": total, "ok": 1, "warning": 1, "critical": 3, "unknown": 0}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -226,8 +218,8 @@ class TestGetUnreadCount:
     def test_returns_unread_count(
         self, logged_in_client, db_session, seeded_permissions, admin_user
     ):
-        """Should return the total from the Nagios count response."""
-        with patch(_PATCH_COUNT_RANGE, return_value=_sample_count_data(total=7)):
+        """Distinct hosts each count as one unread entry."""
+        with patch(_PATCH_NOTIF_RANGE, return_value=_sample_notifications(7)):
             resp = logged_in_client.get(self.URL)
 
         assert resp.status_code == 200
@@ -239,28 +231,31 @@ class TestGetUnreadCount:
     def test_zero_count(
         self, logged_in_client, db_session, seeded_permissions, admin_user
     ):
-        """A count of 0 should return 200 with unread_count=0."""
-        with patch(_PATCH_COUNT_RANGE, return_value=_sample_count_data(total=0)):
+        """No notifications should return 200 with unread_count=0."""
+        with patch(_PATCH_NOTIF_RANGE, return_value=[]):
             resp = logged_in_client.get(self.URL)
 
         assert resp.status_code == 200
         assert resp.get_json()["data"]["unread_count"] == 0
 
-    def test_integer_count_response(
+    def test_repeat_notifications_count_once(
         self, logged_in_client, db_session, seeded_permissions, admin_user
     ):
-        """If Nagios returns an integer instead of a dict it should be handled."""
-        with patch(_PATCH_COUNT_RANGE, return_value=4):
+        """Repeats of the same host in the same state are one unread entry."""
+        repeats = [
+            {"timestamp": 1_000_000 + i * 300, "hostname": "h1", "state": "DOWN"}
+            for i in range(6)
+        ]
+        with patch(_PATCH_NOTIF_RANGE, return_value=repeats):
             resp = logged_in_client.get(self.URL)
 
-        assert resp.status_code == 200
-        assert resp.get_json()["data"]["unread_count"] == 4
+        assert resp.get_json()["data"]["unread_count"] == 1
 
     def test_nagios_unreachable_returns_502(
         self, logged_in_client, db_session, seeded_permissions, admin_user
     ):
         """When Nagios returns None the endpoint should respond with 502."""
-        with patch(_PATCH_COUNT_RANGE, return_value=None):
+        with patch(_PATCH_NOTIF_RANGE, return_value=None):
             resp = logged_in_client.get(self.URL)
 
         assert resp.status_code == 502
@@ -396,3 +391,48 @@ class TestMarkNotificationsRead:
         by_host = {n["host_name"]: n for n in notifications}
         assert by_host["old-host"]["is_read"] is True
         assert by_host["new-host"]["is_read"] is False
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# normalize_notification / collapse_repeats
+# ══════════════════════════════════════════════════════════════════════════════
+
+from app.nagios.notifications import collapse_repeats, normalize_notification
+
+
+class TestNormalizeNotification:
+    def test_reads_alias_keys(self):
+        n = normalize_notification({
+            "host_name": "h1", "service_description": "ssh", "contact_name": "bob",
+            "notification_reason": "down", "plugin_output": "boom",
+        })
+        assert (n["hostname"], n["servicedesc"], n["contact"]) == ("h1", "ssh", "bob")
+        assert (n["state"], n["output"]) == ("DOWN", "boom")
+
+    def test_missing_fields_stay_empty(self):
+        n = normalize_notification({"timestamp": 1})
+        assert n["hostname"] == "" and n["servicedesc"] is None and n["output"] == ""
+
+
+class TestCollapseRepeats:
+    @staticmethod
+    def _n(ts, host="h1", state="DOWN", service=None):
+        return {"timestamp": ts, "hostname": host, "servicedesc": service, "state": state}
+
+    def test_same_state_collapses_with_count(self):
+        out = collapse_repeats([self._n(1), self._n(2), self._n(3)])
+        assert len(out) == 1
+        assert out[0]["repeat_count"] == 3
+        assert (out[0]["timestamp"], out[0]["first_timestamp"]) == (3, 1)
+
+    def test_state_change_starts_new_entry(self):
+        out = collapse_repeats([self._n(1), self._n(2, state="UP"), self._n(3)])
+        assert [o["state"] for o in out] == ["DOWN", "UP", "DOWN"]
+
+    def test_different_hosts_and_services_stay_separate(self):
+        out = collapse_repeats([self._n(1), self._n(2, host="h2"), self._n(3, service="ssh")])
+        assert len(out) == 3
+
+    def test_blank_host_is_never_collapsed(self):
+        out = collapse_repeats([self._n(1, host=""), self._n(2, host="")])
+        assert len(out) == 2

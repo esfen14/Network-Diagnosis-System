@@ -429,13 +429,76 @@ for cleanup. `inventory-before-discovery.json` separates retained baseline data 
 unexpected rows. This is test setup through the real API, not proof that the
 product enforces Plugin Manager disable on discovery-generated checks.
 
-The `PM-ENABLE-APPLY` service case also applies `check_dummy` to an existing target
-through `/configurations`, verifies Applied and `/running`, and waits for an
-executed healthy check. `apply_monitoring` requires an exact service description;
-use a unique test-owned description to avoid colliding with discovery services.
-Review the existing default command first; the harness never overwrites it.
+Monitoring follows from enabling a plugin: `service-case` enables it, waits for the
+service to be listed by `GET /api/plugin/<id>/services`, then waits for an executed
+healthy check. The old Plugin Manager apply flow (`/targets`, `/configurations`,
+`/running`) no longer exists; a case that sets `apply_monitoring` is rejected. When
+every matching service is still "waiting" at the timeout, the case is recorded as
+**Blocked** (the app needs `PINPOINT_SCHEDULER=1` and a Nagios API account), not Fail.
 No missing inventory/permission fixtures or guest permission/restart repairs may
 be introduced to turn failed acceptance into a pass.
+
+## Plugin-driven monitoring runs
+
+These commands run the acceptance plan
+([`../../plans/PLUGIN_DRIVEN_MONITORING_ACCEPTANCE_TEST_PLAN.md`](../../plans/PLUGIN_DRIVEN_MONITORING_ACCEPTANCE_TEST_PLAN.md))
+without hand steps. Design: [`PLUGIN_DRIVEN_MONITORING_HARNESS_ADJUSTMENT_PLAN.md`](../../plans/PLUGIN_DRIVEN_MONITORING_HARNESS_ADJUSTMENT_PLAN.md).
+
+Prerequisites (preflight reports each one and blocks the cases that need it):
+
+- Test the **checked-out branch** on its own port and its own database. Set `pinpoint.base_url`
+  to that app and `databases.system` to its `system.db`; preflight blocks when the database is not
+  at the checkout's migration head.
+- Start that app with `PINPOINT_SCHEDULER=1` and the Nagios API account in its environment
+  (`NAGIOS_USERNAME`, `NAGIOS_PASSWORD`). Without them every service stays "waiting" and the status
+  cases are recorded as Blocked.
+- `nagios.host_config` and `nagios.localhost_config` in `lab.json` (see `lab.example.json`).
+- `PINPOINT_TEST_SSH_KEY` is the dedicated test key, not the NCPA deployment key.
+- Scenarios that open fixture ports need those ports in `discovery.tcp_ports` (80, 8080, 8081, 9100).
+- For the archive step, start the app with `PINPOINT_PORT_ARCHIVE_AFTER_DAYS=0.001` (about 90
+  seconds) and keep `archive_after_seconds` in the scenario above that; otherwise the step is skipped.
+
+```bash
+python runner/run_tests.py --config config/lab.json init-run --run-id <run-id>   # also records the localhost.cfg hash
+python runner/run_tests.py --config config/lab.json enable-check --run-id <run-id> --plugin check_ssh
+python runner/run_tests.py --config config/lab.json --cases config/plugin-cases.json \
+  service-case --run-id <run-id> --case-id PLG-HTTP
+python runner/run_tests.py --config config/lab.json --scenarios config/plugin-scenarios.json \
+  scenario --run-id <run-id> --scenario PORT-HELD [--dry-run]
+python runner/run_tests.py --config config/lab.json finalize --run-id <run-id> \
+  --traceability config/plugin-traceability.json
+```
+
+Quick start with the local `config/lab.json` (git-ignored; branch app on `127.0.0.1:8001`, `server/system.db`):
+
+```bash
+cd server && .venv/bin/flask --app app:app db upgrade          # database must be at the migration head
+tests/e2e/network_discovery/start_branch_app.sh &                # or start it with the extra variables above
+cd tests/e2e/network_discovery && source ~/.config/pinpoint-tests/lab.env
+python runner/run_tests.py --config config/lab.json preflight
+python runner/run_tests.py --config config/lab.json init-run --run-id quick-1
+python runner/run_tests.py --config config/lab.json --scenarios config/plugin-scenarios.json scenario --run-id quick-1 --scenario PORT-HELD
+python runner/run_tests.py --config config/lab.json finalize --run-id quick-1 --traceability config/plugin-traceability.json
+```
+
+Scenarios: `PORT-FLAG` (L-03/L-04), `PORT-HELD` (L-05), `PORT-GUESS` (L-01/L-02/L-07), `PORT-PIN` (L-06),
+`STOP-RESUME` (F-06/C-14), `LOCALHOST` (O-04/C-12/C-13), `REJECT-CONFIG` (R-01 to R-03, PM-07/PM-08),
+`PORT-LIFECYCLE` (L-08) and `PERMISSIONS` (P-01 to P-06). Each starts only allow-listed fixtures
+(`services/remote_service.py --fixture`), restores what it changed in a `finally`, and records Pass, Fail
+or Blocked. `finalize` also records the `localhost.cfg` guard as case `O-04`.
+
+`REJECT-CONFIG` needs the app started with a wrapper as `NAGIOS_BIN`. After `init-run`, run
+`python runner/run_tests.py --config config/lab.json prepare-rejection --run-id <run-id>`, start the app with
+`NAGIOS_BIN=<printed path>`, then run the scenario. The wrapper only rejects a changed candidate
+hosts file while the run's `reject-config.flag` exists, so normal runs are unaffected; if the app does not
+use it the scenario is Blocked.
+
+`PERMISSIONS` creates four roles and accounts named `e2e-pdm-*` through the admin API and reuses them on
+later runs. The API cannot delete roles or accounts, so teardown empties the roles and deactivates the
+accounts; the lab database keeps these four inactive rows. Passwords are derived from the admin password
+and are never written to evidence.
+
+`cleanup/restore_lab.py` also stops every scenario fixture on every target (idempotent; use `--no-fixtures` to skip).
 
 Validate Nagios. Add `--reload` only after reviewing the live configuration:
 

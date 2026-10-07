@@ -130,17 +130,6 @@
       "visibility_only": true,
       "note": "Separate executed healthy metric acceptance; NCPA deployment and stop/recovery remain mandatory workflow cases.",
       "expected_check_command": "pinpoint_nd_ncpa"
-    },
-    {
-      "id": "PM-ENABLE-APPLY",
-      "plugin": "check_dummy",
-      "target": "target01",
-      "service": "e2e-dummy",
-      "apply_monitoring": true,
-      "required": true,
-      "visibility_only": true,
-      "note": "Use the existing approved default command. Verify enable, apply, running configuration, and an executed OK check. Full state matrix is a separate required case.",
-      "expected_check_command": "pinpoint_check_dummy"
     }
   ]
 }

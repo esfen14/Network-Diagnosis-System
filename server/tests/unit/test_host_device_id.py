@@ -96,6 +96,17 @@ class TestHostList:
         assert items["web-01"]["device_id"] == device.NetDiscoveryID
         assert items["localhost"]["device_id"] is None
 
+    def test_each_host_carries_the_devices_current_ip_or_null(self, logged_in_client, db_session, admin_user):
+        new_device(db_session, admin_user, ip="10.0.0.5")
+        _make_host(db_session, "web-01")
+        _make_host(db_session, "localhost")
+        db_session.session.commit()
+
+        items = {i["hostname"]: i for i in logged_in_client.get(HOSTS).get_json()["data"]["items"]}
+
+        assert items["web-01"]["ip_address"] == "10.0.0.5"
+        assert items["localhost"]["ip_address"] is None
+
     def test_the_whole_page_is_resolved_with_one_device_query(self, logged_in_client, db_session, admin_user):
         for i in range(12):
             _make_host(db_session, f"host-{i}")

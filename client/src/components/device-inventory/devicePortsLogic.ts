@@ -147,7 +147,7 @@ export function confirmationText(action: PortActionId, port: DevicePort, host: s
 
 export const SERVICE_NAME_RULE = /^[a-z0-9][a-z0-9_-]{0,31}$/
 
-export const SERVICE_NAME_HELP = "Use lowercase letters, digits, '-' or '_' (up to 32 characters, starting with a letter or digit)."
+export const SERVICE_NAME_HELP = "Use letters, digits, '-' or '_' (shown in lowercase; up to 32 characters, starting with a letter or digit)."
 
 // The "Checked by" line of the Set service dialog (requirement §6): a known service leads to its check
 // plugin; any other name is checked by the generic TCP plugin on TCP and skipped on UDP.

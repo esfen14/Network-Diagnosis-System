@@ -20,6 +20,7 @@ acknowledgements belong in `system.db` even though they relate to Nagios alerts.
 ### Default bind: identity, configuration, operations, and acknowledgement
 
 - Identity/access: `Permission`, `Role`, `RolePermission`, `User` (`Must_Change_Password` forces a password change after reactivation or an admin password reset).
+- Plugin settings: `PluginSettings` (`PLUGIN_SETTINGS`), one row per plugin definition (`Plugin_Name`, e.g. `snmp`) holding the variables saved from Settings -> Plugins in `Variables` (JSON), with `Version`/`Updated_By`. No row means the `config.py` defaults apply.
 - Network profile: singleton `NetworkProfile` (`Id=1`) holding the editable name, reference and detail rows of the Network Health info card.
 - Audit/logging: `ActivityLog`, `ConfigurationChanges`, `ExportLog`.
 - Discovery: `NetworkDiscoveryStatus`, `SkippedService`, `NetworkDiscovery`,
@@ -72,6 +73,16 @@ Plugin lifecycle and active monitoring are separate:
 - Command overrides preserve an immutable snapshot of the original command.
 - Plugin Manager targets existing `NetworkDiscovery` devices; free-form targets
   are out of scope.
+- **Monitoring state of a device.** `NetworkDiscovery.Device_State` (lifecycle) and
+  `Include_Device_In_Scanning` (an administrator's pause) together give one label
+  from `monitoring_state()` in `network_discovery/device_identity.py`: merged, retired,
+  paused, address_unknown, missing, monitored (first match wins). Only
+  `POST /hosts/<id>/pause` and `/resume` write the flag; scans and the lifecycle
+  (`apply_match()`, `update_lifecycle()`) never change it. The config builder
+  leaves a paused device out of `hosts.cfg`. Its `history.db` rows stop at the
+  pause and are kept, but `unchecked_host_names()` (paused, retired, merged) lets
+  `get_latest_hosts()` / `get_latest_services()` leave them out of the dashboard and
+  Network Health counts and alerts.
 - **Plugin Manager gates monitoring.** `plan_host_services()` (the planner
   behind both `hosts.cfg` and the reconciler) skips a port whose plugin
   (`plugin_for_definition()`) is not `Enabled` or `Active`, recording the reason
@@ -189,7 +200,12 @@ are recorded as `SkippedService` entries rather than silently discarded.
 Network targets, ports, service rules, NCPA metrics, SNMP defaults, and
 Nagios filesystem paths live in `server/config.py` and may be environment
 overridden where defined. Networks, ports and service rules can also be saved
-from the Settings page (`DiscoverySettings`), which then takes precedence.
+from the Settings page (`DiscoverySettings`), which then takes precedence. The SNMP
+OID table (`SNMP_OIDS`) and the NCPA metric table (`NCPA_METRICS`) can be saved from
+Settings -> Plugins (`PluginSettings`, one row per plugin: `snmp`, `ncpa`);
+`plugin_config()` in `network_discovery/plugin_settings.py` puts the saved values in
+place of their `config.py` keys once per config build, for both `hosts.cfg` and the
+plugin reconciler. Per-host `Plugin_Variables` overrides still win.
 
 ### Service identification
 
@@ -244,6 +260,14 @@ monitoring it by hand or acknowledging a mismatch releases it. A monitored, unpi
 fingerprints as a service its frozen plugin does not match keeps its service and
 raises a `SERVICE_CHANGED` `DeviceReviewItem`; hints never raise one, and the
 NCPA port of a deployed agent is exempt.
+
+Port lifecycle thresholds live in `config.py`: a monitored port unseen for
+`PORT_MISSING_AFTER_SCANS` (5) scans becomes `MISSING` and stays monitored; after
+`PORT_ARCHIVE_AFTER_DAYS` (30) days as `MISSING` it is archived and its service leaves
+Nagios. `PINPOINT_PORT_ARCHIVE_AFTER_DAYS` overrides the 30 days so a test lab can
+reach the archived state in minutes (fractions allowed, for example `0.001`); it
+must be a number above zero or the application refuses to start, and it is left
+unset in production.
 
 The scan leaves the monitoring server out by every non-loopback IPv4 address of
 its network interfaces (read with `ip -4 -o addr`) as well as the addresses its

@@ -19,7 +19,10 @@ from app.network_discovery.port_lifecycle import (
     set_port_state,
     unpin_port_service,
 )
-from app.plugin_models import Plugin, PluginSource, PluginStatus, PluginType
+from app.plugin_models import (
+    Plugin, PluginConfiguration, PluginConfigurationOrigin, PluginConfigurationStatus, PluginSource, PluginStatus,
+    PluginType,
+)
 from app.system_models import (
     AgentStatus,
     DeviceReviewItem,
@@ -57,6 +60,15 @@ def enable(*names):
     for name in names:
         db.session.add(Plugin(Name=name, Plugin_Type=PluginType.NAGIOS, Source=PluginSource.BASELINE_ISO,
                               Status=PluginStatus.ENABLED))
+    db.session.commit()
+
+
+def apply_service(device, number, plugin_name="check_ssh", protocol="tcp", status=PluginConfigurationStatus.APPLIED):
+    """Give a port the Nagios service the reconciler would have written for it."""
+    plugin = db.session.scalar(sa.select(Plugin).where(Plugin.Name == plugin_name))
+    db.session.add(PluginConfiguration(
+        PluginID=plugin.PluginID, NetDiscoveryID=device.NetDiscoveryID, Port_Number=number, Protocol=protocol,
+        Nagios_Service_Name=f"svc-{number}-{protocol}", Status=status, Origin=PluginConfigurationOrigin.AUTO))
     db.session.commit()
 
 
@@ -118,6 +130,7 @@ class TestList:
         row = port(device, 22)
         row.Port_State, row.Plugin_Name = PortState.MONITORED, "ssh"
         db.session.commit()
+        apply_service(device, 22)
 
         item = by_number(listing(logged_in_client, device), 22)
 
@@ -237,15 +250,49 @@ class TestReasons:
     def reason(self, client, device, number, protocol="tcp"):
         return by_number(listing(client, device), number, protocol)["reason"]
 
-    def test_monitored_missing_and_archived_ports_have_no_reason(self, logged_in_client, db_session, status):
-        device = new_device(status, tcp={22: "ssh", 80: "http", 443: "https"})
+    def test_a_monitored_port_with_its_plugin_on_and_an_archived_port_have_no_reason(self, logged_in_client, db_session, status):
+        enable("check_ssh")
+        device = new_device(status, tcp={22: "ssh", 443: "https"})
         port(device, 22).Port_State = PortState.MONITORED
-        port(device, 80).Port_State = PortState.MISSING
         port(device, 443).Port_State = PortState.ARCHIVED
         db.session.commit()
+        apply_service(device, 22)
 
-        for number in (22, 80, 443):
+        for number in (22, 443):
             assert self.reason(logged_in_client, device, number) is None
+
+    def test_a_missing_port_says_it_was_not_seen_lately(self, logged_in_client, db_session, status):
+        device = new_device(status, tcp={80: "http"})
+        port(device, 80).Port_State = PortState.MISSING
+        db.session.commit()
+
+        reason = self.reason(logged_in_client, device, 80)
+
+        assert reason["code"] == "missing"
+        assert reason["text"].startswith("Not seen lately")
+
+    def test_a_monitored_port_whose_plugin_is_off_says_nothing_checks_it(self, logged_in_client, db_session, status):
+        device = new_device(status, tcp={22: "ssh"})
+        port(device, 22).Port_State = PortState.MONITORED
+        db.session.commit()
+
+        assert self.reason(logged_in_client, device, 22) == {
+            "code": "monitoring_inactive",
+            "text": "check_ssh is not enabled in Plugin Manager, so nothing is checking this port.",
+        }
+
+    def test_a_monitored_port_with_no_applied_service_is_a_configuration_problem(self, logged_in_client, db_session, status):
+        enable("check_ssh", "check_http")
+        device = new_device(status, tcp={22: "ssh", 80: "http"})
+        port(device, 22).Port_State = PortState.MONITORED
+        port(device, 80).Port_State = PortState.MONITORED
+        db.session.commit()
+        apply_service(device, 80, status=PluginConfigurationStatus.FAILED)
+
+        for number in (22, 80):
+            reason = self.reason(logged_in_client, device, number)
+            assert reason["code"] == "service_missing"
+            assert "configuration problem" in reason["text"]
 
     def test_not_used_as_intended(self, logged_in_client, db_session, status):
         device = new_device(status, tcp={22: "http"})

@@ -19,7 +19,7 @@ type Props = {
 // say what a pin does so nobody pins a port by accident.
 export function SetServiceDialog({ port, host, options, isSaving, error, onCancel, onSave }: Props) {
   const [name, setName] = useState(port.service_name)
-  const trimmed = name.trim()
+  const trimmed = name.trim().toLowerCase()
   const valid = SERVICE_NAME_RULE.test(trimmed)
   const unchanged = trimmed === port.service_name
   const monitored = port.state === 'MONITORED' || port.state === 'MISSING'

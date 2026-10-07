@@ -38,8 +38,43 @@ from app.history_models import (
     HostStateType,
     ServiceStatus,
 )
-from app.network_discovery.device_identity import device_ids_by_host_name
+from app.network_discovery.device_identity import (
+    MONITORING_STATES,
+    devices_by_host_name,
+    monitoring_state,
+)
 from app.system_models import AlertAcknowledgement, AckHistory, AckAction
+
+# ---------------------------------------------------------------------------
+# Monitoring filter
+# ---------------------------------------------------------------------------
+
+def _filter_by_monitoring(query, monitoring_filter):
+    """
+    Narrow the host query to the hosts whose device has the given monitoring
+    label, or to every host Nagios is not fully checking for "not_monitored".
+    A host with no device record (for example localhost) counts as monitored.
+    """
+    names_by_state = {state: [] for state in MONITORING_STATES}
+    for name, device in devices_by_host_name().items():
+        names_by_state[monitoring_state(device)].append(name)
+
+    if monitoring_filter == "monitored":
+        not_monitored = []
+        for state in MONITORING_STATES:
+            if state != "monitored":
+                not_monitored.extend(names_by_state[state])
+        return query.where(HostStatus.Hostname.notin_(not_monitored))
+
+    if monitoring_filter == "not_monitored":
+        wanted = []
+        for state in MONITORING_STATES:
+            if state != "monitored":
+                wanted.extend(names_by_state[state])
+        return query.where(HostStatus.Hostname.in_(wanted))
+
+    return query.where(HostStatus.Hostname.in_(names_by_state[monitoring_filter]))
+
 
 # ---------------------------------------------------------------------------
 # §2.2  Host Status Table
@@ -60,10 +95,17 @@ def list_hosts():
         search          — partial match on hostname
         state           — UP | DOWN | UNREACHABLE
         ack_filter      — all (default) | acknowledged | unacknowledged
+        monitoring      — all (default) | not_monitored | monitored | missing |
+                          address_unknown | paused | retired | merged. A host
+                          with no device record counts as monitored.
 
     Each item:
     {
         "hostname":        str,
+        "device_id":       int | null,
+        "ip_address":      str | null,  // current IP; null for hosts with no discovered device
+        "monitoring_state": str | null, // monitored / missing / address_unknown / paused / retired / merged; null with no device
+        "monitored":       bool | null, // false when Nagios is not (fully) checking the device; null with no device
         "state":           str,         // UP / DOWN / UNREACHABLE
         "state_type":      str,         // Soft / Hard
         "last_check":      str | null,  // ISO-8601
@@ -87,6 +129,7 @@ def list_hosts():
         search     = request.args.get("search", default="", type=str)
         state_arg  = request.args.get("state", default="", type=str).upper()
         ack_filter = request.args.get("ack_filter", default="all", type=str).lower()
+        monitoring_filter = request.args.get("monitoring", default="all", type=str).lower()
 
         if page < 1:
             return error("Page must be greater than 0.", 400)
@@ -96,6 +139,12 @@ def list_hosts():
             return error("order must be 'asc' or 'desc'.", 400)
         if ack_filter not in ("all", "acknowledged", "unacknowledged"):
             return error("ack_filter must be 'all', 'acknowledged', or 'unacknowledged'.", 400)
+
+        if monitoring_filter not in ("all", "not_monitored", *MONITORING_STATES):
+            return error(
+                "monitoring must be 'all', 'not_monitored' or one of: " + ", ".join(MONITORING_STATES) + ".",
+                400,
+            )
 
         _sort_map = {
             "hostname":      HostStatus.Hostname,
@@ -138,6 +187,9 @@ def list_hosts():
             except KeyError:
                 return error(f"Invalid state: {state_arg}. Must be UP, DOWN, or UNREACHABLE.", 400)
 
+        if monitoring_filter != "all":
+            query = _filter_by_monitoring(query, monitoring_filter)
+
         query = query.order_by(
             sort_col.asc() if order == "asc" else sort_col.desc()
         )
@@ -162,14 +214,18 @@ def list_hosts():
 
         page_result = db.paginate(query, page=page, per_page=per_page, error_out=False)
 
-        device_ids = device_ids_by_host_name([h.Hostname for h in page_result.items])
+        devices = devices_by_host_name([h.Hostname for h in page_result.items])
 
         items = []
         for h in page_result.items:
             ack = ack_map.get(h.Hostname)
+            device = devices.get(h.Hostname)
             items.append({
                 "hostname":      h.Hostname,
-                "device_id":     device_ids.get(h.Hostname),
+                "device_id":     device.NetDiscoveryID if device else None,
+                "ip_address":    device.IP_Address if device else None,
+                "monitoring_state": monitoring_state(device) if device else None,
+                "monitored":     monitoring_state(device) == "monitored" if device else None,
                 "state":         h.Current_State.value,
                 "state_type":    h.State_Type.value,
                 "last_check":    h.Last_Check.isoformat() if h.Last_Check else None,
@@ -219,6 +275,8 @@ def host_detail(hostname: str):
     {
         "hostname":                 str,
         "device_id":                int | null,   # null when the host has no device record
+        "monitoring_state":         str | null,   # see the list route; null with no device record
+        "monitored":                bool | null,
         "state":                    str,
         "state_type":               str,
         "plugin_output":            str,
@@ -330,9 +388,13 @@ def host_detail(hostname: str):
             )
         )
 
+        device = devices_by_host_name([host.Hostname]).get(host.Hostname)
+
         return success({
             "hostname":               host.Hostname,
-            "device_id":              device_ids_by_host_name([host.Hostname]).get(host.Hostname),
+            "device_id":              device.NetDiscoveryID if device else None,
+            "monitoring_state":       monitoring_state(device) if device else None,
+            "monitored":              monitoring_state(device) == "monitored" if device else None,
             "state":                  host.Current_State.value,
             "state_type":             host.State_Type.value,
             "plugin_output":          host.Plugin_Output,

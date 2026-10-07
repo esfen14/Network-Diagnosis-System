@@ -64,7 +64,7 @@ Flow: `discover_network()` → `_create_hostname()` → `_override_service_names
 
 - **Update branch resets NCPA eligibility.** On an existing device, `NCPA_Eligible = False` is set unconditionally, so a Linux device loses eligibility on every rescan.
 - **`SSH_Port = int(port_number)` uses a variable before it is assigned.** On the first new NCPA-eligible device in a scan this raises `UnboundLocalError` and the whole save is rolled back. On later devices it stores the last port of the *previous* host.
-- **`Include_Device_In_Scanning`** is filtered on everywhere but nothing ever sets it to `False`.
+- **`Include_Device_In_Scanning`** is filtered on everywhere but nothing ever sets it to `False`. (Since 2026-10-07 the pause route does; see `Device_Monitoring_State_Plan.md`.)
 
 ---
 
