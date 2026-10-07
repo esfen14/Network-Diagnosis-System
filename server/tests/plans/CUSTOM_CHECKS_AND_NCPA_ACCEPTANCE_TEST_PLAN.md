@@ -218,9 +218,48 @@ Open each plugin in the drawer as Admin.
 | `check_by_ssh`, `check_ups`, `check_clamd` | "Not service-driven. There is no port for discovery to attach this plugin to. Add a custom check to run it against a device." and a **Custom checks** section with **Add check**. No Enable button |
 | `check_apt`, `check_uptime`, `check_sensors` | "Not service-driven. Runs on the Nagios server. Not available yet." No Custom checks section |
 | `check_ping`, `check_icmp` | "Not service-driven. Checks the device itself rather than a port. Not available yet." |
-| `check_radius`, `check_mysql_query` | "Not service-driven. Needs a password, which custom checks cannot store yet." |
+| `check_radius`, `check_mysql_query`, `check_nt`, `check_disk_smb` | The Custom checks section; the password field is masked and the dialog carries an amber note about where passwords go |
+| `check_dbi`, `check_oracle` | "Not service-driven. Its password cannot be passed to the plugin yet." No section |
 | `check_load`, `check_disk` | "Checks the Nagios server itself through Nagios Core. Not managed here." |
 | `check_ssh` | Enable and Disable buttons; no Custom checks section |
+
+### W-01: a password is stored encrypted and is never shown
+
+1. Set `PINPOINT_SECRETS_KEY` (or confirm `SECRET_KEY` is fixed in `/etc/pinpoint/pinpoint.env`) and restart. Open `check_radius` (or `check_mysql_query`) → **Add check**, device target01, a password `Lab-Pw_1`, and the other required fields.
+2. Query the row: `select Configuration_Data from PLUGIN_CONFIGURATION where Origin='CUSTOM' order by 1 desc limit 1;`. Also open the list in the UI and `GET /api/plugin/<id>/custom-checks`.
+
+| Expected | The stored JSON has `"secrets": {"password": "v1:..."}` and does not contain `Lab-Pw_1` anywhere. The list and the API show `-p ••••••` and `secrets_set: ["password"]`, never the password; the browser's network tab shows it only in the request that added it. The plugin history message and `journalctl -u pinpoint-gunicorn` do not contain it. The list shows no warning (`secrets_readable` true) |
+|---|---|
+
+### W-02: Nagios gets the password; the file is protected
+
+1. `grep -n "pinpoint_custom_check_radius" hosts.cfg` and `ls -l hosts.cfg`; then check the Nagios web UI's service command view.
+
+| Expected | The service command contains the password in plain text (this is how Nagios plugins work). `hosts.cfg` is not readable by users outside the Nagios user and group; if it is world-readable the Pinpoint log has "holds a custom check password and is readable by every user" (record it and run `chmod 640` with the right group). The check reaches a real state |
+|---|---|
+
+### W-03: change, keep, replace, remove
+
+| Step | Expected |
+|---|---|
+| **Change** the check; leave the password blank; save | Saved; the check keeps working; the password field showed "Stored. Leave blank to keep it" |
+| Type a new password; save | The new password is used (the command in `hosts.cfg` changes); the old one is gone from the file |
+| `check_mysql_query` (password optional): tick "Remove the stored mysql password"; save | The password is removed and the check runs without `-p`; the list shows no stored password. For a required password there is no such option |
+| Add a password containing `'` or `;` | Refused: the button is disabled and the API returns 400 naming the argument without echoing the value |
+
+### W-04: the key changes
+
+1. Change `SECRET_KEY` (or `PINPOINT_SECRETS_KEY`) and restart the service.
+
+| Expected | The check is no longer in `hosts.cfg` after the next apply (Pinpoint logs a warning with no password). The drawer shows "A stored password can no longer be read, so this check is not running." Opening **Change** shows the same message; saving without typing the password is refused; typing it again restores the check |
+|---|---|
+
+### W-05: no fixed key, no passwords
+
+1. Start the backend in debug mode with no `SECRET_KEY` and try to add a check that has a password.
+
+| Expected | Refused: "Passwords cannot be stored because the server has no fixed SECRET_KEY…". Nothing is saved. A check without passwords is still accepted |
+|---|---|
 
 ### C-02: add a check and watch it run (the key case)
 

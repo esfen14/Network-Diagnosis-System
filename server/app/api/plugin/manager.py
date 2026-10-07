@@ -597,21 +597,24 @@ def run_custom_check_change(change):
 
 def parse_custom_check_body(require_device):
     """
-    Parse the JSON body of a create or update: (name, variables, device_id, None), or
-    (None, None, None, error response). Values are validated by the service, which knows the plugin.
+    Parse the JSON body of a create or update: (name, variables, device_id, clear_secrets, None), or
+    (None, None, None, None, error response). Values are validated by the service, which knows the plugin.
     """
     data = request.get_json(silent=True)
     err = validate_json_data(data)
     if err is not None:
-        return None, None, None, err
+        return None, None, None, None, err
     name, variables, device_id = data.get("name"), data.get("variables", {}), data.get("device_id")
+    clear_secrets = data.get("clear_secrets", [])
     if not isinstance(name, str):
-        return None, None, None, error("name must be text.", 400)
+        return None, None, None, None, error("name must be text.", 400)
     if not isinstance(variables, dict):
-        return None, None, None, error("variables must be an object.", 400)
+        return None, None, None, None, error("variables must be an object.", 400)
+    if not isinstance(clear_secrets, list) or not all(isinstance(item, str) for item in clear_secrets):
+        return None, None, None, None, error("clear_secrets must be a list of names.", 400)
     if require_device and (not isinstance(device_id, int) or isinstance(device_id, bool)):
-        return None, None, None, error("device_id must be a number.", 400)
-    return name, variables, device_id, None
+        return None, None, None, None, error("device_id must be a number.", 400)
+    return name, variables, device_id, clear_secrets, None
 
 
 @plugin_bp.get('/custom-check-devices')
@@ -711,7 +714,7 @@ def create_custom_check_route(plugin_id):
     * ``409`` - Nagios did not accept the change; nothing was saved.
     * ``500`` - unexpected internal error (logged with traceback).
     """
-    name, variables, device_id, err = parse_custom_check_body(require_device=True)
+    name, variables, device_id, _clear_secrets, err = parse_custom_check_body(require_device=True)
     if err is not None:
         return err
     return run_custom_check_change(lambda: custom_checks_service.create_custom_check(
@@ -724,14 +727,16 @@ def create_custom_check_route(plugin_id):
 def update_custom_check_route(plugin_id, check_id):
     """
     Rename a custom check and replace its arguments. The device cannot change; remove the check
-    and add it again instead. Body ``{"name": ..., "variables": {...}}``; errors as for create,
-    plus ``404`` when the check is not this plugin's.
+    and add it again instead. Body ``{"name": ..., "variables": {...}, "clear_secrets": [...]}``: a password
+    left blank keeps the stored one, and one named in the optional ``clear_secrets`` is removed. Errors as
+    for create, plus ``404`` when the check is not this plugin's. Passwords are never returned; each check
+    lists ``secrets_set`` (which are stored) and ``secrets_readable`` (false if the server key changed).
     """
-    name, variables, _device_id, err = parse_custom_check_body(require_device=False)
+    name, variables, _device_id, clear_secrets, err = parse_custom_check_body(require_device=False)
     if err is not None:
         return err
     return run_custom_check_change(lambda: custom_checks_service.update_custom_check(
-        plugin_id, check_id, name, variables, current_user.UserID))
+        plugin_id, check_id, name, variables, current_user.UserID, clear_secrets))
 
 
 @plugin_bp.post('/<int:plugin_id>/custom-checks/<int:check_id>/pause')

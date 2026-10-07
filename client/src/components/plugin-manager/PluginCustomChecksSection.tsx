@@ -58,9 +58,13 @@ function formatDateTime(iso: string | null) {
 
 // The arguments of a check as the person typed them, for a one-line summary.
 function summarize(check: CustomCheckItem, fields: CustomCheckField[]) {
+  const stored = new Set(check.secrets_set ?? [])
   return fields
-    .filter((field) => check.variables[field.name])
-    .map((field) => `${field.flag} ${check.variables[field.name]}`)
+    .map((field) => {
+      if (field.secret) return stored.has(field.name) ? `${field.flag} ••••••` : ''
+      return check.variables[field.name] ? `${field.flag} ${check.variables[field.name]}` : ''
+    })
+    .filter(Boolean)
     .join('  ')
 }
 
@@ -208,6 +212,11 @@ export function PluginCustomChecksSection({ pluginId, pluginName, fields, onChan
 
                 {summarize(check, fields) && (
                   <p className="mt-1.5 break-all font-mono text-xs text-gray-600 dark:text-gray-300">{summarize(check, fields)}</p>
+                )}
+                {check.secrets_readable === false && (
+                  <p className="mt-1 text-xs text-red-600 dark:text-red-300">
+                    A stored password can no longer be read, so this check is not running. Change it and type the password again.
+                  </p>
                 )}
                 <p className="mt-1 break-words text-xs text-gray-600 dark:text-gray-300">{check.status.output}</p>
 

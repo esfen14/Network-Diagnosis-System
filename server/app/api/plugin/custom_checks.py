@@ -26,6 +26,7 @@ from app.api.plugin.service import (
     latest_service_results,
     record_plugin_action,
 )
+from app import secrets_store
 from app.network_discovery import custom_checks
 from app.network_discovery.create_host_cfg import regenerate_and_apply_config_status
 from app.network_discovery.device_identity import nagios_host_name
@@ -79,7 +80,8 @@ def describe_custom_support(plugin):
         "supported": supported,
         "note": custom_checks.PLUGIN_CLASS_NOTES.get(plugin_class),
         "fields": [
-            {"name": f.name, "flag": f.flag, "label": f.label, "required": f.required, "placeholder": f.placeholder}
+            {"name": f.name, "flag": f.flag, "label": f.label, "required": f.required,
+             "placeholder": f.placeholder, "secret": f.secret}
             for f in custom_checks.plugin_fields(plugin.Name)
         ],
     }
@@ -99,6 +101,9 @@ def serialize_check(row, device, result, now):
         "service": row.Nagios_Service_Name,
         "device": {"id": device.NetDiscoveryID, "hostname": nagios_host_name(device), "ip_address": device.IP_Address},
         "variables": data.get("variables") or {},
+        # Passwords are never returned: only which ones are set, and whether they can still be read.
+        "secrets_set": sorted((data.get("secrets") or {}).keys()),
+        "secrets_readable": all(secrets_store.is_readable(token) for token in (data.get("secrets") or {}).values()),
         "paused": paused,
         "running_since": row.Applied_At.isoformat() if row.Applied_At and not paused else None,
         "status": status,
@@ -241,6 +246,42 @@ def mark_applied(row):
         row.Applied_At = datetime.now(timezone.utc)
 
 
+def prepare_variables(plugin, variables, stored_secrets=None, clear_secrets=()):
+    """
+    Validate what an administrator typed and split it into what is stored: (public variables,
+    encrypted secrets). stored_secrets are the passwords already saved on a check being changed:
+    a password left blank keeps its stored value, unless it is in clear_secrets. Raises CustomCheckError
+    for an invalid value, a missing required argument, an unreadable stored password that was not
+    typed again, or when passwords cannot be stored at all (no fixed SECRET_KEY).
+    """
+    stored_secrets = stored_secrets or {}
+    names = set(custom_checks.secret_names(plugin.Name))
+    unknown = sorted(set(clear_secrets) - names)
+    if unknown:
+        raise CustomCheckError(f"'{unknown[0]}' is not a password of {plugin.Name}.")
+
+    merged = dict(variables)
+    for name in names:
+        typed = str(merged.get(name) or "").strip()
+        if typed or name in clear_secrets or name not in stored_secrets:
+            continue
+        try:
+            merged[name] = secrets_store.decrypt(stored_secrets[name])
+        except secrets_store.SecretsError:
+            pass  # left out: a required one is reported below as missing
+    try:
+        cleaned = custom_checks.clean_variables(plugin.Name, merged)
+    except PluginConfigurationError as error:
+        raise CustomCheckError(str(error))
+
+    public, secret_values = custom_checks.split_secrets(plugin.Name, cleaned)
+    try:
+        encrypted = {name: secrets_store.encrypt(value) for name, value in secret_values.items()}
+    except secrets_store.SecretsError as error:
+        raise CustomCheckError(error.message)
+    return public, encrypted
+
+
 def create_custom_check(plugin_id, device_id, name, variables, user_id):
     """
     Add a custom check of plugin_id on a device and apply it. Returns the serialized check plus
@@ -253,9 +294,9 @@ def create_custom_check(plugin_id, device_id, name, variables, user_id):
     device = get_device(device_id)
     try:
         name = custom_checks.validate_check_name(name)
-        cleaned = custom_checks.clean_variables(plugin.Name, variables)
     except PluginConfigurationError as error:
         raise CustomCheckError(str(error))
+    public, encrypted = prepare_variables(plugin, variables)
 
     service_name = custom_checks.service_name(plugin.Name, name)
     taken = db.session.scalar(sa.select(PluginConfiguration.PluginConfigurationID).where(
@@ -268,7 +309,7 @@ def create_custom_check(plugin_id, device_id, name, variables, user_id):
     row = PluginConfiguration(
         PluginID=plugin.PluginID, NetDiscoveryID=device.NetDiscoveryID, Service_Description=name,
         Nagios_Service_Name=service_name, Origin=PluginConfigurationOrigin.CUSTOM,
-        Status=PluginConfigurationStatus.PENDING, Configuration_Data={"variables": cleaned, "paused": False},
+        Status=PluginConfigurationStatus.PENDING, Configuration_Data={"variables": public, "secrets": encrypted, "paused": False},
     )
     db.session.add(row)
     db.session.flush()
@@ -280,10 +321,11 @@ def create_custom_check(plugin_id, device_id, name, variables, user_id):
     return {**serialize_check(row, device, None, datetime.now(timezone.utc)), **applied}
 
 
-def update_custom_check(plugin_id, check_id, name, variables, user_id):
+def update_custom_check(plugin_id, check_id, name, variables, user_id, clear_secrets=()):
     """
     Rename a check and replace its arguments (the device cannot change; remove and add instead).
-    Same errors as create_custom_check, plus CustomCheckNotFoundError.
+    A password left blank keeps the stored one; one named in clear_secrets is removed (only an
+    optional password can be). Same errors as create_custom_check, plus CustomCheckNotFoundError.
     """
     plugin = get_plugin_or_raise(plugin_id)
     require_custom_plugin(plugin)
@@ -291,9 +333,10 @@ def update_custom_check(plugin_id, check_id, name, variables, user_id):
     device = db.session.get(NetworkDiscovery, row.NetDiscoveryID)
     try:
         name = custom_checks.validate_check_name(name)
-        cleaned = custom_checks.clean_variables(plugin.Name, variables)
     except PluginConfigurationError as error:
         raise CustomCheckError(str(error))
+    stored = dict((row.Configuration_Data or {}).get("secrets") or {})
+    public, encrypted = prepare_variables(plugin, variables, stored, clear_secrets)
 
     service_name = custom_checks.service_name(plugin.Name, name)
     clash = db.session.scalar(sa.select(PluginConfiguration.PluginConfigurationID).where(
@@ -305,7 +348,8 @@ def update_custom_check(plugin_id, check_id, name, variables, user_id):
         raise CustomCheckError(f"This device already has a check named '{name}'.")
 
     data = dict(row.Configuration_Data or {})
-    data["variables"] = cleaned
+    data["variables"] = public
+    data["secrets"] = encrypted
     row.Configuration_Data = data
     row.Service_Description = name
     row.Nagios_Service_Name = service_name

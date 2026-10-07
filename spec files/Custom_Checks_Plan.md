@@ -259,10 +259,34 @@ Answered by the owner, second round:
 
 ---
 
+## 8b. Passwords (built on `feature/custom-check-secrets`)
+
+A password field of a plugin (`secret` in `CUSTOM_CHECK_FIELDS`) is handled as follows.
+
+- **Stored encrypted.** `app/secrets_store.py` encrypts it with Fernet; the key is derived (HKDF-SHA256)
+  from `PINPOINT_SECRETS_KEY` when set, otherwise from the app's `SECRET_KEY`. The token is kept in
+  `Configuration_Data["secrets"]` as `v1:<token>`. No migration is needed.
+- **Never returned or logged.** The API lists only `secrets_set` (which are stored) and
+  `secrets_readable`; history messages, errors and logs never contain a value (an invalid value is
+  reported by argument name only).
+- **Write-only in the UI.** A masked box; on a change, blank keeps the stored password and an optional
+  one can be removed (`clear_secrets`). A required password cannot be removed.
+- **Decrypted only to build the command**, when `hosts.cfg` is generated. If it cannot be read (the key
+  changed), the check is left out of the file with a warning, the list says so, and the administrator types
+  the password again. Without a fixed `SECRET_KEY` (the debug session's random one) nothing is stored.
+- **What it does not protect.** Nagios needs the password in the check's command, so it is in `hosts.cfg`
+  in plain text, in the Nagios web UI's command view, and in the process list while the check runs. Keep
+  `hosts.cfg` readable only by the Nagios user and group; Pinpoint logs a warning when a host file that
+  holds a password is world-readable (POSIX). Moving passwords into Nagios resource macros is a possible
+  later step; it would mean editing `resource.cfg`, which Pinpoint does not touch.
+- **Plugins.** `check_radius` and `check_mysql_query` (previously "needs a password") now take custom
+  checks, and `check_nt` (`-s`) and `check_disk_smb` (`-p`) gain an optional password. `check_dbi` and
+  `check_oracle` stay unavailable: their credentials are not passed as a plain argument.
+
 ## 9. Out of scope
 
 Server-local checks (§2.6, its own plan), per-check notification rules, check groups or templates,
-importing existing Nagios services, secrets storage, and plugins that need a daemon or
+importing existing Nagios services, keeping passwords out of `hosts.cfg` (§8b), and plugins that need a daemon or
 install step. The five stock local plugins stay "Not managed here".
 
 ---

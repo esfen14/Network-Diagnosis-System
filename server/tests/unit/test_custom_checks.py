@@ -7,6 +7,8 @@ The single Nagios writer is replaced, so nothing is validated or reloaded.
 """
 from unittest.mock import patch
 
+import os
+
 import pytest
 import sqlalchemy as sa
 
@@ -81,7 +83,7 @@ class TestPluginClasses:
 
     @pytest.mark.parametrize("name, expected", [
         ("check_ssh", "service"), ("check_ncpa.py", "service"), ("check_by_ssh", "custom"),
-        ("check_apt", "server"), ("check_ping", "host"), ("check_radius", "credentials"),
+        ("check_apt", "server"), ("check_ping", "host"), ("check_dbi", "credentials"), ("check_radius", "custom"),
         ("check_cluster", "unsupported"), ("check_company", None),
     ])
     def test_plugin_class(self, name, expected):
@@ -184,7 +186,7 @@ class TestRoutes:
     @pytest.mark.parametrize("plugin_name, message", [
         ("check_apt", "Runs on the Nagios server"),
         ("check_ssh", "does not take custom checks"),
-        ("check_radius", "password"),
+        ("check_dbi", "cannot be passed"),
     ])
     def test_plugins_that_take_no_custom_check_are_refused(self, logged_in_client, db_session, status, writer,
                                                            plugin_name, message):
@@ -434,3 +436,255 @@ class TestDeviceSearch:
         assert everything[0]["ip_address"] == "10.0.0.6"
         found = logged_in_client.get("/api/plugin/custom-check-devices?search=10.0.0.5").get_json()["data"]
         assert [d["hostname"] for d in found] == ["web-01"]
+
+
+# ==========================================================
+# PASSWORDS
+# ==========================================================
+
+PASSWORD = "S3cret-pw_9"
+RADIUS = {"user": "probe", "password": PASSWORD, "config": "/etc/radiusclient/radiusclient.conf"}
+
+
+class TestSecretsStore:
+
+    def test_a_secret_round_trips_and_is_not_stored_as_text(self, app):
+        from app import secrets_store
+        with app.app_context():
+            stored = secrets_store.encrypt(PASSWORD)
+            assert stored.startswith("v1:") and PASSWORD not in stored
+            assert secrets_store.decrypt(stored) == PASSWORD
+            assert secrets_store.encrypt(PASSWORD) != stored  # a fresh token each time
+            assert secrets_store.is_readable(stored)
+
+    def test_another_key_cannot_read_it(self, app, monkeypatch):
+        from app import secrets_store
+        with app.app_context():
+            stored = secrets_store.encrypt(PASSWORD)
+            monkeypatch.setenv("PINPOINT_SECRETS_KEY", "a-different-key")
+            with pytest.raises(secrets_store.SecretsError) as raised:
+                secrets_store.decrypt(stored)
+            assert PASSWORD not in str(raised.value) and not secrets_store.is_readable(stored)
+
+    @pytest.mark.parametrize("bad", ["", "plain", "v1:not-a-token", None])
+    def test_garbage_is_unreadable(self, app, bad):
+        from app import secrets_store
+        with app.app_context(), pytest.raises(secrets_store.SecretsError):
+            secrets_store.decrypt(bad)
+
+    def test_nothing_is_stored_under_a_temporary_key(self, app):
+        from app import secrets_store
+        app.config["SECRET_KEY_IS_TEMPORARY"] = True
+        try:
+            with app.app_context(), pytest.raises(secrets_store.SecretsError, match="fixed SECRET_KEY"):
+                secrets_store.encrypt(PASSWORD)
+        finally:
+            app.config["SECRET_KEY_IS_TEMPORARY"] = False
+
+    def test_an_explicit_key_wins_over_the_secret_key(self, app, monkeypatch):
+        from app import secrets_store
+        with app.app_context():
+            under_secret_key = secrets_store.encrypt(PASSWORD)
+            monkeypatch.setenv("PINPOINT_SECRETS_KEY", "explicit")
+            under_explicit = secrets_store.encrypt(PASSWORD)
+            assert secrets_store.decrypt(under_explicit) == PASSWORD
+            assert not secrets_store.is_readable(under_secret_key)
+
+
+class TestPasswordFields:
+
+    def test_the_plugins_that_take_a_password(self):
+        names = {plugin: custom_checks.secret_names(plugin) for plugin in custom_checks.CUSTOM_CHECK_FIELDS}
+        assert {p: n for p, n in names.items() if n} == {
+            "check_nt": ("password",), "check_radius": ("password",),
+            "check_mysql_query": ("password",), "check_disk_smb": ("password",),
+        }
+
+    def test_a_radius_password_is_required_and_a_mysql_one_is_not(self):
+        with pytest.raises(PluginConfigurationError, match="Password to test with"):
+            custom_checks.clean_variables("check_radius", {"user": "u", "config": "/c"})
+        assert custom_checks.clean_variables("check_mysql_query", {"query": "SELECT 1", "warning": "1", "critical": "2"})
+
+    def test_split_and_rebuild(self, app):
+        public, secret = custom_checks.split_secrets("check_radius", dict(RADIUS))
+        assert secret == {"password": PASSWORD} and PASSWORD not in str(public)
+        from app import secrets_store
+        with app.app_context():
+            data = {"variables": public, "secrets": {"password": secrets_store.encrypt(PASSWORD)}}
+            assert custom_checks.command_variables(data) == RADIUS
+
+    def test_a_radius_command_carries_the_password_as_an_argument(self):
+        command = custom_checks.resolve_plugin_command_for("check_radius", {**RADIUS, "port": "1812"})
+        assert command == f"pinpoint_custom_check_radius!probe!{PASSWORD}!/etc/radiusclient/radiusclient.conf!-P '1812'"
+
+
+class TestPasswordRoutes:
+
+    def add(self, client, plugin, device, name="Auth probe", variables=None):
+        return client.post(checks_url(plugin), json={
+            "device_id": device.NetDiscoveryID, "name": name, "variables": dict(RADIUS) if variables is None else variables})
+
+    def test_the_password_is_stored_encrypted_and_never_returned(self, logged_in_client, db_session, status, writer, caplog):
+        device = new_device(status)
+        radius = add_plugin("check_radius")
+
+        resp = self.add(logged_in_client, radius, device)
+
+        data = resp.get_json()["data"]
+        assert resp.status_code == 200
+        assert "password" not in data["variables"] and PASSWORD not in resp.get_data(as_text=True)
+        assert data["secrets_set"] == ["password"] and data["secrets_readable"] is True
+        row, = rows()
+        assert row.Configuration_Data["secrets"]["password"].startswith("v1:")
+        assert PASSWORD not in str(row.Configuration_Data)
+        assert row.Configuration_Data["variables"] == {"user": "probe", "config": RADIUS["config"]}
+        history = db.session.scalar(sa.select(PluginHistory))
+        assert PASSWORD not in (history.Message or "") and PASSWORD not in caplog.text
+
+        listed = logged_in_client.get(checks_url(radius))
+        assert PASSWORD not in listed.get_data(as_text=True)
+        assert listed.get_json()["data"]["items"][0]["secrets_set"] == ["password"]
+
+    def test_the_plugin_details_mark_password_fields(self, logged_in_client, db_session):
+        radius = add_plugin("check_radius")
+        fields = logged_in_client.get(f"/api/plugin/{radius.PluginID}").get_json()["data"]["custom_checks"]["fields"]
+        assert {f["name"]: f["secret"] for f in fields} == {"user": False, "password": True, "config": False, "port": False}
+
+    def test_a_missing_required_password_is_refused(self, logged_in_client, db_session, status, writer):
+        device = new_device(status)
+        resp = self.add(logged_in_client, add_plugin("check_radius"), device, variables={"user": "u", "config": "/c"})
+        assert resp.status_code == 400 and "Password to test with" in resp.get_json()["message"] and rows() == []
+
+    def test_an_unsafe_password_is_refused_without_echoing_it(self, logged_in_client, db_session, status, writer):
+        device = new_device(status)
+        bad = "pa'ss;word"
+        resp = self.add(logged_in_client, add_plugin("check_radius"), device, variables={**RADIUS, "password": bad})
+        assert resp.status_code == 400 and bad not in resp.get_data(as_text=True) and rows() == []
+
+    def test_the_command_in_hosts_cfg_uses_the_decrypted_password(self, app, logged_in_client, db_session, status, writer, tmp_path):
+        from app.network_discovery.create_host_cfg import _create_host_cfg_file, _load_monitored_hosts, load_custom_checks
+        device = new_device(status)
+        self.add(logged_in_client, add_plugin("check_radius"), device)
+
+        [(name, command, plugin)] = load_custom_checks()[device.NetDiscoveryID]
+        assert PASSWORD in command and plugin == "check_radius"
+        original = app.config["HOST_CONFIG_DIR"]
+        app.config["HOST_CONFIG_DIR"] = tmp_path
+        try:
+            text = _create_host_cfg_file(_load_monitored_hosts()).read_text()
+        finally:
+            app.config["HOST_CONFIG_DIR"] = original
+        assert f"pinpoint_custom_check_radius!probe!{PASSWORD}!" in text
+
+    def test_changing_a_check_keeps_the_password_when_it_is_left_blank(self, logged_in_client, db_session, status, writer):
+        from app import secrets_store
+        device = new_device(status)
+        radius = add_plugin("check_radius")
+        check = self.add(logged_in_client, radius, device).get_json()["data"]
+
+        resp = logged_in_client.put(f"{checks_url(radius)}/{check['id']}", json={
+            "name": "Auth probe", "variables": {"user": "other", "config": RADIUS["config"], "password": ""}})
+
+        assert resp.status_code == 200
+        data = rows()[0].Configuration_Data
+        assert data["variables"]["user"] == "other"
+        with logged_in_client.application.app_context():
+            assert secrets_store.decrypt(data["secrets"]["password"]) == PASSWORD
+
+    def test_a_new_password_replaces_the_old_one(self, logged_in_client, db_session, status, writer):
+        from app import secrets_store
+        device = new_device(status)
+        radius = add_plugin("check_radius")
+        check = self.add(logged_in_client, radius, device).get_json()["data"]
+
+        logged_in_client.put(f"{checks_url(radius)}/{check['id']}", json={
+            "name": "Auth probe", "variables": {**RADIUS, "password": "N3w-pass"}})
+
+        with logged_in_client.application.app_context():
+            assert secrets_store.decrypt(rows()[0].Configuration_Data["secrets"]["password"]) == "N3w-pass"
+
+    def test_a_required_password_cannot_be_cleared_but_an_optional_one_can(self, logged_in_client, db_session, status, writer):
+        device = new_device(status)
+        radius, mysql = add_plugin("check_radius"), add_plugin("check_mysql_query")
+        radius_check = self.add(logged_in_client, radius, device).get_json()["data"]
+        refused = logged_in_client.put(f"{checks_url(radius)}/{radius_check['id']}", json={
+            "name": "Auth probe", "variables": {"user": "probe", "config": RADIUS["config"]}, "clear_secrets": ["password"]})
+        assert refused.status_code == 400 and "required" in refused.get_json()["message"]
+
+        mysql_check = logged_in_client.post(checks_url(mysql), json={
+            "device_id": device.NetDiscoveryID, "name": "Orders", "variables": {
+                "query": "SELECT COUNT(*) FROM orders", "warning": "1", "critical": "5", "password": "dbpass"}}).get_json()["data"]
+        assert mysql_check["secrets_set"] == ["password"]
+        cleared = logged_in_client.put(f"{checks_url(mysql)}/{mysql_check['id']}", json={
+            "name": "Orders", "variables": {"query": "SELECT COUNT(*) FROM orders", "warning": "1", "critical": "5"},
+            "clear_secrets": ["password"]}).get_json()["data"]
+        assert cleared["secrets_set"] == []
+
+    def test_an_unknown_name_to_clear_is_refused(self, logged_in_client, db_session, status, writer):
+        device = new_device(status)
+        radius = add_plugin("check_radius")
+        check = self.add(logged_in_client, radius, device).get_json()["data"]
+        resp = logged_in_client.put(f"{checks_url(radius)}/{check['id']}", json={
+            "name": "Auth probe", "variables": {}, "clear_secrets": ["user"]})
+        assert resp.status_code == 400 and "not a password" in resp.get_json()["message"]
+        assert logged_in_client.put(f"{checks_url(radius)}/{check['id']}", json={
+            "name": "x", "variables": {}, "clear_secrets": "password"}).status_code == 400
+
+    def test_a_password_that_can_no_longer_be_read_is_reported_and_left_out_of_the_file(
+            self, app, logged_in_client, db_session, status, writer, monkeypatch, caplog):
+        from app.network_discovery.create_host_cfg import load_custom_checks
+        device = new_device(status)
+        radius = add_plugin("check_radius")
+        check = self.add(logged_in_client, radius, device).get_json()["data"]
+
+        monkeypatch.setenv("PINPOINT_SECRETS_KEY", "rotated")
+        listed = logged_in_client.get(checks_url(radius)).get_json()["data"]["items"][0]
+        assert listed["secrets_readable"] is False and PASSWORD not in str(listed)
+        assert load_custom_checks() == {}
+        assert PASSWORD not in caplog.text
+
+        # Without typing the password again the change is refused; with it, the check works again.
+        refused = logged_in_client.put(f"{checks_url(radius)}/{check['id']}", json={
+            "name": "Auth probe", "variables": {"user": "probe", "config": RADIUS["config"]}})
+        assert refused.status_code == 400 and "Password to test with" in refused.get_json()["message"]
+        fixed = logged_in_client.put(f"{checks_url(radius)}/{check['id']}", json={
+            "name": "Auth probe", "variables": dict(RADIUS)})
+        assert fixed.status_code == 200 and fixed.get_json()["data"]["secrets_readable"] is True
+        assert load_custom_checks()
+
+    def test_no_password_is_stored_without_a_fixed_key(self, app, logged_in_client, db_session, status, writer):
+        device = new_device(status)
+        app.config["SECRET_KEY_IS_TEMPORARY"] = True
+        try:
+            resp = self.add(logged_in_client, add_plugin("check_radius"), device)
+        finally:
+            app.config["SECRET_KEY_IS_TEMPORARY"] = False
+        assert resp.status_code == 400 and "fixed SECRET_KEY" in resp.get_json()["message"] and rows() == []
+
+    def test_a_check_without_passwords_never_needs_the_key(self, app, logged_in_client, db_session, status, writer):
+        device = new_device(status)
+        app.config["SECRET_KEY_IS_TEMPORARY"] = True
+        try:
+            resp = self.add(logged_in_client, add_plugin("check_ups"), device, variables={"ups": "nut1"})
+        finally:
+            app.config["SECRET_KEY_IS_TEMPORARY"] = False
+        assert resp.status_code == 200
+
+
+class TestWorldReadableWarning:
+
+    def test_a_host_file_with_a_password_that_everyone_can_read_is_reported(self, app, caplog, tmp_path):
+        from app.network_discovery.create_host_cfg import warn_if_world_readable
+        if os.name != "posix":
+            pytest.skip("POSIX file modes only")
+        path = tmp_path / "hosts.cfg"
+        path.write_text("x")
+        path.chmod(0o644)
+        with app.app_context():
+            warn_if_world_readable(path)
+        assert "readable by every user" in caplog.text
+        caplog.clear()
+        path.chmod(0o640)
+        with app.app_context():
+            warn_if_world_readable(path)
+        assert "readable by every user" not in caplog.text
