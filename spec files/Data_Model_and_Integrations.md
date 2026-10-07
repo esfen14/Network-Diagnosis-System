@@ -281,7 +281,8 @@ enabled plugins would otherwise start monitoring. No plugin promotes a held port
 monitoring it by hand or acknowledging a mismatch releases it. A monitored, unpinned port that
 fingerprints as a service its frozen plugin does not match keeps its service and
 raises a `SERVICE_CHANGED` `DeviceReviewItem`; hints never raise one, and the
-NCPA port of a deployed agent is exempt.
+NCPA port of a deployed agent is exempt. The item resolves itself (`Resolved_At` set)
+when a later scan fingerprints the port as a service its frozen plugin matches again.
 
 Port lifecycle thresholds live in `config.py`: a monitored port unseen for
 `PORT_MISSING_AFTER_SCANS` (5) scans becomes `MISSING` and stays monitored; after
