@@ -76,11 +76,12 @@ function StatusBadge({ status }: { status: PluginStatus }) {
 
 // Coverage at a glance: how many services a plugin runs and on how many devices.
 export function monitoringLabel(plugin: PluginListItem) {
-  if (!plugin.service_driven) return 'Not service-driven'
   const { services, devices } = plugin.monitoring_usage
+  // A plugin with custom checks reports them like any other monitored services.
   if (services > 0) {
     return `${services} ${services === 1 ? 'service' : 'services'} on ${devices} ${devices === 1 ? 'device' : 'devices'}`
   }
+  if (!plugin.service_driven) return 'Not service-driven'
   return plugin.status === 'Enabled' || plugin.status === 'Active' ? 'No matching services yet' : '—'
 }
 

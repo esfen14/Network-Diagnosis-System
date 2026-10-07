@@ -1,6 +1,6 @@
 # Plan: Custom Checks for Plugins That Discovery Cannot Drive
 
-Status: **draft, all decisions Q-C1 to Q-C7 answered by the owner (2026-10-07); nothing built.** The plugin audit the owner asked for (Q-C2) is §2.4, and its result changes which plugins this plan is for.
+Status: **decisions Q-C1 to Q-C7 answered by the owner (2026-10-07); phases C0b to C3 built on `feature/custom-checks` and unit-tested; C4 (lab run) and C5 (server-host checks) remain.** The plugin audit the owner asked for (Q-C2) is §2.4, and its result changes which plugins this plan is for.
 Follows the format of `Device_Ports_UI_Plan.md`; like it, this file is not indexed in
 `AGENTS.md`. Behaviour rules belong in the specs listed in §10 once decisions are made.
 
@@ -42,6 +42,15 @@ Nagios Core (§2.6 of the monitoring plan, decision Q6/Q7).
 
 ## 2. Design
 
+> **Built differently from the draft in three places** (the rest is as written):
+> 1. A custom command is generated from the plugin's argument table
+>    (`CUSTOM_CHECK_FIELDS`), the way the registry builds its commands, not from the plugin's
+>    stored Commands row. So a command Override in Plugin Manager does not change a custom
+>    check; this keeps every argument validated and quoted by one code path.
+> 2. Pause is a flag in `Configuration_Data` (`{"paused": true}`), not a new column or status.
+> 3. A device picker needs its own route, `GET /api/plugin/custom-check-devices`, under
+>    `plugin.custom_check`, so the form does not depend on the Network Health permission.
+
 ### 2.1 What a custom check is
 
 One row per check: *plugin + device + name + arguments (+ optional warn/crit)*. It
@@ -64,11 +73,10 @@ config is validated with Nagios's own check, and a rejected config rolls back. N
 config file, so the retired `plugin-services.cfg` problems (drift, second host object) do
 not return.
 
-Each plugin gets one generated command, `pinpoint_custom_<plugin>`, built from the
-plugin's existing Commands row (`check_apt` is `check_apt`; `check_by_ssh` is
-`check_by_ssh -H $HOSTADDRESS$ -C $ARG1$`). The service passes the admin's arguments as
-`$ARG1$..$ARGn$`. Plugin Manager's existing Override keeps working as the way to change a
-plugin's command; a custom check uses whatever command is stored when config is generated.
+Each plugin gets one generated command, `pinpoint_custom_<plugin>`, built from the plugin's
+argument table (`check_by_ssh` is `$USER1$/check_by_ssh -H $HOSTADDRESS$ -C '$ARG1$' $ARG2$`).
+Required arguments are passed as `$ARG1$..$ARGn$` and the optional ones are rendered together
+into the last `$ARG$`, exactly as the registry does.
 
 ### 2.3 Safety
 
@@ -86,8 +94,8 @@ Arguments end up in a shell-executed command line, so this is the risky part:
 - **Administrator.** The code has no superadmin and no bypass: `_has_permission` only
   checks the role's `RolePermission` rows. The owner confirmed the intent is the
   Administrator role (Q-C5), so `plugin.custom_check` is granted to Administrator in the
-  seed, and `flask sync-permissions` adds it to Administrator on existing databases (to
-  be verified in C1: that command must grant, not only create, the permission).
+  seed, and `flask sync-permissions` adds it to Administrator on existing databases (verified
+  in C1: that command creates every missing permission and grants all of them to Administrator).
 
 ### 2.4 Audit: which plugins really are not service-driven (Q-C2)
 
@@ -101,6 +109,11 @@ using their default command in `plugin_command_defaults.py`. Four outcomes:
 | **B. Host-driven** | Probe the device, not a port | `check_ping`, `check_icmp`, `check_fping`, `check_dig` (a lookup, overlaps `check_dns`) | Not custom checks. Host aliveness is already a Nagios host check; a per-host service is a separate small feature (Q-C7). Until then they stay inventory-only |
 | **C. Probes a device over the network but needs arguments or credentials** | The target is the device; only an admin knows the arguments | `check_by_ssh`, `check_breeze`, `check_wave`, `check_hpjd`, `check_ifstatus`, `check_ifoperstatus` (needs an interface index), `check_ups` (needs the UPS name), `check_nt`, `check_nwstat`, `check_overcr` and `check_real` (rare services that each need a mandatory argument: `-v` or `-u`; Q-C6), `check_radius` (needs a shared secret), `check_ssl_validity`, `check_disk_smb` (needs a share), `check_mysql_query`, `check_oracle`, `check_dbi`, `check_game`, `check_clamd` | **Custom checks** (this plan). Those that need a secret (`check_radius`, database passwords) are blocked until a secrets store exists (§9), and the dialog says so |
 | **D. Checks the machine it runs on** | Local to the Nagios server, whatever device you pick | `check_apt`, `check_uptime`, `check_sensors`, `check_ide_smart`, `check_file_age`, `check_log`, `check_mailq`, `check_mrtg`, `check_mrtgtraf`, `check_flexlm`, `check_nagios`, `check_dummy`, and the five stock local plugins | **Not offered on other devices**, because the result would be the server's, filed under another device's name. They wait for the server-host feature (§2.6). `check_cluster` (aggregates service states) is out of scope for now |
+
+Where the audit table in code (`PLUGIN_CLASSES`) differs from the list above: `check_dhcp` is
+class D (it broadcasts from the server's own interface), and the deprecated `check_ntp` has a
+class of its own, `replaced`, because `check_ntp_time` already covers it. A test fails when a
+catalog plugin has no class, which is how `check_ntp` was found.
 
 Rules the audit gives us:
 - A plugin is class C only if its default command takes `$HOSTADDRESS$` (`-H`). The dialog
@@ -184,12 +197,12 @@ The Monitoring column wording and the drawer note change, so
 
 | Phase | Content | Done when |
 |---|---|---|
-| C0 | One-hour spike: render one `check_by_ssh` service for a lab device and validate it | Spike config passes `nagios -v` |
-| C0b | Add the approved class A plugins to the registry (a `PluginDefinition`, Port → Service rule and tests each). Independent of the rest, so it can ship first | Enabling each one attaches it to a lab port, as `check_ssh` does |
-| C1 | Migration, model, argument validator, unit tests | Validator rejects every forbidden character; migration upgrades and downgrades |
-| C2 | Routes, permission, generator, reconcile coexistence | A custom check survives rescan, reconcile, merge and retire; rejected config rolls back |
-| C3 | Frontend section, dialog, class notes, Monitoring column | Component tests; manual check in a browser |
-| C4 | Specs, acceptance plan, lab run | Cases in §7 pass on the lab |
+| C0 | One-hour spike: render one `check_by_ssh` service for a lab device and validate it | **Not done on a live Nagios.** The generated service and command are checked in unit tests only; the spike's `nagios -v` is the first item of C4 |
+| C0b | **Done.** Add the approved class A plugins to the registry (a `PluginDefinition`, Port → Service rule and tests each). Independent of the rest, so it can ship first | Enabling each one attaches it to a lab port, as `check_ssh` does |
+| C1 | **Done.** Migration, model, argument validator, unit tests | Validator rejects every forbidden character; migration upgrades and downgrades |
+| C2 | **Done.** Routes, permission, generator, reconcile coexistence | A custom check survives rescan, reconcile, merge and retire; rejected config rolls back |
+| C3 | **Done.** Frontend section, dialog, class notes, Monitoring column | Component tests; manual check in a browser |
+| C4 | Specs (done), acceptance plan and lab run (open) | Cases in §7 pass on the lab |
 | C5 | Server-host checks (§2.6): its own plan, written after C4 | Separate plan approved |
 
 C0 comes first because the one-service-per-check model and the shared writer are

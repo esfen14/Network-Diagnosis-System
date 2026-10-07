@@ -417,3 +417,20 @@ class TestHostConfig:
             (target.NetDiscoveryID, "custom-ups-rack_ups"), (target.NetDiscoveryID, "custom-ups-spare_ups"),
         ])
         assert db.session.get(type(source), source.NetDiscoveryID).Device_State is DeviceState.MERGED
+
+
+class TestDeviceSearch:
+
+    def test_the_picker_lists_monitored_devices_by_name_and_filters(self, logged_in_client, db_session, status):
+        from app.system_models import DeviceState
+        first, second, retired = (new_device(status), new_device(status, "10.0.0.6", "aa:aa:aa:aa:aa:02"),
+                                  new_device(status, "10.0.0.7", "aa:aa:aa:aa:aa:03"))
+        first.Nagios_Host_Name, second.Nagios_Host_Name, retired.Nagios_Host_Name = "web-01", "db-01", "old-01"
+        retired.Device_State = DeviceState.RETIRED
+        db_session.session.commit()
+
+        everything = logged_in_client.get("/api/plugin/custom-check-devices").get_json()["data"]
+        assert [d["hostname"] for d in everything] == ["db-01", "web-01"]
+        assert everything[0]["ip_address"] == "10.0.0.6"
+        found = logged_in_client.get("/api/plugin/custom-check-devices?search=10.0.0.5").get_json()["data"]
+        assert [d["hostname"] for d in found] == ["web-01"]

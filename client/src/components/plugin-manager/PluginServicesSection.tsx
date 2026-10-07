@@ -26,6 +26,7 @@ const STATUS_STYLES: Record<ServiceStatusKind, string> = {
   waiting: 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
   stale: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
   stopped: 'bg-gray-400/15 text-gray-500 dark:text-gray-400',
+  paused: 'bg-gray-400/15 text-gray-500 dark:text-gray-400',
 }
 
 const STATUS_LABELS: Record<ServiceStatusKind, string> = {
@@ -36,6 +37,7 @@ const STATUS_LABELS: Record<ServiceStatusKind, string> = {
   waiting: 'Waiting',
   stale: 'No recent data',
   stopped: 'Stopped',
+  paused: 'Paused',
 }
 
 function formatDateTime(iso: string | null) {

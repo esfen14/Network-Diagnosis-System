@@ -67,7 +67,8 @@ Plugin lifecycle and active monitoring are separate:
   `Nagios_Service_Name` (e.g. `ssh-22-tcp`), `Applied_At` (first time active;
   not reset by a re-apply) and `Origin` (`Auto` for rows the plugin
   reconciler derives, `Manual` for rows created by hand, which the reconciler
-  never touches). `(PluginID, NetDiscoveryID, Nagios_Service_Name)` is unique;
+  never touches, `Custom` for checks an administrator added for a plugin
+  discovery cannot drive). `(PluginID, NetDiscoveryID, Nagios_Service_Name)` is unique;
   rows without a service name are not compared. The reconciler itself is
   planned, see `Plugin_Driven_Monitoring_Plan.md`; today every row is `Manual`.
 - Command overrides preserve an immutable snapshot of the original command.
@@ -89,6 +90,18 @@ Plugin lifecycle and active monitoring are separate:
   ("check_ssh is not enabled in Plugin Manager.") in the skipped services, and
   the generic TCP fallback needs `check_tcp` enabled too. Ports keep their state
   and frozen plugin when a plugin is off, so enabling restores them.
+- **Custom checks** (`network_discovery/custom_checks.py`, `api/plugin/custom_checks.py`;
+  `Custom_Checks_Plan.md`): a `PluginConfiguration` row with `Origin = Custom`, no port
+  (`Port_Number` and `Protocol` stay NULL), `Service_Description` the admin's name,
+  `Nagios_Service_Name` `custom-<plugin>-<name>` and `Configuration_Data`
+  `{"variables": {...}, "paused": bool}`. `create_host_cfg.load_custom_checks()` reads the
+  unpaused rows and writes each as a service on its device in `hosts.cfg`, with one
+  `pinpoint_custom_<plugin>` command per plugin used (rendered like a registry command:
+  required arguments as `$ARGn$`, optional ones in the final `$ARG$`, every value single-quoted
+  and checked against the registry's forbidden characters). Which plugins take one, and
+  the arguments of each, are the `CUSTOM_CHECK_FIELDS` table; `PLUGIN_CLASSES` gives every
+  other catalog plugin its reason for not taking one. Merging a device moves its custom
+  checks to the target, dropping one whose name the target already has.
 - **The reconciler** (`app/api/plugin/reconcile.py`,
   `reconcile_plugin_monitoring`) keeps the `Origin = Auto` rows of
   `PluginConfiguration` equal to the services the planner generates (one per

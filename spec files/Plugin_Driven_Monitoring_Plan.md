@@ -151,7 +151,8 @@ expand to one entry per metric (SNMP OIDs, NCPA metrics)
 - Plugins that are not port-driven have nothing to attach to. They stay in the
   inventory and can be validated, updated and have their command overridden,
   but show **"Not service-driven"**, offer no Enable/Disable, and are never
-  attached. This covers the local-statistics plugins (§2.6) and plugins with
+  attached by discovery. Those that probe a device can instead take per-device
+  **custom checks** (`Custom_Checks_Plan.md`). This covers the local-statistics plugins (§2.6) and plugins with
   required arguments and no safe default, such as `check_dummy`, `check_log`,
   `check_mailq`, `check_nagios`, `check_apt`, `check_ide_smart`, `check_dhcp`.
 - `plugin-services.cfg` and `monitoring_config.py` are retired. This also
@@ -770,6 +771,7 @@ the phase can close, re-point what it cannot, and add anything new. Status is
 | G24 | The Plugin Manager page does not refresh a plugin's service statuses on a timer; statuses update when the drawer reloads or an action runs | 5 | lab case UI-01 decides whether polling is needed | Open: decision for the owner |
 | G25 | **Upgrade effect on suggested ports.** The upgrade enables `check_tcp` when any port was monitored by the generic check, and an enabled generic plugin attaches every identified port with no plugin of its own, so ports that were only suggested before would have become monitored on the first reconcile. The same rule also re-promoted a port an admin had set back to Suggested | 6 | 6 | Closed (6, option 2 chosen by the owner): `Promotion_Held` (migration `e9b4c2f7a105`). The upgrade holds exactly the Suggested ports the enabled plugins would promote, and setting a port to Suggested holds it; monitoring it by hand or acknowledging a mismatch releases it. Ports whose plugin is not enabled are not held, so enabling that plugin later still attaches them |
 | G27 | The NCPA plugin is stored by its filename, `check_ncpa.py`, so exact-name lookups missed it: Plugin Manager showed it "Not service-driven", it could not be enabled, and its catalog entry and curated command were not found | - | - | Closed: `normalize_plugin_name` strips a script extension (`.py`, `.pl`, `.sh`) wherever a Plugin Manager name is compared with the registry, enabled set, catalog or command defaults. Stored names and Executable Path keep the real name, and the registry's `executable` field (`check_ncpa.py`) is what the Nagios command runs. The server still needs a `python` command for `check_ncpa.py`'s shebang |
+| G28 | Plugins that are not service-driven could not be used for anything | - | - | Closed for plugins that probe a device (`Custom_Checks_Plan.md`): per-device custom checks. Port-driven plugins missing from the registry were added. Server-local, host-level and password-needing plugins remain unavailable |
 | G26 | A held port had no screen | 6 | with G1 | Closed (ports UI P3): held ports are marked Held under Needs attention and released with Monitor |
 
 ## 14. Pull request notes

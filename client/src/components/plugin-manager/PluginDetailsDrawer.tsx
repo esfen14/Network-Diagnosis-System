@@ -26,6 +26,7 @@ import {
 } from '../../lib/pluginApi'
 import { errorMessage } from '../../lib/api'
 import { useCurrentUser } from '../../contexts/CurrentUserContext'
+import { PluginCustomChecksSection } from './PluginCustomChecksSection'
 import { PluginServicesSection } from './PluginServicesSection'
 import type {
   AttachResult,
@@ -54,6 +55,19 @@ function formatDateTime(iso: string | null) {
 const LOCAL_SERVER_PLUGINS = ['check_load', 'check_disk', 'check_swap', 'check_procs', 'check_users']
 
 type Notice = { tone: 'ok' | 'error'; text: string }
+
+// Why a plugin that discovery cannot drive has no Enable button, and what (if anything) to do instead.
+function notServiceDrivenNote(details: PluginDetails): string {
+  if (LOCAL_SERVER_PLUGINS.includes(details.name)) {
+    return 'Checks the Nagios server itself through Nagios Core. Not managed here.'
+  }
+  const custom = details.custom_checks
+  if (custom?.supported) {
+    return 'There is no port for discovery to attach this plugin to. Add a custom check to run it against a device.'
+  }
+  if (custom?.note) return custom.note
+  return 'This plugin does not check a service that discovery finds on a port, so there is nothing to attach it to.'
+}
 
 // Say what the reconciler did after an enable or disable, from the route's auto_apply.
 function describeAttach(action: 'enable' | 'disable', result: AttachResult | undefined): Notice | null {
@@ -311,9 +325,7 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
                 {!details.service_driven && (
                   <p className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
                     <span className="font-semibold">Not service-driven.</span>{' '}
-                    {LOCAL_SERVER_PLUGINS.includes(details.name)
-                      ? 'Checks the Nagios server itself through Nagios Core. Not managed here.'
-                      : 'This plugin does not check a service that discovery finds on a port, so there is nothing to attach it to.'}
+                    {notServiceDrivenNote(details)}
                   </p>
                 )}
 
@@ -476,6 +488,19 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
                   key={pluginId}
                   pluginId={pluginId}
                   refreshKey={servicesKey}
+                  onChanged={async () => {
+                    await load(false)
+                    onChanged()
+                  }}
+                />
+              )}
+
+              {details.custom_checks?.supported && hasPermission('plugin.custom_check') && (
+                <PluginCustomChecksSection
+                  key={`custom-${pluginId}`}
+                  pluginId={pluginId}
+                  pluginName={details.name}
+                  fields={details.custom_checks.fields}
                   onChanged={async () => {
                     await load(false)
                     onChanged()

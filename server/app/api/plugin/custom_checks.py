@@ -105,6 +105,29 @@ def serialize_check(row, device, result, now):
     }
 
 
+def search_devices(search, limit=20):
+    """
+    Devices a custom check can be added to, for the form's device picker: up to limit monitored
+    devices whose name or IP contains search (case-insensitive), by name. Each item is
+    {"id", "hostname", "ip_address"}.
+    """
+    query = sa.select(NetworkDiscovery).where(NetworkDiscovery.Device_State.not_in(UNMONITORED_DEVICE_STATES))
+    needle = (search or "").strip()
+    if needle:
+        pattern = f"%{needle}%"
+        query = query.where(sa.or_(
+            NetworkDiscovery.Hostname.ilike(pattern),
+            NetworkDiscovery.Nagios_Host_Name.ilike(pattern),
+            NetworkDiscovery.IP_Address.ilike(pattern),
+        ))
+    devices = db.session.scalars(query.limit(500)).all()
+    devices.sort(key=lambda device: nagios_host_name(device).lower())
+    return [
+        {"id": device.NetDiscoveryID, "hostname": nagios_host_name(device), "ip_address": device.IP_Address}
+        for device in devices[:limit]
+    ]
+
+
 def list_custom_checks(plugin_id, page, per_page, search):
     """
     Paginated custom checks of a plugin, sorted by device then name, each with its device, arguments

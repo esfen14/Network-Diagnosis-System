@@ -15,6 +15,7 @@ GET  /plugin/<id>/enable-preview - What enabling would monitor (counts)
 GET  /plugin/<id>/services   - What a plugin monitors, with live status
 POST /plugin/<id>/services/stop   - Stop monitoring one port on one device
 POST /plugin/<id>/services/resume - Resume a stopped port
+GET  /plugin/custom-check-devices - Devices a custom check can be added to
 GET  /plugin/<id>/custom-checks - A plugin's custom checks with live status
 POST /plugin/<id>/custom-checks - Add a custom check on a device
 PUT  /plugin/<id>/custom-checks/<check_id> - Change a custom check
@@ -611,6 +612,31 @@ def parse_custom_check_body(require_device):
     if require_device and (not isinstance(device_id, int) or isinstance(device_id, bool)):
         return None, None, None, error("device_id must be a number.", 400)
     return name, variables, device_id, None
+
+
+@plugin_bp.get('/custom-check-devices')
+@login_required
+@require_permission('plugin.custom_check')
+def custom_check_devices_route():
+    """
+    Search the devices a custom check can be added to, for the form's device picker.
+
+    **Query Parameters**
+
+    search (str, optional): matched against hostname and IP
+
+    **Returns (JSON via success())** up to 20 devices by name
+
+    .. code-block:: json
+
+        {"success": true, "data": [{"id": 4, "hostname": "web-01", "ip_address": "192.168.130.20"}]}
+    """
+    try:
+        search = request.args.get("search", default="", type=str)
+        return success(custom_checks_service.search_devices(search))
+    except Exception:
+        current_app.logger.exception("An unexpected error occurred while searching devices.")
+        return error("An unexpected error occurred.", 500)
 
 
 @plugin_bp.get('/<int:plugin_id>/custom-checks')

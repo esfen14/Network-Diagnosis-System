@@ -81,6 +81,8 @@ export type PluginDetails = {
   // Official documentation page for bundled plugins; null for custom ones.
   documentation_url?: string | null
   service_driven: boolean
+  // Whether and how the plugin takes custom checks (absent in older responses).
+  custom_checks?: PluginCustomSupport
   type: PluginType
   source: PluginSource
   status: PluginStatus
@@ -184,6 +186,7 @@ export type ServiceStatusKind =
   | 'waiting'
   | 'stale'
   | 'stopped'
+  | 'paused'
 
 export type ServiceStatus = {
   kind: ServiceStatusKind
@@ -205,6 +208,56 @@ export type PluginServiceItem = {
   running_since: string | null
   status: ServiceStatus
 }
+
+export type CustomCheckField = {
+  name: string
+  flag: string
+  label: string
+  required: boolean
+  placeholder: string
+}
+
+// Which class the plugin is in (Custom_Checks_Plan.md section 2.4) and what a custom check of it takes.
+export type PluginCustomSupport = {
+  class: 'service' | 'custom' | 'credentials' | 'host' | 'server' | 'unsupported' | 'replaced' | null
+  supported: boolean
+  // Why the plugin takes no custom check, when it does not.
+  note: string | null
+  fields: CustomCheckField[]
+}
+
+// One custom check of a plugin (GET /api/plugin/<id>/custom-checks).
+export type CustomCheckItem = {
+  id: number
+  name: string
+  service: string
+  device: { id: number; hostname: string; ip_address: string }
+  variables: Record<string, string>
+  paused: boolean
+  running_since: string | null
+  status: ServiceStatus
+}
+
+export type CustomChecksResponse = {
+  items: CustomCheckItem[]
+  page: number
+  per_page: number
+  pages: number
+  total: number
+  has_next: boolean
+  has_prev: boolean
+}
+
+export type CustomCheckDevice = { id: number; hostname: string; ip_address: string }
+
+// The body of an add (device_id) or change (name and variables only).
+export type CustomCheckInput = {
+  device_id?: number
+  name: string
+  variables: Record<string, string>
+}
+
+export type CustomCheckChange = CustomCheckItem & { changed: boolean; message: string }
 
 export type PluginServicesResponse = {
   items: PluginServiceItem[]

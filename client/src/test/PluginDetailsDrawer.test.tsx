@@ -20,8 +20,14 @@ const api = vi.hoisted(() => ({
 
 vi.mock('../lib/pluginApi', () => api)
 
+const permissions = vi.hoisted(() => ({ denied: new Set<string>() }))
 vi.mock('../contexts/CurrentUserContext', () => ({
-  useCurrentUser: () => ({ user: null, isLoading: false, hasPermission: () => true }),
+  useCurrentUser: () => ({ user: null, isLoading: false, hasPermission: (name: string) => !permissions.denied.has(name) }),
+}))
+
+// The custom checks list has its own tests; here it only shows that it was rendered.
+vi.mock('../components/plugin-manager/PluginCustomChecksSection', () => ({
+  PluginCustomChecksSection: ({ pluginName }: { pluginName: string }) => <div>custom checks of {pluginName}</div>,
 }))
 
 // The list has its own tests; here it only shows that it was rendered and when it reloads.
@@ -289,6 +295,45 @@ describe('PluginDetailsDrawer not service-driven', () => {
       expect(await screen.findByText(/Checks the Nagios server itself through Nagios Core. Not managed here./)).toBeInTheDocument()
     },
   )
+
+  it('offers custom checks, and says why, for a plugin that takes them', async () => {
+    api.getPluginDetails.mockResolvedValue(details({
+      name: 'check_by_ssh', service_driven: false,
+      custom_checks: { class: 'custom', supported: true, note: null, fields: [] },
+    }))
+    renderDrawer()
+
+    expect(await screen.findByText(/Add a custom check to run it against a device/)).toBeInTheDocument()
+    expect(screen.getByText('custom checks of check_by_ssh')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Enable$/ })).not.toBeInTheDocument()
+  })
+
+  it('hides the custom checks from someone without the permission', async () => {
+    permissions.denied = new Set(['plugin.custom_check'])
+    api.getPluginDetails.mockResolvedValue(details({
+      name: 'check_by_ssh', service_driven: false,
+      custom_checks: { class: 'custom', supported: true, note: null, fields: [] },
+    }))
+    renderDrawer()
+
+    await screen.findByText('Not service-driven.')
+    expect(screen.queryByText('custom checks of check_by_ssh')).not.toBeInTheDocument()
+    permissions.denied = new Set()
+  })
+
+  it.each([
+    ['check_apt', 'server', 'Runs on the Nagios server. Not available yet.'],
+    ['check_ping', 'host', 'Checks the device itself rather than a port. Not available yet.'],
+    ['check_radius', 'credentials', 'Needs a password, which custom checks cannot store yet.'],
+  ] as const)('explains why %s takes no custom check', async (name, plugin_class, note) => {
+    api.getPluginDetails.mockResolvedValue(details({
+      name, service_driven: false, custom_checks: { class: plugin_class, supported: false, note, fields: [] },
+    }))
+    renderDrawer()
+
+    expect(await screen.findByText(note)).toBeInTheDocument()
+    expect(screen.queryByText(/custom checks of/)).not.toBeInTheDocument()
+  })
 
   it('still lets a plugin that was enabled before this rule be disabled', async () => {
     api.getPluginDetails.mockResolvedValue(details({ name: 'check_ping', service_driven: false, status: 'Active' }))

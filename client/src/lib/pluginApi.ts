@@ -1,8 +1,12 @@
 // Wrappers around the Plugin Manager routes documented in
 // server/app/api/plugin/manager.py (see PinPoint_Plugin_Manager_UI_Architecture
 // reference doc, Section 2 "Route Reference").
-import { apiGet, apiPost } from './api'
+import { apiDelete, apiGet, apiPost, apiPut } from './api'
 import type {
+  CustomCheckChange,
+  CustomCheckDevice,
+  CustomCheckInput,
+  CustomChecksResponse,
   CustomPluginUploadResult,
   EnablePreview,
   PluginCommand,
@@ -104,6 +108,35 @@ export function getEnablePreview(id: number) {
 export function getPluginServices(id: number, query: { page?: number; per_page?: number; search?: string }) {
   const qs = buildQuery(query)
   return apiGet<PluginServicesResponse>(`/api/plugin/${id}/services?${qs}`)
+}
+
+// Custom checks: a plugin discovery cannot attach to a port, run against one device (Custom_Checks_Plan.md).
+export function getCustomChecks(id: number, query: { page?: number; per_page?: number; search?: string }) {
+  return apiGet<CustomChecksResponse>(`/api/plugin/${id}/custom-checks?${buildQuery(query)}`)
+}
+
+export function searchCustomCheckDevices(search: string) {
+  return apiGet<CustomCheckDevice[]>(`/api/plugin/custom-check-devices?${buildQuery({ search })}`)
+}
+
+export function addCustomCheck(id: number, input: CustomCheckInput) {
+  return apiPost<CustomCheckChange>(`/api/plugin/${id}/custom-checks`, input)
+}
+
+export function changeCustomCheck(id: number, checkId: number, input: CustomCheckInput) {
+  return apiPut<CustomCheckChange>(`/api/plugin/${id}/custom-checks/${checkId}`, input)
+}
+
+export function pauseCustomCheck(id: number, checkId: number) {
+  return apiPost<CustomCheckChange>(`/api/plugin/${id}/custom-checks/${checkId}/pause`)
+}
+
+export function resumeCustomCheck(id: number, checkId: number) {
+  return apiPost<CustomCheckChange>(`/api/plugin/${id}/custom-checks/${checkId}/resume`)
+}
+
+export function removeCustomCheck(id: number, checkId: number) {
+  return apiDelete<{ id: number; changed: boolean; message: string }>(`/api/plugin/${id}/custom-checks/${checkId}`)
 }
 
 export type ServicePortRef = { device_id: number; protocol: 'tcp' | 'udp'; port: number }
