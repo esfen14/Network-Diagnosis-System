@@ -287,7 +287,6 @@ changed response, one component with its tests).
 
 - Device identity UI: confidence badges, address history, merge, retire, static/DHCP,
   and the "Needs review" list (`DHCP_Device_Identity_Plan.md` §11).
-- Auto-resolving `SERVICE_CHANGED` items (an existing `Implementation_Status.md` row).
 - A bulk action for held ports ("monitor all held ports of this plugin").
 
 ---
