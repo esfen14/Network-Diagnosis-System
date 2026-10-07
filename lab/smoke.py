@@ -94,6 +94,8 @@ def main():
     parser.add_argument("--password", default=os.environ.get("SMOKE_PASSWORD", DEFAULT_PASSWORD),
                         help="administrator password (or set SMOKE_PASSWORD, which keeps it out of the process list)")
     parser.add_argument("--set-network", metavar="CIDR", help="add this network to Network Discovery if missing")
+    parser.add_argument("--expect-ips", default="", metavar="IP,IP,...",
+                        help="check the targets by address instead of by name (real appliances name hosts dev-xxxxxx)")
     args = parser.parse_args()
     api = Client(args.base_url)
 
@@ -125,23 +127,37 @@ def main():
         f"{outcome.get('status')}, {took}s, {outcome.get('message')}" if outcome else f"no result after {took}s",
     )
 
-    def hosts_up():
-        _, summary = api.call("GET", "/api/system/network-health/summary")
-        hosts = (summary.get("data") or {}).get("hosts") or {}
-        return hosts if hosts.get("up", 0) >= len(TARGETS) + 1 else None
+    def host_items():
+        _, listing = api.call("GET", "/api/system/network-health/hosts?per_page=100")
+        data = listing.get("data") or {}
+        return data.get("items") or data.get("hosts") or []
 
-    hosts = wait_for(hosts_up, args.hosts_timeout, interval=10)
-    check(
-        "Pinpoint shows the targets and localhost as up",
-        bool(hosts),
-        f"{hosts['up']} up of {hosts['total']}" if hosts else "not all hosts up in time",
-    )
+    expected = [ip.strip() for ip in args.expect_ips.split(",") if ip.strip()]
+    if expected:
+        # By address: a total-host count can be satisfied by unrelated hosts (the
+        # installer's default range finds the VirtualBox NAT's own addresses).
+        def states():
+            return {str(h.get("ip_address")): str(h.get("state")).lower() for h in host_items()}
 
-    _, listing = api.call("GET", "/api/system/network-health/hosts?per_page=50")
-    data = listing.get("data") or {}
-    names = [str(item.get("hostname") or item.get("host_name") or "") for item in (data.get("items") or data.get("hosts") or [])]
-    for target in TARGETS:
-        check(f"host table lists {target}", any(target in name for name in names))
+        wait_for(lambda: all(states().get(ip) == "up" for ip in expected), args.hosts_timeout, interval=10)
+        final = states()
+        for ip in expected:
+            check(f"{ip} is monitored and Up", final.get(ip) == "up", f"state: {final.get(ip, 'not in the host table')}")
+    else:
+        def hosts_up():
+            _, summary = api.call("GET", "/api/system/network-health/summary")
+            hosts = (summary.get("data") or {}).get("hosts") or {}
+            return hosts if hosts.get("up", 0) >= len(TARGETS) + 1 else None
+
+        hosts = wait_for(hosts_up, args.hosts_timeout, interval=10)
+        check(
+            "Pinpoint shows the targets and localhost as up",
+            bool(hosts),
+            f"{hosts['up']} up of {hosts['total']}" if hosts else "not all hosts up in time",
+        )
+        names = [str(item.get("hostname") or item.get("host_name") or "") for item in host_items()]
+        for target in TARGETS:
+            check(f"host table lists {target}", any(target in name for name in names))
 
     failed = results.count(False)
     print(f"\n{len(results) - failed} passed, {failed} failed")

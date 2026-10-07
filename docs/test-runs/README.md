@@ -42,7 +42,7 @@ table while you test, not afterward.
 
 | Run | Kind | Commit | Result | Report |
 |---|---|---|---|---|
-| _none recorded yet_ | | | | |
+| [2026-10-08 vm-lab-first-run](2026-10-08-vm-lab-first-run/REPORT.md) | VM lab, installer-built appliance | app `1540545` | Pass (tooling); defect #43 found | [REPORT.md](2026-10-08-vm-lab-first-run/REPORT.md) |
 
 Add a row when you commit a report. Earlier runs mentioned in
 [`../plans/`](../plans/) (for example the 2026-10-03 and 2026-10-06 live runs)

@@ -51,6 +51,7 @@ VMLAB_LAB_INTNET="pinpoint-demo"
 VMLAB_ADMIN_EMAIL=""
 VMLAB_ADMIN_PASSWORD=""
 VMLAB_LAB_NETWORK="10.77.0.0/28"
+VMLAB_TARGET_IPS="10.77.0.2,10.77.0.3,10.77.0.4,10.77.0.5,10.77.0.6"
 VMLAB_INSTALLER_REPO="https://github.com/lorraine-pangilinan/PinPoint-Installer.git"
 VMLAB_INSTALLER_DIR="$default_installer_dir"
 # shellcheck disable=SC1090
@@ -339,19 +340,21 @@ case "$cmd" in
 
   sync)
     need_config; with_client=0; [ "${1:-}" = "--client" ] && with_client=1
-    command -v rsync >/dev/null || die "rsync is not installed on this machine"
     vm_ssh true || die "cannot reach the appliance (scripts/vmlab up)"
-    extra=(); mapfile -t extra < <(ssh_args)
-    rsync -az --delete \
-      --exclude='.venv' --exclude='venv' --exclude='__pycache__' --exclude='*.db' --exclude='*.db.*' --exclude='tests' \
-      --exclude='host-config-files' --exclude='running-host-config-backup' --exclude='database-backups' --exclude='backups' --exclude='.env' \
-      -e "ssh ${extra[*]}" --rsync-path="sudo rsync" "$root/server/" "$VMLAB_SSH_TARGET:$app_dir/server/"
+    # tar over SSH: nothing extra to install. Databases, generated Nagios files and the
+    # virtualenv are excluded, so the appliance keeps its state.
+    tar -C "$root/server" -cf - \
+        --exclude='./.venv' --exclude='./venv' --exclude='./tests' --exclude='./.env' \
+        --exclude='./host-config-files' --exclude='./running-host-config-backup' \
+        --exclude='./database-backups' --exclude='./backups' \
+        --exclude='__pycache__' --exclude='*.db' --exclude='*.db.*' . \
+      | vm_ssh "sudo tar -C $app_dir/server --no-same-owner -xf -"
     if [ "$with_client" = 1 ]; then
       ( cd "$root/client" && { [ -d node_modules ] || npm ci; } && npm run build )
-      rsync -az --delete -e "ssh ${extra[*]}" --rsync-path="sudo rsync" "$root/client/dist/" "$VMLAB_SSH_TARGET:$app_dir/client/dist/"
+      tar -C "$root/client/dist" -cf - . | vm_ssh "sudo mkdir -p $app_dir/client/dist && sudo tar -C $app_dir/client/dist --no-same-owner -xf -"
     fi
     vm_ssh "sudo chown -R pinpoint:pinpoint $app_dir/server $app_dir/client/dist 2>/dev/null; sudo systemctl restart pinpoint-gunicorn && systemctl is-active pinpoint-gunicorn"
-    echo "synced (migrations are NOT run by sync; use 'fresh' when models change)"
+    echo "synced. Not done by sync: migrations, and removing files you deleted locally (use 'fresh' for a clean install)."
     ;;
 
   health)
@@ -402,7 +405,7 @@ if status != 200 or not body.get("success"):
     [ -n "$VMLAB_ADMIN_PASSWORD" ] || { [ -f "$state_dir/admin-password" ] && VMLAB_ADMIN_PASSWORD="$(cat "$state_dir/admin-password")"; }
     [ -n "$VMLAB_ADMIN_EMAIL" ] && [ -n "$VMLAB_ADMIN_PASSWORD" ] || die "no administrator login: run scripts/vmlab setup-admin (or set VMLAB_ADMIN_EMAIL and VMLAB_ADMIN_PASSWORD in $config)"
     SMOKE_PASSWORD="$VMLAB_ADMIN_PASSWORD" exec python3 -I "$root/lab/smoke.py" --base-url "$(web_url)" \
-      --email "$VMLAB_ADMIN_EMAIL" --set-network "$VMLAB_LAB_NETWORK" "$@"
+      --email "$VMLAB_ADMIN_EMAIL" --set-network "$VMLAB_LAB_NETWORK" --expect-ips "$VMLAB_TARGET_IPS" "$@"
     ;;
 
   targets) exec python3 "$root/demo/demo_lab.py" "$@" ;;
