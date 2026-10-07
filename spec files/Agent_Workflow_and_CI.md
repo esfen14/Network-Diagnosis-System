@@ -45,8 +45,8 @@ different fixes.
 
 | Stage | Command | Notes |
 |---|---|---|
-| Docs | `scripts/verify.sh docs` | Relative links in `AGENTS.md`, `README.md`, `spec files/` resolve |
-| Backend | `scripts/verify.sh backend` | Route drift check, then `pytest tests/unit` in `server/` with `FLASK_DEBUG=1`; ~4 min, 2,167 passed / 14 skipped on 2026-10-08 |
+| Docs | `scripts/verify.sh docs` | Relative links resolve; environment variables match the README table; browser routes match `App.tsx`, `pageAccess.ts` and the spec. Standard library only |
+| Backend | `scripts/verify.sh backend` | Route and client-API drift checks, then `pytest tests/unit` in `server/` with `FLASK_DEBUG=1`; ~4 min, 2,167 passed / 14 skipped on 2026-10-08 |
 | Frontend | `scripts/verify.sh frontend` | `npm run test`, `npm run build`, `npm run lint` (errors fail; warnings do not) |
 | Everything | `scripts/verify.sh all` | Same stages as CI |
 
@@ -73,18 +73,25 @@ build and install test, spec-vs-code drift checks.
 ## Drift checks
 
 A drift check fails when documentation and code disagree, so an agent can trust
-the specs. `scripts/check_route_drift.py` compares every `/api` route registered
-in Flask with the `METHOD /api/...` entries in `Backend_Modules_and_Routes.md`
-(path parameters match by position; a first cell struck through with `~~` marks
-a documented-disabled route). It fails on a route missing from the catalog, a
-catalog route missing from the code, or a route documented as disabled that is
-registered. When it fails, fix the catalog in the same change as the route.
-Put a route in its own table row; a combined row such as "`/pause` and
-`/resume`" cannot be checked.
+the specs. Each is a script in `scripts/`; when one fails, fix the document (or
+the code) in the same change.
 
-Not yet checked: frontend routes versus `Frontend_Modules_and_Routes.md`,
-`config.py` environment variables versus the `README.md` table, and seeded
-permissions versus the permission list.
+| Script | Compares | Stage |
+|---|---|---|
+| `check_route_drift.py` | Every `/api` route registered in Flask against the `METHOD /api/...` entries in `Backend_Modules_and_Routes.md`. A first cell struck through with `~~` marks a documented-disabled route | backend |
+| `check_client_api_drift.py` | Every `/api/...` string in `client/src` (including `${CONST}` prefixes) against the routes Flask serves, with the HTTP method when the call states it. A `${...}` placeholder matches any one segment | backend |
+| `check_frontend_route_drift.py` | `<Route>` paths and page components in `App.tsx`, `PAGE_PERMISSIONS` in `pageAccess.ts` and the "Browser route catalog" table in `Frontend_Modules_and_Routes.md` | docs |
+| `check_env_drift.py` | Environment variables the server reads (`os.environ`, `os.getenv`, `env_*` helpers) against the README "Production settings" table, which the installer builds `pinpoint.env` from | docs |
+| `check_doc_links.py` | Relative markdown links in `AGENTS.md`, `README.md` and `spec files/` | docs |
+
+Rules the checks rely on: put each route in its own table row (a combined row
+such as "`/pause` and `/resume`" cannot be checked); a new environment variable
+gets a README row in the commit that adds it.
+
+Not yet checked: seeded permissions versus `require_permission` calls, the
+permission list in `Backend_Modules_and_Routes.md` and the client permissions
+(`Implementation_Status.md` already lists one known mismatch, the discovery stop
+permission); component and module inventories; model inventories.
 
 ## Reproducible environment
 

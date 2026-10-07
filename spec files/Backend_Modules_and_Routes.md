@@ -21,18 +21,17 @@ The seed command currently defines these permissions:
 ```text
 role.edit, role.view, role.info, role.list
 account.view, account.edit, account.info
-system.discover, system.deploy.ncpa, system.hosts, system.logs
+system.discover, system.deploy.ncpa, system.hosts, system.hosts.edit, system.logs
 system.report, system.notifications, system.services, system.network_health
-system.acknowledge_alerts, system.dashboard
+system.acknowledge_alerts, system.dashboard, system.history
 plugin.scan, plugin.view, plugin.enable, plugin.disable
 plugin.command_override, plugin.command_restore, plugin.validate
 plugin.custom_add, plugin.custom_check, plugin.update, plugin.update_rollback
 settings.security, settings.system, settings.discovery, settings.plugins
 ```
 
-Some seeded permissions are not attached to a current route, and the history
-routes require an unseeded `system.history` permission. Those facts are tracked
-as current-state inventory rather than treated as intended permission design.
+Some seeded permissions are not attached to a current route. That is tracked as
+current-state inventory rather than treated as intended permission design.
 
 ## Response and request conventions
 
