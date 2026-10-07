@@ -18,6 +18,22 @@ agents; loop engineering; last-mile checks in CI; reproducible environments).
 
 See `docs/README.md` for the rules and lifecycle.
 
+## One checkout per agent
+
+Two agents (or an agent and a person) must never share a working tree: they move each
+other's branches, mix uncommitted files into the wrong commit and can end up with a
+stray commit on someone else's pull request. Give each agent its own git worktree:
+
+```bash
+scripts/agent-worktree.sh <name>     # creates ../<repo>-<name> on branch qa/<name>, with its own .venv and node_modules
+```
+
+Start the agent from that folder. It creates its own `issue-<n>-<slug>` branches from
+`origin/main` (the workflow never runs `git checkout main`, which fails when `main` is
+checked out in another folder). A branch can be checked out in only one worktree at a
+time. Remove a worktree with `git worktree remove ../<repo>-<name>`; the issue
+branches and their pull requests are unaffected.
+
 ## Source of truth
 
 1. Tasks live in GitHub Issues, created from the **Task** template
