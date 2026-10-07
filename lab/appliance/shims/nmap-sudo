@@ -1,0 +1,5 @@
+#!/bin/sh
+# Lab stand-in for the installer's nmap-sudo wrapper: nmap holds NET_RAW and
+# NET_ADMIN as file capabilities (the container is started with those caps).
+export NMAP_PRIVILEGED=1
+exec /usr/bin/nmap "$@"

@@ -1,0 +1,66 @@
+# Pinpoint local lab (fast lane). Run through scripts/lab; see
+# docs/manuals/Local_Lab.md.
+name: pinpoint-lab
+
+x-target: &target
+  build:
+    context: ..
+    dockerfile: lab/targets/Dockerfile
+  restart: unless-stopped
+
+services:
+  appliance:
+    build:
+      context: ..
+      dockerfile: lab/appliance/Dockerfile
+    hostname: pinpoint
+    cap_add: [NET_RAW, NET_ADMIN]
+    volumes:
+      - ..:/src:ro
+    ports:
+      - "127.0.0.1:8000:80"     # Pinpoint API through Nginx (Vite proxies /api here)
+    networks:
+      lab: { ipv4_address: 10.78.0.10 }
+      mgmt: {}
+
+  web01:
+    <<: *target
+    hostname: web01
+    environment: { SSH_PORT: "22", HTTP_PORTS: "80", HTTPS: "1" }
+    networks: { lab: { ipv4_address: 10.78.0.2 } }
+
+  web02:
+    <<: *target
+    hostname: web02
+    environment: { SSH_PORT: "22", HTTP_PORTS: "80" }
+    networks: { lab: { ipv4_address: 10.78.0.3 } }
+
+  app01:
+    <<: *target
+    hostname: app01
+    environment: { SSH_PORT: "22", HTTP_PORTS: "8080" }
+    networks: { lab: { ipv4_address: 10.78.0.4 } }
+
+  snmp01:
+    <<: *target
+    hostname: snmp01
+    environment: { SSH_PORT: "22", SNMP: "1" }
+    networks: { lab: { ipv4_address: 10.78.0.5 } }
+
+  legacy01:
+    <<: *target
+    hostname: legacy01
+    environment: { SSH_PORT: "2222" }
+    networks: { lab: { ipv4_address: 10.78.0.6 } }
+
+networks:
+  # No route to the internet or to your LAN: discovery can only see the targets.
+  # The bridge itself gets no address (isolated gateway mode), so discovery
+  # sees only the five targets and not the Docker host.
+  lab:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+    ipam: { config: [{ subnet: 10.78.0.0/24 }] }
+  # Only for publishing the appliance's ports to 127.0.0.1.
+  mgmt: {}

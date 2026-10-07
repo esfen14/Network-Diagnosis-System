@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Pinpoint local lab (fast lane): the appliance and five small target servers
+# in Docker, on an isolated network. See docs/manuals/Local_Lab.md.
+#
+#   scripts/lab up            build if needed and start everything
+#   scripts/lab down          stop and remove the containers (state is lost)
+#   scripts/lab reset         down + up: a fresh appliance, fresh databases
+#   scripts/lab status        containers and health
+#   scripts/lab sync          copy the working tree into the appliance, restart Gunicorn
+#   scripts/lab ui            run the Vite dev server against the lab API (:5173)
+#   scripts/lab logs [svc]    follow logs (default: appliance)
+#   scripts/lab shell [svc]   shell in a container (default: appliance)
+#   scripts/lab break <target> <ssh|http|snmp|all>   stop a service, or the whole target
+#   scripts/lab fix   <target> <ssh|http|snmp|all>   start it again
+#   scripts/lab smoke         run the smoke checks (lab/smoke.py)
+#
+# Lab-only credentials: admin@test.com / Password123! (seeded development users).
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+compose=(docker compose -f "$root/lab/compose.yaml")
+targets="web01 web02 app01 snmp01 legacy01"
+
+die() { echo "lab: $*" >&2; exit 1; }
+
+need_docker() {
+  command -v docker >/dev/null || die "docker is not installed"
+  docker info >/dev/null 2>&1 || die "cannot reach the Docker daemon (is it running, and are you in the docker group?)"
+}
+
+valid_target() {
+  case " $targets " in *" $1 "*) return 0 ;; *) die "unknown target '$1' (one of: $targets)" ;; esac
+}
+
+service_program() {
+  case "$1" in
+    ssh) echo sshd ;;
+    http) echo nginx ;;
+    snmp) echo snmpd ;;
+    *) die "unknown service '$1' (ssh, http, snmp or all)" ;;
+  esac
+}
+
+wait_ready() {
+  echo "waiting for Pinpoint (first start builds the databases)..."
+  for _ in $(seq 1 90); do
+    if curl -fsS -o /dev/null http://127.0.0.1:8000/api/user/me 2>/dev/null || \
+       [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/user/me)" = "401" ]; then
+      echo "Pinpoint API is up: http://127.0.0.1:8000  (admin@test.com / Password123!)"
+      return 0
+    fi
+    sleep 2
+  done
+  "${compose[@]}" logs --tail 40 appliance >&2
+  die "Pinpoint did not come up in 3 minutes"
+}
+
+cmd="${1:-help}"; shift || true
+case "$cmd" in
+  up)     need_docker; "${compose[@]}" up -d --build; wait_ready ;;
+  down)   need_docker; "${compose[@]}" down ;;
+  reset)  need_docker; "${compose[@]}" down; "${compose[@]}" up -d; wait_ready ;;
+  status) need_docker; "${compose[@]}" ps ;;
+  sync)   need_docker; "${compose[@]}" exec appliance pp-sync; wait_ready ;;
+  logs)   need_docker; "${compose[@]}" logs -f --tail 100 "${1:-appliance}" ;;
+  shell)  need_docker; "${compose[@]}" exec "${1:-appliance}" bash ;;
+  ui)
+    cd "$root/client"
+    [ -d node_modules ] || npm ci
+    API_PROXY_TARGET=http://127.0.0.1:8000 exec npm run dev -- --host 127.0.0.1
+    ;;
+  break|fix)
+    need_docker
+    target="${1:-}"; service="${2:-}"
+    [ -n "$target" ] && [ -n "$service" ] || die "usage: scripts/lab $cmd <target> <ssh|http|snmp|all>"
+    valid_target "$target"
+    if [ "$service" = "all" ]; then
+      if [ "$cmd" = break ]; then "${compose[@]}" stop "$target"; else "${compose[@]}" start "$target"; fi
+    else
+      program="$(service_program "$service")"
+      action=stop; [ "$cmd" = fix ] && action=start
+      "${compose[@]}" exec "$target" supervisorctl "$action" "$program"
+    fi
+    ;;
+  smoke)  need_docker; exec python3 -I "$root/lab/smoke.py" "$@" ;;
+  help|-h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) die "unknown command '$cmd' (try: scripts/lab help)" ;;
+esac

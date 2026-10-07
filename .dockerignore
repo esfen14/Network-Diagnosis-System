@@ -1,0 +1,5 @@
+# The lab images only need server/requirements.txt and the lab/ files; the app
+# itself is mounted at run time. Keep the build context tiny.
+*
+!server/requirements.txt
+!lab/**
