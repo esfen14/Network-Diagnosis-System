@@ -60,10 +60,12 @@ class CheckField:
     label: str
     required: bool = False
     placeholder: str = ""
+    # A password: stored encrypted (secrets_store), never returned by the API, never logged.
+    secret: bool = False
 
 
-def field(name, flag, label, required=False, placeholder=""):
-    return CheckField(name, flag, label, required, placeholder)
+def field(name, flag, label, required=False, placeholder="", secret=False):
+    return CheckField(name, flag, label, required, placeholder, secret)
 
 
 WARNING = field("warning", "-w", "Warning threshold")
@@ -96,7 +98,8 @@ CUSTOM_CHECK_FIELDS = {
                            field("critical", "-c", "Critical if it expires in fewer than N days")),
     "check_nt": (field("variable", "-v", "Variable (CPULOAD, UPTIME, USEDDISKS, ...)", True),
                  field("port", "-p", "NSClient port", placeholder="1248"), WARNING, CRITICAL,
-                 field("params", "-l", "Additional parameters (for example a drive letter)")),
+                 field("params", "-l", "Additional parameters (for example a drive letter)"),
+                 field("password", "-s", "NSClient password", secret=True)),
     "check_nwstat": (field("variable", "-v", "Variable (LOAD1, CONNS, ...)", True),
                      field("port", "-p", "Port"), WARNING, CRITICAL),
     "check_overcr": (field("variable", "-v", "Variable (LOAD, DISK, PROCS, UPTIME)", True),
@@ -124,10 +127,22 @@ CUSTOM_CHECK_FIELDS = {
                   field("port", "-p", "DNS port", placeholder="53"),
                   field("warning", "-w", "Warning response time (s)"),
                   field("critical", "-c", "Critical response time (s)")),
+    "check_radius": (field("user", "-u", "Username to test with", True),
+                     field("password", "-p", "Password to test with", True, secret=True),
+                     field("config", "-F", "RADIUS config file (path on the Nagios server)", True),
+                     field("port", "-P", "RADIUS port", placeholder="1645")),
+    "check_mysql_query": (field("query", "-q", "SQL query", True, "SELECT COUNT(*) FROM orders"),
+                          field("warning", "-w", "Warning threshold", True),
+                          field("critical", "-c", "Critical threshold", True),
+                          field("user", "-u", "MySQL user"),
+                          field("password", "-p", "MySQL password", secret=True),
+                          field("database", "-d", "Database"),
+                          field("port", "-P", "MySQL port", placeholder="3306")),
     "check_disk_smb": (field("share", "-s", "Share name", True), field("user", "-u", "SMB user", placeholder="guest"),
                        field("workgroup", "-W", "Workgroup or domain"),
                        field("warning", "-w", "Warning free-space threshold (%)"),
-                       field("critical", "-c", "Critical free-space threshold (%)")),
+                       field("critical", "-c", "Critical free-space threshold (%)"),
+                       field("password", "-p", "SMB password", secret=True)),
 }
 
 # Plugins that check the machine Nagios runs on. They take no host: the service is written on the
@@ -165,7 +180,7 @@ ALL_CHECK_FIELDS = {**CUSTOM_CHECK_FIELDS, **SERVER_CHECK_FIELDS}
 # The registry's own plugins are class "service" and are not listed here.
 PLUGIN_CLASSES = {
     **{name: "custom" for name in CUSTOM_CHECK_FIELDS},
-    **{name: "credentials" for name in ("check_mysql_query", "check_dbi", "check_oracle", "check_radius")},
+    **{name: "credentials" for name in ("check_dbi", "check_oracle")},
     **{name: "server" for name in SERVER_CHECK_FIELDS},
     **{name: "stock" for name in ("check_load", "check_disk", "check_swap", "check_procs", "check_users")},
     **{name: "advanced" for name in ("check_log", "check_mrtg", "check_mrtgtraf", "check_dummy", "check_dhcp")},
@@ -174,7 +189,7 @@ PLUGIN_CLASSES = {
 }
 
 PLUGIN_CLASS_NOTES = {
-    "credentials": "Needs a password, which custom checks cannot store yet.",
+    "credentials": "Its password cannot be passed to the plugin yet.",
     "stock": "Checks the Nagios server itself through Nagios Core. Not managed here.",
     "advanced": "Needs arguments Pinpoint cannot build yet.",
     "unsupported": "Aggregates other services. Not available yet.",
@@ -210,6 +225,32 @@ def check_target(plugin_name):
 def plugin_fields(plugin_name):
     """The CheckFields of a custom-checkable plugin, or an empty tuple."""
     return ALL_CHECK_FIELDS.get(normalize_plugin_name(plugin_name), ())
+
+
+def secret_names(plugin_name):
+    """The names of the plugin's password fields."""
+    return tuple(f.name for f in plugin_fields(plugin_name) if f.secret)
+
+
+def split_secrets(plugin_name, variables):
+    """(public, secret): the variables of a check split by whether the plugin's field is a password."""
+    secret = set(secret_names(plugin_name))
+    return (
+        {name: value for name, value in variables.items() if name not in secret},
+        {name: value for name, value in variables.items() if name in secret},
+    )
+
+
+def command_variables(data):
+    """
+    All the variables of a stored check (its Configuration_Data), passwords decrypted, ready for
+    resolve_plugin_command_for. Raises secrets_store.SecretsError if a password cannot be read.
+    """
+    from app.secrets_store import decrypt
+    variables = dict(data.get("variables") or {})
+    for name, stored in (data.get("secrets") or {}).items():
+        variables[name] = decrypt(stored)
+    return variables
 
 
 def build_definitions():

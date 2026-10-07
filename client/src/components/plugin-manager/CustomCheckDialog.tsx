@@ -27,6 +27,9 @@ const RUNS_COMMANDS = ['check_by_ssh']
 export function CustomCheckDialog({ pluginName, fields, target, check, isSaving, error, onCancel, onSave }: Props) {
   const [name, setName] = useState(check?.name ?? '')
   const [values, setValues] = useState<Record<string, string>>(check?.variables ?? {})
+  // Passwords already stored on the check being changed, and the ones the person chose to remove.
+  const stored = new Set(check?.secrets_set ?? [])
+  const [cleared, setCleared] = useState<Set<string>>(new Set())
   const [deviceQuery, setDeviceQuery] = useState('')
   const [devices, setDevices] = useState<CustomCheckDevice[]>([])
   const [device, setDevice] = useState<CustomCheckDevice | null>(null)
@@ -59,7 +62,8 @@ export function CustomCheckDialog({ pluginName, fields, target, check, isSaving,
   if (!name.trim()) problems.push('Enter a name.')
   for (const field of fields) {
     const value = (values[field.name] ?? '').trim()
-    if (field.required && !value) problems.push(`${field.label} is required.`)
+    const keepsStored = !!field.secret && stored.has(field.name) && !cleared.has(field.name)
+    if (field.required && !value && !keepsStored) problems.push(`${field.label} is required.`)
     if (FORBIDDEN.test(value)) problems.push(`${field.label} contains a character that is not allowed.`)
   }
 
@@ -70,7 +74,13 @@ export function CustomCheckDialog({ pluginName, fields, target, check, isSaving,
       const value = (values[field.name] ?? '').trim()
       if (value) variables[field.name] = value
     }
-    onSave({ ...(check || onServer ? {} : { device_id: device!.id }), name: name.trim(), variables })
+    const clear_secrets = [...cleared].filter((fieldName) => !variables[fieldName])
+    onSave({
+      ...(check || onServer ? {} : { device_id: device!.id }),
+      name: name.trim(),
+      variables,
+      ...(clear_secrets.length > 0 ? { clear_secrets } : {}),
+    })
   }
 
   const title = check ? `Change ${check.name}` : `Add a ${pluginName} ${onServer ? 'server check' : 'check'}`
@@ -149,21 +159,54 @@ export function CustomCheckDialog({ pluginName, fields, target, check, isSaving,
           </div>
         )}
 
-        {fields.map((field) => (
-          <div key={field.name}>
-            <label htmlFor={`custom-check-${field.name}`} className="mb-1 block text-xs text-gray-500 dark:text-gray-400">
-              {field.label}
-              {field.required ? ' *' : ''} <span className="font-mono text-gray-400">{field.flag}</span>
-            </label>
-            <input
-              id={`custom-check-${field.name}`}
-              value={values[field.name] ?? ''}
-              placeholder={field.placeholder}
-              onChange={(e) => setValues({ ...values, [field.name]: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-900 outline-none focus:border-[#ffb100] dark:border-white/15 dark:bg-[#0D1117] dark:text-white"
-            />
-          </div>
-        ))}
+        {fields.some((field) => field.secret) && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+            Passwords are stored encrypted and are never shown again. Nagios needs them in the check&apos;s command, so they
+            are also written to the Nagios host file: keep that file readable only by the Nagios user.
+          </p>
+        )}
+
+        {check && check.secrets_readable === false && (
+          <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300">
+            The stored password can no longer be read (the server key changed). Type it again.
+          </p>
+        )}
+
+        {fields.map((field) => {
+          const isStored = !!field.secret && stored.has(field.name) && !cleared.has(field.name)
+          return (
+            <div key={field.name}>
+              <label htmlFor={`custom-check-${field.name}`} className="mb-1 block text-xs text-gray-500 dark:text-gray-400">
+                {field.label}
+                {field.required ? ' *' : ''} <span className="font-mono text-gray-400">{field.flag}</span>
+              </label>
+              <input
+                id={`custom-check-${field.name}`}
+                type={field.secret ? 'password' : 'text'}
+                autoComplete={field.secret ? 'new-password' : 'off'}
+                value={values[field.name] ?? ''}
+                placeholder={isStored ? 'Stored. Leave blank to keep it' : field.placeholder}
+                onChange={(e) => setValues({ ...values, [field.name]: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-900 outline-none focus:border-[#ffb100] dark:border-white/15 dark:bg-[#0D1117] dark:text-white"
+              />
+              {field.secret && check && stored.has(field.name) && !field.required && (
+                <label className="mt-1 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                  <input
+                    type="checkbox"
+                    checked={cleared.has(field.name)}
+                    onChange={(e) => {
+                      const next = new Set(cleared)
+                      if (e.target.checked) next.add(field.name)
+                      else next.delete(field.name)
+                      setCleared(next)
+                    }}
+                  />
+                  Remove the stored {field.label.toLowerCase()}
+                </label>
+              )}
+            </div>
+          )
+        })}
 
         {error && (
           <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300">

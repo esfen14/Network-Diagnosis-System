@@ -100,7 +100,10 @@ Plugin lifecycle and active monitoring are separate:
   required arguments as `$ARGn$`, optional ones in the final `$ARG$`, every value single-quoted
   and checked against the registry's forbidden characters). Which plugins take one, and
   the arguments of each, are the `CUSTOM_CHECK_FIELDS` table; `PLUGIN_CLASSES` gives every
-  other catalog plugin its reason for not taking one. Merging a device moves its custom
+  other catalog plugin its reason for not taking one. A password field is stored encrypted in
+  `Configuration_Data["secrets"]` (`app/secrets_store.py`, Fernet, key from `PINPOINT_SECRETS_KEY` or
+  `SECRET_KEY`), never returned by the API, and decrypted only when `hosts.cfg` is generated, where it
+  is written in plain text because Nagios needs it in the command (Custom_Checks_Plan.md §8b). Merging a device moves its custom
   checks to the target, dropping one whose name the target already has.
 - **Server checks** are custom checks with no device (`NetDiscoveryID` empty) for the plugins in
   `SERVER_CHECK_FIELDS` (`check_apt`, `check_uptime`, `check_sensors`, `check_ide_smart`,

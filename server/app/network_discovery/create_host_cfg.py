@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from datetime import datetime, timezone
 import hashlib
@@ -50,6 +51,7 @@ from app.system_models import DiscoveryStatus, DeploymentStatus, NetworkDiscover
 from app.network_discovery.discovery_settings import get_port_services, ncpa_port_key
 from app.network_discovery.plugin_settings import plugin_config
 from app.network_discovery import custom_checks
+from app.secrets_store import SecretsError
 from app.plugin_models import PluginConfiguration, PluginConfigurationOrigin
 import socket
 import ipaddress
@@ -150,8 +152,8 @@ def load_custom_checks():
             continue
         plugin = custom_checks.normalize_plugin_name(row.Plugin_Configuration.Name)
         try:
-            command = custom_checks.resolve_plugin_command_for(plugin, data.get("variables") or {})
-        except (custom_checks.PluginConfigurationError, KeyError) as error:
+            command = custom_checks.resolve_plugin_command_for(plugin, custom_checks.command_variables(data))
+        except (custom_checks.PluginConfigurationError, SecretsError, KeyError) as error:
             current_app.logger.warning(
                 f"Skipping custom check {row.Nagios_Service_Name} (device {row.NetDiscoveryID}): {error}"
             )
@@ -184,12 +186,34 @@ def load_server_checks():
             current_app.logger.warning(f"Skipping {row.Nagios_Service_Name}: {plugin} is not a server check.")
             continue
         try:
-            command = custom_checks.resolve_plugin_command_for(plugin, data.get("variables") or {})
-        except (custom_checks.PluginConfigurationError, KeyError) as error:
+            command = custom_checks.resolve_plugin_command_for(plugin, custom_checks.command_variables(data))
+        except (custom_checks.PluginConfigurationError, SecretsError, KeyError) as error:
             current_app.logger.warning(f"Skipping server check {row.Nagios_Service_Name}: {error}")
             continue
         checks.append((row.Nagios_Service_Name, command, plugin))
     return checks
+
+
+def custom_checks_use_secrets():
+    """True if any custom check has a stored password, so the file written next will contain one."""
+    rows = db.session.scalars(
+        sa.select(PluginConfiguration).where(PluginConfiguration.Origin == PluginConfigurationOrigin.CUSTOM)
+    ).all()
+    return any((row.Configuration_Data or {}).get("secrets") for row in rows if not (row.Configuration_Data or {}).get("paused"))
+
+
+def warn_if_world_readable(path):
+    """Log a warning when a host file that holds a password can be read by every user (POSIX only)."""
+    if os.name != "posix":
+        return
+    try:
+        if path.stat().st_mode & 0o004:
+            current_app.logger.warning(
+                f"{path} holds a custom check password and is readable by every user; "
+                "restrict it to the Nagios user and group."
+            )
+    except OSError:
+        pass
 
 
 def plan_plugin_services(plugin_name, service_label, port, transport, facts, overrides, app_config):
@@ -750,6 +774,8 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
     with open(cfg_path, "w") as f:
         # remember to f.write("string") here after you're done with discovering devices
         f.write("".join(host_config))
+    if custom_checks_use_secrets():
+        warn_if_world_readable(cfg_path)
     return cfg_path
 
 def local_interface_ips():
