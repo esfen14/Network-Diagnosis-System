@@ -198,7 +198,8 @@ Network targets, ports, service rules, NCPA metrics, SNMP defaults, and
 Nagios filesystem paths live in `server/config.py` and may be environment
 overridden where defined. Networks, ports and service rules can also be saved
 from the Settings page (`DiscoverySettings`), which then takes precedence. The SNMP
-OID table (`SNMP_OIDS`) can be saved from Settings -> Plugins (`PluginSettings`);
+OID table (`SNMP_OIDS`) and the NCPA metric table (`NCPA_METRICS`) can be saved from
+Settings -> Plugins (`PluginSettings`, one row per plugin: `snmp`, `ncpa`);
 `plugin_config()` in `network_discovery/plugin_settings.py` puts the saved values in
 place of their `config.py` keys once per config build, for both `hosts.cfg` and the
 plugin reconciler. Per-host `Plugin_Variables` overrides still win.

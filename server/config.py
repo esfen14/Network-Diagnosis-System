@@ -142,7 +142,9 @@ class Config:
     # service per partition recorded at install time (NCPADevicePartition); an
     # entry may add a fallback_path used when none were recorded (none is set
     # for disk: NCPA 3.5.0 has no aggregate disk node). NCPA names the disk
-    # node used_percent. Overridable per host via
+    # node used_percent. This is only the default: the metric table can be
+    # edited from Settings -> Plugins (PluginSettings), which then takes
+    # precedence. Overridable per host via
     # NetworkDiscovery.Plugin_Variables["ncpa"].
     NCPA_METRICS = [
         {"metric": "cpu", "path": "cpu/percent", "warning": "50", "critical": "80", "queryargs": "aggregate=avg"},

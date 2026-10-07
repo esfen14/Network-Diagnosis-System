@@ -1,7 +1,7 @@
 """
 Plugin settings (Settings -> Plugins): network-wide defaults for plugins that
-Network Discovery configures, starting with the SNMP OIDs every SNMP device is
-checked for. A plugin's section is offered only once Plugin Manager has the
+Network Discovery configures: the SNMP OIDs every SNMP device is checked for
+and the NCPA metrics every NCPA host is checked for. A plugin's section is offered only once Plugin Manager has the
 plugin installed (it has a Plugin row).
 
 Defaults come from config.py. Saving stores them in the plugin's
@@ -16,8 +16,9 @@ GET  /system/plugin-settings
     Return each editable plugin's settings, its config.py defaults, and whether
     the plugin is installed.
 
-PUT  /system/plugin-settings/snmp
-    Validate and save the SNMP OID table, then rebuild the Nagios config.
+PUT  /system/plugin-settings/<plugin>
+    Validate and save the SNMP OID table (snmp) or the NCPA metric table
+    (ncpa), then rebuild the Nagios config.
 """
 import sqlalchemy as sa
 from flask import request, current_app
@@ -31,12 +32,12 @@ from app.api.helper import success, error, validate_json_data
 from app.api.helper.database_access.permissions import require_permission
 from app.logging.configuration_changes import create_configuration_log
 from app.network_discovery.plugin_settings import (
+    PLUGIN_SETTINGS_VALIDATORS,
     SETTINGS_PLUGINS,
     PluginSettingsError,
     get_plugin_defaults,
     get_plugin_settings,
     get_plugin_settings_row,
-    validate_snmp_oids,
 )
 from app.plugin_models import Plugin
 from app.system_models import PluginSettings, SystemSettings
@@ -77,7 +78,9 @@ def get_plugin_settings_route():
     plugin definition name, e.g.
     {"snmp": {"plugin": "check_snmp", "installed": true, "status": "Active",
               "settings": {"oids": [{"metric": "uptime", "oid": "1.3.6.1.2.1.1.3.0"}]},
-              "defaults": {"oids": [...]}, "version": 0}}
+              "defaults": {"oids": [...]}, "version": 0},
+     "ncpa": {"plugin": "check_ncpa", ..., "settings": {"metrics": [{"metric": "cpu",
+              "path": "cpu/percent", "warning": "50", ...}]}, ...}}
     """
     try:
         return success({name: serialize_plugin_settings(name) for name in SETTINGS_PLUGINS})
@@ -86,74 +89,87 @@ def get_plugin_settings_route():
         return error("An unexpected error occurred.", 500)
 
 
-@system_bp.put('/plugin-settings/snmp')
+@system_bp.put('/plugin-settings/<plugin_name>')
 @login_required
 @require_permission('settings.plugins')
-def update_snmp_settings_route():
+def update_plugin_settings_route(plugin_name):
     """
-    Validate and save the SNMP OID table, then rebuild the Nagios config so
-    every SNMP device is checked for the new OIDs. Each entry becomes a service
-    named "snmp-<metric>-<port>-udp", so renaming a description replaces that
-    service and its history starts again. Refused with 400 if check_snmp is not
-    installed or an entry is invalid, and with 409 if the version is stale.
-    The response carries the saved section plus config_applied, config_ok and
-    config_message, as other changes that rebuild the config do.
+    Validate and save one plugin's table, then rebuild the Nagios config so
+    every device using the plugin is checked for the new entries. plugin_name
+    is "snmp" (body key "oids") or "ncpa" (body key "metrics"); anything else is
+    404. Each entry becomes a service named "<plugin>-<metric>-<port>-<protocol>",
+    so renaming a description replaces that service and its history starts
+    again. Refused with 400 if the plugin is not installed or an entry is
+    invalid, and with 409 if the version is stale. The response carries the
+    saved section plus config_applied, config_ok and config_message, as other
+    changes that rebuild the config do.
 
     JSON Format
     {
         "version": 0,
         "oids": [{"metric": "uptime", "oid": "1.3.6.1.2.1.1.3.0"}]
     }
+    or
+    {
+        "version": 0,
+        "metrics": [{"metric": "cpu", "path": "cpu/percent", "warning": "50",
+                     "critical": "80", "units": "", "queryargs": "aggregate=avg"}]
+    }
     """
+    if plugin_name not in PLUGIN_SETTINGS_VALIDATORS:
+        return error("Unknown plugin.", 404)
+    variable, validate = PLUGIN_SETTINGS_VALIDATORS[plugin_name]
+
     data = request.get_json(silent=True)
     err = validate_json_data(data)
     if err is not None:
         return err
 
-    if not serialize_plugin_settings("snmp")["installed"]:
-        return error("check_snmp is not installed.", 400)
+    if not serialize_plugin_settings(plugin_name)["installed"]:
+        return error(f"{SETTINGS_PLUGINS[plugin_name]} is not installed.", 400)
 
-    if "oids" not in data:
-        return error("Missing required field: 'oids'", 400)
+    if variable not in data:
+        return error(f"Missing required field: '{variable}'", 400)
     try:
-        oids = validate_snmp_oids(data["oids"])
+        values = validate(data[variable])
     except PluginSettingsError as exc:
         return error(str(exc), 400)
 
     try:
-        row = get_plugin_settings_row("snmp")
+        row = get_plugin_settings_row(plugin_name)
         current_version = row.Version if row is not None else 0
         if data.get("version") != current_version:
-            return error("SNMP settings were updated by someone else. Reload and try again.", 409)
+            return error("These settings were updated by someone else. Reload and try again.", 409)
 
-        before = get_plugin_settings("snmp")["oids"]
-        if before == oids:
+        before = get_plugin_settings(plugin_name)[variable]
+        if before == values:
             return success(
-                {**serialize_plugin_settings("snmp"), "config_applied": False, "config_ok": True,
+                {**serialize_plugin_settings(plugin_name), "config_applied": False, "config_ok": True,
                  "config_message": "No changes to save."},
                 message="No changes to save.",
             )
 
         if row is None:
-            row = PluginSettings(Plugin_Name="snmp", Variables={}, Version=0)
+            row = PluginSettings(Plugin_Name=plugin_name, Variables={}, Version=0)
             db.session.add(row)
-        row.Variables = {**(row.Variables or {}), "oids": oids}
+        row.Variables = {**(row.Variables or {}), variable: values}
         row.Version += 1
         row.Updated_By = current_user.UserID
 
         system_settings = db.session.get(SystemSettings, 1)
         if system_settings is None or system_settings.Audit_Logging:
             create_configuration_log(
-                current_user.UserID, "plugin_settings", "snmp_oids", short_value(before), short_value(oids)
+                current_user.UserID, "plugin_settings", f"{plugin_name}_{variable}",
+                short_value(before), short_value(values),
             )
 
         db.session.commit()
     except Exception:
         db.session.rollback()
-        current_app.logger.exception("An unexpected error occurred while updating SNMP settings.")
+        current_app.logger.exception("An unexpected error occurred while updating plugin settings.")
         return error("An unexpected error occurred.", 500)
 
     return success(
-        {**serialize_plugin_settings("snmp"), **apply_config_change()},
-        message="SNMP settings updated.",
+        {**serialize_plugin_settings(plugin_name), **apply_config_change()},
+        message="Plugin settings updated.",
     )

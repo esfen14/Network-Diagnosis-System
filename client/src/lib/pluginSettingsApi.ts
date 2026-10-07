@@ -1,11 +1,17 @@
 // Wrappers around server/app/api/system/plugin_settings.py.
 import { apiGet, apiPut } from './api'
-import type { PluginSettingsResponse, SnmpOid, SnmpSaveResponse } from '../types/pluginSettings'
+import type {
+  PluginSettingsResponse,
+  PluginSettingsRow,
+  PluginSettingsSaveResponse,
+  SettingsPluginName,
+} from '../types/pluginSettings'
 
 export function getPluginSettings() {
   return apiGet<PluginSettingsResponse>('/api/system/plugin-settings')
 }
 
-export function saveSnmpSettings(oids: SnmpOid[], version: number) {
-  return apiPut<SnmpSaveResponse>('/api/system/plugin-settings/snmp', { oids, version })
+// variable is the body key the plugin's table is saved under ("oids" for snmp, "metrics" for ncpa).
+export function savePluginSettings(plugin: SettingsPluginName, variable: string, rows: PluginSettingsRow[], version: number) {
+  return apiPut<PluginSettingsSaveResponse>(`/api/system/plugin-settings/${plugin}`, { [variable]: rows, version })
 }

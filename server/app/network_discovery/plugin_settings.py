@@ -1,8 +1,9 @@
 """
 Plugin settings editable from Settings -> Plugins: network-wide defaults for a
-plugin's variables, such as the SNMP OIDs every SNMP device is checked for.
+plugin's variables, such as the SNMP OIDs every SNMP device is checked for and
+the NCPA metrics every NCPA host is checked for.
 
-The defaults live in config.py (SNMP_OIDS). Once an administrator saves a
+The defaults live in config.py (SNMP_OIDS, NCPA_METRICS). Once an administrator saves a
 plugin's settings they are stored in its PluginSettings row in system.db and
 take precedence over config.py the next time the Nagios config is built.
 Per-host overrides (NetworkDiscovery.Plugin_Variables) still win over both;
@@ -10,7 +11,8 @@ see the resolution order in plugin_registry.py.
 
 Every value ends up in a generated Nagios object and a shell-executed check
 command, and each SNMP metric is part of a Nagios service name
-("snmp-<metric>-<port>-udp"), so the validators below are strict.
+("snmp-<metric>-<port>-udp"), as is each NCPA metric ("ncpa-<metric>-<port>-tcp"),
+so the validators below are strict.
 """
 import re
 
@@ -24,17 +26,36 @@ from app.system_models import PluginSettings
 # Plugin definition -> {variable: config.py key} of the variables Settings -> Plugins edits.
 EDITABLE_PLUGIN_SETTINGS = {
     "snmp": {"oids": "SNMP_OIDS"},
+    "ncpa": {"metrics": "NCPA_METRICS"},
 }
 
 # The Plugin Manager plugin whose presence shows a definition's section.
 SETTINGS_PLUGINS = {
     "snmp": "check_snmp",
+    "ncpa": "check_ncpa",
 }
 
 MAX_SNMP_OIDS = 50
 METRIC_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_]{0,31}$")
 OID_PATTERN = re.compile(r"^\.?[0-9]+(\.[0-9]+)+$")
 MAX_OID_LENGTH = 128
+
+MAX_NCPA_METRICS = 50
+# An NCPA API path: "/"-separated segments of letters, digits, "_", "-", "." or "|" (NCPA's "/"
+# inside a mount point), or the literal {partition}, which expands to one service per partition.
+NCPA_PATH_PATTERN = re.compile(r"^([A-Za-z0-9_.|-]+|\{partition\})(/([A-Za-z0-9_.|-]+|\{partition\}))*$")
+MAX_NCPA_PATH_LENGTH = 200
+# A Nagios threshold range such as 80, 10:, ~:20, 10:20 or @10:20.
+THRESHOLD_PATTERN = re.compile(r"^@?(~|-?[0-9]+(\.[0-9]+)?)?(:(-?[0-9]+(\.[0-9]+)?)?)?$")
+UNITS_PATTERN = re.compile(r"^[A-Za-z%]{1,8}$")
+# NCPA query arguments such as aggregate=avg or aggregate=avg,sample=5.
+QUERYARGS_PATTERN = re.compile(r"^[A-Za-z0-9_]+=[A-Za-z0-9_.-]+(,[A-Za-z0-9_]+=[A-Za-z0-9_.-]+)*$")
+NCPA_OPTIONAL_FIELDS = (
+    ("warning", THRESHOLD_PATTERN, "Warning must be a Nagios threshold, e.g. 80 or 10:20."),
+    ("critical", THRESHOLD_PATTERN, "Critical must be a Nagios threshold, e.g. 95 or 10:20."),
+    ("units", UNITS_PATTERN, "Units must be up to 8 letters or '%', e.g. Gi."),
+    ("queryargs", QUERYARGS_PATTERN, "Query args must be name=value pairs separated by ',', e.g. aggregate=avg."),
+)
 
 
 class PluginSettingsError(ValueError):
@@ -122,3 +143,59 @@ def validate_snmp_oids(oids):
         seen_oids.add(oid.lstrip("."))
         cleaned.append({"metric": metric, "oid": oid})
     return cleaned
+
+
+def validate_ncpa_metrics(metrics):
+    """
+    Return the NCPA metric list cleaned up, or raise PluginSettingsError. Expects
+    a list of 1 to MAX_NCPA_METRICS {"metric", "path"} entries with optional
+    "warning", "critical", "units" and "queryargs" (an empty value is dropped).
+    The metric is the description of what is measured and becomes part of the
+    service name, so it follows the SNMP rules and is unique. The path is an NCPA
+    API path; "{partition}" in it expands to one service per partition.
+    """
+    if not isinstance(metrics, list):
+        raise PluginSettingsError("metrics must be a list.")
+    if not metrics:
+        raise PluginSettingsError("Add at least one metric. To stop NCPA checks, disable check_ncpa in Plugin Manager.")
+    if len(metrics) > MAX_NCPA_METRICS:
+        raise PluginSettingsError(f"At most {MAX_NCPA_METRICS} metrics are allowed.")
+
+    cleaned = []
+    names = set()
+    for entry in metrics:
+        if not isinstance(entry, dict):
+            raise PluginSettingsError("Each metric entry needs a description and a path.")
+        metric = str(entry.get("metric") or "").strip().lower()
+        path = str(entry.get("path") or "").strip().strip("/")
+
+        if not METRIC_PATTERN.match(metric):
+            raise PluginSettingsError(
+                "Description must start with a letter or digit and use only lowercase letters, digits and '_' (32 characters at most)."
+            )
+        if metric in names:
+            raise PluginSettingsError(f"Description '{metric}' is used more than once.")
+        if len(path) > MAX_NCPA_PATH_LENGTH or not NCPA_PATH_PATTERN.match(path):
+            raise PluginSettingsError(
+                f"Path for '{metric}' must be an NCPA path such as cpu/percent or disk/logical/{{partition}}/used_percent."
+            )
+
+        item = {"metric": metric, "path": path}
+        for field, pattern, message in NCPA_OPTIONAL_FIELDS:
+            value = str(entry.get(field) or "").strip()
+            if not value:
+                continue
+            if not pattern.match(value):
+                raise PluginSettingsError(f"{message} ('{metric}')")
+            item[field] = value
+
+        names.add(metric)
+        cleaned.append(item)
+    return cleaned
+
+
+# Plugin definition -> (the variable its section edits, its validator).
+PLUGIN_SETTINGS_VALIDATORS = {
+    "snmp": ("oids", validate_snmp_oids),
+    "ncpa": ("metrics", validate_ncpa_metrics),
+}
