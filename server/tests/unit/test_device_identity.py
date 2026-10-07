@@ -2,7 +2,7 @@
 tests/unit/test_device_identity.py — Device identity and reconciliation
 (app/network_discovery/device_identity.py and _save_discovered_hosts).
 
-Covers Phases 0 and 1 of "spec files/DHCP_Device_Identity_Plan.md": the three
+Covers Phases 0 and 1 of "docs/plans/DHCP_Device_Identity_Plan.md": the three
 Phase 0 bug fixes, one test per row of the section 4 decision table, stable
 Nagios host names, the device lifecycle (section 6) and the edge cases of
 section 13. Nmap, SSH and Nagios are never touched: scans are plain dicts.

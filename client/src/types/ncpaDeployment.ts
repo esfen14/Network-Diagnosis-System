@@ -1,5 +1,5 @@
 // Wire records from /api/system/deployment/ncpa/* and the view models the
-// NCPA Deployment page uses. See spec files/NCPA_Deployment_UI_Plan.md §6.
+// NCPA Deployment page uses. See docs/plans/NCPA_Deployment_UI_Plan.md §6.
 
 import { serverDate } from '../utils/formatDateTime'
 export type RunStatus = 'Running' | 'Success' | 'Partial Failure' | 'Failed' | 'Interrupted'

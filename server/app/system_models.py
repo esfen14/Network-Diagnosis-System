@@ -270,7 +270,7 @@ class SkippedService(db.Model):
     DiscoveryRecord: so.Mapped[NetworkDiscoveryStatus] = so.relationship(back_populates='Skipped_Services')
 
 """
-Device identity enums (see "spec files/DHCP_Device_Identity_Plan.md").
+Device identity enums (see "docs/plans/DHCP_Device_Identity_Plan.md").
 
 AddressingMode   - how the device gets its IP; set by a user or inferred.
 IdentityConfidence - how sure PinPoint is that a record is one physical device.

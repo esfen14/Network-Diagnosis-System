@@ -1,6 +1,6 @@
 """
 tests/unit/test_device_config.py — How device identity reaches the generated Nagios
-config (Phase 1 and 3 of "spec files/DHCP_Device_Identity_Plan.md", section 10).
+config (Phase 1 and 3 of "docs/plans/DHCP_Device_Identity_Plan.md", section 10).
 
 Covers which devices are loaded, the stable host_name, the inactive config for
 a device whose address is unknown, skipping validate/apply/reload when nothing

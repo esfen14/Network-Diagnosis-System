@@ -30,6 +30,13 @@ This directory is the authoritative documentation set for Pinpoint. The root
   when that code changes.
 - **Reference catalogs** provide factual lookup information for a subsystem.
 
+## What does not belong here
+
+Plans, proposals, acceptance or remediation reports, and manuals live in
+[`../docs/`](../docs/README.md). A specification states current behavior; it has
+no draft status, decision log or task list. When a plan ships, move what is
+still true into the matching document below and close the plan.
+
 ## Maintenance rule
 
 Do not put substantial system documentation back into `AGENTS.md`. New material

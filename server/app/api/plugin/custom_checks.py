@@ -3,7 +3,7 @@ custom_checks.py — storage and Nagios changes for custom checks.
 
 A custom check is one PLUGIN_CONFIGURATION row (Origin CUSTOM): an administrator
 runs a plugin discovery cannot attach to a port against one discovered device,
-with arguments they supply (spec files/Custom_Checks_Plan.md). Plugins that
+with arguments they supply (docs/plans/Custom_Checks_Plan.md). Plugins that
 take them, and what each accepts, are in network_discovery/custom_checks.py.
 
 Every change saves the row, regenerates hosts.cfg through the shared writer

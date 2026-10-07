@@ -99,7 +99,7 @@ class Config:
     # (port_lifecycle.device_ssh_port).
     SSH_PORT = 22
 
-    # Device identity and port lifecycle (see "spec files/DHCP_Device_Identity_Plan.md").
+    # Device identity and port lifecycle (see "docs/plans/DHCP_Device_Identity_Plan.md").
     # Scans a device may go unseen before ACTIVE -> MISSING, and days it may
     # stay MISSING / ADDRESS_UNKNOWN before it is retired automatically.
     DEVICE_MISSING_AFTER_SCANS = 5

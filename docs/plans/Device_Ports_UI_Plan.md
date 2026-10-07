@@ -1,7 +1,7 @@
 # Plan: Device Ports UI
 
 Status: **decisions Q1–Q5 made and the requirement approved with changes (2026-10-06); phases P2 (backend) and P3 (frontend) are done; P4 (specs and lab) remains the live-lab run.** The requirement is
-[`Device_Inventory_Requirements.md`](Device_Inventory_Requirements.md). That file is the
+[`Device_Inventory_Requirements.md`](../../spec%20files/Device_Inventory_Requirements.md). That file is the
 authority for what the screen shows, its wording and its acceptance criteria; this plan is
 only how and in what order it is built. If they disagree, the requirement wins.
 Follows the format of `NCPA_Deployment_UI_Plan.md`; like it, this file is not

@@ -1,4 +1,4 @@
-"""Fail when a relative markdown link in AGENTS.md or spec files/ is broken."""
+"""Fail when a relative markdown link in AGENTS.md, README.md, spec files/, docs/ or server/tests/ is broken."""
 import re
 import sys
 from pathlib import Path
@@ -11,6 +11,8 @@ def main(root):
     root = Path(root)
     files = [root / "AGENTS.md", root / "README.md"]
     files.extend(sorted((root / "spec files").glob("*.md")))
+    files.extend(sorted((root / "docs").rglob("*.md")))
+    files.extend(sorted((root / "server" / "tests").rglob("*.md")))
     broken = []
     for doc in files:
         for target in LINK.findall(doc.read_text(encoding="utf-8")):

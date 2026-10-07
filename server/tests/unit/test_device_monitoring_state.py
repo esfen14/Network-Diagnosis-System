@@ -2,7 +2,7 @@
 tests/unit/test_device_monitoring_state.py — The monitoring label, its filter on the Device
 Inventory host list, and the pause / resume routes.
 
-See "spec files/Device_Monitoring_State_Plan.md". A device has one label saying whether Nagios is
+See "docs/plans/Device_Monitoring_State_Plan.md". A device has one label saying whether Nagios is
 checking it: monitored, missing, address_unknown, paused, retired or merged (first match wins in
 that reverse order). Pause sets Include_Device_In_Scanning to false and nothing else; scans keep
 tracking the device but never turn the pause off. Regenerating the Nagios config is mocked.

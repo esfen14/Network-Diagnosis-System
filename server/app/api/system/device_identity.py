@@ -3,7 +3,7 @@ Device identity API: address history, identifiers, merge, retire, port state
 and the "needs review" list produced by network discovery.
 
 These are the routes behind the Device Inventory changes in
-"spec files/DHCP_Device_Identity_Plan.md" section 11. Reading needs
+"docs/plans/DHCP_Device_Identity_Plan.md" section 11. Reading needs
 ``system.hosts``; anything that changes a device needs ``system.hosts.edit``
 and writes an activity-log entry. Changes that affect the Nagios config
 (merge, retire, a port becoming or ceasing to be monitored) regenerate

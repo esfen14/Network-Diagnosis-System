@@ -1,7 +1,7 @@
 """
 Custom checks: Plugin Manager plugins that discovery cannot attach to a port, run
 by an administrator against one discovered device with arguments they supply
-(spec files/Custom_Checks_Plan.md).
+(docs/plans/Custom_Checks_Plan.md).
 
 This module is pure: it knows which plugins take a custom check, what arguments
 each takes, and how a check becomes a Nagios command. It never touches the

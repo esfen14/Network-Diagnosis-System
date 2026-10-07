@@ -6,6 +6,18 @@ How work is picked up, verified and merged, by people and by coding agents.
 Origin: the 2026-10-07 mentoring session (source of truth must be readable by
 agents; loop engineering; last-mile checks in CI; reproducible environments).
 
+## Where documents live
+
+| Kind | Location |
+|---|---|
+| Specifications (current behavior and constraints) | `spec files/` |
+| Plans, proposals, acceptance and remediation reports | `docs/plans/` |
+| Operator and user manuals | `docs/manuals/` |
+| Test plans and live-lab plans | `server/tests/plans/` |
+| Tasks and open defects | GitHub issues |
+
+See `docs/README.md` for the rules and lifecycle.
+
 ## Source of truth
 
 1. Tasks live in GitHub Issues, created from the **Task** template

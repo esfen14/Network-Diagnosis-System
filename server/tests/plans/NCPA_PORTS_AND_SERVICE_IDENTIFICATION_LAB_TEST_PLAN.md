@@ -27,7 +27,7 @@ stay as they are. Where this plan needs them on the new target, it says
 | `PLG-NCPA-CPU/MEMORY/DISK` | `plugin-cases.example.json` | Unchanged |
 | ND-05 UDP services, ND-07 TCP 9000, ND-09 unchanged rescan | Extended plan §11 | Extra assertions only (SVC-02, SCAN-02, MIG-01) |
 | DS-01..03 discovery settings, SEC-01 secret screening, CLEAN-01 restore | Extended plan §11 | Run as written; SEC-01 must include the new runs |
-| Deployment page unit tests (wizard, runs, review) | `spec files/NCPA_Deployment_UI_Plan.md` §8 | Mocked only; lab acceptance is DEP-01 |
+| Deployment page unit tests (wizard, runs, review) | `docs/plans/NCPA_Deployment_UI_Plan.md` §8 | Mocked only; lab acceptance is DEP-01 |
 
 ### 1.2 New in this plan
 

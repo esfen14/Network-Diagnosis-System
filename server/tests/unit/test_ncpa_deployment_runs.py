@@ -2,7 +2,7 @@
 tests/unit/test_ncpa_deployment_runs.py — NCPA deployment runs, per-device
 outcomes, trust confirmation, login checks and run review.
 
-Covers "spec files/NCPA_Deployment_UI_Plan.md" sections 3 to 6. SSH is
+Covers "docs/plans/NCPA_Deployment_UI_Plan.md" sections 3 to 6. SSH is
 always mocked; no test opens a network connection.
 
 Endpoints tested (all under /api/system/deployment/ncpa/):

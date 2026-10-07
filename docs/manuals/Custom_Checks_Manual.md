@@ -6,8 +6,8 @@ need a password.
 
 **Applies to:** the build with `feature/host-level-checks`, `feature/server-host-checks` and
 `feature/custom-check-secrets` (and the earlier custom checks work) merged. Design and decisions are in
-[`Custom_Checks_Plan.md`](Custom_Checks_Plan.md); lab test cases are in
-[`CUSTOM_CHECKS_AND_NCPA_ACCEPTANCE_TEST_PLAN.md`](../server/tests/plans/CUSTOM_CHECKS_AND_NCPA_ACCEPTANCE_TEST_PLAN.md).
+[`Custom_Checks_Plan.md`](../plans/Custom_Checks_Plan.md); lab test cases are in
+[`CUSTOM_CHECKS_AND_NCPA_ACCEPTANCE_TEST_PLAN.md`](../../server/tests/plans/CUSTOM_CHECKS_AND_NCPA_ACCEPTANCE_TEST_PLAN.md).
 
 ---
 

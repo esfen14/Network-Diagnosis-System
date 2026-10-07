@@ -1,7 +1,7 @@
 """
 tests/unit/test_port_lifecycle.py — Port lifecycle (app/network_discovery/port_lifecycle.py).
 
-Phase 3 of "spec files/DHCP_Device_Identity_Plan.md": one missed scan changes
+Phase 3 of "docs/plans/DHCP_Device_Identity_Plan.md": one missed scan changes
 nothing, three misses mark a monitored port MISSING, a host that was not seen
 changes no counters, NCPA's port is never archived while a token is deployed,
 new ports are suggestions unless auto-monitored, a monitored port's plugin is

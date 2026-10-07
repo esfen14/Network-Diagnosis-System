@@ -3,7 +3,7 @@
 **Status:** Draft for review
 **Test level:** Live manual lab (supplements the Tier 2 plan; nothing here is automated)
 **Code under test:** branch `feature/plugin-driven-monitoring`
-**Design:** [`Plugin_Driven_Monitoring_Plan.md`](../../../spec%20files/Plugin_Driven_Monitoring_Plan.md)
+**Design:** [`Plugin_Driven_Monitoring_Plan.md`](../../../docs/plans/Plugin_Driven_Monitoring_Plan.md)
 **Companion plans:** [`NETWORK_DISCOVERY_EXTENDED_TEST_PLAN.md`](NETWORK_DISCOVERY_EXTENDED_TEST_PLAN.md),
 [`NCPA_PORTS_AND_SERVICE_IDENTIFICATION_LAB_TEST_PLAN.md`](NCPA_PORTS_AND_SERVICE_IDENTIFICATION_LAB_TEST_PLAN.md)
 

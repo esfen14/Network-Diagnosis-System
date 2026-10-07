@@ -3,8 +3,8 @@
 **Status:** Draft for review
 **Test level:** Live lab acceptance (manual)
 **Code under test:** `fix/plugin-name-normalization` (PR #31) and `feature/custom-checks`, merged into one test build
-**Design:** [`Custom_Checks_Plan.md`](../../../spec%20files/Custom_Checks_Plan.md),
-[`Plugin_Driven_Monitoring_Plan.md`](../../../spec%20files/Plugin_Driven_Monitoring_Plan.md) (§2.2, §2.5, gap G27)
+**Design:** [`Custom_Checks_Plan.md`](../../../docs/plans/Custom_Checks_Plan.md),
+[`Plugin_Driven_Monitoring_Plan.md`](../../../docs/plans/Plugin_Driven_Monitoring_Plan.md) (§2.2, §2.5, gap G27)
 **Related plans:** [`PLUGIN_DRIVEN_MONITORING_ACCEPTANCE_TEST_PLAN.md`](PLUGIN_DRIVEN_MONITORING_ACCEPTANCE_TEST_PLAN.md)
 (environment, accounts and fixtures are reused from it),
 [`PLUGIN_DRIVEN_MONITORING_LAB_TEST_PLAN.md`](PLUGIN_DRIVEN_MONITORING_LAB_TEST_PLAN.md)

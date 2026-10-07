@@ -1,7 +1,7 @@
 """ncpa deployment results and review
 
 Adds the per-run, per-device NCPA_DEPLOYMENT_RESULT table and the review
-columns on NCPA_DEPLOYMENT_STATUS from "spec files/NCPA_Deployment_UI_Plan.md"
+columns on NCPA_DEPLOYMENT_STATUS from "docs/plans/NCPA_Deployment_UI_Plan.md"
 (section 4). Existing runs keep their rows; they simply have no device
 results and are not reviewed.
 
