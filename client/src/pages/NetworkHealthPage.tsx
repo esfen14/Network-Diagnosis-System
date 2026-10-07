@@ -368,7 +368,7 @@ export function NetworkHealthPage() {
         <div className="mt-6 flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
           <div className="min-w-0 flex-1 space-y-6">
             <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-12">
-              <div className="flex flex-col gap-4 lg:col-span-5">
+              <div className="flex flex-col gap-4 lg:col-span-6">
                 <NetworkInfoCard
                   lastScanTime={lastScanTime}
                   lastScanDate={lastScanDate}
@@ -385,7 +385,7 @@ export function NetworkHealthPage() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-4 lg:col-span-7">
+              <div className="flex flex-col gap-4 lg:col-span-6">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <DeviceCountCard
                     title="Online Devices"

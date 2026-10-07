@@ -55,7 +55,7 @@ def request_alerts_range(start_ts, end_ts, hostname=None, service=None):
         params['hostname'] = hostname
 
     if service:
-        params['service'] = service
+        params['servicedescription'] = service
 
     return _request_archive("alertlist", params)
 
@@ -70,7 +70,7 @@ def request_alert_count_range(start_ts, end_ts, hostname=None, service=None):
         params['hostname'] = hostname
 
     if service:
-        params['service'] = service
+        params['servicedescription'] = service
 
     return _request_archive("alertcount", params)
 
@@ -116,7 +116,7 @@ def request_notifications_range(start_ts, end_ts, hostname=None, service=None):
         params['hostname'] = hostname
 
     if service:
-        params['service'] = service
+        params['servicedescription'] = service
 
     return _request_archive("notificationlist", params)
 
@@ -131,7 +131,7 @@ def request_notification_count_range(start_ts, end_ts, hostname=None, service=No
         params['hostname'] = hostname
 
     if service:
-        params['service'] = service
+        params['servicedescription'] = service
 
     return _request_archive("notificationcount", params)
 
@@ -186,8 +186,10 @@ def normalize_notification(raw: dict) -> dict:
     }
 
 
-_HOST_STATES = {0: "UP", 1: "DOWN", 2: "UNREACHABLE"}
-_SERVICE_STATES = {0: "OK", 1: "WARNING", 2: "CRITICAL", 3: "UNKNOWN"}
+# archivejson sends states as bit flags (host 1/2/4, service 8/16/32/64) and
+# state types as soft=1, hard=2; plain 0-3 codes are accepted too.
+_HOST_STATES = {0: "UP", 1: "UP", 2: "DOWN", 4: "UNREACHABLE"}
+_SERVICE_STATES = {0: "OK", 8: "OK", 16: "WARNING", 32: "CRITICAL", 64: "UNKNOWN", 1: "WARNING", 2: "CRITICAL", 3: "UNKNOWN"}
 _ALERT_HOST_KEYS = _HOST_KEYS + ("name",)
 
 def _alert_state(value, is_service: bool) -> str:
@@ -213,7 +215,7 @@ def normalize_alert(raw: dict) -> dict:
 
     state_type = raw.get("state_type")
     if isinstance(state_type, int):
-        state_type = "hard" if state_type == 1 else "soft"
+        state_type = "hard" if state_type == 2 else "soft"
 
     return {
         **raw,

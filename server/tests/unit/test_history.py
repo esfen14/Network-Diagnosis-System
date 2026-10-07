@@ -286,9 +286,9 @@ class TestAlertsHistory:
         # under "name"/"host_name", and no last_state or duration.
         real = [
             {"timestamp": 1791291918000, "object_type": 1, "name": "h1",
-             "state_type": 1, "state": 1, "plugin_output": "PING CRITICAL"},
+             "state_type": 2, "state": 2, "plugin_output": "PING CRITICAL"},
             {"timestamp": 1791291919000, "object_type": 2, "host_name": "h2",
-             "description": "http-80-tcp", "state_type": 0, "state": 2, "plugin_output": "HTTP"},
+             "description": "http-80-tcp", "state_type": 1, "state": 32, "plugin_output": "HTTP"},
         ]
         with patch(_ALERTS_RANGE, return_value=real):
             resp = logged_in_client.get("/api/system/history/alerts?preset=24h&sort_by=hostname&order=asc")
@@ -763,3 +763,19 @@ class TestNotificationsHistoryDetail:
                     f"&timestamp={notif['timestamp']}"
                 )
         assert resp.get_json()["data"]["type"] == "host"
+
+
+class TestNagiosArchiveParameters:
+    """archivejson rejects an unknown option ("Invalid option: 'service'"), which
+    made every service notification/alert detail fail."""
+
+    def test_service_filter_uses_servicedescription(self, app):
+        from app.nagios.notifications import request_alerts_range, request_notifications_range
+
+        for request_fn in (request_alerts_range, request_notifications_range):
+            with app.app_context(), patch("app.nagios.notifications.requests.get") as get:
+                get.return_value.json.return_value = {"data": {"alertlist": [], "notificationlist": []}}
+                request_fn(1, 2, hostname="web", service="http-80-tcp")
+            params = get.call_args.kwargs["params"]
+            assert params["servicedescription"] == "http-80-tcp"
+            assert "service" not in params
