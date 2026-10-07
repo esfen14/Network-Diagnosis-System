@@ -1,8 +1,9 @@
 # VM Lab Plan (faithful lane)
 
 Status: **in progress.** Design agreed 2026-10-08. `scripts/vmlab` is written; only
-its read-only commands, argument checks and the smoke-test network helper have
-been exercised. Nothing that installs or restores a VM has been run yet. Feeds
+its read-only commands, guards, helper functions and the smoke-test network helper
+have been exercised. Nothing that creates, installs or restores the appliance VM has
+been run yet. Feeds
 [`Agent_Workflow_and_CI.md`](../../spec%20files/Agent_Workflow_and_CI.md) (test
 environments) and replaces nothing in the Docker lab
 ([`Local_Lab.md`](../manuals/Local_Lab.md)).
@@ -51,26 +52,36 @@ signal to run `provision --force`.
 | Piece | State |
 |---|---|
 | Targets: `demo/demo_lab.py` (five Ubuntu 24.04 VMs on internal network `pinpoint-demo`, `10.77.0.0/28`; break, fix, load, reset, wall, NCPA login) | Existing; `build-base` started 2026-10-08 |
-| Appliance VM: `pinpoint-demo` (4 GB, 4 CPUs; NIC 1 bridged, NIC 2 on `pinpoint-demo`) | Exists; contents unknown. A fresh Ubuntu 22.04.5 install from `PinPoint-Installer-v1.1.iso` is needed (stop before the PinPoint setup wizard) |
-| `scripts/vmlab`: status, provision, fresh, sync, health, smoke, creds, up, down, revert, targets | Written. `status`, `help` and the config guards ran; the rest is untested |
+| Appliance VM `pinpoint-appliance` (4 GB, 4 CPUs; NIC 1 NAT with SSH and web port forwards, NIC 2 on `pinpoint-demo`), built by `scripts/vmlab create` from the stock Ubuntu 22.04.5 live-server ISO, unattended | Not created yet. Your existing `pinpoint-demo` VM is left alone |
+| `scripts/vmlab`: iso, create, status, provision, fresh, sync, health, smoke, creds, up, down, revert, targets | Written. `help`, the `create` ISO guard, three helper functions and the installer-clone safety check ran; the rest is untested |
 | `lab/smoke.py`: `--email`, `--password`, `--set-network` | `--set-network` verified against the Docker lab (add and restore); the VM path untested |
 | `lab/vmlab.env.example` | Written |
 
 ## 4. Steps to get running
 
-1. **Targets.** `python3 demo/demo_lab.py create --apply` after `build-base` finishes
-   (about 10 to 25 minutes). Then `up`.
-2. **Appliance base.** Install Ubuntu from `PinPoint-Installer-v1.1.iso` into the
-   appliance VM and shut down before the setup wizard. Give NIC 2 the address
-   `10.77.0.1/28` (see `demo/README.md` section 3). Give the install user
-   passwordless sudo and your SSH key.
-3. **Config.** Copy `lab/vmlab.env.example` to `~/.config/pinpoint-vmlab/env` and set
-   `VMLAB_SSH_TARGET`.
-4. **Snapshot.** `scripts/vmlab provision` (runs installer steps 1 to 5, powers off,
-   takes `os-nagios-ready`).
-5. **First test.** `scripts/vmlab fresh`, then `scripts/vmlab creds`; sign in once in
-   the browser and change the password, put it in the config, then
-   `scripts/vmlab targets up` and `scripts/vmlab smoke`.
+No console steps: everything runs from `scripts/vmlab`, using your local clone of the
+installer repository for the setup steps.
+
+1. **Targets.** `python3 demo/demo_lab.py create --apply` (after `build-base`), then
+   `scripts/vmlab targets up`.
+2. **ISO.** `scripts/vmlab iso` downloads the stock Ubuntu 22.04.5 live-server ISO
+   (about 2 GB). The installer's own ISO is not needed: its install screens are
+   interactive, and the lab runs the same setup steps itself.
+3. **Appliance VM.** `scripts/vmlab create` builds `pinpoint-appliance` with an
+   unattended install (10 to 25 minutes): SSH key, passwordless sudo, apt sources and
+   `10.77.0.1/28` on NIC 2 are set up for you.
+4. **Config (optional).** Copy `lab/vmlab.env.example` to
+   `~/.config/pinpoint-vmlab/env`; set `VMLAB_INSTALLER_DIR` to your installer clone to
+   test installer edits before pushing them.
+5. **Snapshot.** `scripts/vmlab provision` runs installer steps 1 to 5, powers off and
+   takes `os-nagios-ready`.
+6. **First test.** `scripts/vmlab fresh`, then `scripts/vmlab creds`; sign in once at
+   `http://127.0.0.1:8080`, change the password, put it in the config, then
+   `scripts/vmlab smoke`.
+
+What is not automated: the installer ISO's own install path (interactive screens, the
+late-commands that copy the setup files, the first-boot service and the setup wizard).
+Test that by hand with `PinPoint-Installer-v1.1.iso` before a release.
 
 ## 5. Risks and unknowns
 
@@ -78,8 +89,12 @@ signal to run `provision --force`.
   base steps and the two app steps are run directly over SSH, not through
   `pinpoint-setup.sh`. If one needs input or state the wizard provides, `provision`
   or `fresh` will fail at that step; fix by adapting `vmlab`, not the installer.
-- **The deploy step needs internet and GitHub access in the VM** (NIC 1) and a pushed
-  branch.
+- **The deploy step needs internet and GitHub access in the VM** (the NAT NIC) and a
+  pushed branch.
+- **Unattended install on Ubuntu 22.04.5** follows the recipe `demo_lab.py` proved on
+  24.04. VirtualBox's generated installer file could differ for 22.04; `create` stops
+  with a clear message if its apt section is not in the expected form.
+- **Disk:** the appliance disk is sparse (40 GB maximum); the host is near 90% full.
 - **Time:** a fresh install builds the client and installs Python dependencies, so
   expect several minutes. Not yet measured.
 - **The administrator password** is generated by the installer and must be changed
