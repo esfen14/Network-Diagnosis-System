@@ -47,6 +47,9 @@ It is the one procedure for every agent. The commands below only load it:
 | OpenCode | `/work-issue <n>` (`.opencode/commands/work-issue.md`) |
 | Any other agent | Tell it: "Follow `.agent/workflows/work-issue.md` for issue #<n>." |
 
+Run each agent in its own checkout (`scripts/agent-worktree.sh <name>`); see
+[`Agent_Workflow_and_CI.md`](spec%20files/Agent_Workflow_and_CI.md) "One checkout per agent".
+
 ## Verify before you finish
 
 Run `scripts/verify.sh <docs|backend|frontend|all>` (the same commands CI runs)

@@ -53,8 +53,9 @@ git branch -a --list "*issue-<n>-*"
 
 **Otherwise, start:**
 
-1. Create the branch from an up-to-date `main`:
-   `git checkout main && git pull --ff-only && git checkout -b issue-<n>-<short-slug>`
+1. Create the branch from the latest `origin/main`:
+   `git fetch -q origin && git checkout -b issue-<n>-<short-slug> origin/main`
+   (Not `git checkout main`: in a worktree, `main` may be checked out in another folder.)
 2. Read `AGENTS.md`. Find the row for the area you will change, and read every document
    it marks **Required**, then the source files those documents name. Note the
    specification section the change touches. Read nothing else until you need it.
