@@ -179,6 +179,6 @@ describe('NetworkHealthPage backend-driven cards', () => {
   it('explains the section when no plugins have been added', async () => {
     RESPONSES['/api/system/network-health/plugin-trends'] = { hours: 24, plugins: [] }
     await renderPage()
-    expect(screen.getByText(/no plugins have been added yet/i)).toBeInTheDocument()
+    expect(screen.getByText(/no plugin widgets yet/i)).toBeInTheDocument()
   })
 })

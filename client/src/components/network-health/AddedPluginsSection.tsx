@@ -141,7 +141,7 @@ export function AddedPluginsSection({ plugins, error, hours, onHoursChange, isLo
         <p className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 text-sm text-[var(--text-muted)]">Loading…</p>
       ) : plugins.length === 0 ? (
         <p className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 text-sm text-[var(--text-muted)]">
-          No plugins have been added yet. Plugins you add and apply in the Plugin Manager get their own widget here.
+          No plugin widgets yet. Plugins you enable in the Plugin Manager get their own widget here once their services have reported.
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">

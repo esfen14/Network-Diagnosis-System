@@ -59,10 +59,16 @@ from app.api.system.statistics import (
     ncpa_averages,
     perf_trends,
     NAGIOS_HOST,
+    PING_PLUGINS,
     DISCOVERY_COMMAND_PREFIX,
     PLUGIN_MANAGER_COMMAND_PREFIX,
+    LOAD_PLUGIN,
+    SWAP_PLUGIN,
+    DISK_PLUGIN,
     _plugin_key,
 )
+from app.network_discovery.plugin_registry import normalize_plugin_name
+from app.network_discovery.port_lifecycle import ENABLED_PLUGIN_STATES
 from app.history_models import (
     HostStateType,
     ServicePerfData,
@@ -216,18 +222,29 @@ def latest_change(rows):
     return utc_isoformat(max(times)) if times else None
 
 
-def added_plugin_name(check_command):
+# Plugins that already have their own Network Health widgets (ping/latency,
+# NCPA resources and the Nagios server's local load, swap and disk checks).
+DEDICATED_WIDGET_PLUGINS = PING_PLUGINS | {"check_ncpa", LOAD_PLUGIN, SWAP_PLUGIN, DISK_PLUGIN}
+
+
+def added_plugin_name(service, enabled_plugins):
     """
-    The Plugin Manager plugin a service runs, from its Nagios command
-    ("pinpoint_check_dig" → "check_dig"), or None for checks that come with
-    the default system: Network Discovery's "pinpoint_nd_*" commands and
-    stock Nagios commands.
+    The Plugin Manager plugin a service gets a widget for, or None.
+
+    A service belongs to a plugin through its Nagios command (see
+    statistics._plugin_key): Network Discovery's "pinpoint_nd_<plugin>" and
+    the older Plugin Manager "pinpoint_<plugin>" both resolve to the plugin.
+    It gets a widget when that plugin is enabled in Plugin Manager
+    (enabled_plugins holds normalized names) and does not already have a
+    dedicated widget. Checks of plugins that are not enabled, such as stock
+    Nagios commands, are left out; they appear in the plugin state summary.
     """
-    if not check_command or check_command.startswith(DISCOVERY_COMMAND_PREFIX):
+    command = (service.Check_Command or "").split("!")[0].strip()
+    key = normalize_plugin_name(_plugin_key(service.Service, service.Check_Command))
+    if key in DEDICATED_WIDGET_PLUGINS:
         return None
-    if check_command.startswith(PLUGIN_MANAGER_COMMAND_PREFIX):
-        return check_command[len(PLUGIN_MANAGER_COMMAND_PREFIX):] or None
-    return None
+    is_manual = command.startswith(PLUGIN_MANAGER_COMMAND_PREFIX) and not command.startswith(DISCOVERY_COMMAND_PREFIX)
+    return key if is_manual or key in enabled_plugins else None
 
 
 def bucketed_average(pairs, metric, unit, hours, buckets):
@@ -715,11 +732,11 @@ def network_health_insights():
 @require_permission("system.network_health")
 def network_health_plugin_trends():
     """
-    One entry per plugin added through the Plugin Manager (services whose
-    Nagios command is "pinpoint_<plugin>"), so each added plugin can get its
-    own widget. Checks that come with the default system — stock Nagios
-    commands and Network Discovery's "pinpoint_nd_*" commands — are left out;
-    they have dedicated widgets or appear in the plugin state summary.
+    One entry per plugin that has services and is either enabled in Plugin
+    Manager (its Network Discovery "pinpoint_nd_<plugin>" services) or runs
+    through the older manual "pinpoint_<plugin>" commands, so each gets its
+    own widget. Plugins with dedicated widgets (ping, NCPA, the Nagios
+    server's load/swap/disk) and plugins that are not enabled are left out.
 
     For every perf metric a plugin reports, "current" lists the latest value
     per service. Only durations (s, ms, us) and percentages are averaged
@@ -764,9 +781,14 @@ def network_health_plugin_trends():
         return error("buckets must be between 1 and 168.", 400)
 
     try:
+        enabled = db.session.scalars(
+            sa.select(Plugin).where(Plugin.Status.in_(ENABLED_PLUGIN_STATES))
+        ).all()
+        enabled_names = {normalize_plugin_name(p.Name) for p in enabled}
+
         services_by_plugin = defaultdict(list)
         for service in get_latest_services():
-            name = added_plugin_name(service.Check_Command)
+            name = added_plugin_name(service, enabled_names)
             if name:
                 services_by_plugin[name].append(service)
 
@@ -774,8 +796,8 @@ def network_health_plugin_trends():
             return success({"hours": hours, "plugins": []})
 
         display_names = {}
-        for plugin in db.session.scalars(sa.select(Plugin).where(Plugin.Name.in_(list(services_by_plugin)))):
-            display_names[plugin.Name] = plugin.Display_Name or plugin.Name
+        for plugin in db.session.scalars(sa.select(Plugin)):
+            display_names.setdefault(normalize_plugin_name(plugin.Name), plugin.Display_Name or plugin.Name)
 
         plugins = []
         for name, services in services_by_plugin.items():

@@ -367,6 +367,22 @@ class TestPluginTrends:
         assert size_metric["points"] == []
         assert [c["hostname"] for c in size_metric["current"]] == ["db", "web"]
 
+    def test_enabled_plugin_gets_widget_for_discovery_services(self, logged_in_client, db_session):
+        from app.plugin_models import Plugin, PluginSource, PluginStatus, PluginType
+        db_session.session.add(Plugin(
+            Name="check_ssh", Display_Name="SSH", Plugin_Type=PluginType.NAGIOS,
+            Source=PluginSource.BASELINE_ISO, Status=PluginStatus.ENABLED,
+        ))
+        svc = _make_service(db_session, "web", "ssh-22-tcp", ServiceStateType.OK, check_command="pinpoint_nd_ssh")
+        _make_service_perf(db_session, svc, "time", 0.05, "s")
+        # Not enabled, so no widget even though it has services.
+        _make_service(db_session, "web", "http-80-tcp", check_command="pinpoint_nd_http")
+        db_session.session.commit()
+
+        [plugin] = logged_in_client.get(self.URL).get_json()["data"]["plugins"]
+        assert (plugin["plugin_name"], plugin["display_name"], plugin["total"]) == ("check_ssh", "SSH", 1)
+        assert plugin["metrics"][0]["current_avg"] == pytest.approx(0.05)
+
     def test_percent_is_averaged_and_unknown_plugin_uses_its_name(self, logged_in_client, db_session):
         svc = _make_service(db_session, "web", "Mem", check_command="pinpoint_check_mem")
         _make_service_perf(db_session, svc, "used", 40.0, "%")
