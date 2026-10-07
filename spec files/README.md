@@ -14,6 +14,7 @@ This directory is the authoritative documentation set for Pinpoint. The root
 | [`Frontend_Modules_and_Routes.md`](Frontend_Modules_and_Routes.md) | React route/page map, component ownership, contexts, API clients, and page-access rules |
 | [`Data_Model_and_Integrations.md`](Data_Model_and_Integrations.md) | Database ownership, model inventory, Nagios data semantics, scheduler, network discovery, NCPA, and plugin integration |
 | [`Engineering_Standards.md`](Engineering_Standards.md) | Coding, validation, security, migration, test, and run rules |
+| [`Agent_Workflow_and_CI.md`](Agent_Workflow_and_CI.md) | Task intake, agent loop, verification commands, CI pipeline, dev container, installer deployment contract |
 | [`Implementation_Status.md`](Implementation_Status.md) | Current implemented surface, incomplete work, exclusions, and known code/spec mismatches |
 | [`Display_Requirements.md`](Display_Requirements.md) | Normative Dashboard, Network Health, and alert-acknowledgement behavior and API shapes |
 | [`Alerts_Notifications_History_Requirements.md`](Alerts_Notifications_History_Requirements.md) | Normative Alerts and Notifications History page behavior |

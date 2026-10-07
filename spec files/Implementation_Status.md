@@ -1,6 +1,6 @@
 # Implementation Status and Scope
 
-**Snapshot date:** 2026-09-27
+**Snapshot date:** 2026-10-08
 
 This file reports what is present in the repository. It is not a substitute for
 the normative behavior in the requirement specifications.
@@ -73,6 +73,8 @@ the normative behavior in the requirement specifications.
 | NCPA deployment cleanup | A failed install leaves the deployment account, key, sudo rule and helper on the device; the error message says so | Add an explicit cleanup action if operators need it |
 | SERVICE_CHANGED auto-clear | A `SERVICE_CHANGED` review item stays open after the mismatch disappears (seen when a port rule was removed); only an operator resolves it | Resolve the item automatically when the port again matches its frozen plugin |
 | NCPA token in check command | The NCPA token is a positional argument of the Nagios command, so it is visible in process listings and any transcript of the command | Review passing the token another way (for example a Nagios resource file) |
+| CI and automation | CI runs docs links, backend unit tests and frontend test/build on pull requests (`.github/workflows/ci.yml`). Not automated: deployment, installer ISO build and headless install test, spec-vs-code drift checks, branch protection | Require the CI jobs on `main`; add an installer build/install job when that repository's scope is agreed |
+| Frontend lint | `npm run lint` reports 33 errors (mostly `react-hooks` setState-in-effect, `react-refresh/only-export-components`, `no-empty`); the CI lint step is advisory | Fix the errors, then remove `continue-on-error` from the CI lint step and the `\|\| echo` fallback in `scripts/verify.sh` |
 | Installer | Developed in another repository | Keep installer work out of this repository unless scope changes |
 
 ## Test approach status

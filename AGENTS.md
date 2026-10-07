@@ -30,10 +30,18 @@ in [`spec files/`](spec%20files/).
 | Alerts/notifications history | **Required:** [`Alerts_Notifications_History_Requirements.md`](spec%20files/Alerts_Notifications_History_Requirements.md) | Backend, frontend, and data specifications |
 | Plugin Manager or plugin-driven monitoring | **Required:** [`Plugins_List.md`](spec%20files/Plugins_List.md), backend, frontend, and data specifications | Network discovery and Nagios config code named in the data spec |
 | Open defects and follow-up from the plugin-driven monitoring acceptance run | **Required:** [`Plugin_Driven_Monitoring_Remediation.md`](spec%20files/Plugin_Driven_Monitoring_Remediation.md), [`Implementation_Status.md`](spec%20files/Implementation_Status.md) | [`Plugin_Driven_Monitoring_Plan.md`](spec%20files/Plugin_Driven_Monitoring_Plan.md), plugin acceptance plan in `server/tests/plans/` |
+| Task workflow, verification, CI, deployment/installer contract | **Required:** [`Agent_Workflow_and_CI.md`](spec%20files/Agent_Workflow_and_CI.md) | [`Engineering_Standards.md`](spec%20files/Engineering_Standards.md) |
 | Tests, migrations, style, validation, security | **Required:** [`Engineering_Standards.md`](spec%20files/Engineering_Standards.md) | The domain specification for the code being changed |
 | Backend tests, fixtures, or test failures | **Required:** [`server/tests/README.md`](server/tests/README.md), [`Engineering_Standards.md`](spec%20files/Engineering_Standards.md) | The backend/domain specification for the behavior under test |
 | Frontend tests | **Required:** [`Frontend_Modules_and_Routes.md`](spec%20files/Frontend_Modules_and_Routes.md), [`Engineering_Standards.md`](spec%20files/Engineering_Standards.md) | The page/domain specification for the behavior under test |
 | Scope, unfinished work, or exclusions | **Required:** [`Implementation_Status.md`](spec%20files/Implementation_Status.md) | Relevant domain specification |
+
+## Verify before you finish
+
+Run `scripts/verify.sh <docs|backend|frontend|all>` (the same commands CI runs)
+and follow the loop in
+[`Agent_Workflow_and_CI.md`](spec%20files/Agent_Workflow_and_CI.md). A task is
+done when its finish condition holds and CI is green.
 
 ## Precedence
 
