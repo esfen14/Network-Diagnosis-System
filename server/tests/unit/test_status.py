@@ -276,3 +276,54 @@ class TestGetStatusCheckCommand:
         row = get_service(db_session, "PING")
         assert row is not None
         assert row.Check_Command is None
+
+
+# ==========================================================
+# PENDING AND UNKNOWN HOST STATUS
+# ==========================================================
+
+class TestPendingHosts:
+    """Nagios lists a host as pending until its first check has run: there is no state yet."""
+
+    def host_row(self, db_session, name):
+        return db_session.session.scalar(sa.select(HostStatus).where(HostStatus.Hostname == name))
+
+    def test_pending_host_is_skipped_without_an_error(self, db_session, caplog):
+        with caplog.at_level("ERROR"):
+            insert_host_status_data(host_payload(name="new-host", status="pending"))
+
+        assert self.host_row(db_session, "new-host") is None
+        assert "Failed to insert host status" not in caplog.text
+
+    def test_unknown_status_is_logged_and_skipped(self, db_session, caplog):
+        # Anything that is not up, down, unreachable or pending is unexpected: say so, keep going.
+        with caplog.at_level("ERROR"):
+            insert_host_status_data(host_payload(name="odd-host", status="not-a-state"))
+
+        assert self.host_row(db_session, "odd-host") is None
+        assert "Failed to insert host status" in caplog.text
+
+    def test_pending_host_does_not_block_the_rest_of_the_poll(self, app, db_session):
+        hostlist = {
+            "new-host": host_payload(name="new-host", status="pending"),
+            "ready-host": host_payload(name="ready-host", status="up"),
+        }
+
+        def fake_get(url, params=None, **kwargs):
+            query = params["query"]
+            if url == OBJECT_URL:
+                return json_response(object_servicelist({}))
+            if query == "programstatus":
+                return json_response({"data": {"programstatus": {"version": "4.5.0"}}})
+            if query == "hostlist":
+                return json_response({"data": {"hostlist": hostlist}})
+            return json_response({"data": {"servicelist": {}}})
+
+        with patch.dict(app.config, {"NAGIOS_OBJECT_URL": OBJECT_URL}), \
+                patch("app.nagios.status.requests.get", side_effect=fake_get):
+            get_status()
+
+        assert self.host_row(db_session, "new-host") is None
+        ready = self.host_row(db_session, "ready-host")
+        assert ready is not None
+        assert ready.Current_State == HostStateType.UP

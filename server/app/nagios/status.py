@@ -58,11 +58,14 @@ def _extract_plugin_status(plugin_output):
 def insert_host_status_data(data):
     try:
         plugin_status = _extract_plugin_status(data.get('plugin_output', ''))
-        
+        current_state = convert_host_state_type_enum(data.get('status'))
+        if current_state is None:
+            return
+
         host_status = HostStatus(
             Timestamp=convert_to_UTC(data.get('last_update')),
             Hostname=data.get('name'),
-            Current_State=convert_host_state_type_enum(data.get('status')),
+            Current_State=current_state,
             Plugin_Status=convert_plugin_status_type_enum(plugin_status),
             Plugin_Output=data.get('plugin_output', ''),
             State_Type=convert_connection_state_type_enum(data.get('state_type')),
