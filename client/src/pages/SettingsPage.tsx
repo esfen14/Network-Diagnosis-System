@@ -1,15 +1,16 @@
-import { Cog, Lock, Radar, ServerCog } from 'lucide-react'
+import { Cog, Lock, Puzzle, Radar, ServerCog } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { GeneralSettings } from '../components/settings/GeneralSettings'
 import { SecuritySettings } from '../components/settings/SecuritySettings'
 import { SystemSettings } from '../components/settings/SystemSettings'
 import { DiscoverySettings } from '../components/settings/DiscoverySettings'
+import { PluginSettings } from '../components/settings/PluginSettings'
 import { useSystemSettings } from '../contexts/SystemSettingsContext'
 import { useCurrentUser } from '../contexts/CurrentUserContext'
 import { SETTINGS_TAB_PERMISSIONS } from '../lib/pageAccess'
 
-type SettingsTab = 'general' | 'security' | 'system' | 'discovery'
+type SettingsTab = 'general' | 'security' | 'system' | 'discovery' | 'plugins'
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
@@ -23,12 +24,13 @@ export function SettingsPage() {
   }, [refreshSettings])
 
   // General is for everyone; Security and System need their permission
-  // (assigned per role in Manage Roles), as does Network Discovery.
+  // (assigned per role in Manage Roles), as do Network Discovery and Plugins.
   const tabs = [
     { id: 'general' as const, label: 'General Settings', icon: Cog },
     { id: 'security' as const, label: 'Security', icon: Lock },
     { id: 'system' as const, label: 'System', icon: ServerCog },
     { id: 'discovery' as const, label: 'Network Discovery', icon: Radar },
+    { id: 'plugins' as const, label: 'Plugins', icon: Puzzle },
   ].filter((tab) => tab.id === 'general' || hasPermission(SETTINGS_TAB_PERMISSIONS[tab.id]))
 
   // Fall back to General if the open tab's permission was removed.
@@ -67,6 +69,7 @@ export function SettingsPage() {
           {shownTab === 'security' && <SecuritySettings />}
           {shownTab === 'system' && <SystemSettings />}
           {shownTab === 'discovery' && <DiscoverySettings />}
+          {shownTab === 'plugins' && <PluginSettings />}
         </div>
 
       </div>

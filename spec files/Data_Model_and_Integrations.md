@@ -20,6 +20,7 @@ acknowledgements belong in `system.db` even though they relate to Nagios alerts.
 ### Default bind: identity, configuration, operations, and acknowledgement
 
 - Identity/access: `Permission`, `Role`, `RolePermission`, `User` (`Must_Change_Password` forces a password change after reactivation or an admin password reset).
+- Plugin settings: `PluginSettings` (`PLUGIN_SETTINGS`), one row per plugin definition (`Plugin_Name`, e.g. `snmp`) holding the variables saved from Settings -> Plugins in `Variables` (JSON), with `Version`/`Updated_By`. No row means the `config.py` defaults apply.
 - Network profile: singleton `NetworkProfile` (`Id=1`) holding the editable name, reference and detail rows of the Network Health info card.
 - Audit/logging: `ActivityLog`, `ConfigurationChanges`, `ExportLog`.
 - Discovery: `NetworkDiscoveryStatus`, `SkippedService`, `NetworkDiscovery`,
@@ -196,7 +197,11 @@ are recorded as `SkippedService` entries rather than silently discarded.
 Network targets, ports, service rules, NCPA metrics, SNMP defaults, and
 Nagios filesystem paths live in `server/config.py` and may be environment
 overridden where defined. Networks, ports and service rules can also be saved
-from the Settings page (`DiscoverySettings`), which then takes precedence.
+from the Settings page (`DiscoverySettings`), which then takes precedence. The SNMP
+OID table (`SNMP_OIDS`) can be saved from Settings -> Plugins (`PluginSettings`);
+`plugin_config()` in `network_discovery/plugin_settings.py` puts the saved values in
+place of their `config.py` keys once per config build, for both `hosts.cfg` and the
+plugin reconciler. Per-host `Plugin_Variables` overrides still win.
 
 ### Service identification
 

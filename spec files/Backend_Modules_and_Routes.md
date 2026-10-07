@@ -27,7 +27,7 @@ system.acknowledge_alerts, system.dashboard
 plugin.scan, plugin.view, plugin.enable, plugin.disable
 plugin.command_override, plugin.command_restore, plugin.validate
 plugin.custom_add, plugin.update, plugin.update_rollback
-settings.security, settings.system
+settings.security, settings.system, settings.discovery, settings.plugins
 ```
 
 Some seeded permissions are not attached to a current route, and the history
@@ -175,6 +175,13 @@ this is a documented implementation mismatch, not a recommended convention.
 |---|---|---|
 | `GET /api/system/discovery-settings` | `settings.discovery` | Effective discovery settings, their `config.py` defaults, and whether a scan is running |
 | `PUT /api/system/discovery-settings` | `settings.discovery` | Save networks, TCP/UDP ports and the Port -> Service tables (`tcpPortServices`, `udpPortServices`: the service expected on each port); every field is required, the version must match. GET also returns `ncpaPort`, the derived NCPA entry in the TCP table (accepted back but never stored; mapping that port to anything but `ncpa` is a 400) and `resolution` (which check each entry leads to) |
+
+### `app/api/system/plugin_settings.py`
+
+| Method and path | Permission | Purpose |
+|---|---|---|
+| `GET /api/system/plugin-settings` | `settings.plugins` | Each editable plugin's section keyed by definition name (today only `snmp`): `plugin` (`check_snmp`), `installed` (it has a Plugin Manager row), `status`, `settings` (effective values), `defaults` (`config.py`) and `version` (0 until first saved) |
+| `PUT /api/system/plugin-settings/snmp` | `settings.plugins` | Save the SNMP OID table `{"version", "oids": [{"metric", "oid"}]}`. `metric` is the description (lowercase letters, digits, `_`, at most 32, unique) and names the service `snmp-<metric>-<port>-udp`; `oid` is numeric and dotted (unique); 1 to 50 entries. 400 when `check_snmp` is not installed or an entry is invalid, 409 on a stale version. Writes a Configuration Change entry (when audit logging is on), then rebuilds the Nagios config; returns the section plus `config_applied`, `config_ok`, `config_message` |
 
 ### `app/api/system/device_identity.py`
 

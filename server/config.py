@@ -120,8 +120,10 @@ class Config:
     # Nagios service ("snmp-<metric>-<port>-<protocol>", e.g.
     # snmp-uptime-161-udp); optional keys warning, critical, label and units
     # are passed to check_snmp for that service.
-    # A host can override any of these (including the whole OID list) via
-    # NetworkDiscovery.Plugin_Variables["snmp"] — see
+    # SNMP_OIDS is only the default: the OID table can be edited from
+    # Settings -> Plugins (PluginSettings, network_discovery/plugin_settings.py),
+    # which then takes precedence. A host can override any of these (including
+    # the whole OID list) via NetworkDiscovery.Plugin_Variables["snmp"] — see
     # network_discovery/plugin_registry.py.
     SNMP_COMMUNITY_STRING = os.environ.get('SNMP_COMMUNITY_STRING') or "public"
     SNMP_PORT = "161"

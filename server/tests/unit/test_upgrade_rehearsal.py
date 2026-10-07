@@ -82,8 +82,9 @@ class TestUpgrade:
 
     def test_the_retired_permission_and_its_grant_are_gone(self, report):
         assert "plugin.configure" in report["before"]["permissions"]
-        assert report["after_upgrade"]["permissions"] == ["plugin.disable", "plugin.enable"]
-        assert report["after_upgrade"]["grants"] == [[1], [2]]
+        assert report["after_upgrade"]["permissions"] == ["plugin.disable", "plugin.enable", "settings.plugins"]
+        # 3 is settings.plugins, which f3a8c1d6b2e9 adds and grants to Administrator.
+        assert report["after_upgrade"]["grants"] == [[1], [2], [3]]
 
     def test_port_states_are_unchanged_by_the_migrations(self, report):
         assert report["after_upgrade"]["port_states"] == report["before"]["port_states"]
@@ -169,7 +170,7 @@ class TestDowngradeAndUpgradeAgain:
     def test_upgrading_again_reaches_the_head_and_removes_the_permission_again(self, report):
         again = report["after_reupgrade"]
         assert again["version"] == [[HEAD]]
-        assert again["permissions"] == ["plugin.disable", "plugin.enable"]
+        assert again["permissions"] == ["plugin.disable", "plugin.enable", "settings.plugins"]
         assert again["configs"] == [[1, "MANUAL", "APPLIED", "check_ping"]]
         assert again["port_states"] == report["after_reconcile"]["port_states"]
         assert again["held"] == [["tcp", 2, 9100]]          # recomputed: still Suggested, still held

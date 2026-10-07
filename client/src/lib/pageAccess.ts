@@ -24,6 +24,7 @@ export const SETTINGS_TAB_PERMISSIONS = {
   security: 'settings.security',
   system: 'settings.system',
   discovery: 'settings.discovery',
+  plugins: 'settings.plugins',
 } as const
 
 // Where to send a user who opens a page they can't access, in sidebar order.

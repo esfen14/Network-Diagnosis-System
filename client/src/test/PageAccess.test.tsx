@@ -147,12 +147,20 @@ describe('SettingsPage tabs', () => {
   })
 
   it('shows all tabs with every settings permission', () => {
-    signIn(['settings.security', 'settings.system', 'settings.discovery'])
+    signIn(['settings.security', 'settings.system', 'settings.discovery', 'settings.plugins'])
     renderSettings()
 
     expect(screen.getByRole('button', { name: /security/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^system$/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /network discovery/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^plugins$/i })).toBeInTheDocument()
+  })
+
+  it('shows Plugins only with its own permission', () => {
+    signIn(['settings.system'])
+    renderSettings()
+
+    expect(screen.queryByRole('button', { name: /^plugins$/i })).not.toBeInTheDocument()
   })
 
   it('shows Network Discovery only with its own permission', () => {

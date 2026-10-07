@@ -40,6 +40,7 @@ the normative behavior in the requirement specifications.
 - Device Inventory backed by latest host-status APIs.
 - Account and role management.
 - System Settings and per-user preferences.
+- Settings -> Plugins tab (`settings.plugins`): the SNMP OID table, editable once `check_snmp` is installed; saving rebuilds the Nagios config.
 - System Logs with five backend categories.
 - Reports UI for host availability and network services.
 - Plugin Manager inventory/running tabs, details, scan, custom plugin, and
