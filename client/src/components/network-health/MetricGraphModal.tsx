@@ -32,6 +32,8 @@ export type MetricGraphModalProps = {
   emptyMessage?: string
   /** Extra content under the stats, e.g. per-host values. */
   details?: ReactNode
+  // Shown in place of the generic "No data available" panel when there is nothing to graph.
+  emptyContent?: ReactNode
   onClose: () => void
 }
 
@@ -47,6 +49,7 @@ export function MetricGraphModal({
   isConfigured,
   emptyMessage,
   details,
+  emptyContent,
   onClose,
 }: MetricGraphModalProps) {
   const [showRangePicker, setShowRangePicker] = useState(false)
@@ -139,6 +142,8 @@ export function MetricGraphModal({
             <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
               Loading…
             </div>
+          ) : (!isConfigured || !hasAnyData) && emptyContent ? (
+            <div className="h-full overflow-y-auto">{emptyContent}</div>
           ) : !isConfigured || !hasAnyData ? (
             <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center">
               <p className="text-sm font-medium text-[var(--text)]">No data available</p>

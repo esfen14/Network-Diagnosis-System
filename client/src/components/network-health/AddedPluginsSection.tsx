@@ -17,6 +17,18 @@ const STATE_STYLE: Record<AddedPlugin['worstState'], { label: string; badge: str
 
 const SERIES_COLORS = ['#38BDF8', '#A78BFA', '#10B981', '#F4A90B', '#EF4444']
 
+/** "check_ssh" → "SSH", "check_ntp_time" → "Ntp Time": the plugin's name without the check_ prefix. */
+function shortName(pluginName: string) {
+  const name = pluginName.replace(/\.py$/i, '').replace(/^check_/i, '').replace(/_/g, ' ').trim()
+  if (!name) return pluginName
+  return name.length <= 4 ? name.toUpperCase() : name.replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+/** The plugin's Plugin Manager display name, or its short name when none was set. */
+function titleFor(plugin: AddedPlugin) {
+  return plugin.displayName === plugin.pluginName ? shortName(plugin.pluginName) : plugin.displayName
+}
+
 function formatValue(value: number | null, unit: string | null) {
   if (value == null) return '—'
   const digits = Math.abs(value) >= 100 ? 0 : Math.abs(value) >= 1 ? 2 : 3
@@ -28,19 +40,70 @@ function primaryMetric(plugin: AddedPlugin): PluginMetric | null {
   return plugin.metrics.find((m) => m.averaged) ?? plugin.metrics[0] ?? null
 }
 
+const STATUS_HEADLINE: Record<AddedPlugin['worstState'], string> = {
+  ok: 'Working normally',
+  warning: 'Needs attention',
+  critical: 'Not working',
+  unknown: 'Status unknown',
+}
+
+function plural(count: number, noun: string) {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`
+}
+
+/** One plain sentence on how the plugin's checks are doing. */
+function statusSentence(plugin: AddedPlugin) {
+  const { total, ok, warning, critical, unknown } = plugin
+  if (ok === total) return total === 1 ? 'The check is passing.' : `All ${total} checks are passing.`
+  const problems = [
+    critical && `${critical} failing`,
+    warning && `${warning} with a warning`,
+    unknown && `${unknown} with an unknown result`,
+  ].filter(Boolean).join(', ')
+  return `${ok} of ${plural(total, 'check')} passing. ${problems}.`
+}
+
+function StatusSummary({ plugin }: { plugin: AddedPlugin }) {
+  const state = STATE_STYLE[plugin.worstState]
+  const counts = [
+    { label: 'OK', count: plugin.ok, badge: STATE_STYLE.ok.badge },
+    { label: 'Warning', count: plugin.warning, badge: STATE_STYLE.warning.badge },
+    { label: 'Critical', count: plugin.critical, badge: STATE_STYLE.critical.badge },
+    { label: 'Unknown', count: plugin.unknown, badge: STATE_STYLE.unknown.badge },
+  ].filter((c) => c.count > 0)
+
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
+      <span className={`rounded-full px-3 py-1 text-sm font-semibold text-white ${state.badge}`}>
+        {STATUS_HEADLINE[plugin.worstState]}
+      </span>
+      <p className="text-base font-medium text-[var(--text)]">{statusSentence(plugin)}</p>
+      <div className="flex flex-wrap justify-center gap-2">
+        {counts.map((c) => (
+          <span key={c.label} className="flex items-center gap-1.5 text-sm text-[var(--text-muted)]">
+            <span className={`h-2 w-2 rounded-full ${c.badge}`} />
+            {c.count} {c.label}
+          </span>
+        ))}
+      </div>
+      <p className="text-xs text-[var(--text-muted)]">
+        This check reports pass or fail only, so there is no graph to show.
+      </p>
+    </div>
+  )
+}
+
 function PluginCard({ plugin, onOpen }: { plugin: AddedPlugin; onOpen: () => void }) {
   const state = STATE_STYLE[plugin.worstState]
   const metric = primaryMetric(plugin)
 
-  let value = '—'
-  let caption = 'No performance data reported'
+  let value = STATUS_HEADLINE[plugin.worstState]
+  let caption = statusSentence(plugin)
   if (metric?.averaged) {
     value = formatValue(metric.currentAvg, metric.unit)
     caption = metric.serviceCount === 1
       ? `${metric.metric} on ${metric.current[0].hostname}`
       : `avg ${metric.metric} across ${metric.serviceCount} services`
-  } else if (metric) {
-    caption = `${metric.metric} varies per host — open for values`
   }
 
   return (
@@ -52,12 +115,12 @@ function PluginCard({ plugin, onOpen }: { plugin: AddedPlugin; onOpen: () => voi
       className="flex flex-col gap-2 rounded-2xl bg-[var(--card)] border border-[var(--border)] p-4 shadow-sm cursor-pointer transition hover:border-[var(--text-muted)]"
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="text-sm text-[var(--text-muted)]">{plugin.displayName}</span>
+        <span className="text-sm text-[var(--text-muted)]">{titleFor(plugin)}</span>
         <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium text-white ${state.badge}`}>
           {plugin.worstState === 'ok' ? `${plugin.ok}/${plugin.total} OK` : `${plugin[plugin.worstState]} ${state.label}`}
         </span>
       </div>
-      <span className="text-2xl font-bold text-[var(--text)]">{value}</span>
+      <span className={`${metric?.averaged ? 'text-2xl' : 'text-xl'} font-bold text-[var(--text)]`}>{value}</span>
       <span className="text-xs text-[var(--text-muted)]">{caption}</span>
       {metric?.averaged && (
         <MiniSparkline
@@ -72,11 +135,11 @@ function PluginCard({ plugin, onOpen }: { plugin: AddedPlugin; onOpen: () => voi
 
 function PerHostValues({ plugin }: { plugin: AddedPlugin }) {
   if (plugin.metrics.length === 0) {
-    return <p className="text-sm text-[var(--text-muted)]">This plugin reports no performance data.</p>
+    return null
   }
   return (
     <div className="max-h-48 overflow-y-auto">
-      <p className="mb-2 text-sm font-medium text-[var(--text)]">Current values per service</p>
+      <p className="mb-2 text-sm font-medium text-[var(--text)]">Latest readings by host</p>
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-[var(--text-muted)]">
@@ -153,16 +216,16 @@ export function AddedPluginsSection({ plugins, error, hours, onHoursChange, isLo
 
       {open && (
         <MetricGraphModal
-          title={open.displayName}
+          title={titleFor(open)}
           unit={primary?.averaged ? primary.unit ?? '' : ''}
-          datasourceLabel={`${open.pluginName} — average across services`}
+          datasourceLabel={series.length > 0 ? `${titleFor(open)} — average across services` : `${titleFor(open)} — status of ${plural(open.total, 'check')}`}
           series={series}
           seriesData={seriesData}
           hours={hours}
           onHoursChange={onHoursChange}
           isLoading={isLoading}
           isConfigured={series.length > 0}
-          emptyMessage="This plugin has no time or percentage metric to average — see the per-service values below."
+          emptyContent={<StatusSummary plugin={open} />}
           details={<PerHostValues plugin={open} />}
           onClose={() => setOpenName(null)}
         />
