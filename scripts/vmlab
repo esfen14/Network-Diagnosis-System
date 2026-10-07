@@ -18,7 +18,8 @@
 #                                      Gunicorn (--client also builds and copies client/dist)
 #   scripts/vmlab health               installer healthcheck on the running appliance
 #   scripts/vmlab smoke                log in, add the lab network, run discovery, wait for hosts up
-#   scripts/vmlab creds                print the installer's administrator credentials (lab only)
+#   scripts/vmlab setup-admin          set a fresh administrator password (kept in the state folder, never printed)
+#   scripts/vmlab creds                print the installer's one-time credentials (shows the password; lab only)
 #   scripts/vmlab up | down | revert   start (headless), power off, restore the snapshot only
 #   scripts/vmlab targets <cmd...>     pass through to demo/demo_lab.py (up, down, wall, break, ...)
 #
@@ -38,7 +39,7 @@ VMLAB_VM="pinpoint-appliance"
 VMLAB_SNAPSHOT="os-nagios-ready"
 VMLAB_SSH_TARGET="lab@127.0.0.1"
 VMLAB_SSH_PORT="2250"
-VMLAB_WEB_PORT="8080"
+VMLAB_WEB_PORT="18080"
 VMLAB_SSH_KEY="$state_dir/id_ed25519"
 VMLAB_ISO="$HOME/Downloads/ubuntu-22.04.5-live-server-amd64.iso"
 VMLAB_ISO_URL="https://releases.ubuntu.com/22.04/ubuntu-22.04.5-live-server-amd64.iso"
@@ -93,7 +94,16 @@ power_off() {
   VBoxManage controlvm "$VMLAB_VM" acpipowerbutton 2>/dev/null || true
   wait_state poweroff 90 || { echo "graceful shutdown timed out; powering off"; VBoxManage controlvm "$VMLAB_VM" poweroff; wait_state poweroff 30; }
 }
+# A snapshot stores the VM's port forwards, so restoring one brings back the old ports.
+# Re-apply the configured ones (VM powered off) so a changed port never needs a new snapshot.
+ensure_forwards() {
+  VBoxManage modifyvm "$VMLAB_VM" --nat-pf1 delete ssh >/dev/null 2>&1 || true
+  VBoxManage modifyvm "$VMLAB_VM" --nat-pf1 delete web >/dev/null 2>&1 || true
+  VBoxManage modifyvm "$VMLAB_VM" "--nat-pf1=ssh,tcp,127.0.0.1,$VMLAB_SSH_PORT,,22"
+  VBoxManage modifyvm "$VMLAB_VM" "--nat-pf1=web,tcp,127.0.0.1,$VMLAB_WEB_PORT,,80"
+}
 start_vm() {
+  if [ "$(vm_state)" = "poweroff" ]; then ensure_forwards; fi
   [ "$(vm_state)" = "running" ] || VBoxManage startvm "$VMLAB_VM" --type headless >/dev/null
   echo "waiting for SSH on $VMLAB_SSH_TARGET (port $VMLAB_SSH_PORT) ..."
   local i
@@ -202,7 +212,7 @@ open(path, "w").write(text.replace(old, new))
 
 cmd="${1:-help}"; shift || true
 case "$cmd" in
-  help|-h|--help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//' ;;
+  help|-h|--help) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//' ;;
 
   iso)
     if [ -f "$VMLAB_ISO" ]; then echo "already present: $VMLAB_ISO"; exit 0; fi
@@ -355,11 +365,44 @@ case "$cmd" in
     vm_ssh "sudo cat /root/pinpoint-install-credentials.txt 2>/dev/null || echo 'No stored credentials (confirmed and removed already?). Set VMLAB_ADMIN_EMAIL and VMLAB_ADMIN_PASSWORD.'"
     ;;
 
+  setup-admin)
+    # Take the installer's one-time administrator login, set a fresh password and keep it in
+    # the private state folder, so the smoke test can sign in. Nothing secret is printed.
+    need_config
+    mkdir -p "$state_dir"; chmod 700 "$state_dir"
+    creds="$(vm_ssh 'sudo cat /root/pinpoint-install-credentials.txt' 2>/dev/null || true)"
+    email="$(printf '%s\n' "$creds" | awk '/^Username \(email\):/{getline; print; exit}')"
+    first="$(printf '%s\n' "$creds" | awk '/^Password:/{getline; print; exit}')"
+    if [ -z "$email" ] || [ -z "$first" ]; then
+      [ -f "$state_dir/admin-email" ] && [ -f "$state_dir/admin-password" ] && { echo "admin login already set up ($(cat "$state_dir/admin-email"))"; exit 0; }
+      die "no installer credentials on the appliance and none stored; set VMLAB_ADMIN_EMAIL and VMLAB_ADMIN_PASSWORD yourself"
+    fi
+    new="Lab-$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 18)9!"
+    SETUP_URL="$(web_url)" SETUP_EMAIL="$email" SETUP_OLD="$first" SETUP_NEW="$new" python3 -I -c '
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import smoke
+api = smoke.Client(os.environ["SETUP_URL"])
+status, body = api.call("POST", "/api/user/login", {"email": os.environ["SETUP_EMAIL"], "password": os.environ["SETUP_OLD"]})
+if status != 200:
+    sys.exit("login with the installer credentials failed (HTTP %s)" % status)
+status, body = api.call("POST", "/api/user/change-password", {"current_password": os.environ["SETUP_OLD"],
+    "new_password": os.environ["SETUP_NEW"], "confirm_password": os.environ["SETUP_NEW"]})
+if status != 200 or not body.get("success"):
+    sys.exit("password change failed (HTTP %s): %s" % (status, body.get("message")))
+' "$root/lab" || die "could not set up the administrator login"
+    printf '%s' "$email" > "$state_dir/admin-email"; printf '%s' "$new" > "$state_dir/admin-password"; chmod 600 "$state_dir/admin-email" "$state_dir/admin-password"
+    vm_ssh 'sudo rm -f /root/pinpoint-install-credentials.txt /var/lib/pinpoint/web-credentials-pending' 2>/dev/null || true
+    echo "administrator $email: new password stored in $state_dir/admin-password"
+    ;;
+
   smoke)
     need_config
-    [ -n "$VMLAB_ADMIN_EMAIL" ] && [ -n "$VMLAB_ADMIN_PASSWORD" ] || die "set VMLAB_ADMIN_EMAIL and VMLAB_ADMIN_PASSWORD in $config (read them with: scripts/vmlab creds)"
-    exec python3 -I "$root/lab/smoke.py" --base-url "$(web_url)" --email "$VMLAB_ADMIN_EMAIL" \
-      --password "$VMLAB_ADMIN_PASSWORD" --set-network "$VMLAB_LAB_NETWORK" "$@"
+    [ -n "$VMLAB_ADMIN_EMAIL" ] || { [ -f "$state_dir/admin-email" ] && VMLAB_ADMIN_EMAIL="$(cat "$state_dir/admin-email")"; }
+    [ -n "$VMLAB_ADMIN_PASSWORD" ] || { [ -f "$state_dir/admin-password" ] && VMLAB_ADMIN_PASSWORD="$(cat "$state_dir/admin-password")"; }
+    [ -n "$VMLAB_ADMIN_EMAIL" ] && [ -n "$VMLAB_ADMIN_PASSWORD" ] || die "no administrator login: run scripts/vmlab setup-admin (or set VMLAB_ADMIN_EMAIL and VMLAB_ADMIN_PASSWORD in $config)"
+    SMOKE_PASSWORD="$VMLAB_ADMIN_PASSWORD" exec python3 -I "$root/lab/smoke.py" --base-url "$(web_url)" \
+      --email "$VMLAB_ADMIN_EMAIL" --set-network "$VMLAB_LAB_NETWORK" "$@"
     ;;
 
   targets) exec python3 "$root/demo/demo_lab.py" "$@" ;;

@@ -76,8 +76,8 @@ installer repository for the setup steps.
 5. **Snapshot.** `scripts/vmlab provision` runs installer steps 1 to 5, powers off and
    takes `os-nagios-ready`.
 6. **First test.** `scripts/vmlab fresh`, then `scripts/vmlab creds`; sign in once at
-   `http://127.0.0.1:8080`, change the password, put it in the config, then
-   `scripts/vmlab smoke`.
+   `http://127.0.0.1:18080`. `scripts/vmlab setup-admin` sets a fresh administrator
+   password (stored privately, never printed) and `scripts/vmlab smoke` signs in with it.
 
 What is not automated: the installer ISO's own install path (interactive screens, the
 late-commands that copy the setup files, the first-boot service and the setup wizard).

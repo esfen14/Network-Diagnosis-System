@@ -12,6 +12,7 @@ For a real appliance (scripts/vmlab smoke) pass the administrator's --email and
 import argparse
 import http.cookiejar
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -90,7 +91,8 @@ def main():
     parser.add_argument("--discovery-timeout", type=int, default=300)
     parser.add_argument("--hosts-timeout", type=int, default=240)
     parser.add_argument("--email", default=DEFAULT_EMAIL, help="administrator email (default: the lab's seeded user)")
-    parser.add_argument("--password", default=DEFAULT_PASSWORD, help="administrator password")
+    parser.add_argument("--password", default=os.environ.get("SMOKE_PASSWORD", DEFAULT_PASSWORD),
+                        help="administrator password (or set SMOKE_PASSWORD, which keeps it out of the process list)")
     parser.add_argument("--set-network", metavar="CIDR", help="add this network to Network Discovery if missing")
     args = parser.parse_args()
     api = Client(args.base_url)
