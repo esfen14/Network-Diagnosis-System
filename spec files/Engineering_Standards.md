@@ -131,6 +131,9 @@ injection and secret-exposure review.
 
 ## Verification commands
 
+`scripts/verify.sh all` runs everything below exactly as CI does; see
+[`Agent_Workflow_and_CI.md`](Agent_Workflow_and_CI.md).
+
 Backend syntax after editing Python:
 
 ```bash

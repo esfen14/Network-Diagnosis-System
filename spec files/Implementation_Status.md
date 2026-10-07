@@ -1,6 +1,6 @@
 # Implementation Status and Scope
 
-**Snapshot date:** 2026-09-27
+**Snapshot date:** 2026-10-08
 
 This file reports what is present in the repository. It is not a substitute for
 the normative behavior in the requirement specifications.
@@ -55,8 +55,7 @@ the normative behavior in the requirement specifications.
 
 | Area | Current state | Required direction |
 |---|---|---|
-| History frontend | Backend routes exist; no routed Alerts & Notifications History page exists | Build the two-tab page from `Alerts_Notifications_History_Requirements.md` and add client permission/navigation wiring |
-| History permission seed | Routes require `system.history`, but the seed permission list does not include it | Add and seed the permission before relying on the routes in a normal installation |
+| History frontend | `/history` is routed to `HistoryPage` with a sidebar entry and the `system.history` client permission, and calls the list and detail routes. It has not been audited against `Alerts_Notifications_History_Requirements.md` | Audit the page against the requirements and fix gaps |
 | Auto-resolved acknowledgements | `AckAction.AUTO_RESOLVED` and model contract exist; status polling does not clean resolved active acknowledgements | On UP/OK transition, delete the active acknowledgement and append an AUTO_RESOLVED history record |
 | Discovery stop permission | Stop route checks `network.discovery`; seed data defines `system.discover` | Standardize the route on the seeded permission or deliberately introduce/seed the alternate permission |
 | Topology exclusion | `TopologyPage`, `/topology`, and a sidebar entry labeled “System Status” are still active | Remove the route and navigation entry while keeping source code for possible future use |
@@ -73,6 +72,8 @@ the normative behavior in the requirement specifications.
 | NCPA deployment cleanup | A failed install leaves the deployment account, key, sudo rule and helper on the device; the error message says so | Add an explicit cleanup action if operators need it |
 | SERVICE_CHANGED auto-clear | A `SERVICE_CHANGED` review item stays open after the mismatch disappears (seen when a port rule was removed); only an operator resolves it | Resolve the item automatically when the port again matches its frozen plugin |
 | NCPA token in check command | The NCPA token is a positional argument of the Nagios command, so it is visible in process listings and any transcript of the command | Review passing the token another way (for example a Nagios resource file) |
+| CI and automation | CI runs docs links, backend unit tests and frontend test/build on pull requests (`.github/workflows/ci.yml`). Drift checks cover backend routes, browser routes, client API calls and environment variables (`Agent_Workflow_and_CI.md`). Not automated: deployment, installer ISO build and headless install test, a permissions drift check, branch protection | Require the CI jobs on `main`; add an installer build/install job when that repository's scope is agreed |
+| Frontend lint | `npm run lint` has 0 errors and blocks CI. 24 `react-hooks/set-state-in-effect` warnings remain (the rule is set to `warn` in `client/eslint.config.js`): pages and components that set state inside effects | Refactor each (derive state, key the component, or fetch with an event/subscription), then set the rule back to `error` |
 | Installer | Developed in another repository | Keep installer work out of this repository unless scope changes |
 
 ## Test approach status

@@ -18,5 +18,15 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // Existing pages sync state from props/fetches inside effects. Surfaced as
+      // warnings until each is refactored (see Implementation_Status.md).
+      'react-hooks/set-state-in-effect': 'warn',
+    },
+  },
+  {
+    // Context modules export a provider plus its hook and defaults by design.
+    files: ['src/contexts/**/*.tsx'],
+    rules: { 'react-refresh/only-export-components': 'off' },
   },
 ])

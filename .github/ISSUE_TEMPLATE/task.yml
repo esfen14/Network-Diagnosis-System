@@ -1,0 +1,32 @@
+name: Task
+description: A bug or change an engineer or agent can pick up and verify without asking questions.
+body:
+  - type: input
+    id: title
+    attributes:
+      label: Title
+      description: Imperative and specific, e.g. "Resolve SERVICE_CHANGED items when the port matches again".
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and how to reproduce
+      description: Observed vs expected behavior, with exact steps, page or route, and sample data.
+    validations:
+      required: true
+  - type: textarea
+    id: finish
+    attributes:
+      label: Finish condition
+      description: Checkable outcomes, ideally naming the test that must pass or the spec section that must hold.
+      placeholder: "- [ ] tests/unit/... covers the case\n- [ ] scripts/verify.sh all passes\n- [ ] Implementation_Status.md updated"
+    validations:
+      required: true
+  - type: textarea
+    id: refs
+    attributes:
+      label: References
+      description: Spec files and source files to read first (see AGENTS.md), related issues, logs.
+    validations:
+      required: true

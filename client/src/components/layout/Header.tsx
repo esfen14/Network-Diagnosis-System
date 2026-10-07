@@ -323,6 +323,7 @@ export function Header() {
         const data = await apiGet<{ unread_count: number }>('/api/system/notifications/unread-count')
         setUnreadCount(data.unread_count)
       } catch {
+        // Keep the last count; the next poll retries.
       }
     }
     pollUnread()
