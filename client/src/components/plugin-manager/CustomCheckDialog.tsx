@@ -7,6 +7,8 @@ import type { CustomCheckDevice, CustomCheckField, CustomCheckInput, CustomCheck
 type Props = {
   pluginName: string
   fields: CustomCheckField[]
+  // Where the check runs: a chosen device, or the Nagios server (no device to pick).
+  target: 'device' | 'server'
   // The check being changed; null when adding one. The device of an existing check cannot change.
   check: CustomCheckItem | null
   isSaving: boolean
@@ -22,7 +24,7 @@ const FORBIDDEN = /['"`!$;\\\n\r]/
 // check_by_ssh runs whatever command it is given on the device, so it carries a warning.
 const RUNS_COMMANDS = ['check_by_ssh']
 
-export function CustomCheckDialog({ pluginName, fields, check, isSaving, error, onCancel, onSave }: Props) {
+export function CustomCheckDialog({ pluginName, fields, target, check, isSaving, error, onCancel, onSave }: Props) {
   const [name, setName] = useState(check?.name ?? '')
   const [values, setValues] = useState<Record<string, string>>(check?.variables ?? {})
   const [deviceQuery, setDeviceQuery] = useState('')
@@ -30,8 +32,10 @@ export function CustomCheckDialog({ pluginName, fields, check, isSaving, error, 
   const [device, setDevice] = useState<CustomCheckDevice | null>(null)
   const [deviceError, setDeviceError] = useState<string | null>(null)
 
+  const onServer = target === 'server'
+
   useEffect(() => {
-    if (check) return
+    if (check || onServer) return
     let cancelled = false
     const timeout = setTimeout(async () => {
       try {
@@ -48,10 +52,10 @@ export function CustomCheckDialog({ pluginName, fields, check, isSaving, error, 
       cancelled = true
       clearTimeout(timeout)
     }
-  }, [deviceQuery, check])
+  }, [deviceQuery, check, onServer])
 
   const problems: string[] = []
-  if (!check && !device) problems.push('Choose a device.')
+  if (!check && !onServer && !device) problems.push('Choose a device.')
   if (!name.trim()) problems.push('Enter a name.')
   for (const field of fields) {
     const value = (values[field.name] ?? '').trim()
@@ -66,10 +70,10 @@ export function CustomCheckDialog({ pluginName, fields, check, isSaving, error, 
       const value = (values[field.name] ?? '').trim()
       if (value) variables[field.name] = value
     }
-    onSave({ ...(check ? {} : { device_id: device!.id }), name: name.trim(), variables })
+    onSave({ ...(check || onServer ? {} : { device_id: device!.id }), name: name.trim(), variables })
   }
 
-  const title = check ? `Change ${check.name}` : `Add a ${pluginName} check`
+  const title = check ? `Change ${check.name}` : `Add a ${pluginName} ${onServer ? 'server check' : 'check'}`
 
   return (
     <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
@@ -97,7 +101,11 @@ export function CustomCheckDialog({ pluginName, fields, check, isSaving, error, 
           />
         </div>
 
-        {check ? (
+        {onServer ? (
+          <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-white/5 dark:text-gray-300">
+            This runs on the Nagios server itself, as the Nagios user, and is shown under the server&apos;s own host.
+          </p>
+        ) : check ? (
           <p className="text-xs text-gray-500 dark:text-gray-400">
             Device: {check.device.hostname} · {check.device.ip_address}. To check another device, remove this check and add
             a new one.

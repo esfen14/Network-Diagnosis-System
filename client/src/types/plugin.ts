@@ -219,8 +219,10 @@ export type CustomCheckField = {
 
 // Which class the plugin is in (Custom_Checks_Plan.md section 2.4) and what a custom check of it takes.
 export type PluginCustomSupport = {
-  class: 'service' | 'custom' | 'credentials' | 'server' | 'unsupported' | 'replaced' | null
+  class: 'service' | 'custom' | 'server' | 'credentials' | 'stock' | 'advanced' | 'unsupported' | 'replaced' | null
   supported: boolean
+  // Where a check runs: on a chosen device, or on the Nagios server itself (no device).
+  target?: 'device' | 'server' | null
   // Why the plugin takes no custom check, when it does not.
   note: string | null
   fields: CustomCheckField[]
@@ -231,7 +233,8 @@ export type CustomCheckItem = {
   id: number
   name: string
   service: string
-  device: { id: number; hostname: string; ip_address: string }
+  // The Nagios server for a server check: id null and no IP.
+  device: { id: number | null; hostname: string; ip_address: string }
   variables: Record<string, string>
   paused: boolean
   running_since: string | null

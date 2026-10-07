@@ -201,3 +201,79 @@ describe('PluginCustomChecksSection', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Nagios did not accept the change')
   })
 })
+
+describe('PluginCustomChecksSection for a plugin that runs on the Nagios server', () => {
+  const APT_FIELDS: CustomCheckField[] = [
+    { name: 'warning', flag: '-w', label: 'Warn if this many packages need upgrading', required: false, placeholder: '' },
+  ]
+  const serverCheck = (overrides: Partial<CustomCheckItem> = {}) =>
+    check({
+      name: 'Package updates',
+      service: 'server-apt-package_updates',
+      device: { id: null, hostname: 'Nagios server', ip_address: '' },
+      variables: { warning: '5' },
+      ...overrides,
+    })
+
+  function renderServer(onChanged = vi.fn()) {
+    return render(
+      <PluginCustomChecksSection pluginId={7} pluginName="check_apt" fields={APT_FIELDS} target="server" onChanged={onChanged} />,
+    )
+  }
+
+  beforeEach(() => {
+    Object.values(api).forEach((fn) => fn.mockReset())
+    api.getCustomChecks.mockResolvedValue(response([serverCheck()]))
+  })
+
+  it('is called Server checks and shows the Nagios server without an IP', async () => {
+    renderServer()
+
+    expect(await screen.findByRole('heading', { name: 'Server checks' })).toBeInTheDocument()
+    expect(screen.getByText('Package updates')).toBeInTheDocument()
+    expect(screen.getByText('Nagios server')).toBeInTheDocument()
+    expect(screen.queryByText(/Nagios server ·/)).not.toBeInTheDocument()
+  })
+
+  it('says what to do when there are none', async () => {
+    api.getCustomChecks.mockResolvedValue(response([]))
+    renderServer()
+
+    expect(await screen.findByText(/Add one to run this plugin on the Nagios server\./)).toBeInTheDocument()
+  })
+
+  it('adds a check without asking for a device and sends none', async () => {
+    api.addCustomCheck.mockResolvedValue({ ...serverCheck(), changed: true, message: '' })
+    renderServer()
+    await screen.findByText('Package updates')
+
+    fireEvent.click(screen.getByRole('button', { name: /Add check/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Add a check_apt server check' })
+    expect(within(dialog).queryByLabelText('Device')).not.toBeInTheDocument()
+    expect(within(dialog).getByText(/runs on the Nagios server itself/)).toBeInTheDocument()
+    expect(api.searchCustomCheckDevices).not.toHaveBeenCalled()
+
+    const add = within(dialog).getByRole('button', { name: 'Add check' })
+    expect(add).toBeDisabled() // no name yet
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Weekly updates' } })
+    expect(add).toBeEnabled() // apt has no required argument
+    fireEvent.click(add)
+
+    await waitFor(() => expect(api.addCustomCheck).toHaveBeenCalledWith(7, { name: 'Weekly updates', variables: {} }))
+  })
+
+  it('changes and pauses a server check by id', async () => {
+    api.changeCustomCheck.mockResolvedValue({ ...serverCheck(), changed: true, message: '' })
+    api.pauseCustomCheck.mockResolvedValue({})
+    renderServer()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Pause Package updates on Nagios server' }))
+    await waitFor(() => expect(api.pauseCustomCheck).toHaveBeenCalledWith(7, 12))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change Package updates on Nagios server' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Change Package updates' })
+    expect(within(dialog).queryByText(/remove this check and add/)).not.toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(api.changeCustomCheck).toHaveBeenCalledWith(7, 12, { name: 'Package updates', variables: { warning: '5' } }))
+  })
+})

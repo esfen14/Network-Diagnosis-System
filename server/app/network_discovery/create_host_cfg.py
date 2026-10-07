@@ -160,6 +160,38 @@ def load_custom_checks():
     return checks
 
 
+def load_server_checks():
+    """
+    The server checks an administrator added (Origin CUSTOM, no device) that are not paused, as
+    [(service_name, command, plugin), ...] in the order they were added. They run on the Nagios
+    server and are written as services of its own host object (SERVER_HOST_NAME); localhost.cfg is
+    never touched. A check whose arguments no longer build a command is skipped with a warning.
+    Read-only; does not touch the session.
+    """
+    checks = []
+    rows = db.session.scalars(
+        sa.select(PluginConfiguration)
+        .where(PluginConfiguration.Origin == PluginConfigurationOrigin.CUSTOM,
+               PluginConfiguration.NetDiscoveryID.is_(None))
+        .order_by(PluginConfiguration.PluginConfigurationID)
+    ).all()
+    for row in rows:
+        data = row.Configuration_Data or {}
+        if data.get("paused"):
+            continue
+        plugin = custom_checks.normalize_plugin_name(row.Plugin_Configuration.Name)
+        if custom_checks.check_target(plugin) != "server":
+            current_app.logger.warning(f"Skipping {row.Nagios_Service_Name}: {plugin} is not a server check.")
+            continue
+        try:
+            command = custom_checks.resolve_plugin_command_for(plugin, data.get("variables") or {})
+        except (custom_checks.PluginConfigurationError, KeyError) as error:
+            current_app.logger.warning(f"Skipping server check {row.Nagios_Service_Name}: {error}")
+            continue
+        checks.append((row.Nagios_Service_Name, command, plugin))
+    return checks
+
+
 def plan_plugin_services(plugin_name, service_label, port, transport, facts, overrides, app_config):
     """
     Resolve one discovered port into the services plugin_name produces for
@@ -529,6 +561,7 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
     enabled_plugins = enabled_plugin_names()
     # Checks administrators added by hand for plugins discovery cannot drive.
     custom_by_device = load_custom_checks()
+    server_checks = load_server_checks()
     used_custom_plugins = set()
     # config.py with the plugin settings saved from Settings -> Plugins (e.g. SNMP OIDs) in place.
     app_config = plugin_config()
@@ -633,6 +666,27 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
                     create_service(service,command)
                 )
                 host_config.append(_add_space(4))
+
+    # Server checks: services of the Nagios server's own host, which localhost.cfg defines. Only
+    # services are written here; the host and its stock services stay where they are.
+    if server_checks:
+        host_config.append(
+            f"""
+
+        #
+        # Define Server Checks (Nagios server: {custom_checks.SERVER_HOST_NAME})
+        #
+
+        """
+        )
+        for service_name, command, plugin_name in server_checks:
+            used_custom_plugins.add(plugin_name)
+            host_config.append(create_service({
+                "host_name": custom_checks.SERVER_HOST_NAME,
+                "service_name": service_name,
+                "contact_groups": "system_users",
+            }, command))
+            host_config.append(_add_space(4))
 
     host_config.append(
         f"""

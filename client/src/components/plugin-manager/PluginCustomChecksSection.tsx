@@ -21,6 +21,8 @@ type Props = {
   pluginId: number
   pluginName: string
   fields: CustomCheckField[]
+  // 'server' for a plugin whose checks run on the Nagios server; there is no device to pick.
+  target?: 'device' | 'server'
   // Called after a check was added, changed, paused, resumed or removed, so the drawer's counts reload.
   onChanged: () => void | Promise<void>
 }
@@ -64,7 +66,9 @@ function summarize(check: CustomCheckItem, fields: CustomCheckField[]) {
     .join('  ')
 }
 
-export function PluginCustomChecksSection({ pluginId, pluginName, fields, onChanged }: Props) {
+export function PluginCustomChecksSection({ pluginId, pluginName, fields, target = 'device', onChanged }: Props) {
+  const onServer = target === 'server'
+  const noun = onServer ? 'server check' : 'custom check'
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [page, setPage] = useState(1)
@@ -143,14 +147,14 @@ export function PluginCustomChecksSection({ pluginId, pluginName, fields, onChan
   return (
     <section>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Custom checks</h4>
+        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">{onServer ? 'Server checks' : 'Custom checks'}</h4>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 dark:border-white/10 dark:bg-[#0D1117]">
             <Search className="h-3.5 w-3.5 text-gray-500" />
             <input
               type="search"
-              aria-label="Search custom checks"
-              placeholder="Search name, device or IP"
+              aria-label={`Search ${noun}s`}
+              placeholder={onServer ? 'Search name' : 'Search name, device or IP'}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="w-40 bg-transparent text-xs text-gray-900 outline-none placeholder:text-gray-500 dark:text-white"
@@ -186,7 +190,9 @@ export function PluginCustomChecksSection({ pluginId, pluginName, fields, onChan
         <p className="rounded-xl border border-dashed border-gray-300 px-3 py-4 text-sm text-gray-500 dark:border-white/15 dark:text-gray-400">
           {debouncedQuery
             ? 'No custom checks match your search.'
-            : 'No checks yet. Add one to run this plugin against a device.'}
+            : onServer
+              ? 'No checks yet. Add one to run this plugin on the Nagios server.'
+              : 'No checks yet. Add one to run this plugin against a device.'}
         </p>
       ) : (
         <div className="space-y-2">
@@ -198,7 +204,7 @@ export function PluginCustomChecksSection({ pluginId, pluginName, fields, onChan
                   <div className="min-w-0">
                     <p className="break-words text-sm font-medium text-gray-900 dark:text-white">{check.name}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {check.device.hostname} · {check.device.ip_address}
+                      {check.device.ip_address ? `${check.device.hostname} · ${check.device.ip_address}` : check.device.hostname}
                     </p>
                   </div>
                   <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[check.status.kind]}`}>
@@ -281,6 +287,7 @@ export function PluginCustomChecksSection({ pluginId, pluginName, fields, onChan
         <CustomCheckDialog
           pluginName={pluginName}
           fields={fields}
+          target={target}
           check={dialog === 'add' ? null : dialog}
           isSaving={isSaving}
           error={dialogError}

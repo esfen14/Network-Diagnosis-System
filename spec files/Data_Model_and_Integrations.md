@@ -102,6 +102,12 @@ Plugin lifecycle and active monitoring are separate:
   the arguments of each, are the `CUSTOM_CHECK_FIELDS` table; `PLUGIN_CLASSES` gives every
   other catalog plugin its reason for not taking one. Merging a device moves its custom
   checks to the target, dropping one whose name the target already has.
+- **Server checks** are custom checks with no device (`NetDiscoveryID` empty) for the plugins in
+  `SERVER_CHECK_FIELDS` (`check_apt`, `check_uptime`, `check_sensors`, `check_ide_smart`,
+  `check_file_age`, `check_mailq`, `check_nagios`, `check_flexlm`). `load_server_checks()` writes
+  them under "Define Server Checks" as services of the host `localhost`, named `server-<plugin>-<name>`,
+  with commands that take no `-H`. `localhost.cfg` and the stock `localhost` services are never
+  touched; merges and the reconciler ignore them.
 - **The reconciler** (`app/api/plugin/reconcile.py`,
   `reconcile_plugin_monitoring`) keeps the `Origin = Auto` rows of
   `PluginConfiguration` equal to the services the planner generates (one per

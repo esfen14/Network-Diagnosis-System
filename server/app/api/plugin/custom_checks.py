@@ -73,16 +73,35 @@ def describe_custom_support(plugin):
     argument as {"name", "flag", "label", "required", "placeholder"} in the order the form shows them.
     """
     plugin_class = custom_checks.plugin_class(plugin.Name)
-    supported = plugin_class == "custom"
+    supported = custom_checks.is_custom_checkable(plugin.Name)
     return {
         "class": plugin_class,
         "supported": supported,
+        # Where a check of this plugin runs: "device" (pick one) or "server" (the Nagios server).
+        "target": custom_checks.check_target(plugin.Name),
         "note": custom_checks.PLUGIN_CLASS_NOTES.get(plugin_class),
         "fields": [
             {"name": f.name, "flag": f.flag, "label": f.label, "required": f.required, "placeholder": f.placeholder}
             for f in custom_checks.plugin_fields(plugin.Name)
         ],
     }
+
+
+def server_label():
+    """The name a server check shows where a device would be."""
+    return "Nagios server"
+
+
+def serialize_target(device):
+    """A check's target as {"id", "hostname", "ip_address"}: the device, or the Nagios server (id null)."""
+    if device is None:
+        return {"id": None, "hostname": server_label(), "ip_address": ""}
+    return {"id": device.NetDiscoveryID, "hostname": nagios_host_name(device), "ip_address": device.IP_Address}
+
+
+def target_host_name(device):
+    """The Nagios host a check's service belongs to: the device's, or the server's own host."""
+    return custom_checks.SERVER_HOST_NAME if device is None else nagios_host_name(device)
 
 
 def serialize_check(row, device, result, now):
@@ -97,7 +116,7 @@ def serialize_check(row, device, result, now):
         "id": row.PluginConfigurationID,
         "name": row.Service_Description,
         "service": row.Nagios_Service_Name,
-        "device": {"id": device.NetDiscoveryID, "hostname": nagios_host_name(device), "ip_address": device.IP_Address},
+        "device": serialize_target(device),
         "variables": data.get("variables") or {},
         "paused": paused,
         "running_since": row.Applied_At.isoformat() if row.Applied_At and not paused else None,
@@ -146,7 +165,7 @@ def list_custom_checks(plugin_id, page, per_page, search):
         PluginConfiguration.Origin == PluginConfigurationOrigin.CUSTOM,
     )).all():
         device = db.session.get(NetworkDiscovery, row.NetDiscoveryID) if row.NetDiscoveryID else None
-        if device is not None:
+        if device is not None or row.NetDiscoveryID is None:
             pairs.append((row, device))
 
     if search:
@@ -155,19 +174,19 @@ def list_custom_checks(plugin_id, page, per_page, search):
             (row, device) for row, device in pairs
             if needle in (row.Service_Description or "").lower()
             or needle in (row.Nagios_Service_Name or "").lower()
-            or needle in nagios_host_name(device).lower()
-            or needle in device.IP_Address
+            or needle in serialize_target(device)["hostname"].lower()
+            or needle in serialize_target(device)["ip_address"]
         ]
-    pairs.sort(key=lambda pair: (nagios_host_name(pair[1]).lower(), (pair[0].Service_Description or "").lower()))
+    pairs.sort(key=lambda pair: (serialize_target(pair[1])["hostname"].lower(), (pair[0].Service_Description or "").lower()))
 
     total = len(pairs)
     pages = max(1, -(-total // per_page))
     window = pairs[(page - 1) * per_page: page * per_page]
-    results = latest_service_results({(nagios_host_name(device), row.Nagios_Service_Name) for row, device in window})
+    results = latest_service_results({(target_host_name(device), row.Nagios_Service_Name) for row, device in window})
     now = datetime.now(timezone.utc)
     return {
         "items": [
-            serialize_check(row, device, results.get((nagios_host_name(device), row.Nagios_Service_Name)), now)
+            serialize_check(row, device, results.get((target_host_name(device), row.Nagios_Service_Name)), now)
             for row, device in window
         ],
         "page": page, "per_page": per_page, "pages": pages, "total": total,
@@ -194,6 +213,20 @@ def get_device(device_id):
     if device is None or device.Device_State in UNMONITORED_DEVICE_STATES:
         raise CustomCheckError("Device not found.")
     return device
+
+
+def resolve_target(plugin, device_id):
+    """
+    The device a new check is added to, or None for a server check. A device plugin needs a device
+    and a server plugin takes none; either mismatch raises CustomCheckError.
+    """
+    if custom_checks.check_target(plugin.Name) == "server":
+        if device_id is not None:
+            raise CustomCheckError(f"{plugin.Name} checks the Nagios server, so it takes no device.")
+        return None
+    if device_id is None:
+        raise CustomCheckError("Choose a device.")
+    return get_device(device_id)
 
 
 def get_check(plugin_id, check_id):
@@ -250,7 +283,7 @@ def create_custom_check(plugin_id, device_id, name, variables, user_id):
     """
     plugin = get_plugin_or_raise(plugin_id)
     require_custom_plugin(plugin)
-    device = get_device(device_id)
+    device = resolve_target(plugin, device_id)
     try:
         name = custom_checks.validate_check_name(name)
         cleaned = custom_checks.clean_variables(plugin.Name, variables)
@@ -258,15 +291,22 @@ def create_custom_check(plugin_id, device_id, name, variables, user_id):
         raise CustomCheckError(str(error))
 
     service_name = custom_checks.service_name(plugin.Name, name)
+    device_filter = (
+        PluginConfiguration.NetDiscoveryID.is_(None) if device is None
+        else PluginConfiguration.NetDiscoveryID == device.NetDiscoveryID
+    )
     taken = db.session.scalar(sa.select(PluginConfiguration.PluginConfigurationID).where(
-        PluginConfiguration.NetDiscoveryID == device.NetDiscoveryID,
-        PluginConfiguration.Nagios_Service_Name == service_name,
+        device_filter, PluginConfiguration.Nagios_Service_Name == service_name,
     ))
     if taken is not None:
-        raise CustomCheckError(f"This device already has a check named '{name}'.")
+        raise CustomCheckError(
+            f"The Nagios server already has a check named '{name}'." if device is None
+            else f"This device already has a check named '{name}'."
+        )
 
     row = PluginConfiguration(
-        PluginID=plugin.PluginID, NetDiscoveryID=device.NetDiscoveryID, Service_Description=name,
+        PluginID=plugin.PluginID, NetDiscoveryID=None if device is None else device.NetDiscoveryID,
+        Service_Description=name,
         Nagios_Service_Name=service_name, Origin=PluginConfigurationOrigin.CUSTOM,
         Status=PluginConfigurationStatus.PENDING, Configuration_Data={"variables": cleaned, "paused": False},
     )
@@ -275,7 +315,7 @@ def create_custom_check(plugin_id, device_id, name, variables, user_id):
 
     applied = apply_to_nagios(plugin_id, user_id, f"Adding check '{name}' failed")
     mark_applied(row)
-    record_success(plugin, user_id, service_name, f"Added check '{name}' on {nagios_host_name(device)}.")
+    record_success(plugin, user_id, service_name, f"Added check '{name}' on {target_host_name(device)}.")
     db.session.commit()
     return {**serialize_check(row, device, None, datetime.now(timezone.utc)), **applied}
 
@@ -288,7 +328,7 @@ def update_custom_check(plugin_id, check_id, name, variables, user_id):
     plugin = get_plugin_or_raise(plugin_id)
     require_custom_plugin(plugin)
     row = get_check(plugin_id, check_id)
-    device = db.session.get(NetworkDiscovery, row.NetDiscoveryID)
+    device = db.session.get(NetworkDiscovery, row.NetDiscoveryID) if row.NetDiscoveryID else None
     try:
         name = custom_checks.validate_check_name(name)
         cleaned = custom_checks.clean_variables(plugin.Name, variables)
@@ -297,7 +337,8 @@ def update_custom_check(plugin_id, check_id, name, variables, user_id):
 
     service_name = custom_checks.service_name(plugin.Name, name)
     clash = db.session.scalar(sa.select(PluginConfiguration.PluginConfigurationID).where(
-        PluginConfiguration.NetDiscoveryID == row.NetDiscoveryID,
+        PluginConfiguration.NetDiscoveryID.is_(None) if row.NetDiscoveryID is None
+        else PluginConfiguration.NetDiscoveryID == row.NetDiscoveryID,
         PluginConfiguration.Nagios_Service_Name == service_name,
         PluginConfiguration.PluginConfigurationID != row.PluginConfigurationID,
     ))
@@ -326,7 +367,7 @@ def set_check_paused(plugin_id, check_id, paused, user_id):
     """
     plugin = get_plugin_or_raise(plugin_id)
     row = get_check(plugin_id, check_id)
-    device = db.session.get(NetworkDiscovery, row.NetDiscoveryID)
+    device = db.session.get(NetworkDiscovery, row.NetDiscoveryID) if row.NetDiscoveryID else None
     if bool((row.Configuration_Data or {}).get("paused")) == paused:
         return {**serialize_check(row, device, None, datetime.now(timezone.utc)), "changed": False, "message": ""}
     if not paused:

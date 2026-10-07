@@ -308,6 +308,17 @@ describe('PluginDetailsDrawer not service-driven', () => {
     expect(screen.queryByRole('button', { name: /^Enable$/ })).not.toBeInTheDocument()
   })
 
+  it('says a server plugin checks the Nagios server itself and offers server checks', async () => {
+    api.getPluginDetails.mockResolvedValue(details({
+      name: 'check_apt', service_driven: false,
+      custom_checks: { class: 'server', supported: true, target: 'server', note: null, fields: [] },
+    }))
+    renderDrawer()
+
+    expect(await screen.findByText(/checks the Nagios server itself\. Add a server check to run it there\./)).toBeInTheDocument()
+    expect(screen.getByText('custom checks of check_apt')).toBeInTheDocument()
+  })
+
   it('hides the custom checks from someone without the permission', async () => {
     permissions.denied = new Set(['plugin.custom_check'])
     api.getPluginDetails.mockResolvedValue(details({

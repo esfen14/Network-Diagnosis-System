@@ -62,6 +62,9 @@ function notServiceDrivenNote(details: PluginDetails): string {
     return 'Checks the Nagios server itself through Nagios Core. Not managed here.'
   }
   const custom = details.custom_checks
+  if (custom?.supported && custom.target === 'server') {
+    return 'This plugin checks the Nagios server itself. Add a server check to run it there.'
+  }
   if (custom?.supported) {
     return 'There is no port for discovery to attach this plugin to. Add a custom check to run it against a device.'
   }
@@ -501,6 +504,7 @@ export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
                   pluginId={pluginId}
                   pluginName={details.name}
                   fields={details.custom_checks.fields}
+                  target={details.custom_checks.target ?? 'device'}
                   onChanged={async () => {
                     await load(false)
                     onChanged()
