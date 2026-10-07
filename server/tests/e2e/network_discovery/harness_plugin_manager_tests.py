@@ -46,8 +46,8 @@ class FakePinpoint:
     """A scripted Pinpoint with a custom check store and a real hosts.cfg file."""
 
     def __init__(self, hosts: Path, *, status="ok", host_for_server="localhost", keep_on_pause=False,
-                 accept_anything=False, leak_password=False, forget_password_on_change=False):
-        self.hosts, self.status, self.host_for_server = hosts, status, host_for_server
+                 accept_anything=False, leak_password=False, forget_password_on_change=False, mode=0o640):
+        self.hosts, self.status, self.host_for_server, self.mode = hosts, status, host_for_server, mode
         self.keep_on_pause, self.accept_anything = keep_on_pause, accept_anything
         self.leak_password, self.forget_password_on_change = leak_password, forget_password_on_change
         self.checks: dict[int, dict] = {}
@@ -69,6 +69,9 @@ class FakePinpoint:
                 f"    service_description         {check['service']}\n"
                 f"    check_command               {command}\n}}\n")
         self.hosts.write_text("\n".join(blocks) + "\n", encoding="utf-8")
+        if os.name == "posix":
+            # The product keeps the file for the Nagios user and group; the default umask would leave it 0664.
+            self.hosts.chmod(self.mode)
 
     # ---------------------------------------------------------------- inventory
     def plugin_by_name(self, name):
@@ -484,6 +487,17 @@ class PluginManagerScenarioTests(unittest.TestCase):
         self.assertEqual(ctx.failures, [])
         self.assertNotIn(PASSWORD, json.dumps(ctx.evidence))
         self.assertEqual(ctx.run_teardown(), [])
+
+    @unittest.skipUnless(os.name == "posix", "file modes are only meaningful on POSIX")
+    def test_password_case_reports_a_host_file_that_everyone_can_read(self):
+        ctx = self.run_password(FakePinpoint(self.hosts, mode=0o644))
+        self.assertTrue(any("readable by every user (mode 0o644)" in f for f in ctx.failures), ctx.failures)
+
+    @unittest.skipUnless(os.name == "posix", "file modes are only meaningful on POSIX")
+    def test_password_case_records_the_host_file_mode_in_the_evidence(self):
+        ctx = self.run_password(FakePinpoint(self.hosts, mode=0o640))
+        self.assertEqual(ctx.failures, [])
+        self.assertEqual(ctx.evidence.get("hosts_cfg_mode"), "0o640")
 
     def test_password_case_reports_a_password_in_the_list(self):
         ctx = self.run_password(FakePinpoint(self.hosts, leak_password=True))
