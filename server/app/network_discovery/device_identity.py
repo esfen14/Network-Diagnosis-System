@@ -197,25 +197,32 @@ def final_device(device):
     return device
 
 
-def device_ids_by_host_name(names):
+def devices_by_host_name(names):
     """
-    Return {Nagios host name: device id} for the given host names, using the same naming rule as
-    nagios_host_name(). The Device Inventory host list is keyed by that name, so this is how it
-    reaches a device's id. A name with no device (for example "localhost") is simply absent. If a
-    retired or merged device once had the same name as a current one, the current device wins.
+    Return {Nagios host name: NetworkDiscovery row} for the given host names, using the same naming
+    rule as nagios_host_name(). A name with no device (for example "localhost") is simply absent. If
+    a retired or merged device once had the same name as a current one, the current device wins.
     """
     wanted = set(names)
     if not wanted:
         return {}
 
-    ids = {}
+    found = {}
     ended = (DeviceState.RETIRED, DeviceState.MERGED)
     devices = db.session.scalars(sa.select(NetworkDiscovery).order_by(NetworkDiscovery.NetDiscoveryID)).all()
     for device in sorted(devices, key=lambda d: d.Device_State in ended, reverse=True):
         name = nagios_host_name(device)
         if name in wanted:
-            ids[name] = device.NetDiscoveryID
-    return ids
+            found[name] = device
+    return found
+
+
+def device_ids_by_host_name(names):
+    """
+    Return {Nagios host name: device id} for the given host names. The Device Inventory host list is
+    keyed by that name, so this is how it reaches a device's id. See devices_by_host_name().
+    """
+    return {name: device.NetDiscoveryID for name, device in devices_by_host_name(names).items()}
 
 
 def nagios_host_name(device):

@@ -134,3 +134,67 @@ def request_notification_count_range(start_ts, end_ts, hostname=None, service=No
         params['service'] = service
 
     return _request_archive("notificationcount", params)
+
+
+# ======================= NORMALIZATION ===============================
+# archivejson key names differ between Nagios versions, so each canonical
+# field is read from several aliases (first non-empty wins).
+_HOST_KEYS = ("hostname", "host_name", "host")
+_SERVICE_KEYS = ("servicedesc", "service_description", "description", "service")
+_STATE_KEYS = ("notificationreason", "notification_reason", "state")
+_TYPE_KEYS = ("notificationtype", "notification_type")
+_CONTACT_KEYS = ("contact", "contact_name")
+_MESSAGE_KEYS = ("output", "plugin_output", "message")
+_METHOD_KEYS = ("notificationmethod", "method", "command")
+
+
+def _first(raw, keys):
+    for key in keys:
+        value = raw.get(key)
+        if value not in (None, ""):
+            return value
+    return ""
+
+
+def normalize_notification(raw: dict) -> dict:
+    """
+    Return the raw Nagios notification with canonical keys added
+    (hostname, servicedesc, state, notificationtype, contact, output,
+    notificationmethod). Original keys are kept; empty values stay empty.
+    """
+    return {
+        **raw,
+        "hostname":           _first(raw, _HOST_KEYS),
+        "servicedesc":        _first(raw, _SERVICE_KEYS) or None,
+        "state":              str(_first(raw, _STATE_KEYS)).upper(),
+        "notificationtype":   str(_first(raw, _TYPE_KEYS)).upper(),
+        "contact":            _first(raw, _CONTACT_KEYS),
+        "output":             _first(raw, _MESSAGE_KEYS),
+        "notificationmethod": _first(raw, _METHOD_KEYS),
+    }
+
+
+def collapse_repeats(items: list) -> list:
+    """
+    Collapse repeat notifications — the same host/service re-notifying in the
+    same state — into one entry carrying the newest timestamp plus
+    `repeat_count` and `first_timestamp`. A state change starts a new entry.
+    Items without a host name are never collapsed. Input items must already be
+    normalized; the result is newest-first.
+    """
+    groups = []
+    last_group = {}  # (host, service) -> most recent group for that object
+    for item in sorted(items, key=lambda n: n.get("timestamp", 0)):
+        host = item.get("hostname")
+        key = (host, item.get("servicedesc"))
+        group = last_group.get(key) if host else None
+        if group is not None and group["state"] == item.get("state"):
+            group["timestamp"] = item.get("timestamp", 0)
+            group["repeat_count"] += 1
+            continue
+        group = {**item, "repeat_count": 1, "first_timestamp": item.get("timestamp", 0)}
+        groups.append(group)
+        if host:
+            last_group[key] = group
+    groups.sort(key=lambda n: n.get("timestamp", 0), reverse=True)
+    return groups

@@ -38,7 +38,7 @@ from app.history_models import (
     HostStateType,
     ServiceStatus,
 )
-from app.network_discovery.device_identity import device_ids_by_host_name
+from app.network_discovery.device_identity import device_ids_by_host_name, devices_by_host_name
 from app.system_models import AlertAcknowledgement, AckHistory, AckAction
 
 # ---------------------------------------------------------------------------
@@ -64,6 +64,8 @@ def list_hosts():
     Each item:
     {
         "hostname":        str,
+        "device_id":       int | null,
+        "ip_address":      str | null,  // current IP; null for hosts with no discovered device
         "state":           str,         // UP / DOWN / UNREACHABLE
         "state_type":      str,         // Soft / Hard
         "last_check":      str | null,  // ISO-8601
@@ -162,14 +164,15 @@ def list_hosts():
 
         page_result = db.paginate(query, page=page, per_page=per_page, error_out=False)
 
-        device_ids = device_ids_by_host_name([h.Hostname for h in page_result.items])
+        devices = devices_by_host_name([h.Hostname for h in page_result.items])
 
         items = []
         for h in page_result.items:
             ack = ack_map.get(h.Hostname)
             items.append({
                 "hostname":      h.Hostname,
-                "device_id":     device_ids.get(h.Hostname),
+                "device_id":     devices[h.Hostname].NetDiscoveryID if h.Hostname in devices else None,
+                "ip_address":    devices[h.Hostname].IP_Address if h.Hostname in devices else None,
                 "state":         h.Current_State.value,
                 "state_type":    h.State_Type.value,
                 "last_check":    h.Last_Check.isoformat() if h.Last_Check else None,

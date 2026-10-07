@@ -63,7 +63,7 @@ from app.history_models import (
     ServiceStateType,
     ProgramStatus,
 )
-from app.nagios.notifications import request_notifications_last
+from app.nagios.notifications import request_notifications_last, normalize_notification
 from app.system_models import AlertAcknowledgement, AckHistory, AckAction
 
 # ---------------------------------------------------------------------------
@@ -332,7 +332,8 @@ def _normalize_notification(item: dict) -> dict:
     Field names differ between archivejson versions/mock data — handles
     "hostname"/"host_name" and millisecond vs. second timestamps.
     """
-    hostname = item.get("hostname") or item.get("host_name") or ""
+    item     = normalize_notification(item)
+    hostname = item["hostname"]
     raw_ts   = item.get("timestamp") or 0
 
     # Convert millisecond timestamps to seconds if needed.
@@ -342,12 +343,12 @@ def _normalize_notification(item: dict) -> dict:
 
     return {
         "timestamp":    ts_sec,
-        "type":         (item.get("notificationtype") or "").upper(),
+        "type":         item["notificationtype"],
         "hostname":     hostname,
-        "service_name": item.get("servicedesc") or item.get("description") or None,
-        "state":        item.get("notificationreason") or item.get("state") or "",
-        "contact":      item.get("contact") or "",
-        "message":      (item.get("output") or item.get("plugin_output") or "")[:200],
+        "service_name": item["servicedesc"],
+        "state":        item["state"],
+        "contact":      item["contact"],
+        "message":      item["output"][:200],
     }
 
 

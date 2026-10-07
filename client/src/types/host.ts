@@ -1,6 +1,7 @@
 // Mirrors the Host Status Table exposed by server/app/api/system/network_hosts.py.
 // This is a Nagios host-status snapshot, not a device/asset inventory —
-// there is no device type, IP, OS version, or router grouping on the backend.
+// there is no device type, OS version, or router grouping on the backend.
+// The IP comes from the discovered device matching the host name (null if none).
 
 export type HostState = 'UP' | 'DOWN' | 'UNREACHABLE'
 
@@ -12,6 +13,7 @@ export type HostAck = {
 
 export type Host = {
   hostname: string
+  ipAddress: string | null
   state: HostState
   stateType: string
   lastCheck: string | null
@@ -31,6 +33,7 @@ type HostAckApiRecord = {
 
 type HostApiRecord = {
   hostname: string
+  ip_address?: string | null
   state: string
   state_type: string
   last_check: string | null
@@ -45,6 +48,7 @@ type HostApiRecord = {
 export function fromHostRecord(record: HostApiRecord): Host {
   return {
     hostname: record.hostname,
+    ipAddress: record.ip_address ?? null,
     // HostStateType.value is actually "Up"/"Down"/"Unreachable" (title case)
     // despite the route's docstring claiming UP/DOWN/UNREACHABLE — normalize
     // so the rest of the frontend can treat state as a stable uppercase enum.

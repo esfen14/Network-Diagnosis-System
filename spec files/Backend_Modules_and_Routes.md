@@ -124,7 +124,7 @@ Valid trend windows are `hours=1`, `6`, `24`, or `168`.
 
 | Method and path | Permission | Purpose |
 |---|---|---|
-| `GET /api/system/network-health/hosts` | `system.network_health` | Paginated/filterable latest host snapshot; each item carries `device_id` (the discovered device behind the Nagios host name, `null` for a host with no device record such as `localhost`) |
+| `GET /api/system/network-health/hosts` | `system.network_health` | Paginated/filterable latest host snapshot; each item carries `device_id` (the discovered device behind the Nagios host name, `null` for a host with no device record such as `localhost`) and `ip_address` (that device's current IP, `null` in the same case) |
 | `GET /api/system/network-health/hosts/<hostname>/detail` | `system.network_health` | Host detail panel data, including `device_id` |
 | `POST /api/system/network-health/hosts/acknowledge` | `system.acknowledge_alerts` | Acknowledge a host alert |
 | `DELETE /api/system/network-health/hosts/acknowledge` | `system.acknowledge_alerts` | Unacknowledge a host alert |
@@ -154,8 +154,8 @@ in the seed permission list. This is tracked in `Implementation_Status.md`.
 
 | Method and path | Permission | Purpose |
 |---|---|---|
-| `GET /api/system/notifications` | `system.notifications` | Recent notifications from Nagios (`source: nagios`) and Pinpoint itself (`source: pinpoint`, network scan results) annotated with per-user read state |
-| `GET /api/system/notifications/unread-count` | `system.notifications` | Count events after the user's cursor |
+| `GET /api/system/notifications` | `system.notifications` | Recent notifications from Nagios (`source: nagios`) and Pinpoint itself (`source: pinpoint`, network scan results) annotated with per-user read state. Nagios field names are normalized (`normalize_notification`) and repeats of the same host/service in the same state are collapsed into one entry with `repeat_count` and `first_timestamp` (`collapse_repeats`); the history routes are not collapsed |
+| `GET /api/system/notifications/unread-count` | `system.notifications` | Count collapsed entries after the user's cursor (matches the panel list) |
 | `POST /api/system/notifications/mark-read` | `system.notifications` | Advance the user's notification cursor |
 
 ### `app/api/system/network_discovery.py`

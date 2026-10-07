@@ -7,7 +7,7 @@ define host {{
     checks_enabled                  1
     retain_status_information       1
     retain_nonstatus_information    1
-    notification_interval           5
+    notification_interval           30
     notification_period             24x7
     contact_groups                  {contact_groups}
 }}

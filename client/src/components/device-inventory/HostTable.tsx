@@ -144,6 +144,7 @@ export function HostTable({
           <thead>
             <tr className="border-b border-gray-200 text-xs text-gray-500 dark:border-white/10 dark:text-gray-500">
               <th className="px-4 py-3 font-normal">Hostname</th>
+              <th className="px-4 py-3 font-normal">IP Address</th>
               <th className="px-4 py-3 font-normal">State</th>
               <th className="px-4 py-3 font-normal">Latency</th>
               <th className="px-4 py-3 font-normal">Last Check</th>
@@ -156,13 +157,13 @@ export function HostTable({
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                   Loading hosts…
                 </td>
               </tr>
             ) : hosts.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                   No hosts match your search or filter
                 </td>
               </tr>
@@ -186,6 +187,7 @@ export function HostTable({
                       host.hostname
                     )}
                   </td>
+                  <td className="px-4 py-3 font-mono text-gray-900 dark:text-white">{host.ipAddress ?? '—'}</td>
                   <td className="px-4 py-3"><StateBadge state={host.state} /></td>
                   <td className="px-4 py-3 text-gray-900 dark:text-white">{host.checkLatency.toFixed(3)}s</td>
                   <td className="px-4 py-3 text-gray-900 dark:text-white">{formatDateTime(host.lastCheck)}</td>
