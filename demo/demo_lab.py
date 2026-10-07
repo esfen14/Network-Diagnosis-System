@@ -29,7 +29,6 @@ import contextlib
 import io
 import os
 import re
-import secrets
 import shlex
 import socket
 import subprocess
@@ -42,6 +41,7 @@ PREFIX = "pinpoint-demo"
 BASE_SNAPSHOT = "base-ready"
 DEMO_SNAPSHOT = "demo-ready"
 DEMO_USER = "demo"
+DEMO_PASSWORD = "pinpoint-demo"   # static on purpose: the lab VMs are disposable and local-only
 DEFAULT_ISO = Path.home() / "Downloads" / "ubuntu-24.04.5-live-server-amd64.iso"
 DEFAULT_STATE = Path.home() / ".local" / "share" / "pinpoint-demo"
 DEFAULT_LAN_NAME = "pinpoint-demo"      # VirtualBox internal network
@@ -490,13 +490,14 @@ def password_path(state_dir):
 
 
 def ensure_credentials(state_dir, apply):
-    """Create the demo SSH key and the demo user's password if missing."""
+    """Create the demo SSH key and write the static demo password file if missing or stale."""
     state_dir = Path(state_dir)
     key = key_path(state_dir)
     pw = password_path(state_dir)
-    if key.exists() and pw.exists():
+    password_current = pw.exists() and pw.read_text().strip() == DEMO_PASSWORD
+    if key.exists() and password_current:
         return
-    say("  + create SSH key and demo password in " + str(state_dir) + " (mode 600)")
+    say("  + create SSH key and demo password file in " + str(state_dir) + " (mode 600)")
     if not apply:
         return
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -504,8 +505,8 @@ def ensure_credentials(state_dir, apply):
     if not key.exists():
         subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "pinpoint-demo",
                         "-f", str(key)], check=True)
-    if not pw.exists():
-        pw.write_text(secrets.token_urlsafe(12) + "\n")
+    if not password_current:
+        pw.write_text(DEMO_PASSWORD + "\n")
         pw.chmod(0o600)
 
 
@@ -1098,11 +1099,8 @@ def cmd_shell(args):
 
 def cmd_creds(args):
     """Print what you type into the NCPA deployment wizard."""
-    pw = password_path(args.state_dir)
-    if not pw.exists():
-        fail("no credentials yet. Run build-base first.")
     say("Username: " + DEMO_USER)
-    say("Password: " + pw.read_text().strip())
+    say("Password: " + DEMO_PASSWORD)
     parts = []
     for key in ACTIVE_TARGETS:
         parts.append(lan_ip(key) + " (" + key + ")")

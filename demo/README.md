@@ -194,8 +194,19 @@ VirtualBox side. It creates throwaway `pinpoint-demo-*` VMs without installing a
 OS, tests them and deletes everything. It needs about 1.6 GiB of free RAM for its
 boot stage and refuses to run if a demo lab already exists.
 
-The demo's SSH key and generated password live in `~/.local/share/pinpoint-demo/`
-(mode 600), never in the repository. The servers' management SSH is reachable only
+The demo VMs use a fixed login, the same on every server:
+
+| Username | Password |
+|---|---|
+| `demo` | `pinpoint-demo` |
+
+`python3 demo_lab.py creds` prints the same login. It is the one you type into the NCPA
+wizard. The password is deliberately static and public: the VMs are disposable, local-only
+lab machines, so never reuse it anywhere real. A VM built before this change keeps its old
+random password until you rebuild it.
+
+The demo's SSH key and a copy of the password (for the unattended installer) live in
+`~/.local/share/pinpoint-demo/` (mode 600), never in the repository. The servers' management SSH is reachable only
 at `127.0.0.1:2200` to `2205`, and the demo user has passwordless sudo inside the
 disposable lab VMs.
 
@@ -222,7 +233,7 @@ to fix small things on the first rehearsal.
 ```bash
 python3 demo_lab.py down
 python3 demo_lab.py destroy --apply          # asks you to type yes; deletes only pinpoint-demo-* VMs
-rm -rf ~/.local/share/pinpoint-demo          # the demo key and password
+rm -rf ~/.local/share/pinpoint-demo          # the demo key and password file
 ```
 
 `destroy` never touches your Pinpoint VM, your other VMs or the ISO.
