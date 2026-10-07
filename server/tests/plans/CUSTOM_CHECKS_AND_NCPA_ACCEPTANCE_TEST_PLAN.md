@@ -216,11 +216,38 @@ Open each plugin in the drawer as Admin.
 | Plugin | Expected in the drawer |
 |---|---|
 | `check_by_ssh`, `check_ups`, `check_clamd` | "Not service-driven. There is no port for discovery to attach this plugin to. Add a custom check to run it against a device." and a **Custom checks** section with **Add check**. No Enable button |
-| `check_apt`, `check_uptime`, `check_sensors` | "Not service-driven. Runs on the Nagios server. Not available yet." No Custom checks section |
+| `check_apt`, `check_uptime`, `check_sensors`, `check_file_age` | "Not service-driven. This plugin checks the Nagios server itself. Add a server check to run it there." and a **Server checks** section (no device picker) |
+| `check_log`, `check_mrtg`, `check_dummy`, `check_dhcp` | "Not service-driven. Needs arguments Pinpoint cannot build yet." No section |
 | `check_ping`, `check_icmp` | "Not service-driven. Checks the device itself rather than a port. Not available yet." |
 | `check_radius`, `check_mysql_query` | "Not service-driven. Needs a password, which custom checks cannot store yet." |
-| `check_load`, `check_disk` | "Checks the Nagios server itself through Nagios Core. Not managed here." |
+| `check_load`, `check_disk`, `check_swap`, `check_procs`, `check_users` | "Checks the Nagios server itself through Nagios Core. Not managed here." No section |
 | `check_ssh` | Enable and Disable buttons; no Custom checks section |
+
+### S-01: add a server check (check_apt)
+
+1. `sha256sum localhost.cfg` and keep it. Open `check_apt` → **Server checks** → **Add check**. Name `Package updates`. Leave the arguments empty. **Add check**.
+
+| Expected | The dialog has no device picker and says it runs on the Nagios server. The list shows **Package updates** under **Nagios server** (no IP), status **Waiting**, then OK or Warning with the package count within about 5 minutes. `hosts.cfg` has a section `# Define Server Checks (Nagios server: localhost)` with a service `server-apt-package_updates` on host `localhost` and command `pinpoint_custom_check_apt` (`command_line $USER1$/check_apt $ARG1$`, no `-H`). `nagios -v` reports 0 errors. **`localhost.cfg` has the same sha256 as before.** The Nagios web UI shows the service on the `localhost` host next to the stock ones. Network Health lists it under **APT** |
+|---|---|
+| Fail if | The check is filed under a device, `localhost.cfg` changed, or `nagios -v` complains about an unknown host `localhost` (then the server's host object has another name; record it and the name) |
+
+### S-02: more server checks
+
+1. Add `check_uptime` (warning `86400`, unit `seconds`), `check_file_age` (file a file that exists, critical `60`), `check_nagios` (status log path, max age `5`, process `/usr/local/nagios/bin/nagios`).
+
+| Expected | Each appears with its own service. `check_file_age` on a file older than 60 s turns **Critical** with the plugin's message; `check_nagios` is **OK**. A path with a forbidden character (for example `;`) is refused: the button stays disabled and the API returns 400 without echoing the value |
+|---|---|
+
+### S-03: server check rules
+
+| Step | Expected |
+|---|---|
+| Add a second server check named `Package updates` | Refused: "The Nagios server already has a check named 'Package updates'." |
+| API: `POST /api/plugin/<check_apt id>/custom-checks` with a `device_id` | 400 "check_apt checks the Nagios server, so it takes no device." |
+| API: `POST` on `check_ups` with no `device_id` | 400 "Choose a device." |
+| Pause, resume, change, remove a server check | As C-06 to C-08: the service leaves and returns in `hosts.cfg` and Nagios; the stock `localhost` services are never touched |
+| Merge two devices, retire a device, run a Rescan | The server checks are unchanged |
+| Make Nagios reject the next reload (lab plan §6.2) and add one | Same refusal and rollback as C-05 |
 
 ### C-02: add a check and watch it run (the key case)
 

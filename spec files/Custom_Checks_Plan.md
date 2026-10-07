@@ -108,7 +108,8 @@ using their default command in `plugin_command_defaults.py`. Four outcomes:
 | **A. Port-driven, missing from the registry** | Check a well-known port and can run with only host and port | `check_pgsql` (5432), `check_ldap` / `check_ldaps` (389 / 636; they need a base DN, so without one they fall back to the generic TCP check, as MySQL does without a user), `check_ircd` (6667), `check_rpc` (111), `check_time` (37), `check_ntp_peer` (UDP 123, an alternative to `check_ntp_time`) | **Add to the registry**, not as custom checks. Each is a `PluginDefinition`, a Port → Service rule and tests; enabling then works like `check_ssh`. These seven are the approved set (Q-C6) |
 | **B. Host-driven** | Probe the device, not a port | `check_ping`, `check_icmp`, `check_fping`, `check_dig` (a lookup, overlaps `check_dns`) | Not custom checks. Host aliveness is already a Nagios host check; a per-host service is a separate small feature (Q-C7). Until then they stay inventory-only |
 | **C. Probes a device over the network but needs arguments or credentials** | The target is the device; only an admin knows the arguments | `check_by_ssh`, `check_breeze`, `check_wave`, `check_hpjd`, `check_ifstatus`, `check_ifoperstatus` (needs an interface index), `check_ups` (needs the UPS name), `check_nt`, `check_nwstat`, `check_overcr` and `check_real` (rare services that each need a mandatory argument: `-v` or `-u`; Q-C6), `check_radius` (needs a shared secret), `check_ssl_validity`, `check_disk_smb` (needs a share), `check_mysql_query`, `check_oracle`, `check_dbi`, `check_game`, `check_clamd` | **Custom checks** (this plan). Those that need a secret (`check_radius`, database passwords) are blocked until a secrets store exists (§9), and the dialog says so |
-| **D. Checks the machine it runs on** | Local to the Nagios server, whatever device you pick | `check_apt`, `check_uptime`, `check_sensors`, `check_ide_smart`, `check_file_age`, `check_log`, `check_mailq`, `check_mrtg`, `check_mrtgtraf`, `check_flexlm`, `check_nagios`, `check_dummy`, and the five stock local plugins | **Not offered on other devices**, because the result would be the server's, filed under another device's name. They wait for the server-host feature (§2.6). `check_cluster` (aggregates service states) is out of scope for now |
+| **D. Checks the machine it runs on** | Local to the Nagios server, whatever device you pick | `check_apt`, `check_uptime`, `check_sensors`, `check_ide_smart`, `check_file_age`, `check_mailq`, `check_flexlm`, `check_nagios` | **Server checks** (§2.6, branch `feature/server-host-checks`): one service on the Nagios server's own host, with no device to pick. Not offered on other devices, because the result would be the server's, filed under another device's name |
+| **D2. Not offered** | Left with Nagios Core, or needs arguments Pinpoint cannot build yet | the five stock plugins (`check_load`, `check_disk`, `check_swap`, `check_procs`, `check_users`) are Nagios Core's (`stock`); `check_log`, `check_mrtg`, `check_mrtgtraf`, `check_dummy`, `check_dhcp` (`advanced`: `check_log` writes a state file at a path the administrator chooses, `check_dummy` takes a positional argument); `check_cluster` (aggregates service states) is out of scope for now | The drawer says why |
 
 Where the audit table in code (`PLUGIN_CLASSES`) differs from the list above: `check_dhcp` is
 class D (it broadcasts from the server's own interface), and the deprecated `check_ntp` has a
@@ -139,9 +140,22 @@ The monitoring server itself is **not** a target in this plan. The reconciler is
 allowed to write anything for it (§2.3, §2.6 of the monitoring plan). That is the
 server-host feature, §2.6 below.
 
-### 2.6 Server-host checks: a separate follow-up (Q-C1, agreed)
+### 2.6 Server-host checks (Q-C1, agreed) — built on `feature/server-host-checks`
 
-Class D plugins (`check_apt` and friends) belong to the Nagios server, so they need their
+> **As built.** A server check is a `PLUGIN_CONFIGURATION` row with `Origin = Custom` and
+> `NetDiscoveryID` empty. It is written as a service of the host `localhost` (the Nagios server's
+> own host object, defined by `localhost.cfg`) in a separate "Define Server Checks" section of
+> `hosts.cfg`, through the same writer, validation and rollback as every other check.
+> `localhost.cfg` is never read or edited. Commands have no `-H`
+> (`$USER1$/check_apt $ARG1$`). Service names start `server-` (`server-apt-weekly_updates`) and
+> are unique among the server's checks. The same routes, permission (`plugin.custom_check`) and
+> argument validation are used; the plugin's `custom_checks.target` says `server`, and such a
+> plugin takes no `device_id`. The Nagios host name is the constant `SERVER_HOST_NAME`
+> (`localhost`); if the install's host object has another name, `nagios -v` rejects the config and
+> the change rolls back with Nagios's message. Checks run as the Nagios user on the Nagios server,
+> so only administrators holding the permission can add them.
+
+The text below is the plan as first written. Class D plugins (`check_apt` and friends) belong to the Nagios server, so they need their
 own feature, planned separately and built after this one. What this plan fixes now, so the
 two do not conflict:
 

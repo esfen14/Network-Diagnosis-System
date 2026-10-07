@@ -609,7 +609,7 @@ def parse_custom_check_body(require_device):
         return None, None, None, error("name must be text.", 400)
     if not isinstance(variables, dict):
         return None, None, None, error("variables must be an object.", 400)
-    if require_device and (not isinstance(device_id, int) or isinstance(device_id, bool)):
+    if require_device and device_id is not None and (not isinstance(device_id, int) or isinstance(device_id, bool)):
         return None, None, None, error("device_id must be a number.", 400)
     return name, variables, device_id, None
 
@@ -692,7 +692,8 @@ def create_custom_check_route(plugin_id):
     """
     Add a custom check: run this plugin against one device with the given arguments, then apply
     it to Nagios. Only plugins the plugin details list as supported (``custom_checks.supported``)
-    take one.
+    take one. A plugin whose ``custom_checks.target`` is ``server`` runs on the Nagios server itself
+    and takes no ``device_id``; every other one needs it.
 
     **JSON Format**
 

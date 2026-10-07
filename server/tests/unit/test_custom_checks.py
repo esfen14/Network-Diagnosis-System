@@ -81,7 +81,7 @@ class TestPluginClasses:
 
     @pytest.mark.parametrize("name, expected", [
         ("check_ssh", "service"), ("check_ncpa.py", "service"), ("check_by_ssh", "custom"),
-        ("check_apt", "server"), ("check_ping", "host"), ("check_radius", "credentials"),
+        ("check_apt", "server"), ("check_load", "stock"), ("check_dhcp", "advanced"), ("check_ping", "host"), ("check_radius", "credentials"),
         ("check_cluster", "unsupported"), ("check_company", None),
     ])
     def test_plugin_class(self, name, expected):
@@ -122,7 +122,7 @@ class TestArguments:
 
     def test_a_plugin_that_takes_no_custom_check_is_refused(self):
         with pytest.raises(PluginConfigurationError):
-            custom_checks.clean_variables("check_apt", {})
+            custom_checks.clean_variables("check_load", {})
 
     def test_check_names(self):
         assert custom_checks.validate_check_name("  Weekly updates ") == "Weekly updates"
@@ -182,7 +182,8 @@ class TestRoutes:
         assert db.session.scalar(sa.select(PluginHistory)).Result is PluginActionResult.FAILED
 
     @pytest.mark.parametrize("plugin_name, message", [
-        ("check_apt", "Runs on the Nagios server"),
+        ("check_load", "Not managed here"),
+        ("check_dhcp", "cannot build yet"),
         ("check_ssh", "does not take custom checks"),
         ("check_radius", "password"),
     ])
@@ -309,8 +310,13 @@ class TestRoutes:
         assert details["supported"] is True and details["class"] == "custom"
         assert [f["name"] for f in details["fields"]][0] == "ups" and details["fields"][0]["required"] is True
 
-        note = logged_in_client.get(f"/api/plugin/{apt.PluginID}").get_json()["data"]["custom_checks"]
-        assert note["supported"] is False and "Nagios server" in note["note"] and note["fields"] == []
+        assert details["target"] == "device"
+        server = logged_in_client.get(f"/api/plugin/{apt.PluginID}").get_json()["data"]["custom_checks"]
+        assert (server["supported"], server["class"], server["target"]) == (True, "server", "server")
+        stock = add_plugin("check_load")
+        note = logged_in_client.get(f"/api/plugin/{stock.PluginID}").get_json()["data"]["custom_checks"]
+        assert note["supported"] is False and "Nagios Core" in note["note"] and note["fields"] == []
+        assert note["target"] is None
 
     def test_the_permission_is_required(self, client, db_session, seeded_permissions, regular_role, status):
         from app.system_models import User, UserStatus
@@ -434,3 +440,196 @@ class TestDeviceSearch:
         assert everything[0]["ip_address"] == "10.0.0.6"
         found = logged_in_client.get("/api/plugin/custom-check-devices?search=10.0.0.5").get_json()["data"]
         assert [d["hostname"] for d in found] == ["web-01"]
+
+
+# ==========================================================
+# SERVER CHECKS (checks that run on the Nagios server)
+# ==========================================================
+
+class TestServerCheckArguments:
+
+    def test_a_server_plugin_runs_without_a_target_host(self):
+        text = custom_checks.render_command_definition("check_apt")
+        assert "command_line    $USER1$/check_apt $ARG1$" in text
+        assert "-H" not in text
+        assert "-H $HOSTADDRESS$" in custom_checks.render_command_definition("check_ups")
+
+    def test_where_each_plugin_runs(self):
+        assert custom_checks.check_target("check_apt") == "server"
+        assert custom_checks.check_target("check_ups") == "device"
+        assert custom_checks.check_target("check_ssh") is None
+        assert custom_checks.check_target("check_load") is None
+
+    def test_arguments_are_validated_like_a_device_checks(self):
+        assert custom_checks.clean_variables("check_apt", {}) == {}
+        assert custom_checks.clean_variables("check_sensors", {}) == {}
+        with pytest.raises(PluginConfigurationError, match="File to check"):
+            custom_checks.clean_variables("check_file_age", {})
+        with pytest.raises(PluginConfigurationError, match="forbidden"):
+            custom_checks.clean_variables("check_file_age", {"file": "/tmp/a;b"})
+        command = custom_checks.resolve_plugin_command_for("check_file_age", {"file": "/var/backups/db.sql", "warning": "86400"})
+        assert command == "pinpoint_custom_check_file_age!/var/backups/db.sql!-w '86400'"
+
+    def test_service_names_say_they_are_the_servers(self):
+        assert custom_checks.service_name("check_apt", "Weekly updates") == "server-apt-weekly_updates"
+        assert custom_checks.service_name("check_ups", "Weekly updates") == "custom-ups-weekly_updates"
+
+    def test_check_log_is_not_offered_because_it_writes_a_file(self):
+        assert custom_checks.plugin_class("check_log") == "advanced"
+        assert not custom_checks.is_custom_checkable("check_log")
+
+    def test_the_five_stock_checks_stay_with_nagios_core(self):
+        for name in ("check_load", "check_disk", "check_swap", "check_procs", "check_users"):
+            assert custom_checks.plugin_class(name) == "stock" and not custom_checks.is_custom_checkable(name)
+
+
+class TestServerCheckRoutes:
+
+    def add(self, client, plugin, name="Package updates", variables=None, **extra):
+        body = {"name": name, "variables": {} if variables is None else variables}
+        body.update(extra)
+        return client.post(checks_url(plugin), json=body)
+
+    def test_adding_a_server_check_needs_no_device(self, logged_in_client, db_session, writer):
+        apt = add_plugin("check_apt")
+
+        resp = self.add(logged_in_client, apt, variables={"warning": "5"})
+
+        data = resp.get_json()["data"]
+        assert resp.status_code == 200 and data["service"] == "server-apt-package_updates"
+        assert data["device"] == {"id": None, "hostname": "Nagios server", "ip_address": ""}
+        row, = rows()
+        assert row.NetDiscoveryID is None and row.Status is PluginConfigurationStatus.APPLIED
+        assert row.Configuration_Data["variables"] == {"warning": "5"}
+        history = db.session.scalar(sa.select(PluginHistory))
+        assert "localhost" in history.Message
+
+    def test_a_device_cannot_be_given_to_a_server_check(self, logged_in_client, db_session, status, writer):
+        device = new_device(status)
+        resp = self.add(logged_in_client, add_plugin("check_apt"), device_id=device.NetDiscoveryID)
+        assert resp.status_code == 400 and "takes no device" in resp.get_json()["message"]
+
+    def test_a_device_check_still_needs_a_device(self, logged_in_client, db_session, writer):
+        resp = self.add(logged_in_client, add_plugin("check_ups"), variables={"ups": "nut1"})
+        assert resp.status_code == 400 and "Choose a device" in resp.get_json()["message"]
+
+    def test_a_name_is_used_once_on_the_server(self, logged_in_client, db_session, writer):
+        apt = add_plugin("check_apt")
+        assert self.add(logged_in_client, apt).status_code == 200
+        second = self.add(logged_in_client, apt)
+        assert second.status_code == 400 and "Nagios server already has a check named" in second.get_json()["message"]
+
+    def test_a_server_check_may_share_a_name_with_a_device_check(self, logged_in_client, db_session, status, writer):
+        device = new_device(status)
+        assert self.add(logged_in_client, add_plugin("check_apt"), name="Rack UPS").status_code == 200
+        ups = add_plugin("check_ups")
+        resp = logged_in_client.post(checks_url(ups), json={
+            "device_id": device.NetDiscoveryID, "name": "Rack UPS", "variables": {"ups": "nut1"}})
+        assert resp.status_code == 200
+
+    def test_listing_changing_pausing_and_removing_a_server_check(self, logged_in_client, db_session, writer):
+        apt = add_plugin("check_apt")
+        check = self.add(logged_in_client, apt).get_json()["data"]
+        url = f"{checks_url(apt)}/{check['id']}"
+
+        listed = logged_in_client.get(checks_url(apt)).get_json()["data"]
+        assert listed["total"] == 1 and listed["items"][0]["device"]["hostname"] == "Nagios server"
+        assert logged_in_client.get(f"{checks_url(apt)}?search=nagios server").get_json()["data"]["total"] == 1
+
+        changed = logged_in_client.put(url, json={"name": "Updates", "variables": {"warning": "3"}}).get_json()["data"]
+        assert changed["service"] == "server-apt-updates" and changed["variables"] == {"warning": "3"}
+
+        assert logged_in_client.post(f"{url}/pause").get_json()["data"]["paused"] is True
+        assert logged_in_client.post(f"{url}/resume").get_json()["data"]["paused"] is False
+        assert logged_in_client.delete(url).status_code == 200 and rows() == []
+
+    def test_a_rejected_config_saves_nothing(self, logged_in_client, db_session):
+        with patch(WRITER, return_value=("failed", "bad")):
+            resp = self.add(logged_in_client, add_plugin("check_apt"))
+        assert resp.status_code == 409 and rows() == []
+
+    def test_stock_and_advanced_plugins_are_refused(self, logged_in_client, db_session, writer):
+        for name in ("check_load", "check_log"):
+            assert self.add(logged_in_client, add_plugin(name)).status_code == 400
+
+
+class TestServerChecksInHostConfig:
+
+    def make(self, plugin, name, variables, paused=False):
+        db.session.add(PluginConfiguration(
+            PluginID=plugin.PluginID, NetDiscoveryID=None, Service_Description=name,
+            Nagios_Service_Name=custom_checks.service_name(plugin.Name, name), Origin=PluginConfigurationOrigin.CUSTOM,
+            Configuration_Data={"variables": variables, "paused": paused},
+        ))
+
+    def test_they_are_loaded_in_order_and_paused_ones_are_left_out(self, app, db_session):
+        from app.network_discovery.create_host_cfg import load_custom_checks, load_server_checks
+        apt, uptime = add_plugin("check_apt"), add_plugin("check_uptime")
+        self.make(apt, "Updates", {"warning": "5"})
+        self.make(uptime, "Uptime", {}, paused=True)
+        self.make(uptime, "Reboot", {"warning": "1"})
+        db.session.commit()
+
+        assert load_server_checks() == [
+            ("server-apt-updates", "pinpoint_custom_check_apt!-w '5'", "check_apt"),
+            ("server-uptime-reboot", "pinpoint_custom_check_uptime!-w '1'", "check_uptime"),
+        ]
+        assert load_custom_checks() == {}
+
+    def test_the_file_has_the_services_on_the_servers_host_and_never_the_host_itself(self, app, db_session, status, tmp_path):
+        from app.network_discovery.create_host_cfg import _create_host_cfg_file, _load_monitored_hosts
+        new_device(status)
+        apt = add_plugin("check_apt")
+        self.make(apt, "Updates", {"warning": "5"})
+        db.session.commit()
+
+        original = app.config["HOST_CONFIG_DIR"]
+        app.config["HOST_CONFIG_DIR"] = tmp_path
+        try:
+            text = _create_host_cfg_file(_load_monitored_hosts()).read_text()
+        finally:
+            app.config["HOST_CONFIG_DIR"] = original
+
+        assert "# Define Server Checks (Nagios server: localhost)" in text
+        block = text.split("define service {")
+        server_service = next(b for b in block if "server-apt-updates" in b)
+        assert "host_name" in server_service and "localhost" in server_service
+        assert "pinpoint_custom_check_apt!-w '5'" in server_service
+        assert text.count("command_name    pinpoint_custom_check_apt") == 1
+        assert "$USER1$/check_apt $ARG1$" in text
+        # The host object itself is localhost.cfg's, never written here.
+        import re
+        assert not re.search(r"define host \{[^}]*host_name\s+localhost\b", text)
+
+    def test_a_file_without_server_checks_has_no_section(self, app, db_session, status, tmp_path):
+        from app.network_discovery.create_host_cfg import _create_host_cfg_file, _load_monitored_hosts
+        new_device(status)
+        original = app.config["HOST_CONFIG_DIR"]
+        app.config["HOST_CONFIG_DIR"] = tmp_path
+        try:
+            text = _create_host_cfg_file(_load_monitored_hosts()).read_text()
+        finally:
+            app.config["HOST_CONFIG_DIR"] = original
+        assert "Define Server Checks" not in text
+
+    def test_merging_devices_leaves_them_alone(self, logged_in_client, db_session, status, writer):
+        source, target = new_device(status), new_device(status, "10.0.0.6", "aa:aa:aa:aa:aa:02")
+        self.make(add_plugin("check_apt"), "Updates", {})
+        db.session.commit()
+
+        with patch("app.api.system.device_identity.apply_config_change",
+                   return_value={"config_applied": True, "config_ok": True, "config_message": ""}):
+            resp = logged_in_client.post(
+                f"/api/system/hosts/{source.NetDiscoveryID}/merge", json={"target_id": target.NetDiscoveryID})
+
+        assert resp.status_code == 200
+        row, = rows()
+        assert row.NetDiscoveryID is None
+
+    def test_the_reconciler_leaves_them_alone(self, app, db_session, writer):
+        from app.api.plugin.reconcile import reconcile_plugin_monitoring
+        self.make(add_plugin("check_apt", PluginStatus.ENABLED), "Updates", {})
+        db.session.commit()
+        with patch("app.api.plugin.reconcile.regenerate_and_apply_config_status", return_value=APPLIED):
+            reconcile_plugin_monitoring()
+        assert len(rows()) == 1
