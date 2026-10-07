@@ -41,7 +41,9 @@ in [`spec files/`](spec%20files/).
 Run `scripts/verify.sh <docs|backend|frontend|all>` (the same commands CI runs)
 and follow the loop in
 [`Agent_Workflow_and_CI.md`](spec%20files/Agent_Workflow_and_CI.md). A task is
-done when its finish condition holds and CI is green.
+done when its finish condition holds and CI is green. Keep a progress file
+(`.agent/progress/issue-<n>.md`) and checkpoint after each round so a stopped
+job can be resumed; see the same document.
 
 ## Precedence
 

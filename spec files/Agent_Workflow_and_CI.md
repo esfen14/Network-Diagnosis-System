@@ -53,11 +53,56 @@ the user has not chosen, the change touches a sensitive module
 (`Engineering_Standards.md`), or the same check has failed three times with
 different fixes.
 
+## Progress file and resuming
+
+An agent that stops mid-job (session ended, limit hit, blocked on a question)
+must not force the next session to start over. All job state is kept in
+`.agent/progress/issue-<n>.md`, created from `.agent/progress/TEMPLATE.md`, on
+the issue branch, and checkpointed after every round.
+
+| Section | Holds |
+|---|---|
+| Header | Issue, branch, `Status:` (`in-progress`, `blocked`, `ready-for-review`) |
+| Finish condition | The issue's items as checkboxes; ticked only when a check proves them |
+| Plan | The whole plan, written before any code, as ordered checkboxes naming the files each step touches |
+| Round log | One row per round: change, check run, result |
+| State for the next session | Last command run, its result, hypothesis, and one specific **Next action** |
+| Decisions and notes | Choices, things ruled out, questions for a person |
+
+Rules:
+
+- Write the plan first and push it (`scripts/agent_checkpoint.sh <n> "plan"`),
+  so even a session that dies in the first minute leaves something to resume.
+- After every round, update the file, then run
+  `scripts/agent_checkpoint.sh <n> "<what changed>"`. The script validates the
+  file, commits as `wip(#<n>): ...` and pushes. It refuses to run on `main`.
+- To resume, run `/work-issue <n>` again. It finds the branch, reads the file,
+  re-runs the last check to see the real state, and continues at "Next action"
+  without redoing ticked steps.
+- The file is scaffolding, not documentation. Delete it (`git rm`) before the
+  pull request is ready for review. CI fails a non-draft pull request that still
+  contains one, and passes a draft. If the job is unfinished, open a draft PR
+  and keep the file.
+- `scripts/check_agent_progress.py` checks the structure (valid status, all
+  sections, no template placeholders, a non-empty Next action). It runs in
+  `scripts/verify.sh docs`.
+
+## Test results
+
+Where results go is defined in [`docs/test-runs/README.md`](../docs/test-runs/README.md):
+
+| Result | Location |
+|---|---|
+| CI test output | JUnit XML in the `backend-test-results` and `frontend-test-results` artifacts of the Actions run, kept 30 days |
+| Local test output | `test-results/` (git-ignored) |
+| Live-lab and acceptance runs | A committed, sanitized `docs/test-runs/<date>-<slug>/REPORT.md` from `scripts/new_test_run.sh`, naming the commit tested, one row per case and an issue for every failure |
+| Raw lab evidence | The harness `output_root` on the lab host; never committed |
+
 ## Verification commands
 
 | Stage | Command | Notes |
 |---|---|---|
-| Docs | `scripts/verify.sh docs` | Relative links resolve; environment variables match the README table; browser routes match `App.tsx`, `pageAccess.ts` and the spec. Standard library only |
+| Docs | `scripts/verify.sh docs` | Agent progress files are well formed; relative links resolve; environment variables match the README table; browser routes match `App.tsx`, `pageAccess.ts` and the spec. Standard library only |
 | Backend | `scripts/verify.sh backend` | Route and client-API drift checks, then `pytest tests/unit` in `server/` with `FLASK_DEBUG=1`; ~4 min, 2,167 passed / 14 skipped on 2026-10-08 |
 | Frontend | `scripts/verify.sh frontend` | `npm run test`, `npm run build`, `npm run lint` (errors fail; warnings do not) |
 | Everything | `scripts/verify.sh all` | Same stages as CI |
@@ -78,6 +123,9 @@ CI or an agent loop without explicit approval; they need a lab Nagios.
 Rules: CI uses no secrets and no network devices; every setting comes from the
 environment (see the production settings table in `README.md`); a failing job
 is fixed in the PR, never skipped. Protect `main` by requiring the three jobs.
+
+Each test job uploads its JUnit XML as an artifact (`if: always()`, so failures keep
+their results).
 
 Not yet automated (see `Implementation_Status.md`): deployment, installer ISO
 build and install test, spec-vs-code drift checks.

@@ -205,3 +205,6 @@ server/plugin-service-config-files/
 server/running-plugin-service-config-backup/
 server/database-backups/
 .DS_Store
+
+# Local test output (JUnit XML, coverage); CI uploads its own
+/test-results/
