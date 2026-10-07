@@ -39,6 +39,7 @@ from app.network_discovery.plugin_settings import (
     get_plugin_settings,
     get_plugin_settings_row,
 )
+from app.network_discovery.plugin_registry import normalize_plugin_name
 from app.plugin_models import Plugin
 from app.system_models import PluginSettings, SystemSettings
 
@@ -53,7 +54,12 @@ def serialize_plugin_settings(plugin_name):
     plugin is installed (and its Plugin Manager status), its effective values,
     their config.py defaults and the version to send back on save.
     """
-    plugin = db.session.scalar(sa.select(Plugin).where(Plugin.Name == SETTINGS_PLUGINS[plugin_name]))
+    # The plugin may be stored under its script filename (check_ncpa.py).
+    wanted = normalize_plugin_name(SETTINGS_PLUGINS[plugin_name])
+    plugin = next(
+        (row for row in db.session.scalars(sa.select(Plugin)).all() if normalize_plugin_name(row.Name) == wanted),
+        None,
+    )
     row = get_plugin_settings_row(plugin_name)
     return {
         "plugin": SETTINGS_PLUGINS[plugin_name],

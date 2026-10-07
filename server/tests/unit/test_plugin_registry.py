@@ -337,3 +337,24 @@ class TestRendering:
         assert sanitize_name_part("my service(1)") == "my_service_1_"
         assert sanitize_name_part("") == "unknown"
         assert sanitize_name_part(None) == "unknown"
+
+
+class TestScriptExtensionNormalization:
+    """Plugin Manager keeps the real filename (check_ncpa.py); comparisons ignore the extension."""
+
+    def test_normalize_plugin_name(self):
+        from app.network_discovery.plugin_registry import normalize_plugin_name
+        assert normalize_plugin_name("check_ncpa.py") == "check_ncpa"
+        assert normalize_plugin_name(" Check_NCPA.PY ") == "check_ncpa"
+        assert normalize_plugin_name("check_ssh") == "check_ssh"
+        assert normalize_plugin_name(None) == ""
+
+    def test_a_py_plugin_is_service_driven(self):
+        from app.network_discovery.plugin_registry import is_service_driven
+        assert is_service_driven("check_ncpa.py")
+        assert is_service_driven("check_ncpa")
+        assert not is_service_driven("check_ping.py")
+
+    def test_the_ncpa_command_keeps_the_real_filename(self):
+        assert PLUGIN_DEFINITIONS["ncpa"].check_plugin == "check_ncpa"
+        assert "$USER1$/check_ncpa.py " in PLUGIN_DEFINITIONS["ncpa"].command_line

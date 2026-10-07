@@ -274,6 +274,13 @@ class TestNcpaSettings:
         assert section["settings"]["metrics"] == app.config["NCPA_METRICS"]
         assert section["defaults"]["metrics"] == app.config["NCPA_METRICS"]
 
+    def test_ncpa_is_installed_when_the_plugin_is_stored_as_check_ncpa_py(self, logged_in_client, db_session):
+        add_plugin("check_ncpa.py")
+
+        section = logged_in_client.get(URL).get_json()["data"]["ncpa"]
+
+        assert (section["plugin"], section["installed"]) == ("check_ncpa", True)
+
     def test_saves_and_rebuilds_the_config(self, logged_in_client, db_session, writer):
         add_plugin("check_ncpa")
 

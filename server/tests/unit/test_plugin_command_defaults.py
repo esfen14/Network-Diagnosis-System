@@ -61,3 +61,7 @@ class TestPluginCommandDefaults:
         just that *some* $ARGn$ macros are present."""
         command = PLUGIN_COMMAND_DEFAULTS["check_mrtg"]
         assert command == "check_mrtg -F $ARG1$ -w $ARG2$ -c $ARG3$ -e $ARG4$ -a $ARG5$ -v $ARG6$"
+
+
+def test_the_ncpa_default_is_found_for_the_script_filename():
+    assert get_default_command("check_ncpa.py") == "check_ncpa.py -H $HOSTADDRESS$ -t $ARG1$ -M $ARG2$"

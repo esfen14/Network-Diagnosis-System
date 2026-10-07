@@ -36,7 +36,7 @@ from app.network_discovery.create_host_cfg import (
     plan_host_services,
     regenerate_and_apply_config_status,
 )
-from app.network_discovery.plugin_registry import plugin_for_definition, resolve_plugin_name
+from app.network_discovery.plugin_registry import normalize_plugin_name, plugin_for_definition, resolve_plugin_name
 from app.network_discovery.plugin_settings import plugin_config
 from app.network_discovery.port_lifecycle import (
     enabled_plugin_names,
@@ -103,6 +103,7 @@ def preview_enable(plugin_name):
     left Suggested at an upgrade) and so are not attached. Read-only: nothing is
     promoted or saved.
     """
+    plugin_name = normalize_plugin_name(plugin_name)
     enabled_plugins = enabled_plugin_names() | {plugin_name}
 
     hosts = {}
@@ -154,7 +155,7 @@ def sync_rows(desired):
     MANUAL rows are never read or changed. Flushes; does not commit.
     """
     plugins_by_name = {
-        plugin.Name: plugin
+        normalize_plugin_name(plugin.Name): plugin
         for plugin in db.session.scalars(sa.select(Plugin).where(Plugin.Status.in_(
             (PluginStatus.ENABLED, PluginStatus.ACTIVE)
         ))).all()

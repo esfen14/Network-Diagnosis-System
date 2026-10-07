@@ -47,6 +47,7 @@ from flask import current_app
 from app import db
 from app.network_discovery.plugin_registry import (
     Transport,
+    normalize_plugin_name,
     plugin_for_definition,
     resolve_plugin_name,
 )
@@ -146,10 +147,13 @@ def identification_from(value):
 
 
 def enabled_plugin_names():
-    """The Plugin Manager plugins that are Enabled or Active, as a set of names."""
-    return set(db.session.scalars(
+    """
+    The Plugin Manager plugins that are Enabled or Active, as a set of normalized names
+    (check_ncpa.py is "check_ncpa"; see plugin_registry.normalize_plugin_name).
+    """
+    return {normalize_plugin_name(name) for name in db.session.scalars(
         sa.select(Plugin.Name).where(Plugin.Status.in_(ENABLED_PLUGIN_STATES))
-    ).all())
+    ).all()}
 
 
 def has_unacknowledged_mismatch(port):
@@ -316,7 +320,9 @@ def enable_plugins_backing_monitored_ports():
         return []
 
     enabled = []
-    for plugin in db.session.scalars(sa.select(Plugin).where(Plugin.Name.in_(needed))).all():
+    for plugin in db.session.scalars(sa.select(Plugin)).all():
+        if normalize_plugin_name(plugin.Name) not in needed:
+            continue
         if plugin.Status in ENABLE_FOR_CONTINUITY_FROM:
             plugin.Status = PluginStatus.ENABLED
             enabled.append(plugin.Name)

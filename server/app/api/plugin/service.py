@@ -46,7 +46,7 @@ from app.api.plugin.plugin_update import (
 )
 from app.api.plugin.scanner import extract_version
 from app.api.plugin.plugin_descriptions import documentation_url, get_catalog_entry
-from app.network_discovery.plugin_registry import is_service_driven, plugin_for_definition
+from app.network_discovery.plugin_registry import is_service_driven, normalize_plugin_name, plugin_for_definition
 from app.network_discovery.port_lifecycle import CONFIG_STATES, port_model, set_port_state
 import os
 
@@ -1556,7 +1556,7 @@ def get_plugin_services(plugin_id, page, per_page, search):
             sa.select(model).where(model.Port_State == PortState.IGNORED, model.Plugin_Name.is_not(None))
         ).all()
         for port in stopped:
-            if plugin_for_definition(port.Plugin_Name) != plugin.Name:
+            if plugin_for_definition(port.Plugin_Name) != normalize_plugin_name(plugin.Name):
                 continue
             device = db.session.get(NetworkDiscovery, port.NetDiscoveryID)
             if device is None:
@@ -1639,7 +1639,7 @@ def set_service_monitoring(plugin_id, device_id, protocol, port_number, monitore
     port = db.session.scalar(
         sa.select(model).where(model.NetDiscoveryID == device_id, model.Port_Number == port_number)
     )
-    if port is None or port.Plugin_Name is None or plugin_for_definition(port.Plugin_Name) != plugin.Name:
+    if port is None or port.Plugin_Name is None or plugin_for_definition(port.Plugin_Name) != normalize_plugin_name(plugin.Name):
         raise MonitoredServiceNotFoundError(f"{plugin.Name} does not monitor {protocol} port {port_number} on that device.")
 
     wanted = PortState.MONITORED if monitored else PortState.IGNORED

@@ -34,6 +34,8 @@ in this dict (custom/non-standard executables) still get the generic
 fallback, unchanged from before.
 """
 
+from app.network_discovery.plugin_registry import normalize_plugin_name
+
 PLUGIN_COMMAND_DEFAULTS = {
     "check_apt": "check_apt",
     "check_breeze": "check_breeze -H $HOSTADDRESS$ -w $ARG1$ -c $ARG2$",
@@ -68,7 +70,7 @@ PLUGIN_COMMAND_DEFAULTS = {
     "check_mrtgtraf": "check_mrtgtraf -F $ARG1$ -w $ARG2$ -c $ARG3$ -e $ARG4$ -a $ARG5$",
     "check_mysql": "check_mysql -H $HOSTADDRESS$",
     "check_mysql_query": "check_mysql_query -H $HOSTADDRESS$ -q $ARG1$ -w $ARG2$ -c $ARG3$",
-    "check_ncpa": "check_ncpa -H $HOSTADDRESS$ -t $ARG1$ -M $ARG2$",
+    "check_ncpa": "check_ncpa.py -H $HOSTADDRESS$ -t $ARG1$ -M $ARG2$",
     "check_nagios": "check_nagios -F $ARG1$ -e $ARG2$ -C $ARG3$",
     "check_nt": "check_nt -H $HOSTADDRESS$ -v $ARG1$",
     # Both the deprecated C build and the Perl replacement are
@@ -113,4 +115,4 @@ def get_default_command(plugin_name):
     non-standard executables) — callers should fall back to the
     generic "<name> -H $HOSTADDRESS$" default in that case.
     """
-    return PLUGIN_COMMAND_DEFAULTS.get(plugin_name)
+    return PLUGIN_COMMAND_DEFAULTS.get(normalize_plugin_name(plugin_name))

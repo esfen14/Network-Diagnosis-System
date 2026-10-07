@@ -50,6 +50,24 @@ from typing import Callable, Optional
 
 COMMAND_NAME_PREFIX = "pinpoint_nd_"
 
+# Script extensions a plugin file may carry (check_ncpa.py). Plugin Manager keeps the real
+# filename; everything that compares a plugin name strips these first.
+PLUGIN_SCRIPT_EXTENSIONS = (".py", ".pl", ".sh")
+
+
+def normalize_plugin_name(name):
+    """
+    The plugin name without a script extension, lowercased and stripped: "check_ncpa.py" and
+    "check_ncpa" both give "check_ncpa". Use it on BOTH sides of any comparison between a
+    Plugin Manager name and a registry check_plugin, catalog key or command default. Stored
+    names, Executable Path and generated commands keep the real filename.
+    """
+    key = str(name or "").strip().lower()
+    for extension in PLUGIN_SCRIPT_EXTENSIONS:
+        if key.endswith(extension):
+            return key[:-len(extension)]
+    return key
+
 # Characters that could break out of a single-quoted shell argument, split
 # Nagios' "!" argument list, expand a Nagios macro, or start a cfg comment.
 FORBIDDEN_VALUE_CHARACTERS = frozenset("'\"`!$;\\\n\r\0")
@@ -179,6 +197,9 @@ class PluginDefinition:
     host_flag: str = "-H"
     fixed_flags: str = ""
     checks: Callable = single_check
+    # The file under $USER1$ when it differs from check_plugin (check_plugin is the
+    # normalized name used for comparisons, e.g. "check_ncpa" for check_ncpa.py).
+    executable: str = ""
 
     @property
     def command_name(self):
@@ -186,7 +207,7 @@ class PluginDefinition:
 
     @property
     def command_line(self):
-        parts = [f"$USER1$/{self.check_plugin}", self.host_flag, "$HOSTADDRESS$"]
+        parts = [f"$USER1$/{self.executable or self.check_plugin}", self.host_flag, "$HOSTADDRESS$"]
         if self.fixed_flags:
             parts.append(self.fixed_flags)
         for index, (flag, _variable) in enumerate(self.arguments, start=1):
@@ -260,6 +281,7 @@ PLUGIN_DEFINITIONS = {
             defaults={"port": 5693},
             config_defaults={"port": "NCPA_PORT", "metrics": "NCPA_METRICS"},
             checks=ncpa_checks,
+            executable="check_ncpa.py",
         ),
         PluginDefinition(
             name="http",
@@ -425,8 +447,8 @@ def service_driven_plugin_names():
 
 
 def is_service_driven(plugin_name):
-    """True if a Plugin Manager plugin name is in service_driven_plugin_names()."""
-    return plugin_name in service_driven_plugin_names()
+    """True if a Plugin Manager plugin name (extension ignored) is in service_driven_plugin_names()."""
+    return normalize_plugin_name(plugin_name) in service_driven_plugin_names()
 
 
 def plugin_for_command(command_name):
