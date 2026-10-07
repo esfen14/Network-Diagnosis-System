@@ -251,6 +251,66 @@ function RowTable({ config, rows, savedMetrics, onChange }: RowTableProps) {
   )
 }
 
+const BANDWIDTH_ROWS = [
+  { metric: 'bandwidth_in', direction: 'bytes_recv' },
+  { metric: 'bandwidth_out', direction: 'bytes_sent' },
+]
+
+// Adds the two rows that feed the Network Health bandwidth card, so nobody has to know NCPA paths.
+function BandwidthHelper({ rows, onChange }: { rows: PluginSettingsRow[]; onChange: (rows: PluginSettingsRow[]) => void }) {
+  const [connection, setConnection] = useState('eth0')
+  const [problem, setProblem] = useState<string | null>(null)
+  const added = BANDWIDTH_ROWS.every((b) => rows.some((row) => row.metric === b.metric))
+
+  const add = () => {
+    const name = connection.trim()
+    if (!/^[A-Za-z0-9_.|-]+$/.test(name)) {
+      setProblem('Enter the connection name using letters, numbers, dots, dashes or underscores, e.g. eth0.')
+      return
+    }
+    setProblem(null)
+    const blank = Object.fromEntries(NCPA_TABLE.columns.map((column) => [column.key, '']))
+    const kept = rows.filter((row) => !BANDWIDTH_ROWS.some((b) => b.metric === row.metric))
+    onChange([
+      ...kept,
+      ...BANDWIDTH_ROWS.map((b) => ({ ...blank, metric: b.metric, path: `interface/${name}/${b.direction}`, queryargs: 'delta=1' })),
+    ])
+  }
+
+  return (
+    <div className="mb-5 rounded-xl border border-[var(--border)] bg-[var(--card-alt)] p-4">
+      <p className="text-sm font-medium text-[var(--text)]">Show bandwidth on Network Health</p>
+      <p className="mt-1 text-xs text-[var(--text-muted)]">
+        This tells the system to watch how much data goes in and out of your computers. Type the name of the network
+        connection they use (on most Linux computers it is <span className="font-mono">eth0</span> or <span className="font-mono">ens18</span>),
+        then press the button and Save. The Bandwidth card fills in after the next check.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <input
+          aria-label="Network connection name"
+          value={connection}
+          onChange={(e) => { setConnection(e.target.value); setProblem(null) }}
+          placeholder="e.g. eth0"
+          className={`${inputClass} max-w-[200px] font-mono text-xs`}
+        />
+        <button
+          type="button"
+          onClick={add}
+          className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)] transition hover:bg-[var(--hover)]"
+        >
+          <Plus size={15} /> {added ? 'Update bandwidth rows' : 'Add bandwidth rows'}
+        </button>
+      </div>
+      {problem && <p className="mt-2 text-xs text-red-500">{problem}</p>}
+      {added && !problem && (
+        <p className="mt-2 text-xs text-[var(--text-muted)]">
+          Bandwidth rows are in the table below. Press Save to start watching.
+        </p>
+      )}
+    </div>
+  )
+}
+
 interface PluginSectionProps {
   config: TableConfig
   section: PluginSettingsSection
@@ -298,6 +358,10 @@ function PluginSection({ config, section, onSaved }: PluginSectionProps) {
           {section.plugin} is {section.status ?? 'not enabled'}. These {config.noun}s are used once it is enabled in Plugin
           Manager.
         </div>
+      )}
+
+      {config.plugin === 'ncpa' && (
+        <BandwidthHelper rows={draft} onChange={(rows) => { setDraft(rows); setSaveError(null) }} />
       )}
 
       <RowTable

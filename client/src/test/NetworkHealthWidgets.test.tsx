@@ -176,6 +176,12 @@ describe('NetworkHealthPage backend-driven cards', () => {
     expect(screen.getByText('0.400 s')).toBeInTheDocument()
   })
 
+  it('keeps the x-axis labels when a plugin metric is itself called "time"', async () => {
+    await renderPage()
+    fireEvent.click(screen.getByText('DNS Lookup (dig)'))
+    expect(screen.queryByText('null')).not.toBeInTheDocument()
+  })
+
   it('explains a plugin with nothing to graph in plain language', async () => {
     RESPONSES['/api/system/network-health/plugin-trends'] = {
       hours: 24,

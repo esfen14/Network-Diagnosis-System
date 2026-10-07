@@ -309,7 +309,7 @@ export function NetworkHealthPage() {
       ],
       seriesData: { in: trends?.bandwidth.in ?? [], out: trends?.bandwidth.out ?? [] },
       isConfigured: trends?.bandwidth.configured ?? false,
-      emptyMessage: 'Plugin not configured — add NCPA interface/<name>/bytes_recv and bytes_sent metrics (checked with delta) in Settings → Plugins to see bandwidth.',
+      emptyMessage: 'Bandwidth is not being measured yet. Go to Settings → Plugins, find “NCPA Metrics”, type your network connection name (usually eth0) under “Show bandwidth on Network Health”, then press Add bandwidth rows and Save. The graph fills in after the next check.',
     },
     avgResponseTime: {
       title: 'Avg. Response Time',
@@ -324,7 +324,7 @@ export function NetworkHealthPage() {
 
   return (
     <main className="ml-[220px] flex-1 min-w-0">
-      <div className="min-w-0 py-6">
+      <div className="min-w-0 p-6">
         {/* Sticky header row */}
         <div className="sticky top-0 z-10 bg-[var(--sticky-bg)] pb-3 pt-3">
           <div className="flex flex-wrap items-start gap-4 sm:gap-8">

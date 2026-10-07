@@ -806,7 +806,7 @@ shows trends so the user can see whether things are getting better or worse.
 
 Throughput is averaged per interface within a bucket, then summed across all
 interfaces. No bandwidth metric is in the default NCPA metric table (interface
-names differ per host), so an administrator adds them in Settings → Plugins.
+names differ per host), so an administrator adds them in Settings → Plugins → NCPA Metrics: the "Show bandwidth on Network Health" helper takes the connection name (e.g. `eth0`) and adds the `bandwidth_in` / `bandwidth_out` rows.
 Until a check reports, the card shows "Not configured".
 
 **Conditional metrics (if NCPA is deployed on at least one host):**

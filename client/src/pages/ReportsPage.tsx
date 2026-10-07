@@ -103,7 +103,7 @@ export function ReportsPage() {
 
   return (
     <main className="ml-55 flex-1">
-      <div className="space-y-6">
+      <div className="space-y-6 p-6">
 
         <PageHeader
           title="Reports"

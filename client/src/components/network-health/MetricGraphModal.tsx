@@ -59,7 +59,9 @@ export function MetricGraphModal({
     return Array.from({ length }, (_, i) => {
       const bucketStart = series.map((s) => seriesData[s.key]?.[i]?.bucketStart).find(Boolean)
       const row: Record<string, string | number | null> = {
-        time: bucketStart ? formatBucketLabel(bucketStart, hours) : '',
+        // Not "time": a plugin metric can be called that (check_http reports
+        // "time"), and its value would overwrite the label with null.
+        __label: bucketStart ? formatBucketLabel(bucketStart, hours) : '',
       }
       series.forEach((s) => {
         row[s.key] = seriesData[s.key]?.[i]?.avgValue ?? null
@@ -163,7 +165,7 @@ export function MetricGraphModal({
                   ))}
                 </defs>
                 <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" />
-                <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: 'var(--chart-text)', fontSize: 11 }} />
+                <XAxis dataKey="__label" axisLine={false} tickLine={false} tick={{ fill: 'var(--chart-text)', fontSize: 11 }} />
                 <YAxis
                   axisLine={false}
                   tickLine={false}

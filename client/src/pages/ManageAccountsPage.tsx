@@ -118,7 +118,7 @@ export function ManageAccountsPage() {
 
   return (
     <main className="ml-55 flex-1">
-      <div className="space-y-6">
+      <div className="space-y-6 p-6">
 
         {/* HEADER */}
         <PageHeader

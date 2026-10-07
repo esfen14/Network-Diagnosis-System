@@ -127,7 +127,7 @@ export function PluginsPage() {
   useEffect(() => stopPolling, [])
 
   return (
-    <main className="ml-55 flex-1 space-y-6">
+    <main className="ml-55 flex-1 space-y-6 p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <PageHeader
           title="Plugin Manager"

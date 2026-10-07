@@ -182,6 +182,33 @@ describe('PluginSettings: NCPA', () => {
     savePluginSettings.mockReset()
   })
 
+  it('adds the two bandwidth rows from a connection name and saves them', async () => {
+    await renderLoaded({ version: 2 })
+    const ncpaCard = within(card('NCPA Metrics'))
+    savePluginSettings.mockResolvedValue({ ...ncpa({ version: 3 }), config_ok: true, config_applied: true, config_message: 'ok' })
+
+    fireEvent.change(ncpaCard.getByLabelText('Network connection name'), { target: { value: 'ens18' } })
+    fireEvent.click(ncpaCard.getByRole('button', { name: /add bandwidth rows/i }))
+
+    expect(ncpaCard.getByDisplayValue('interface/ens18/bytes_recv')).toBeInTheDocument()
+    expect(ncpaCard.getByDisplayValue('interface/ens18/bytes_sent')).toBeInTheDocument()
+    save('NCPA Metrics')
+    await waitFor(() => expect(savePluginSettings).toHaveBeenCalled())
+    const sent = savePluginSettings.mock.calls[0][2] as { metric: string; path: string; queryargs: string }[]
+    expect(sent.filter((r) => r.metric.startsWith('bandwidth_')).map((r) => [r.metric, r.path, r.queryargs])).toEqual([
+      ['bandwidth_in', 'interface/ens18/bytes_recv', 'delta=1'],
+      ['bandwidth_out', 'interface/ens18/bytes_sent', 'delta=1'],
+    ])
+  })
+
+  it('rejects an invalid connection name', async () => {
+    await renderLoaded()
+    const ncpaCard = within(card('NCPA Metrics'))
+    fireEvent.change(ncpaCard.getByLabelText('Network connection name'), { target: { value: 'bad name!' } })
+    fireEvent.click(ncpaCard.getByRole('button', { name: /add bandwidth rows/i }))
+    expect(ncpaCard.getByText(/Enter the connection name/)).toBeInTheDocument()
+  })
+
   it('shows the metric table with every column and blanks for unset options', async () => {
     await renderLoaded()
     const ncpaCard = within(card('NCPA Metrics'))
