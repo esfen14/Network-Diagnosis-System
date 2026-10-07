@@ -259,7 +259,7 @@ in Q4):
 - ND-03 must not assume exactly two global hosts: assert on the target hosts and
   allow the monitoring bridge host; reset the baseline inventory or scope the
   assertion by network prefix.
-- Commit the untracked `spec files/DHCP_Device_Identity_Plan.md` (or fold it into
+- Commit the untracked `docs/plans/DHCP_Device_Identity_Plan.md` (or fold it into
   the specs) so plan cases can cite it.
 
 **G: unsupported UDP (ND-08).** Nmap reports `open|filtered` for UDP services that

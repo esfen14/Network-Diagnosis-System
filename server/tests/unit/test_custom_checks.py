@@ -1,5 +1,5 @@
 """
-tests/unit/test_custom_checks.py — custom checks (spec files/Custom_Checks_Plan.md).
+tests/unit/test_custom_checks.py — custom checks (docs/plans/Custom_Checks_Plan.md).
 
 Covers the plugin classes and argument validation (pure), the routes that add, change,
 pause and remove a check, the host config they produce, and how merging devices treats them.

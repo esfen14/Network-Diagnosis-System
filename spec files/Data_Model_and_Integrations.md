@@ -70,7 +70,7 @@ Plugin lifecycle and active monitoring are separate:
   never touches, `Custom` for checks an administrator added for a plugin
   discovery cannot drive). `(PluginID, NetDiscoveryID, Nagios_Service_Name)` is unique;
   rows without a service name are not compared. The reconciler itself is
-  planned, see `Plugin_Driven_Monitoring_Plan.md`; today every row is `Manual`.
+  planned, see `docs/plans/Plugin_Driven_Monitoring_Plan.md`; today every row is `Manual`.
 - Command overrides preserve an immutable snapshot of the original command.
 - Plugin Manager targets existing `NetworkDiscovery` devices; free-form targets
   are out of scope.
@@ -91,7 +91,7 @@ Plugin lifecycle and active monitoring are separate:
   the generic TCP fallback needs `check_tcp` enabled too. Ports keep their state
   and frozen plugin when a plugin is off, so enabling restores them.
 - **Custom checks** (`network_discovery/custom_checks.py`, `api/plugin/custom_checks.py`;
-  `Custom_Checks_Plan.md`): a `PluginConfiguration` row with `Origin = Custom`, no port
+  `docs/plans/Custom_Checks_Plan.md`): a `PluginConfiguration` row with `Origin = Custom`, no port
   (`Port_Number` and `Protocol` stay NULL), `Service_Description` the admin's name,
   `Nagios_Service_Name` `custom-<plugin>-<name>` and `Configuration_Data`
   `{"variables": {...}, "paused": bool}`. `create_host_cfg.load_custom_checks()` reads the
@@ -103,7 +103,7 @@ Plugin lifecycle and active monitoring are separate:
   other catalog plugin its reason for not taking one. A password field is stored encrypted in
   `Configuration_Data["secrets"]` (`app/secrets_store.py`, Fernet, key from `PINPOINT_SECRETS_KEY` or
   `SECRET_KEY`), never returned by the API, and decrypted only when `hosts.cfg` is generated, where it
-  is written in plain text because Nagios needs it in the command (Custom_Checks_Plan.md §8b). Merging a device moves its custom
+  is written in plain text because Nagios needs it in the command (docs/plans/Custom_Checks_Plan.md §8b). Merging a device moves its custom
   checks to the target, dropping one whose name the target already has.
 - **Server checks** are custom checks with no device (`NetDiscoveryID` empty) for the plugins in
   `SERVER_CHECK_FIELDS` (`check_apt`, `check_uptime`, `check_sensors`, `check_ide_smart`,

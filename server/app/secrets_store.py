@@ -1,7 +1,7 @@
 """
 secrets_store.py — encrypts the passwords stored with custom checks.
 
-A custom check that needs a password (spec files/Custom_Checks_Plan.md section 9) keeps it in
+A custom check that needs a password (docs/plans/Custom_Checks_Plan.md section 9) keeps it in
 PLUGIN_CONFIGURATION.Configuration_Data["secrets"] as a Fernet token, never as plain text, and the
 API never returns it. It is decrypted only to build the Nagios command when hosts.cfg is generated.
 

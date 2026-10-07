@@ -1,6 +1,6 @@
 """device identity and port lifecycle
 
-Adds the tables and columns from "spec files/DHCP_Device_Identity_Plan.md"
+Adds the tables and columns from "docs/plans/DHCP_Device_Identity_Plan.md"
 (section 5) to system.db and migrates existing rows so current behaviour is
 preserved: every device keeps its current host name as its stable
 Nagios_Host_Name (so history.db rows and acknowledgements stay attached),

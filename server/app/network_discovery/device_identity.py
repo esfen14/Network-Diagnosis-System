@@ -5,7 +5,7 @@ A scan only OBSERVES: it reports an IP, maybe a MAC, open ports and some
 identity evidence (SSH host key, NCPA certificate). This module DECIDES which
 known device each observation belongs to, so a DHCP lease change moves a
 device instead of duplicating it, and one device's history is never attached
-to another. See "spec files/DHCP_Device_Identity_Plan.md" sections 4, 6 and 8.
+to another. See "docs/plans/DHCP_Device_Identity_Plan.md" sections 4, 6 and 8.
 
 How it works
 ------------

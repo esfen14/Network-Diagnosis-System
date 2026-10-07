@@ -1,7 +1,7 @@
 """add the CUSTOM origin of a plugin configuration
 
 A custom check is a PLUGIN_CONFIGURATION row an administrator added for a plugin
-discovery cannot drive (spec files/Custom_Checks_Plan.md). It needs a third
+discovery cannot drive (docs/plans/Custom_Checks_Plan.md). It needs a third
 Origin value so the reconciler, which owns AUTO rows, never touches it. No column
 is added: the arguments live in Configuration_Data.
 

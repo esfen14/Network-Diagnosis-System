@@ -1,7 +1,7 @@
 # Device Inventory Requirements — Ports and Monitoring State
 **Detech-IT / 4D-G2 Capstone**
 **Status:** Approved by the owner with the answers to O1–O3 (2026-10-06): a **Remove pin** action and route are included. Built (backend and drawer); the browser check in light and dark mode is still to do on the lab.
-**Companion:** [`Device_Ports_UI_Plan.md`](Device_Ports_UI_Plan.md) (how and in what order it is built)
+**Companion:** [`docs/plans/Device_Ports_UI_Plan.md`](../docs/plans/Device_Ports_UI_Plan.md) (how and in what order it is built)
 
 ---
 
@@ -10,7 +10,7 @@
 This document defines what the **Ports** section of the Device Inventory page
 shows and what an administrator can do in it. It is the requirement the plan asks
 the owner to approve before any code is written (`AGENTS.md`; the same rule is
-noted in `DHCP_Device_Identity_Plan.md` §11).
+noted in `docs/plans/DHCP_Device_Identity_Plan.md` §11).
 
 `Display_Requirements.md` covers the Dashboard and Network Health. This file covers
 **only** the Ports section of the Device Inventory page. The rest of that page (the
@@ -284,7 +284,7 @@ Plugin Manager beyond the one hint line in §7.
 
 ## 12. Monitoring state
 
-Companion plan: [`Device_Monitoring_State_Plan.md`](Device_Monitoring_State_Plan.md).
+Companion plan: [`docs/plans/Device_Monitoring_State_Plan.md`](../docs/plans/Device_Monitoring_State_Plan.md).
 Decisions Q1–Q3 of that plan (owner, 2026-10-07): pause keeps the device's ports and
 history and scans still track it; a host row stays visible with a chip and a filter;
 every non-Active case has a label.

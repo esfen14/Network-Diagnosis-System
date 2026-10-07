@@ -12,7 +12,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 stage="${1:-all}"
 
 docs() {
-  echo "==> docs: relative links in AGENTS.md and spec files/"
+  echo "==> docs: relative markdown links (AGENTS.md, README.md, spec files/, docs/, server/tests/)"
   python3 -I "$root/scripts/check_doc_links.py" "$root"
   echo "==> docs: environment variables match the README table"
   python3 -I "$root/scripts/check_env_drift.py"

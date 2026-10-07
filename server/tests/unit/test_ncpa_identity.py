@@ -1,5 +1,5 @@
 """
-tests/unit/test_ncpa_identity.py — Phase 2 of "spec files/DHCP_Device_Identity_Plan.md":
+tests/unit/test_ncpa_identity.py — Phase 2 of "docs/plans/DHCP_Device_Identity_Plan.md":
 identity evidence collected at NCPA deployment, identity probes used during
 scans, and the relocation job that follows an NCPA device after a lease change.
 

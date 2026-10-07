@@ -1,6 +1,6 @@
 """
 tests/unit/test_device_identity_routes.py — Phase 4 routes of
-"spec files/DHCP_Device_Identity_Plan.md" (section 11), in
+"docs/plans/DHCP_Device_Identity_Plan.md" (section 11), in
 app/api/system/device_identity.py:
 
   GET  /api/system/hosts/<id>/addresses
