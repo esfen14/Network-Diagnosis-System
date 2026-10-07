@@ -334,6 +334,75 @@ PLUGIN_DEFINITIONS = {
             defaults={"port": 3306},
         ),
         PluginDefinition(
+            name="pgsql",
+            check_plugin="check_pgsql",
+            transports=(Transport.TCP,),
+            # Like MySQL: without a login name the check cannot tell a healthy
+            # server from one that refuses an anonymous client, so hosts without
+            # one configured fall back to a plain TCP port check.
+            arguments=(("-P", "port"), ("-l", "user")),
+            options={"password": "-p", "database": "-d", "warning": "-w", "critical": "-c"},
+            defaults={"port": 5432},
+            aliases=("postgresql", "postgres"),
+        ),
+        PluginDefinition(
+            name="ldap",
+            check_plugin="check_ldap",
+            transports=(Transport.TCP,),
+            # check_ldap needs a search base (-b); hosts without one configured
+            # fall back to a plain TCP port check.
+            arguments=(("-p", "port"), ("-b", "base")),
+            options={"warning": "-w", "critical": "-c"},
+            defaults={"port": 389},
+        ),
+        PluginDefinition(
+            name="ldaps",
+            check_plugin="check_ldaps",
+            transports=(Transport.TCP,),
+            arguments=(("-p", "port"), ("-b", "base")),
+            options={"warning": "-w", "critical": "-c"},
+            defaults={"port": 636},
+            aliases=("ldapssl",),
+        ),
+        PluginDefinition(
+            name="rpc",
+            check_plugin="check_rpc",
+            transports=(Transport.TCP,),
+            # check_rpc -C takes a program name or number; the port mapper is
+            # the one every RPC host runs.
+            arguments=(("-p", "port"), ("-C", "program")),
+            defaults={"port": 111, "program": "portmapper"},
+            aliases=("rpcbind", "sunrpc"),
+        ),
+        PluginDefinition(
+            name="ircd",
+            check_plugin="check_ircd",
+            transports=(Transport.TCP,),
+            arguments=(("-p", "port"),),
+            options={"warning": "-w", "critical": "-c"},
+            defaults={"port": 6667},
+            aliases=("irc",),
+        ),
+        PluginDefinition(
+            name="time",
+            check_plugin="check_time",
+            transports=(Transport.TCP,),
+            arguments=(("-p", "port"),),
+            options={"warning": "-w", "critical": "-c"},
+            defaults={"port": 37},
+        ),
+        PluginDefinition(
+            name="ntp_peer",
+            check_plugin="check_ntp_peer",
+            transports=(Transport.UDP,),
+            # An alternative to "ntp" (check_ntp_time) that reports the peer's
+            # offset, jitter and stratum. nmap names the port "ntp", so this one
+            # is reached by setting the port's service to ntp_peer.
+            arguments=(("-p", "port"),),
+            options={"warning": "-w", "critical": "-c"},
+            defaults={"port": 123},
+        ),
+        PluginDefinition(
             name="dns",
             check_plugin="check_dns",
             transports=(Transport.TCP, Transport.UDP),

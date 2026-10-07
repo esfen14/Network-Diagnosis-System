@@ -271,6 +271,47 @@ class TestTcpUdpHosts:
             }
 
 
+class TestPortDrivenPluginsAddedFromTheAudit:
+    """pgsql, ldap, ldaps, rpc, ircd, time and ntp_peer (Custom_Checks_Plan.md §2.4, class A)."""
+
+    def test_ports_with_nothing_else_needed_get_their_own_check(self, app, plugin_config):
+        host = make_host("srv", tcp={"111": "rpcbind", "6667": "irc", "37": "time"})
+        with app.app_context():
+            assert as_dict(build_host_services(host, {}, plugin_config)) == {
+                "rpc-111-tcp": "pinpoint_nd_rpc!111!portmapper!",
+                "ircd-6667-tcp": "pinpoint_nd_ircd!6667!",
+                "time-37-tcp": "pinpoint_nd_time!37!",
+            }
+
+    def test_ldap_and_postgres_fall_back_to_tcp_without_what_they_need(self, app, plugin_config):
+        host = make_host("srv", tcp={"389": "ldap", "636": "ldapssl", "5432": "postgresql"})
+        with app.app_context():
+            assert as_dict(build_host_services(host, {}, plugin_config)) == {
+                "ldap-389-tcp": "pinpoint_nd_tcp!389!",
+                "ldapssl-636-tcp": "pinpoint_nd_tcp!636!",
+                "postgresql-5432-tcp": "pinpoint_nd_tcp!5432!",
+            }
+
+    def test_ldap_and_postgres_use_their_plugin_once_configured(self, app, plugin_config):
+        host = make_host(
+            "srv", tcp={"389": "ldap", "5432": "postgresql"},
+            plugin_variables={"ldap": {"base": "dc=lab,dc=local"}, "pgsql": {"user": "nagios"}},
+        )
+        with app.app_context():
+            assert as_dict(build_host_services(host, {}, plugin_config)) == {
+                "ldap-389-tcp": "pinpoint_nd_ldap!389!dc=lab,dc=local!",
+                "pgsql-5432-tcp": "pinpoint_nd_pgsql!5432!nagios!",
+            }
+
+    def test_each_is_gated_by_its_own_plugin(self, app, plugin_config):
+        host = make_host("srv", tcp={"6667": "irc"})
+        with app.app_context():
+            assert build_host_services(host, {}, plugin_config, [], {"check_ssh"}) == []
+            assert as_dict(build_host_services(host, {}, plugin_config, None, {"check_ircd"})) == {
+                "ircd-6667-tcp": "pinpoint_nd_ircd!6667!"
+            }
+
+
 class TestSkippedUdpServices:
     """UDP ports without a plugin that speaks their protocol are not monitored
     (a generic UDP check cannot tell up from down) but are reported."""

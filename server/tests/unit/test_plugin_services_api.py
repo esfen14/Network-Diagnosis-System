@@ -102,7 +102,9 @@ class TestServiceDriven:
 
     def test_the_plugins_that_check_a_discovered_service_are_service_driven(self):
         assert {"check_ssh", "check_http", "check_snmp", "check_ncpa", "check_tcp", "check_dns",
-                "check_ntp_time", "check_ftp", "check_smtp", "check_mysql", "check_udp"} <= service_driven_plugin_names()
+                "check_ntp_time", "check_ftp", "check_smtp", "check_mysql", "check_udp",
+                "check_pgsql", "check_ldap", "check_ldaps", "check_rpc", "check_ircd", "check_time",
+                "check_ntp_peer"} <= service_driven_plugin_names()
 
     @pytest.mark.parametrize("name", ["check_ping", "check_load", "check_disk", "check_dummy", "check_custom"])
     def test_plugins_that_check_no_port_are_not(self, name):

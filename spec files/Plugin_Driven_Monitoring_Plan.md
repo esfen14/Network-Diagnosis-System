@@ -82,6 +82,12 @@ The registry names a definition (`ssh`); Plugin Manager names an executable
 | `http`, `https` | `check_http` (one plugin enables both) |
 | `ssh` / `ftp` / `smtp` / `mysql` | `check_ssh` / `check_ftp` / `check_smtp` / `check_mysql` |
 | `dns` | `check_dns` |
+| `pgsql` (`postgresql`, `postgres`) | `check_pgsql` (needs a login name; without one the port is checked by `check_tcp`, as MySQL is) |
+| `ldap` / `ldaps` (`ldapssl`) | `check_ldap` / `check_ldaps` (need a search base; without one the port falls back to `check_tcp`) |
+| `rpc` (`rpcbind`, `sunrpc`) | `check_rpc` (checks the port mapper) |
+| `ircd` (`irc`) | `check_ircd` |
+| `time` | `check_time` |
+| `ntp_peer` | `check_ntp_peer` (an alternative to `ntp`; reached by setting a port's service to `ntp_peer`) |
 | `ntp` | `check_ntp_time` |
 
 A definition with no enabled Plugin Manager plugin is **not monitored**.
