@@ -27,7 +27,6 @@ reconcile_plugin_monitoring(user_id)
 from datetime import datetime, timezone
 
 import sqlalchemy as sa
-from flask import current_app
 
 from app import db
 from app.api.plugin.service import record_plugin_action
@@ -38,6 +37,7 @@ from app.network_discovery.create_host_cfg import (
     regenerate_and_apply_config_status,
 )
 from app.network_discovery.plugin_registry import plugin_for_definition, resolve_plugin_name
+from app.network_discovery.plugin_settings import plugin_config
 from app.network_discovery.port_lifecycle import (
     enabled_plugin_names,
     promotable_ports,
@@ -73,13 +73,14 @@ def desired_services():
         return []
 
     facts = load_host_plugin_facts()
+    app_config = plugin_config()
     desired = []
     for hosts in _load_monitored_hosts().values():
         for host_data in hosts.values():
             device_id = host_data["data"].get("net_discovery_id")
             if device_id is None:
                 continue
-            for service in plan_host_services(host_data, facts, current_app.config, None, enabled_plugins):
+            for service in plan_host_services(host_data, facts, app_config, None, enabled_plugins):
                 desired.append({
                     "net_discovery_id": device_id,
                     "plugin": plugin_for_definition(service["plugin"]),
@@ -121,10 +122,11 @@ def preview_enable(plugin_name):
         }
 
     facts = load_host_plugin_facts()
+    app_config = plugin_config()
     services = 0
     devices = set()
     for device_id, host_data in hosts.items():
-        for service in plan_host_services(host_data, facts, current_app.config, None, enabled_plugins):
+        for service in plan_host_services(host_data, facts, app_config, None, enabled_plugins):
             if plugin_for_definition(service["plugin"]) == plugin_name:
                 services += 1
                 devices.add(device_id)

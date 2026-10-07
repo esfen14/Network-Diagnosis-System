@@ -41,8 +41,9 @@ backend routes exist.
 pages the user cannot access, and `PageAccessGuard` prevents direct URL access.
 This is usability protection only; backend permission checks remain mandatory.
 
-The Settings page is generally available to logged-in users. Its Security and
-System tabs require `settings.security` and `settings.system`, respectively.
+The Settings page is generally available to logged-in users. Its Security,
+System, Network Discovery and Plugins tabs require `settings.security`,
+`settings.system`, `settings.discovery` and `settings.plugins`, respectively.
 
 When adding a page:
 
@@ -65,7 +66,7 @@ When adding a page:
 | `components/plugins/` | Older installed/available plugin table components; do not assume these drive the current page |
 | `components/reports/` | Host availability and network-services report tables |
 | `components/manage-accounts/` | Account management table/UI |
-| `components/settings/` | General, security, and system settings controls; the Network Discovery tab edits networks, scan ports and one Port → Service table per protocol (NCPA's port fixed, each entry showing the check it leads to) |
+| `components/settings/` | General, security, and system settings controls; the Network Discovery tab edits networks, scan ports and one Port → Service table per protocol (NCPA's port fixed, each entry showing the check it leads to); the Plugins tab (`PluginSettings`) shows one editable table per installed plugin: SNMP OIDs (description, OID) once `check_snmp` is installed and NCPA metrics (description, metric path, optional warning, critical, units, query args) once `check_ncpa` is installed. Cells edit in place, Add appends an empty row, rows can be removed, Reset restores the `config.py` defaults; each table warns when its plugin is not Enabled/Active and that a new or renamed description starts a new Nagios service |
 | `components/layout/` | Authenticated application shell and global session/access behavior |
 | `components/shared/` | Reusable headers, summary cards, export menu, alerts sidebar, and rescan modal |
 

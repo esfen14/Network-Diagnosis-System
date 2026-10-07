@@ -152,6 +152,7 @@ PERMISSION_NAMES = [
     "settings.security",
     "settings.system",
     "settings.discovery",
+    "settings.plugins",
 ]
 
 

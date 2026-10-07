@@ -27,7 +27,7 @@ system.acknowledge_alerts, system.dashboard
 plugin.scan, plugin.view, plugin.enable, plugin.disable
 plugin.command_override, plugin.command_restore, plugin.validate
 plugin.custom_add, plugin.update, plugin.update_rollback
-settings.security, settings.system
+settings.security, settings.system, settings.discovery, settings.plugins
 ```
 
 Some seeded permissions are not attached to a current route, and the history
@@ -175,6 +175,13 @@ this is a documented implementation mismatch, not a recommended convention.
 |---|---|---|
 | `GET /api/system/discovery-settings` | `settings.discovery` | Effective discovery settings, their `config.py` defaults, and whether a scan is running |
 | `PUT /api/system/discovery-settings` | `settings.discovery` | Save networks, TCP/UDP ports and the Port -> Service tables (`tcpPortServices`, `udpPortServices`: the service expected on each port); every field is required, the version must match. GET also returns `ncpaPort`, the derived NCPA entry in the TCP table (accepted back but never stored; mapping that port to anything but `ncpa` is a 400) and `resolution` (which check each entry leads to) |
+
+### `app/api/system/plugin_settings.py`
+
+| Method and path | Permission | Purpose |
+|---|---|---|
+| `GET /api/system/plugin-settings` | `settings.plugins` | Each editable plugin's section keyed by definition name (`snmp`, `ncpa`): `plugin` (`check_snmp`, `check_ncpa`), `installed` (it has a Plugin Manager row), `status`, `settings` (effective values), `defaults` (`config.py`) and `version` (0 until first saved) |
+| `PUT /api/system/plugin-settings/<plugin>` | `settings.plugins` | Save one plugin's table; `<plugin>` is `snmp` or `ncpa` (404 otherwise). SNMP: `{"version", "oids": [{"metric", "oid"}]}`, `oid` numeric and dotted, unique. NCPA: `{"version", "metrics": [{"metric", "path", "warning"?, "critical"?, "units"?, "queryargs"?}]}`; `path` is an NCPA API path (segments of letters, digits, `_ - . |`, or `{partition}`, which expands to one service per partition), thresholds use Nagios range syntax, units up to 8 letters or `%`, query args `name=value` pairs joined by `,`; empty options are dropped. For both, `metric` is the description (lowercase letters, digits, `_`, at most 32, unique) and names the service `<plugin>-<metric>-<port>-<protocol>`; 1 to 50 entries. 400 when the plugin is not installed or an entry is invalid, 409 on a stale version. Writes a Configuration Change entry (`<plugin>_<variable>`, when audit logging is on), then rebuilds the Nagios config; returns the section plus `config_applied`, `config_ok`, `config_message` |
 
 ### `app/api/system/device_identity.py`
 

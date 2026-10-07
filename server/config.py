@@ -120,8 +120,10 @@ class Config:
     # Nagios service ("snmp-<metric>-<port>-<protocol>", e.g.
     # snmp-uptime-161-udp); optional keys warning, critical, label and units
     # are passed to check_snmp for that service.
-    # A host can override any of these (including the whole OID list) via
-    # NetworkDiscovery.Plugin_Variables["snmp"] — see
+    # SNMP_OIDS is only the default: the OID table can be edited from
+    # Settings -> Plugins (PluginSettings, network_discovery/plugin_settings.py),
+    # which then takes precedence. A host can override any of these (including
+    # the whole OID list) via NetworkDiscovery.Plugin_Variables["snmp"] — see
     # network_discovery/plugin_registry.py.
     SNMP_COMMUNITY_STRING = os.environ.get('SNMP_COMMUNITY_STRING') or "public"
     SNMP_PORT = "161"
@@ -140,7 +142,9 @@ class Config:
     # service per partition recorded at install time (NCPADevicePartition); an
     # entry may add a fallback_path used when none were recorded (none is set
     # for disk: NCPA 3.5.0 has no aggregate disk node). NCPA names the disk
-    # node used_percent. Overridable per host via
+    # node used_percent. This is only the default: the metric table can be
+    # edited from Settings -> Plugins (PluginSettings), which then takes
+    # precedence. Overridable per host via
     # NetworkDiscovery.Plugin_Variables["ncpa"].
     NCPA_METRICS = [
         {"metric": "cpu", "path": "cpu/percent", "warning": "50", "critical": "80", "queryargs": "aggregate=avg"},

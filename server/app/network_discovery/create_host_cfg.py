@@ -48,6 +48,7 @@ from app.logging import create_network_discovery_status, update_network_discover
 from app.logging.deployment_history import update_ncpa_deployment_status
 from app.system_models import DiscoveryStatus, DeploymentStatus, NetworkDiscoveryStatus, ServiceIdentification
 from app.network_discovery.discovery_settings import get_port_services, ncpa_port_key
+from app.network_discovery.plugin_settings import plugin_config
 import socket
 import ipaddress
 import tempfile
@@ -493,6 +494,8 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
     # fetched once for all hosts rather than once per host.
     plugin_facts = load_host_plugin_facts()
     enabled_plugins = enabled_plugin_names()
+    # config.py with the plugin settings saved from Settings -> Plugins (e.g. SNMP OIDs) in place.
+    app_config = plugin_config()
 
     # Plugins actually used by at least one service - each needs its own
     # `define command` object, rendered once at the end of the file.
@@ -551,7 +554,7 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
             # this host only.
             host_skipped = []
             host_services = build_host_services(
-                host_data, plugin_facts, current_app.config, host_skipped, enabled_plugins
+                host_data, plugin_facts, app_config, host_skipped, enabled_plugins
             )
             if skipped is not None:
                 for entry in host_skipped:

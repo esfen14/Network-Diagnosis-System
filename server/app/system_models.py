@@ -805,6 +805,27 @@ class DiscoverySettings(db.Model):
     Updated_By: so.Mapped[Optional[int]] = so.mapped_column(sa.ForeignKey(User.UserID), index=True)
 
 
+class PluginSettings(db.Model):
+    # Table Name
+    __tablename__ = "PLUGIN_SETTINGS"
+
+    # Table Fields
+    Id: so.Mapped[int] = so.mapped_column(primary_key=True)
+    # The plugin definition the values belong to ("snmp"), see plugin_registry.py.
+    Plugin_Name: so.Mapped[str] = so.mapped_column(sa.String(50), unique=True, index=True)
+    # {variable: value} saved from Settings -> Plugins, e.g. {"oids": [{"metric": ..., "oid": ...}]}.
+    # A variable that is absent uses its config.py default.
+    Variables: so.Mapped[dict] = so.mapped_column(sa.JSON())
+
+    # Concurrency + audit trail
+    Version: so.Mapped[int] = so.mapped_column(sa.Integer(), default=1)
+    Updated_At: so.Mapped[datetime] = so.mapped_column(
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    Updated_By: so.Mapped[Optional[int]] = so.mapped_column(sa.ForeignKey(User.UserID), index=True)
+
+
 class NetworkProfile(db.Model):
     __tablename__ = "NETWORK_PROFILE"
 
