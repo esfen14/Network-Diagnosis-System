@@ -246,6 +246,22 @@ def monitoring_state(device):
     return "monitored"
 
 
+# Labels of devices that are out of the Nagios config. Their last history.db snapshot is stale and
+# must not count as a live host or service.
+UNCHECKED_STATES = ("paused", "retired", "merged")
+
+
+def unchecked_host_names():
+    """
+    Return the set of Nagios host names whose device is paused, retired or merged, so it is not in
+    the Nagios config. Hosts with no device record (for example localhost) are never included.
+    """
+    return {
+        name for name, device in devices_by_host_name().items()
+        if monitoring_state(device) in UNCHECKED_STATES
+    }
+
+
 def nagios_host_name(device):
     """
     The name Nagios, history.db and acknowledgements know this device by:

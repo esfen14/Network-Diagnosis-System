@@ -312,18 +312,25 @@ Reasons (shown in the drawer, and as the chip tooltip in the table):
 | Monitored | "Nagios is checking this device." |
 | Missing | "Not seen in the last few scans. It is still being checked, so Nagios reports it as down." |
 | Address unknown | "Its address now belongs to another device. Checks are off until it is found again." |
-| Paused | "An administrator paused monitoring. Scans still track the device, but Nagios does not check it." |
+| Paused | "An administrator paused monitoring. Scans still track the device, but Nagios does not check it. The status shown is the last one Nagios reported." |
 | Retired | "Retired: Nagios no longer checks it. The status shown is the last one Nagios reported." |
 | Merged | "Merged into another device: Nagios no longer checks it. The status shown is the last one Nagios reported." |
 
 ### 12.2 Where it appears
 
-- **Table:** a Monitoring column with the chip. Retired and Merged rows add "last known
-  status" under the chip, because their Nagios snapshot is stale (Q2 point: the row stays
-  visible but must not be read as live).
+- **Table:** a Monitoring column with the chip. Paused, Retired and Merged rows add "last
+  known status" under the chip, because they are out of the Nagios config and their
+  snapshot is stale (Q2 point: the row stays visible but must not be read as live).
 - **Filter:** the table's filter menu has a Monitoring group: All, Monitored, Not
   monitored (every label except Monitored), and one option per other label. It combines
-  with the state filter, the search and paging.
+  with the state filter, the search and paging. The table opens on **Monitored** (owner,
+  2026-10-07); the other hosts are one filter choice away.
+- **Summary cards:** Total Hosts, Up and Down / Unreachable count Monitored hosts only
+  (the same set the table opens on), so a paused device never counts as up. They reload
+  after a pause or resume.
+- **Dashboard and Network Health:** a host whose device is Paused, Retired or Merged, and
+  its services, are left out of every count, the active-alerts feed and the
+  Online / Offline Devices cards (`Display_Requirements.md` §1.2).
 - **Drawer:** a Monitoring section (host view, not the service view) for a host with a
   device record, showing the chip, the reason and the action below.
 
@@ -361,7 +368,12 @@ Reasons (shown in the drawer, and as the chip tooltip in the table):
     paused are each refused with 400 and change nothing.
 30. Pause and Resume write a user-log entry and need `system.hosts.edit`.
 31. Cancelling the confirmation changes nothing.
-32. A Retired or Merged row shows "last known status".
+32. A Paused, Retired or Merged row shows "last known status".
+33. The table opens on the Monitored filter, and its summary cards count Monitored hosts
+    only.
+34. A paused (or retired or merged) device and its services are not counted as hosts,
+    services, online devices or active alerts on the Dashboard and Network Health pages;
+    resuming it counts it again.
 
 ---
 

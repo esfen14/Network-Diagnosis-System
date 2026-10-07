@@ -17,7 +17,8 @@ from app.network_discovery.create_host_cfg import _load_monitored_hosts
 from app.network_discovery.device_identity import MONITORING_STATES, monitoring_state
 from app.system_models import ActivityLog, DeviceState
 from tests.support.identity_helpers import MAC_1, MAC_2, NET, make_status, run_scan, scan
-from tests.support.seed_helpers import _make_host
+from app.history_models import HostStateType, ServiceStateType
+from tests.support.seed_helpers import _make_host, _make_service
 
 pytestmark = pytest.mark.usefixtures("monitoring_plugins")
 
@@ -249,3 +250,53 @@ class TestHostListAndDetail:
 
     def test_an_unknown_filter_is_400(self, logged_in_client, db_session):
         assert logged_in_client.get(f"{HOSTS}?monitoring=sleepy").status_code == 400
+
+
+class TestPausedDevicesAreNotLive:
+    """
+    A paused, retired or merged device is out of the Nagios config, so its last history.db
+    snapshot is stale. It must not count as an online host, a service or an active alert.
+    """
+
+    def seed(self, db_session, status):
+        paused = new_device(db_session, status, ip="10.0.0.5", mac=MAC_1, name="paused-01")
+        paused.Include_Device_In_Scanning = False
+        retired = new_device(db_session, status, ip="10.0.0.6", mac=MAC_2, name="retired-01")
+        retired.Device_State = DeviceState.RETIRED
+        missing = new_device(db_session, status, ip="10.0.0.8", mac="00:11:22:33:44:08", name="missing-01")
+        missing.Device_State = DeviceState.MISSING
+        new_device(db_session, status, ip="10.0.0.7", mac="00:11:22:33:44:07", name="ok-01")
+        db.session.commit()
+        _make_host(db_session, "paused-01")
+        _make_host(db_session, "retired-01", state=HostStateType.DOWN)
+        _make_host(db_session, "missing-01", state=HostStateType.DOWN)
+        _make_host(db_session, "ok-01")
+        _make_service(db_session, "paused-01", state=ServiceStateType.CRITICAL)
+        _make_service(db_session, "ok-01")
+        db_session.session.commit()
+
+    @pytest.mark.parametrize("url", [f"{BASE}/dashboard/summary", f"{BASE}/network-health/summary"])
+    def test_host_and_service_counts_leave_them_out(self, logged_in_client, db_session, status, url):
+        self.seed(db_session, status)
+
+        data = logged_in_client.get(url).get_json()["data"]
+
+        # ok-01 is up; missing-01 is still checked by Nagios, so its DOWN counts.
+        assert (data["hosts"]["total"], data["hosts"]["up"], data["hosts"]["down"]) == (2, 1, 1)
+        assert data["services"]["total"] == 1
+
+    def test_they_raise_no_active_alert(self, logged_in_client, db_session, status):
+        self.seed(db_session, status)
+
+        alerts = logged_in_client.get(f"{BASE}/dashboard/alerts").get_json()["data"]["alerts"]
+
+        assert {a["hostname"] for a in alerts} == {"missing-01"}
+
+    def test_resume_counts_the_device_again(self, logged_in_client, db_session, status):
+        self.seed(db_session, status)
+        device_id = logged_in_client.get(f"{HOSTS}/paused-01/detail").get_json()["data"]["device_id"]
+
+        logged_in_client.post(f"{BASE}/hosts/{device_id}/resume")
+
+        hosts = logged_in_client.get(f"{BASE}/dashboard/summary").get_json()["data"]["hosts"]
+        assert (hosts["total"], hosts["up"]) == (3, 2)

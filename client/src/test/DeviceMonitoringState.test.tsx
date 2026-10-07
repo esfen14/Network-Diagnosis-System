@@ -175,7 +175,8 @@ describe('HostTable monitoring column and filter', () => {
     expect(row('db-01')).toHaveTextContent('Monitored')
     expect(row('old-01')).toHaveTextContent('Retired')
     expect(row('old-01')).toHaveTextContent('last known status')
-    expect(row('web-01')).not.toHaveTextContent('last known status')
+    expect(row('web-01')).toHaveTextContent('last known status')
+    expect(row('db-01')).not.toHaveTextContent('last known status')
     expect(row('localhost')).not.toHaveTextContent(/Monitored|Paused|Retired/)
   })
 

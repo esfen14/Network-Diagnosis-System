@@ -87,7 +87,7 @@ export function UserTable({ users, title, onEdit }: UserTableProps) {
   )
 
   return (
-    <div className="overflow-hidden rounded-2xl bg-[var(--card)] border border-[var(--border)] shadow-sm">
+    <div className="rounded-2xl bg-[var(--card)] border border-[var(--border)] shadow-sm">
 
       {/* Sticky header */}
       <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--card)] p-4">

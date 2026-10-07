@@ -87,7 +87,7 @@ export function HostTable({
   const states: ('All' | HostState)[] = ['All', 'UP', 'DOWN', 'UNREACHABLE']
 
   return (
-    <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[#171B20]">
+    <div className="rounded-2xl bg-white shadow-sm dark:bg-[#171B20]">
       <div className="relative flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 p-4 dark:border-white/10">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
           {title}

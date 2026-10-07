@@ -26,7 +26,7 @@ export function DeviceInventoryPage() {
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [stateFilter, setStateFilter] = useState<'All' | HostState>('All')
-  const [monitoringFilter, setMonitoringFilter] = useState<MonitoringFilter>('all')
+  const [monitoringFilter, setMonitoringFilter] = useState<MonitoringFilter>('monitored')
   const [showFilter, setShowFilter] = useState(false)
   const [sortAsc, setSortAsc] = useState(true)
   const [page, setPage] = useState(1)
@@ -79,8 +79,9 @@ export function DeviceInventoryPage() {
   async function loadCounts() {
     try {
       const [totalRes, upRes] = await Promise.all([
-        apiGet<HostListResponse>(`/api/system/network-health/hosts?${buildQuery({ per_page: 1 })}`),
-        apiGet<HostListResponse>(`/api/system/network-health/hosts?${buildQuery({ per_page: 1, state: 'UP' })}`),
+        // Counts cover monitored hosts only, so a paused device never counts as up (§12).
+        apiGet<HostListResponse>(`/api/system/network-health/hosts?${buildQuery({ per_page: 1, monitoring: 'monitored' })}`),
+        apiGet<HostListResponse>(`/api/system/network-health/hosts?${buildQuery({ per_page: 1, state: 'UP', monitoring: 'monitored' })}`),
       ])
       setCounts({ total: totalRes.total, up: upRes.total })
     } catch {
@@ -147,7 +148,7 @@ export function DeviceInventoryPage() {
           <SummaryStatCard
             title="Total Hosts"
             value={String(hostTotals.total)}
-            subtitle="Across the network"
+            subtitle="Monitored across the network"
             icon={Activity}
             gradient="linear-gradient(135deg,#FFB100,#F59E0B)"
           />
@@ -207,7 +208,7 @@ export function DeviceInventoryPage() {
         <StatusDetailDrawer
           hostname={detailHostname}
           onClose={() => setDetailHostname(null)}
-          onMonitoringChanged={() => { void loadHosts() }}
+          onMonitoringChanged={() => { void Promise.all([loadHosts(), loadCounts()]) }}
         />
       )}
     </main>

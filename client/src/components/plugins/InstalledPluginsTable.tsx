@@ -45,7 +45,7 @@ export function InstalledPluginsTable({ data, selected, onSelect }: Props) {
   }, [data, query, categoryFilter, sortAsc])
 
   return (
-    <div className="overflow-hidden rounded-2xl bg-white dark:bg-[#171B20] shadow-sm">
+    <div className="rounded-2xl bg-white dark:bg-[#171B20] shadow-sm">
 
       {/* HEADER */}
       <div className="flex items-center justify-between border-b border-gray-200 dark:border-white/10 p-4">

@@ -16,7 +16,7 @@ export const MONITORING_REASONS: Record<MonitoringState, string> = {
   monitored: 'Nagios is checking this device.',
   missing: 'Not seen in the last few scans. It is still being checked, so Nagios reports it as down.',
   address_unknown: 'Its address now belongs to another device. Checks are off until it is found again.',
-  paused: 'An administrator paused monitoring. Scans still track the device, but Nagios does not check it.',
+  paused: 'An administrator paused monitoring. Scans still track the device, but Nagios does not check it. The status shown is the last one Nagios reported.',
   retired: 'Retired: Nagios no longer checks it. The status shown is the last one Nagios reported.',
   merged: 'Merged into another device: Nagios no longer checks it. The status shown is the last one Nagios reported.',
 }
@@ -30,14 +30,14 @@ export const MONITORING_STYLES: Record<MonitoringState, string> = {
   merged: 'bg-gray-500/15 text-[var(--text-muted)]',
 }
 
-// A retired or merged device is out of the Nagios config, so its host row is a stale snapshot.
+// A paused, retired or merged device is out of the Nagios config, so its host row is a stale snapshot.
 export function isStaleSnapshot(state: MonitoringState | null) {
-  return state === 'retired' || state === 'merged'
+  return state === 'paused' || state === 'retired' || state === 'merged'
 }
 
 // Pause and resume only make sense for a device that is still in the config or paused out of it.
 export function canPauseOrResume(state: MonitoringState | null) {
-  return state !== null && !isStaleSnapshot(state)
+  return state !== null && state !== 'retired' && state !== 'merged'
 }
 
 export type MonitoringFilter = 'all' | 'not_monitored' | MonitoringState
