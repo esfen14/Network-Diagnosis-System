@@ -76,6 +76,7 @@ function StatusBadge({ status }: { status: PluginStatus }) {
 }
 
 // Coverage at a glance: how many services a plugin runs and on how many devices.
+// eslint-disable-next-line react-refresh/only-export-components
 export function monitoringLabel(plugin: PluginListItem) {
   const { services, devices } = plugin.monitoring_usage
   // A plugin with custom checks reports them like any other monitored services.

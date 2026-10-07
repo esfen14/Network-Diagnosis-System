@@ -46,7 +46,5 @@ jobs:
         working-directory: client
       - run: npm run build
         working-directory: client
-      # Advisory until the lint gap in Implementation_Status.md is closed.
       - run: npm run lint
         working-directory: client
-        continue-on-error: true

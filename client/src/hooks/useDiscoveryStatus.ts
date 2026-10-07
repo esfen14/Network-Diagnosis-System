@@ -71,6 +71,7 @@ export function useDiscoveryStatus(enabled: boolean) {
         })
       }
     } catch {
+      // Keep the last status; the next poll retries.
     }
 
     timeoutRef.current = window.setTimeout(() => pollRef.current(), running ? RUNNING_POLL_MS : IDLE_POLL_MS)

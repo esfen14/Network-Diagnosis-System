@@ -42,6 +42,7 @@ export function ForcePasswordChange() {
     try {
       await apiPost('/api/user/logout')
     } catch {
+      // Sign out locally even if the server call fails.
     }
     localStorage.clear()
     sessionStorage.clear()

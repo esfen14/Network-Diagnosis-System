@@ -308,7 +308,7 @@ describe('PluginCustomChecksSection with passwords', () => {
   it('shows a stored password as dots, never its value', async () => {
     renderWithPasswords()
 
-    expect(await screen.findByText('-u probe  -p ••••••  -n ••••••'.replace(/  /g, ' '))).toBeInTheDocument()
+    expect(await screen.findByText('-u probe  -p ••••••  -n ••••••'.replace(/ {2}/g, ' '))).toBeInTheDocument()
   })
 
   it('masks the field, warns about where the password goes, and requires it when adding', async () => {

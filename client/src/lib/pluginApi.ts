@@ -219,7 +219,7 @@ export async function updatePlugin(
   })
 
   const text = await res.text()
-  let body: { message?: string; data?: PluginUpdateResult } = {}
+  let body: { message?: string; data?: PluginUpdateResult }
   try {
     body = text ? JSON.parse(text) : {}
   } catch {

@@ -84,6 +84,7 @@ export function useNetworkRescan(onComplete?: () => void) {
       const previous = await apiGet<DiscoveryStatusResponse | null>('/api/system/discover/status')
       if (previous && typeof previous.id === 'number') previousRunIdRef.current = previous.id
     } catch {
+      // No previous run id; any new run counts as the rescan.
     }
     try {
       await apiPost('/api/system/discover/start')

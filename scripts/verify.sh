@@ -29,8 +29,8 @@ frontend() {
   cd "$root/client"
   npm run test
   npm run build
-  echo "==> frontend: lint (advisory until Implementation_Status.md gap is closed)"
-  npm run lint || echo "lint failed (known gap, not blocking)"
+  echo "==> frontend: lint (errors block; warnings are tracked in Implementation_Status.md)"
+  npm run lint
 }
 
 case "$stage" in

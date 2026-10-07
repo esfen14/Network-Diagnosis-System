@@ -42,7 +42,7 @@ different fixes.
 |---|---|---|
 | Docs | `scripts/verify.sh docs` | Relative links in `AGENTS.md`, `README.md`, `spec files/` resolve |
 | Backend | `scripts/verify.sh backend` | `pytest tests/unit` in `server/`, with `FLASK_DEBUG=1`; ~4 min, 2,167 passed / 14 skipped on 2026-10-08 |
-| Frontend | `scripts/verify.sh frontend` | `npm run test`, `npm run build`, then advisory `npm run lint` |
+| Frontend | `scripts/verify.sh frontend` | `npm run test`, `npm run build`, `npm run lint` (errors fail; warnings do not) |
 | Everything | `scripts/verify.sh all` | Same stages as CI |
 
 Live tests (`server/tests/integration/`, `server/tests/e2e/`) are never part of
@@ -56,8 +56,7 @@ CI or an agent loop without explicit approval; they need a lab Nagios.
 |---|---|---|
 | `docs` | `scripts/verify.sh docs` | yes |
 | `backend` | Python 3.14, install `requirements*.txt`, `scripts/verify.sh backend` | yes |
-| `frontend` | Node 22, `npm ci`, test, build | yes |
-| `frontend` lint step | `npm run lint` | **no**, until the lint gap is closed |
+| `frontend` | Node 22, `npm ci`, test, build, lint | yes |
 
 Rules: CI uses no secrets and no network devices; every setting comes from the
 environment (see the production settings table in `README.md`); a failing job

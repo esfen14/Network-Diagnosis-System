@@ -74,7 +74,7 @@ the normative behavior in the requirement specifications.
 | SERVICE_CHANGED auto-clear | A `SERVICE_CHANGED` review item stays open after the mismatch disappears (seen when a port rule was removed); only an operator resolves it | Resolve the item automatically when the port again matches its frozen plugin |
 | NCPA token in check command | The NCPA token is a positional argument of the Nagios command, so it is visible in process listings and any transcript of the command | Review passing the token another way (for example a Nagios resource file) |
 | CI and automation | CI runs docs links, backend unit tests and frontend test/build on pull requests (`.github/workflows/ci.yml`). Not automated: deployment, installer ISO build and headless install test, spec-vs-code drift checks, branch protection | Require the CI jobs on `main`; add an installer build/install job when that repository's scope is agreed |
-| Frontend lint | `npm run lint` reports 33 errors (mostly `react-hooks` setState-in-effect, `react-refresh/only-export-components`, `no-empty`); the CI lint step is advisory | Fix the errors, then remove `continue-on-error` from the CI lint step and the `\|\| echo` fallback in `scripts/verify.sh` |
+| Frontend lint | `npm run lint` has 0 errors and blocks CI. 24 `react-hooks/set-state-in-effect` warnings remain (the rule is set to `warn` in `client/eslint.config.js`): pages and components that set state inside effects | Refactor each (derive state, key the component, or fetch with an event/subscription), then set the rule back to `error` |
 | Installer | Developed in another repository | Keep installer work out of this repository unless scope changes |
 
 ## Test approach status

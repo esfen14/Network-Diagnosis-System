@@ -60,6 +60,8 @@ function changeOnServer(updates: Record<string, unknown>) {
 let api: ReturnType<typeof useSystemSettings>
 
 function Probe() {
+  // Test-only: expose the hook result to assertions outside the render.
+  // eslint-disable-next-line react-hooks/globals
   api = useSystemSettings()
   return (
     <div>
