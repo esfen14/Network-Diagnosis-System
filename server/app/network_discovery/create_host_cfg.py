@@ -202,6 +202,19 @@ def custom_checks_use_secrets():
     return any((row.Configuration_Data or {}).get("secrets") for row in rows if not (row.Configuration_Data or {}).get("paused"))
 
 
+def write_private_file(path, text):
+    """
+    Write text to path as a file only its owner can read (0600), whatever the process umask. Candidate and
+    backup host files may hold custom check passwords; the live hosts.cfg keeps whatever mode the
+    operator gave it, because copying onto an existing file leaves its mode alone.
+    """
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w") as handle:
+        handle.write(text)
+    if os.name == "posix":
+        os.chmod(path, 0o600)
+
+
 def warn_if_world_readable(path):
     """Log a warning when a host file that holds a password can be read by every user (POSIX only)."""
     if os.name != "posix":
@@ -771,11 +784,7 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
         host_config.append(custom_checks.render_command_definition(plugin_name))
         host_config.append(_add_space(2))
 
-    with open(cfg_path, "w") as f:
-        # remember to f.write("string") here after you're done with discovering devices
-        f.write("".join(host_config))
-    if custom_checks_use_secrets():
-        warn_if_world_readable(cfg_path)
+    write_private_file(cfg_path, "".join(host_config))
     return cfg_path
 
 def local_interface_ips():
@@ -904,6 +913,8 @@ def _backup_running_host_cfg():
     backup_path = BACKUP_DIR / backup_name
 
     shutil.copyfile(NAGIOS_HOST_CFG, backup_path)
+    if os.name == "posix":
+        os.chmod(backup_path, 0o600)
 
     return backup_path
 
@@ -1248,6 +1259,10 @@ def _apply_new_host_cfg(cfg_path):
     except Exception:
         db.session.rollback()
         current_app.logger.exception("Could not carry service history over to the new service names.")
+
+    # Nagios needs custom check passwords in this file, so say so when everyone can read it.
+    if custom_checks_use_secrets():
+        warn_if_world_readable(NAGIOS_HOST_CFG)
 
     return True, f"Applied {cfg_path} successfully. Backup stored at {backup_path}"
 

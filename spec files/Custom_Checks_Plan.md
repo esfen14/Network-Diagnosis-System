@@ -290,8 +290,10 @@ A password field of a plugin (`secret` in `CUSTOM_CHECK_FIELDS`) is handled as f
   the password again. Without a fixed `SECRET_KEY` (the debug session's random one) nothing is stored.
 - **What it does not protect.** Nagios needs the password in the check's command, so it is in `hosts.cfg`
   in plain text, in the Nagios web UI's command view, and in the process list while the check runs. Keep
-  `hosts.cfg` readable only by the Nagios user and group; Pinpoint logs a warning when a host file that
-  holds a password is world-readable (POSIX). Moving passwords into Nagios resource macros is a possible
+  live `hosts.cfg` readable only by the Nagios user and group (Pinpoint copies onto it, so the mode you
+  set stays). The candidate file Pinpoint generates and the backup it keeps are created `0600`, whatever the
+  umask. After each apply Pinpoint logs a warning when the live file holds a password and is world-readable
+  (POSIX). Moving passwords into Nagios resource macros is a possible
   later step; it would mean editing `resource.cfg`, which Pinpoint does not touch.
 - **Plugins.** `check_radius` and `check_mysql_query` (previously "needs a password") now take custom
   checks, and `check_nt` (`-s`) and `check_disk_smb` (`-p`) gain an optional password. `check_dbi` and

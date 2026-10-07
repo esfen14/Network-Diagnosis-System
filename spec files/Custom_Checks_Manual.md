@@ -45,9 +45,10 @@ that discovery found, and these have none.
 3. **Set a fixed `SECRET_KEY`** in the service's environment file (for example `/etc/pinpoint/pinpoint.env`), or
    `PINPOINT_SECRETS_KEY`. Passwords are encrypted with it (section 7). Do not change it later without
    reading section 7.
-4. **Restrict the Nagios host file.** If you will store passwords, the generated host file holds them in plain
+4. **Restrict the live Nagios host file.** If you will store passwords, the live host file holds them in plain
    text (section 7). Make it readable only by the Nagios user and group, for example `chmod 640` with the right
-   group.
+   group (`sudo chgrp nagios /usr/local/nagios/etc/objects/hosts.cfg`). Pinpoint copies new content onto that file,
+   so the mode you set stays.
 5. **Check the Nagios server can reach what you will check:** a device on the network, the SSH key you will
    name, or the files and devices of the Nagios server itself.
 
@@ -198,8 +199,9 @@ How it is handled:
   optional password has a "Remove the stored …" box; a required one cannot be removed.
 - **Passwords are written to the Nagios host file.** Nagios needs the password in the check's command, so it is in
   plain text in that file, in the Nagios web UI's command view, and in the process list while the check runs. Keep
-  the host file readable only by the Nagios user and group. Pinpoint logs a warning when a host file that holds a
-  password is readable by everyone.
+  the live host file readable only by the Nagios user and group. The other copies Pinpoint makes (the candidate
+  file it generates and the backup it keeps before each apply) are created readable only by the app. Pinpoint
+  logs a warning after an apply when the live host file holds a password and everyone can read it.
 
 If the key changes:
 
