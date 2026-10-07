@@ -19,7 +19,7 @@ acknowledgements belong in `system.db` even though they relate to Nagios alerts.
 
 ### Default bind: identity, configuration, operations, and acknowledgement
 
-- Identity/access: `Permission`, `Role`, `RolePermission`, `User` (`Must_Change_Password` forces a password change after reactivation or an admin password reset).
+- Identity/access: `Permission`, `Role`, `RolePermission`, `User` (`Must_Change_Password` forces a password change on a new account, after reactivation or after an admin password reset).
 - Plugin settings: `PluginSettings` (`PLUGIN_SETTINGS`), one row per plugin definition (`Plugin_Name`, e.g. `snmp`) holding the variables saved from Settings -> Plugins in `Variables` (JSON), with `Version`/`Updated_By`. No row means the `config.py` defaults apply.
 - Network profile: singleton `NetworkProfile` (`Id=1`) holding the editable name, reference and detail rows of the Network Health info card.
 - Audit/logging: `ActivityLog`, `ConfigurationChanges`, `ExportLog`.

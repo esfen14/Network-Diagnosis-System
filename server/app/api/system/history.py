@@ -616,9 +616,10 @@ def notifications_history_detail():
         if raw is None:
             return error("Failed to retrieve notification detail from Nagios.", 502)
 
-        notifications = normalize_nagios_list(raw)
+        notifications = [normalize_notification(n) for n in normalize_nagios_list(raw)]
 
-        # Find the specific notification by timestamp.
+        # Find the specific notification by timestamp (normalized to seconds,
+        # the same value the list sent).
         notif = next(
             (n for n in notifications if n.get("timestamp") == timestamp),
             None
@@ -627,7 +628,6 @@ def notifications_history_detail():
         if notif is None:
             return error("Notification event not found.", 404)
 
-        notif   = normalize_notification(notif)
         state   = notif["state"]
         contact = notif["contact"]
         message = notif["output"]

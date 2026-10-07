@@ -633,6 +633,17 @@ class TestNotificationsHistoryDetail:
         data = resp.get_json()["data"]
         assert data["hostname"] == notif["hostname"]
 
+    def test_millisecond_timestamp_matches_the_seconds_the_list_sent(self, logged_in_client, db_session):
+        raw = {"timestamp": 1_700_001_100_000, "host_name": "webserver", "description": "http-80-tcp",
+               "notification_reason": "CRITICAL", "contact_name": "admin", "plugin_output": "down"}
+        with patch(_NOTIFS_RANGE, return_value=[raw]), patch(_ALERTS_RANGE, return_value=[]):
+            resp = logged_in_client.get(
+                "/api/system/history/notifications/detail"
+                "?hostname=webserver&timestamp=1700001100&service=http-80-tcp"
+            )
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["timestamp"] == 1700001100
+
     def test_missing_hostname_returns_400(self, logged_in_client, db_session):
         with patch(_NOTIFS_RANGE, return_value=[]):
             with patch(_ALERTS_RANGE, return_value=[]):

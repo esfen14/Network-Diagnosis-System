@@ -40,6 +40,17 @@ class TestSuspendWithoutPassword:
 
 
 class TestMustChangePasswordFlag:
+    def test_new_account_must_change_password(self, logged_in_client, db_session, admin_role):
+        from app.system_models import User
+        resp = logged_in_client.post("/api/user/accounts", json={
+            "first_name": "New", "last_name": "Person", "email": "newperson@example.com",
+            "password": NEW_PASSWORD, "confirm_password": NEW_PASSWORD,
+            "status": "Active", "role_id": admin_role.RoleID,
+        })
+        assert resp.status_code == 201
+        created = db_session.session.scalar(db_session.select(User).where(User.Email == "newperson@example.com"))
+        assert created.Must_Change_Password is True
+
     def test_reactivation_sets_flag(self, logged_in_client, db_session, admin_role):
         target = _make_user(db_session, admin_role, "t4@example.com", status=UserStatus.SUSPENDED)
         assert _edit(logged_in_client, target, status="Active").status_code == 200

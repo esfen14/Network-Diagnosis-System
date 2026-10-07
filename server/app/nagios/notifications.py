@@ -139,7 +139,8 @@ def request_notification_count_range(start_ts, end_ts, hostname=None, service=No
 # ======================= NORMALIZATION ===============================
 # archivejson key names differ between Nagios versions, so each canonical
 # field is read from several aliases (first non-empty wins).
-_HOST_KEYS = ("hostname", "host_name", "host")
+# "name" is how archivejson labels the host of a host-level event.
+_HOST_KEYS = ("hostname", "host_name", "host", "name")
 _SERVICE_KEYS = ("servicedesc", "service_description", "description", "service")
 _STATE_KEYS = ("notificationreason", "notification_reason", "state")
 _TYPE_KEYS = ("notificationtype", "notification_type")
@@ -190,7 +191,6 @@ def normalize_notification(raw: dict) -> dict:
 # state types as soft=1, hard=2; plain 0-3 codes are accepted too.
 _HOST_STATES = {0: "UP", 1: "UP", 2: "DOWN", 4: "UNREACHABLE"}
 _SERVICE_STATES = {0: "OK", 8: "OK", 16: "WARNING", 32: "CRITICAL", 64: "UNKNOWN", 1: "WARNING", 2: "CRITICAL", 3: "UNKNOWN"}
-_ALERT_HOST_KEYS = _HOST_KEYS + ("name",)
 
 def _alert_state(value, is_service: bool) -> str:
     """State name for a Nagios alert state: numeric codes map by object type, strings pass through."""
@@ -219,7 +219,7 @@ def normalize_alert(raw: dict) -> dict:
 
     return {
         **raw,
-        "hostname":            _first(raw, _ALERT_HOST_KEYS) or "",
+        "hostname":            _first(raw, _HOST_KEYS) or "",
         "service_description": service,
         "state":               _alert_state(raw.get("state"), is_service),
         "last_state":          _alert_state(raw.get("last_state"), is_service),

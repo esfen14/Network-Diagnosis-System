@@ -461,7 +461,9 @@ def create_account():
                 Last_Name=last_name,
                 Email=normalized_email,
                 Status=normalized_status,
-                RoleID=applied_role.RoleID
+                RoleID=applied_role.RoleID,
+                # The admin chose this password, so the person must replace it at first sign-in.
+                Must_Change_Password=True,
             )
             user.set_password(password)
 
