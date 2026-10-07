@@ -247,6 +247,19 @@ export function NetworkHealthPage() {
   const memory = latestAndChange(trends?.ncpa?.memory)
   const disk = latestAndChange(trends?.ncpa?.disk)
 
+  const bandwidthIn = latestAndChange(trends?.bandwidth.in)
+  const bandwidthOut = latestAndChange(trends?.bandwidth.out)
+  const bandwidthTotal = (trends?.bandwidth.in ?? []).map(
+    (p, i) => (p.avgValue ?? 0) + (trends?.bandwidth.out[i]?.avgValue ?? 0),
+  )
+  const bandwidthLatest =
+    bandwidthIn.latest != null || bandwidthOut.latest != null
+      ? (bandwidthIn.latest ?? 0) + (bandwidthOut.latest ?? 0)
+      : null
+  const bandwidthChange = changeLabel(
+    bandwidthLatest == null ? null : latestAndChange(bandwidthTotal.map((v) => ({ bucketStart: '', avgValue: v, unit: null }))).changePct,
+  )
+
   const rtaChange = changeLabel(rta.changePct)
   const plChange = changeLabel(packetLoss.changePct)
 
@@ -289,11 +302,14 @@ export function NetworkHealthPage() {
     bandwidth: {
       title: 'Bandwidth',
       unit: 'Mbps',
-      datasourceLabel: 'Interface throughput',
-      series: [{ key: 'bandwidth', label: 'Throughput', color: '#38BDF8' }],
-      seriesData: { bandwidth: [] },
-      isConfigured: false,
-      emptyMessage: 'No bandwidth/throughput plugin is wired into monitoring yet.',
+      datasourceLabel: 'NCPA interface throughput — summed across monitored interfaces',
+      series: [
+        { key: 'in', label: 'Inbound', color: '#38BDF8', precision: 2 },
+        { key: 'out', label: 'Outbound', color: '#F4A90B', precision: 2 },
+      ],
+      seriesData: { in: trends?.bandwidth.in ?? [], out: trends?.bandwidth.out ?? [] },
+      isConfigured: trends?.bandwidth.configured ?? false,
+      emptyMessage: 'Plugin not configured — add NCPA interface/<name>/bytes_recv and bytes_sent metrics (checked with delta) in Settings → Plugins to see bandwidth.',
     },
     avgResponseTime: {
       title: 'Avg. Response Time',
@@ -439,12 +455,12 @@ export function NetworkHealthPage() {
 
               <SparklineMetricCard
                 title="Bandwidth"
-                value="—"
-                unit=""
-                change="Not configured"
-                changeType="neutral"
-                sparklineData={[]}
-                sparklineColor="#E70D0D"
+                value={bandwidthLatest != null ? bandwidthLatest.toFixed(2) : '—'}
+                unit={bandwidthLatest != null ? 'Mbps' : ''}
+                change={trends?.bandwidth.configured ? bandwidthChange.text : 'Not configured'}
+                changeType={trends?.bandwidth.configured ? bandwidthChange.type : 'neutral'}
+                sparklineData={bandwidthTotal}
+                sparklineColor="#38BDF8"
                 onClick={() => setOpenMetric('bandwidth')}
               />
 

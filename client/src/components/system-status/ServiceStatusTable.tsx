@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { ArrowUpDown, Filter, Search } from 'lucide-react'
 import type { ServiceRow, ServiceState } from '../../types/service'
 
@@ -41,6 +42,92 @@ function StatusPill({ status }: { status: ServiceState }) {
       <span className={`h-1.5 w-1.5 rounded-full ${dotStyles[status]}`} />
       {status}
     </span>
+  )
+}
+
+const STATE_DESCRIPTIONS: Record<ServiceState, string> = {
+  OK: 'The service is working normally.',
+  WARNING: 'The service is reachable but a value crossed its warning threshold. It should be checked soon.',
+  CRITICAL: 'The service is failing or a value crossed its critical threshold. It needs attention now.',
+  UNKNOWN: 'The check could not determine the state, for example a plugin error or an unreachable agent.',
+}
+
+/**
+ * Status pill that explains itself: hover, focus or click shows what the state
+ * means and the latest plugin output. Fixed-positioned so the table's
+ * horizontal scroll container does not clip it.
+ */
+function StatusWithDescription({ service }: { service: ServiceRow }) {
+  const [open, setOpen] = useState(false)
+  const [pinned, setPinned] = useState(false)
+  const [position, setPosition] = useState({ top: 0, left: 0 })
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const visible = open || pinned
+
+  const show = () => {
+    const rect = buttonRef.current?.getBoundingClientRect()
+    if (rect) setPosition({ top: rect.bottom + 6, left: Math.max(8, Math.min(rect.left, window.innerWidth - 328)) })
+    setOpen(true)
+  }
+
+  useEffect(() => {
+    if (!pinned) return
+    const close = (event: Event) => {
+      if (event.type === 'keydown' && (event as KeyboardEvent).key !== 'Escape') return
+      if (event.type === 'mousedown' && buttonRef.current?.contains(event.target as Node)) return
+      setPinned(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', close)
+    window.addEventListener('scroll', close, true)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', close)
+      window.removeEventListener('scroll', close, true)
+    }
+  }, [pinned])
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-expanded={visible}
+        aria-label={`${service.state} — show status description`}
+        onMouseEnter={show}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={show}
+        onBlur={() => setOpen(false)}
+        onClick={() => {
+          show()
+          setPinned((prev) => !prev)
+        }}
+        className="cursor-pointer rounded-full"
+      >
+        <StatusPill status={service.state} />
+      </button>
+
+      {visible && (
+        <div
+          role="tooltip"
+          style={{ top: position.top, left: position.left }}
+          className="fixed z-50 w-80 rounded-xl border border-gray-200 bg-white p-3 text-left text-xs shadow-lg dark:border-white/10 dark:bg-[#171B20]"
+        >
+          <p className="font-semibold text-gray-900 dark:text-white">{service.service} — {service.state}</p>
+          <p className="mt-1 text-gray-600 dark:text-gray-300">{STATE_DESCRIPTIONS[service.state]}</p>
+          {service.pluginOutput && (
+            <p className="mt-2 break-words rounded-lg bg-gray-50 p-2 font-mono text-[11px] text-gray-700 dark:bg-[#0D1117] dark:text-gray-300">
+              {service.pluginOutput}
+            </p>
+          )}
+          <p className="mt-2 text-gray-400">
+            {service.stateType ? `${service.stateType} state` : null}
+            {service.isFlapping ? ' · flapping' : ''}
+            {service.inDowntime ? ' · in scheduled downtime' : ''}
+          </p>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -172,7 +259,7 @@ export function ServiceStatusTable({
                 >
                   <td className="px-4 py-3 text-gray-900 dark:text-white">{s.hostname}</td>
                   <td className="px-4 py-3 text-gray-900 dark:text-white">{s.service}</td>
-                  <td className="px-4 py-3"><StatusPill status={s.state} /></td>
+                  <td className="px-4 py-3"><StatusWithDescription service={s} /></td>
                   <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{formatDateTime(s.lastCheck)}</td>
                   <td className="px-4 py-3 text-gray-500 dark:text-gray-400">
                     {s.ack ? <span title={s.ack.comment}>By {s.ack.acknowledgedBy}</span> : '—'}

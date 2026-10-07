@@ -50,10 +50,6 @@ const GREEN = 'linear-gradient(135deg,#22C55E,#16A34A)'
 const RED = 'linear-gradient(135deg,#EF4444,#DC2626)'
 const GRAY = 'linear-gradient(135deg,#6B7280,#4B5563)'
 
-function pct(value: number | null | undefined) {
-  return value == null ? '—' : `${value}%`
-}
-
 function nagiosList(raw: unknown): NagiosEvent[] {
   if (Array.isArray(raw)) return raw as NagiosEvent[]
   if (raw && typeof raw === 'object') return Object.values(raw as Record<string, NagiosEvent>)
@@ -75,9 +71,6 @@ function isGood(state: string) {
 
 function buildReport(view: ExtraReportView, data: Record<string, unknown>): Report {
   if (view === 'hosts-by-os') {
-    const summary = data.summary as {
-      total_hosts: number; up: number; down: number; unreachable: number; uptime_pct: number | null
-    }
     const byOs = data.by_os as {
       os_type: string
       hosts: { hostname: string; state: string; uptime_pct: number | null; last_check: string | null; last_state_change: string | null }[]
@@ -113,12 +106,7 @@ function buildReport(view: ExtraReportView, data: Record<string, unknown>): Repo
         { key: 'lastStateChange', label: 'Last State Change', kind: 'datetime' },
       ],
       rows,
-      cards: [
-        { title: 'Total Hosts', value: String(summary.total_hosts), subtitle: `${byOs.length} OS types`, icon: Activity, gradient: GOLD },
-        { title: 'Up', value: String(summary.up), subtitle: 'Currently reachable', icon: CheckCircle2, gradient: GREEN },
-        { title: 'Down / Unreachable', value: String(summary.down + summary.unreachable), subtitle: 'Needs attention', icon: XCircle, gradient: RED },
-        { title: 'Uptime', value: pct(summary.uptime_pct), subtitle: 'Across all hosts', icon: Activity, gradient: GRAY },
-      ],
+      cards: [],
     }
   }
 
@@ -145,8 +133,6 @@ function buildReport(view: ExtraReportView, data: Record<string, unknown>): Repo
         })
       }
     }
-    const ok = rows.filter((r) => String(r.state).toUpperCase() === 'OK').length
-    const problem = rows.filter((r) => ['WARNING', 'CRITICAL'].includes(String(r.state).toUpperCase())).length
     return {
       title: 'Device Services Report',
       noun: 'services',
@@ -166,12 +152,7 @@ function buildReport(view: ExtraReportView, data: Record<string, unknown>): Repo
         { key: 'lastStateChange', label: 'Last State Change', kind: 'datetime' },
       ],
       rows,
-      cards: [
-        { title: 'Total Devices', value: String(data.total_hosts), subtitle: 'With monitored services', icon: Server, gradient: GOLD },
-        { title: 'OK', value: String(ok), subtitle: 'Healthy services', icon: CheckCircle2, gradient: GREEN },
-        { title: 'Warning / Critical', value: String(problem), subtitle: 'Needs attention', icon: XCircle, gradient: RED },
-        { title: 'Total Services', value: String(data.total_services), subtitle: 'Across all devices', icon: Activity, gradient: GRAY },
-      ],
+      cards: [],
     }
   }
 

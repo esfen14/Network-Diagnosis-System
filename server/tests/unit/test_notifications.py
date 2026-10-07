@@ -100,6 +100,28 @@ class TestGetNotifications:
         timestamps = [n["timestamp"] for n in notifications]
         assert timestamps == sorted(timestamps, reverse=True)
 
+    def test_millisecond_timestamps_can_be_marked_read(
+        self, logged_in_client, db_session, seeded_permissions, admin_user
+    ):
+        """
+        Nagios sends millisecond timestamps; the cursor is in seconds (the
+        header sends the seconds value back as up_to). Marking read must clear them.
+        """
+        items = [{"timestamp": 1_700_000_000_000, "host_name": "h1"}]
+
+        with patch(_PATCH_NOTIF_RANGE, return_value=items):
+            first = logged_in_client.get(self.URL).get_json()["data"]
+            assert first["notifications"][0]["timestamp"] == 1_700_000_000
+            assert first["unread_count"] == 1
+
+            logged_in_client.post(
+                "/api/system/notifications/mark-read", json={"up_to": 1_700_000_000}
+            )
+            again = logged_in_client.get(self.URL).get_json()["data"]
+
+        assert again["unread_count"] == 0
+        assert again["notifications"][0]["is_read"] is True
+
     def test_is_read_annotation_with_new_cursor(
         self, logged_in_client, db_session, seeded_permissions, admin_user
     ):

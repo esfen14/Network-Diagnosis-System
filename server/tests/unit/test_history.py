@@ -281,6 +281,24 @@ class TestAlertsHistory:
         items = resp.get_json()["data"]["items"]
         assert all(not i["acknowledged"] for i in items)
 
+    def test_real_nagios_alert_shape(self, logged_in_client, db_session):
+        # archivejson sends numeric states, a millisecond timestamp, the host
+        # under "name"/"host_name", and no last_state or duration.
+        real = [
+            {"timestamp": 1791291918000, "object_type": 1, "name": "h1",
+             "state_type": 1, "state": 1, "plugin_output": "PING CRITICAL"},
+            {"timestamp": 1791291919000, "object_type": 2, "host_name": "h2",
+             "description": "http-80-tcp", "state_type": 0, "state": 2, "plugin_output": "HTTP"},
+        ]
+        with patch(_ALERTS_RANGE, return_value=real):
+            resp = logged_in_client.get("/api/system/history/alerts?preset=24h&sort_by=hostname&order=asc")
+        assert resp.status_code == 200
+        items = resp.get_json()["data"]["items"]
+        assert [(i["hostname"], i["type"], i["new_state"], i["state_type"], i["timestamp"]) for i in items] == [
+            ("h1", "host", "DOWN", "hard", 1791291918),
+            ("h2", "service", "CRITICAL", "soft", 1791291919),
+        ]
+
     def test_empty_nagios_response_returns_empty_list(self, logged_in_client, db_session):
         with patch(_ALERTS_RANGE, return_value=[]):
             resp = logged_in_client.get("/api/system/history/alerts?preset=24h")

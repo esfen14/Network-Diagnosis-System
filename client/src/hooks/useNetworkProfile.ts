@@ -4,7 +4,8 @@ import { apiGet, apiPut } from '../lib/api'
 export type NetworkProfile = {
   name: string
   reference: string
-  details: { label: string; value: string }[]
+  // derived rows are worked out by the server and cannot be edited
+  details: { label: string; value: string; derived?: boolean }[]
 }
 
 export const DEFAULT_NETWORK_NAME = 'CICT Network'
@@ -25,7 +26,8 @@ export function useNetworkProfile() {
   }, [])
 
   const save = useCallback(async (next: NetworkProfile) => {
-    const saved = await apiPut<NetworkProfile>('/api/system/network-profile', next)
+    const editable = { ...next, details: next.details.filter((d) => !d.derived) }
+    const saved = await apiPut<NetworkProfile>('/api/system/network-profile', editable)
     setProfile(saved)
   }, [])
 

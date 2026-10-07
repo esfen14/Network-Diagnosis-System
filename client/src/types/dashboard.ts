@@ -201,6 +201,8 @@ function fromTrendPoints(records: TrendPointRecord[]): TrendPoint[] {
 export type TrendsResponse = {
   ping: { configured: boolean; rta: TrendPoint[]; packetLoss: TrendPoint[] }
   ncpa: { cpu: TrendPoint[]; disk: TrendPoint[]; memory: TrendPoint[] } | null
+  // NCPA interface throughput in Mbps. configured=false until a check reports it.
+  bandwidth: { configured: boolean; in: TrendPoint[]; out: TrendPoint[] }
   // Nagios server's own check_load (load1/5/15). configured=false when absent.
   nagiosCpuLoad: { configured: boolean; load1: TrendPoint[]; load5: TrendPoint[]; load15: TrendPoint[] }
 }
@@ -208,6 +210,7 @@ export type TrendsResponse = {
 type TrendsApiResponse = {
   ping: { configured: boolean; rta: TrendPointRecord[]; packet_loss: TrendPointRecord[] }
   ncpa: { cpu: TrendPointRecord[]; disk: TrendPointRecord[]; memory: TrendPointRecord[] } | null
+  bandwidth?: { configured: boolean; in: TrendPointRecord[]; out: TrendPointRecord[] }
   nagios_server?: {
     cpu_load?: { configured: boolean; load1: TrendPointRecord[]; load5: TrendPointRecord[]; load15: TrendPointRecord[] }
   }
@@ -228,6 +231,11 @@ export function fromTrendsResponse(data: TrendsApiResponse): TrendsResponse {
           memory: fromTrendPoints(data.ncpa.memory),
         }
       : null,
+    bandwidth: {
+      configured: data.bandwidth?.configured ?? false,
+      in: fromTrendPoints(data.bandwidth?.in ?? []),
+      out: fromTrendPoints(data.bandwidth?.out ?? []),
+    },
     nagiosCpuLoad: {
       configured: cpuLoad?.configured ?? false,
       load1: fromTrendPoints(cpuLoad?.load1 ?? []),

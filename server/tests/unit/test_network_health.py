@@ -150,6 +150,28 @@ class TestNetworkHealthTrends:
         for key in ("cpu", "disk", "memory"):
             assert key in ncpa_data
 
+    def test_bandwidth_not_configured_without_interface_checks(self, logged_in_client, db_session):
+        ncpa = _make_service(db_session, "h1", NCPA_CPU_SERVICE)
+        _make_service_perf(db_session, ncpa, "cpu/percent", 12.0, "%")
+        db_session.session.commit()
+        bw = logged_in_client.get("/api/system/network-health/trends").get_json()["data"]["bandwidth"]
+        assert bw["configured"] is False
+        assert bw["in"] == [] and bw["out"] == []
+
+    def test_bandwidth_sums_interfaces_in_mbps(self, logged_in_client, db_session):
+        # 125000 B/s = 1 Mbps; two interfaces inbound sum to 3 Mbps.
+        a = _make_service(db_session, "h1", "ncpa-bandwidth_in-5693-tcp")
+        b = _make_service(db_session, "h2", "ncpa-bandwidth_in-5693-tcp")
+        out = _make_service(db_session, "h1", "ncpa-bandwidth_out-5693-tcp")
+        _make_service_perf(db_session, a, "interface/eth0/bytes_recv", 125000.0, "B")
+        _make_service_perf(db_session, b, "interface/eth0/bytes_recv", 250000.0, "B")
+        _make_service_perf(db_session, out, "interface/eth0/bytes_sent", 125000.0, "B")
+        db_session.session.commit()
+        bw = logged_in_client.get("/api/system/network-health/trends").get_json()["data"]["bandwidth"]
+        assert bw["configured"] is True
+        assert [p["avg_value"] for p in bw["in"] if p["avg_value"] is not None] == [pytest.approx(3.0)]
+        assert [p["avg_value"] for p in bw["out"] if p["avg_value"] is not None] == [pytest.approx(1.0)]
+
     def test_nagios_server_load_configured(self, logged_in_client, db_session):
         svc = _make_service(db_session, "localhost", "load-0-TCP")
         _make_service_perf(db_session, svc, "load1", 0.5)

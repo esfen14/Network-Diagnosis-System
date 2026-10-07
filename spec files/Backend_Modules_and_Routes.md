@@ -268,8 +268,8 @@ update/custom-plugin modules.
 | `POST /api/plugin/<plugin_id>/disable` | `plugin.disable` | Disable a plugin, then reconcile: its services leave Nagios, its ports keep their state and frozen plugin so enabling restores them. If Nagios rejects the change the plugin goes back to its previous state, a failed history row is written and the route returns 409. A plugin enabled before the service-driven rule can still be disabled. The response carries `auto_apply` |
 | `POST /api/plugin/<plugin_id>/commands/<command_id>/override` | `plugin.command_override` | Save a command override |
 | `POST /api/plugin/<plugin_id>/commands/<command_id>/restore-default` | `plugin.command_restore` | Disable the active override |
-| `GET /api/system/network-profile` | `system.network_health` | Editable network name, reference tag and detail rows for the Network Health card (defaults until saved) |
-| `PUT /api/system/network-profile` | `settings.discovery` | Save the network profile (descriptive only) |
+| `GET /api/system/network-profile` | `system.network_health` | Network name, reference tag and detail rows for the Network Health card. ISP and Location are saved; IP Range, Subnet Mask, Gateway Device and DNS Server are derived on every read (scan networks, discovered devices, port 53) and flagged `derived: true` |
+| `PUT /api/system/network-profile` | `settings.discovery` | Save the name, reference, ISP and Location; derived rows in the body are ignored |
 | `POST /api/plugin/<plugin_id>/validate` | `plugin.validate` | Validate executable, permissions, and dependencies |
 | ~~`POST /api/plugin/custom`~~ | `plugin.custom_add` | **Disabled** — route commented out in `manager.py` (and the client call in `pluginApi.ts`); not part of the current release |
 | `POST /api/plugin/<plugin_id>/update` | `plugin.update` | Update from an archive |

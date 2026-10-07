@@ -798,6 +798,17 @@ shows trends so the user can see whether things are getting better or worse.
 | Average RTA / Latency | Line chart over time + current value | `check_ping`, `check_icmp` → `rta` |
 | Average Packet Loss | Line chart over time + current value | `check_ping`, `check_icmp` → `pl` |
 
+**Bandwidth (always-visible card; §3.2):**
+
+| Metric | Display | Source |
+|---|---|---|
+| Inbound / outbound throughput (Mbps) | Sparkline card + line chart over time | `check_ncpa` → `interface/<name>/bytes_recv` and `bytes_sent`, checked with `--delta` (bytes per second) |
+
+Throughput is averaged per interface within a bucket, then summed across all
+interfaces. No bandwidth metric is in the default NCPA metric table (interface
+names differ per host), so an administrator adds them in Settings → Plugins.
+Until a check reports, the card shows "Not configured".
+
 **Conditional metrics (if NCPA is deployed on at least one host):**
 
 | Metric | Display | Source |
@@ -841,6 +852,11 @@ Each `bucket` entry: `{ "bucket_start": ISO-8601, "avg_value": float | null, "un
         "packet_loss": [ { "bucket_start": "2026-08-25T16:00:00+00:00", "avg_value": 0.5,  "unit": "%" },  "..." ]
     },
     "ncpa": null,
+    "bandwidth": {
+        "configured": true,
+        "in":  [ { "bucket_start": "...", "avg_value": 3.2, "unit": "Mbps" } ],
+        "out": [ { "bucket_start": "...", "avg_value": 1.1, "unit": "Mbps" } ]
+    },
     "nagios_server": {
         "cpu_load": {
             "configured": true,
@@ -865,8 +881,10 @@ Each `bucket` entry: `{ "bucket_start": ISO-8601, "avg_value": float | null, "un
 
 `ping.configured: false` means no ping/ICMP checks are set up — the ping
 section renders as "plugin not configured" (§3.2). `ncpa: null` means no
-NCPA services exist — hide that section entirely (conditional, §1.4). The
-`nagios_server` sub-sections each carry their own `configured` flag.
+NCPA services exist — hide that section entirely (conditional, §1.4).
+`bandwidth` is always present; `configured: false` (empty arrays) means no
+NCPA interface counter has reported, and the card renders as "plugin not
+configured". The `nagios_server` sub-sections each carry their own `configured` flag.
 
 `nagios_server.disk.mounts` is a dict keyed by mount-point path. Each value
 is the same bucketed array shape. Mount points are discovered dynamically

@@ -47,6 +47,7 @@ from app.nagios.notifications import (
     request_alerts_range,
     request_notifications_range,
     normalize_notification,
+    normalize_alert,
 )
 from app.nagios.pinpoint_events import (
     SOURCE_NAGIOS,
@@ -245,7 +246,7 @@ def alerts_history():
         if raw is None:
             return error("Failed to retrieve alert history from Nagios.", 502)
 
-        alerts = normalize_nagios_list(raw)
+        alerts = [normalize_alert(a) for a in normalize_nagios_list(raw)]
 
         # Load all ack history records for annotating the list.
         # Keyed by (hostname, service_name) — service_name is None for host alerts.
@@ -350,7 +351,7 @@ def alerts_history_detail():
         if raw is None:
             return error("Failed to retrieve alert detail from Nagios.", 502)
 
-        alerts = normalize_nagios_list(raw)
+        alerts = [normalize_alert(a) for a in normalize_nagios_list(raw)]
 
         # Find the specific event — match on timestamp and new_state.
         alert = next(
@@ -643,7 +644,7 @@ def notifications_history_detail():
         )
         linked_alert = None
         if alert_raw:
-            alerts = normalize_nagios_list(alert_raw)
+            alerts = [normalize_alert(a) for a in normalize_nagios_list(alert_raw)]
             if alerts:
                 # Take the closest alert to this notification's timestamp.
                 alerts.sort(

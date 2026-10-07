@@ -165,6 +165,11 @@ def network_health_trends():
             "disk":   [ { "bucket_start", "avg_value", "unit" } ],
             "memory": [ { "bucket_start", "avg_value", "unit" } ],
         },
+        "bandwidth": {         // always present; Mbps, summed over interfaces
+            "configured": bool,    // false until an NCPA interface check reports
+            "in":  [ { "bucket_start", "avg_value", "unit" } ],
+            "out": [ { "bucket_start", "avg_value", "unit" } ],
+        },
         "nagios_server": {
             "cpu_load": {
                 "configured": bool,
@@ -234,6 +239,9 @@ def network_health_trends():
         else:
             ncpa_section = None
 
+        # ── Bandwidth trends ─────────────────────────────────────────────────
+        bandwidth_section = _bandwidth_section(latest_services, hours, buckets)
+
         # ── Nagios server resource trends ────────────────────────────────────
         nagios_server_section = _nagios_server_trends(
             latest_services, hours, buckets
@@ -244,6 +252,7 @@ def network_health_trends():
             "buckets":       buckets,
             "ping":          ping_section,
             "ncpa":          ncpa_section,
+            "bandwidth":     bandwidth_section,
             "nagios_server": nagios_server_section,
         })
 
@@ -386,6 +395,94 @@ def _ncpa_trend(dimension: str, hours: int, buckets: int) -> list[dict]:
             "unit":         unit_val,
         })
     return result
+
+
+# NCPA interface counters. Checked with --delta they report bytes per second;
+# the unit on the perf data scales that (-u M → MB/s).
+BANDWIDTH_DIRECTIONS = {"in": "bytes_recv", "out": "bytes_sent"}
+_BYTES_PER_UNIT = {"": 1, "b": 1, "kb": 1e3, "mb": 1e6, "gb": 1e9, "kib": 1024, "mib": 1024**2, "gib": 1024**3}
+
+
+def _to_mbps(value: float, unit) -> float:
+    """Bytes/s (scaled by the perf-data unit) to megabits per second."""
+    scale = _BYTES_PER_UNIT.get((unit or "").strip().lower().rstrip("/s"), 1)
+    return value * scale * 8 / 1e6
+
+
+def _bandwidth_section(latest_services: list, hours, buckets: int) -> dict:
+    """
+    Network-wide throughput in Mbps from NCPA interface checks
+    (interface/<name>/bytes_recv and bytes_sent, checked with --delta).
+
+    Each bucket averages every interface's readings, then sums the
+    interfaces, so it is the total traffic the monitored hosts report.
+    "configured" is false until a check_ncpa service in the latest snapshot
+    reports one of those counters.
+    """
+    from app.history_models import ServicePerfData
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+
+    empty = {"configured": False, "in": [], "out": []}
+
+    ncpa_ids = [
+        s.ServiceStatusID for s in latest_services
+        if _plugin_key(s.Service, s.Check_Command) == "check_ncpa"
+    ]
+    if not ncpa_ids:
+        return empty
+
+    lowered = sa.func.lower(ServicePerfData.Metric)
+    counters = [sa.or_(*(lowered.like(f"%{m}%") for m in BANDWIDTH_DIRECTIONS.values()))]
+    configured = db.session.scalar(
+        sa.select(sa.func.count()).select_from(ServicePerfData).where(
+            ServicePerfData.ServiceStatusID.in_(ncpa_ids), *counters
+        )
+    )
+    if not configured:
+        return empty
+
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(hours=hours)
+    bucket_seconds = (timedelta(hours=hours) / buckets).total_seconds()
+
+    rows = db.session.execute(
+        sa.select(
+            ServicePerfData.Metric,
+            ServicePerfData.Measured_Value,
+            ServicePerfData.Unit,
+            ServiceStatus.Hostname,
+            ServiceStatus.Timestamp,
+        )
+        .join(ServiceStatus, ServicePerfData.ServiceStatusID == ServiceStatus.ServiceStatusID)
+        .where(ServiceStatus.Timestamp >= start, *counters)
+    ).all()
+
+    # samples[direction][bucket][(host, metric)] = [Mbps readings]
+    samples = {d: defaultdict(lambda: defaultdict(list)) for d in BANDWIDTH_DIRECTIONS}
+    for row in rows:
+        if row.Measured_Value is None:
+            continue
+        direction = next((d for d, m in BANDWIDTH_DIRECTIONS.items() if m in row.Metric.lower()), None)
+        if direction is None:
+            continue
+        ts = row.Timestamp if row.Timestamp.tzinfo else row.Timestamp.replace(tzinfo=timezone.utc)
+        bucket = min(int((ts - start).total_seconds() / bucket_seconds), buckets - 1)
+        samples[direction][bucket][(row.Hostname, row.Metric)].append(_to_mbps(row.Measured_Value, row.Unit))
+
+    section: dict = {"configured": True}
+    for direction in BANDWIDTH_DIRECTIONS:
+        points = []
+        for i in range(buckets):
+            interfaces = samples[direction].get(i)
+            total = sum(sum(v) / len(v) for v in interfaces.values()) if interfaces else None
+            points.append({
+                "bucket_start": (start + timedelta(seconds=bucket_seconds * i)).isoformat(),
+                "avg_value":    round(total, 4) if total is not None else None,
+                "unit":         "Mbps",
+            })
+        section[direction] = points
+    return section
 
 
 def _nagios_server_trends(

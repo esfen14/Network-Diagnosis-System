@@ -12,10 +12,12 @@ const PLACEHOLDERS: Record<string, string> = {
   Location: 'e.g. building and floor',
 }
 
+const DERIVED_LABELS = ['IP Range', 'Gateway Device', 'Subnet Mask', 'DNS Server']
+
 const FALLBACK_PROFILE: NetworkProfile = {
   name: DEFAULT_NETWORK_NAME,
   reference: '',
-  details: Object.keys(PLACEHOLDERS).map((label) => ({ label, value: '' })),
+  details: Object.keys(PLACEHOLDERS).map((label) => ({ label, value: '', derived: DERIVED_LABELS.includes(label) })),
 }
 
 type NetworkInfoCardProps = {
@@ -109,10 +111,10 @@ export function NetworkInfoCard({ lastScanDate, lastScanTime, profile, onSave }:
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          {shown.details.map(({ label, value }, index) => (
+          {shown.details.map(({ label, value, derived }, index) => (
             <div key={label}>
               <p className="text-sm font-semibold text-white">{label}</p>
-              {editing ? (
+              {editing && !derived ? (
                 <input
                   aria-label={label}
                   placeholder={PLACEHOLDERS[label]}
@@ -125,7 +127,12 @@ export function NetworkInfoCard({ lastScanDate, lastScanTime, profile, onSave }:
                   className={inputClass}
                 />
               ) : (
-                <p className="text-sm text-white/80">{value || 'Not set'}</p>
+                <p
+                  className="text-sm text-white/80"
+                  title={derived ? 'Detected automatically from the scanned networks and discovered devices' : undefined}
+                >
+                  {value || (derived ? 'Not detected' : 'Not set')}
+                </p>
               )}
             </div>
           ))}
