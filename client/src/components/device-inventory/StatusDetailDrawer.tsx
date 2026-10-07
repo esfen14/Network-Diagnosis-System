@@ -6,6 +6,7 @@ import { useCurrentUser } from '../../contexts/CurrentUserContext'
 import { DeviceMonitoringSection } from './DeviceMonitoringSection'
 import { DevicePortsSection } from './DevicePortsSection'
 import type { MonitoringState } from '../../types/host'
+import { useDisplayTime } from '../../hooks/useDisplayTime'
 
 
 type PerfMetric = {
@@ -78,6 +79,7 @@ function threshold(value: number | null, unit: string | null) {
 }
 
 export function StatusDetailDrawer({ hostname, onClose, onMonitoringChanged }: Props) {
+  const { formatDateTime } = useDisplayTime()
   const [service, setService] = useState<string | null>(null)
   const [detail, setDetail] = useState<Detail | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -265,7 +267,7 @@ export function StatusDetailDrawer({ hostname, onClose, onMonitoringChanged }: P
                     return (
                       <div key={key}>
                         <dt className="text-xs text-[var(--text-muted)]">{TIMESTAMP_LABELS[key]}</dt>
-                        <dd>{value ? new Date(value).toLocaleString() : '—'}</dd>
+                        <dd>{formatDateTime(value)}</dd>
                       </div>
                     )
                   })}

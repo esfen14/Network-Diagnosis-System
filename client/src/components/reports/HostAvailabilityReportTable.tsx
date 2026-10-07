@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ArrowUpDown, Filter, Search } from 'lucide-react'
 import { useSystemSettings } from '../../contexts/SystemSettingsContext'
-import { formatDateTime } from '../../utils/formatDateTime'
+import { formatServerDateTime } from '../../utils/formatDateTime'
 import { exportRows } from '../../utils/exportData'
 import { ExportMenu } from '../shared/ExportMenu'
 import type { HostAvailabilityRow } from '../../types/report'
@@ -169,10 +169,10 @@ export function HostAvailabilityReportTable({
                   <td className="px-4 py-3 text-gray-900 dark:text-white">{host.uptimePct ?? '—'}</td>
                   <td className="px-4 py-3 text-gray-900 dark:text-white">{host.totalSnapshots}</td>
                   <td className="px-4 py-3 text-gray-900 dark:text-white">
-                    {host.lastCheck ? formatDateTime(new Date(host.lastCheck), settings.dateTimeFormat, settings.timeZone) : '—'}
+                    {formatServerDateTime(host.lastCheck, settings.dateTimeFormat, settings.timeZone)}
                   </td>
                   <td className="px-4 py-3 text-gray-900 dark:text-white">
-                    {host.lastStateChange ? formatDateTime(new Date(host.lastStateChange), settings.dateTimeFormat, settings.timeZone) : '—'}
+                    {formatServerDateTime(host.lastStateChange, settings.dateTimeFormat, settings.timeZone)}
                   </td>
                 </tr>
               ))

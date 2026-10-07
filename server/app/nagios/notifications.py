@@ -167,26 +167,6 @@ def _timestamp_seconds(value) -> int:
     return int(value // 1000) if value >= _MS_TIMESTAMP_FLOOR else int(value)
 
 
-def normalize_notification(raw: dict) -> dict:
-    """
-    Return the raw Nagios notification with canonical keys added
-    (hostname, servicedesc, state, notificationtype, contact, output,
-    notificationmethod) and the timestamp in UNIX seconds (Nagios may send
-    milliseconds). Original keys are kept; empty values stay empty.
-    """
-    return {
-        **raw,
-        "timestamp":          _timestamp_seconds(raw.get("timestamp")),
-        "hostname":           _first(raw, _HOST_KEYS),
-        "servicedesc":        _first(raw, _SERVICE_KEYS) or None,
-        "state":              str(_first(raw, _STATE_KEYS)).upper(),
-        "notificationtype":   str(_first(raw, _TYPE_KEYS)).upper(),
-        "contact":            _first(raw, _CONTACT_KEYS),
-        "output":             _first(raw, _MESSAGE_KEYS),
-        "notificationmethod": _first(raw, _METHOD_KEYS),
-    }
-
-
 # archivejson sends states as bit flags (host 1/2/4, service 8/16/32/64) and
 # state types as soft=1, hard=2; plain 0-3 codes are accepted too.
 _HOST_STATES = {0: "UP", 1: "UP", 2: "DOWN", 4: "UNREACHABLE"}
@@ -199,6 +179,32 @@ def _alert_state(value, is_service: bool) -> str:
     if isinstance(value, int):
         return (_SERVICE_STATES if is_service else _HOST_STATES).get(value, "")
     return str(value).upper()
+
+
+def normalize_notification(raw: dict) -> dict:
+    """
+    Return the raw Nagios notification with canonical keys added
+    (hostname, servicedesc, state, notificationtype, contact, output,
+    notificationmethod) and the timestamp in UNIX seconds (Nagios may send
+    milliseconds). Original keys are kept; empty values stay empty.
+    """
+    service = _first(raw, _SERVICE_KEYS) or None
+    state = _first(raw, _STATE_KEYS)
+    if isinstance(state, int) and not isinstance(state, bool):
+        # Numeric codes map by object type, like alert states.
+        state = _alert_state(state, service is not None or raw.get("object_type") == 2)
+    return {
+        **raw,
+        "timestamp":          _timestamp_seconds(raw.get("timestamp")),
+        "hostname":           _first(raw, _HOST_KEYS),
+        "servicedesc":        service,
+        "service_description": service,
+        "state":              str(state).upper(),
+        "notificationtype":   str(_first(raw, _TYPE_KEYS)).upper(),
+        "contact":            _first(raw, _CONTACT_KEYS),
+        "output":             _first(raw, _MESSAGE_KEYS),
+        "notificationmethod": _first(raw, _METHOD_KEYS),
+    }
 
 
 def normalize_alert(raw: dict) -> dict:
@@ -226,8 +232,25 @@ def normalize_alert(raw: dict) -> dict:
         "state_type":          str(state_type or "").lower(),
         "timestamp":           _timestamp_seconds(raw.get("timestamp")),
         "duration_seconds":    raw.get("duration_seconds") or 0,
-        "plugin_output":       raw.get("plugin_output") or "",
+        "plugin_output":       raw.get("plugin_output") or raw.get("output") or "",
     }
+
+
+def fill_previous_states(alerts: list) -> list:
+    """
+    archivejson does not say what state an alert came from. Give every
+    normalized alert that has no last_state the state of the previous alert
+    for the same host/service in this list; the first alert of each object in
+    the list stays empty (its earlier state is outside the window). Returns
+    the same list.
+    """
+    latest = {}
+    for alert in sorted(alerts, key=lambda a: a.get("timestamp") or 0):
+        key = (alert.get("hostname"), alert.get("service_description"))
+        if not alert.get("last_state") and key in latest:
+            alert["last_state"] = latest[key]
+        latest[key] = alert.get("state") or ""
+    return alerts
 
 
 def collapse_repeats(items: list) -> list:

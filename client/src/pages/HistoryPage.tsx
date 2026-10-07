@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, Loader2, RefreshCw } from 'lucide-react'
 import { PageHeader } from '../components/shared/PageHeader'
 import { apiGet, errorMessage } from '../lib/api'
 import { formatTimeAgo } from '../utils/formatDateTime'
+import { useDisplayTime } from '../hooks/useDisplayTime'
 
 
 type HistoryTab = 'alerts' | 'notifications'
@@ -151,13 +152,10 @@ function formatDuration(seconds: number) {
   return parts.join(' ') || '—'
 }
 
-function absoluteTime(ts: number) {
-  return new Date(ts * 1000).toLocaleString()
-}
-
 function Timestamp({ ts }: { ts: number }) {
+  const { formatDateTime } = useDisplayTime()
   return (
-    <span title={absoluteTime(ts)}>{formatTimeAgo(new Date(ts * 1000))}</span>
+    <span title={formatDateTime(ts * 1000)}>{formatTimeAgo(new Date(ts * 1000))}</span>
   )
 }
 
@@ -201,6 +199,7 @@ function detailQuery(
 }
 
 export function HistoryPage() {
+  const { formatDateTime, formatTime } = useDisplayTime()
   const [tab, setTab] = useState<HistoryTab>('alerts')
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS)
   const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS)
@@ -469,7 +468,7 @@ export function HistoryPage() {
               : ''}
           </span>
           <div className="flex items-center gap-3">
-            {loadedAt && <span>Loaded {loadedAt.toLocaleTimeString()}</span>}
+            {loadedAt && <span>Loaded {formatTime(loadedAt)}</span>}
             <select
               aria-label="Rows per page"
               value={perPage}
@@ -583,7 +582,7 @@ export function HistoryPage() {
                           {!detailError && !alertDetail && <p className="text-sm text-[var(--text-muted)]">Loading detail…</p>}
                           {alertDetail && (
                             <div className="space-y-3 text-sm">
-                              <p className="text-xs text-[var(--text-muted)]">{absoluteTime(alertDetail.timestamp)}</p>
+                              <p className="text-xs text-[var(--text-muted)]">{formatDateTime(alertDetail.timestamp * 1000)}</p>
                               <div>
                                 <p className="mb-1 font-medium">Plugin output</p>
                                 <pre className="whitespace-pre-wrap break-words font-mono text-xs text-[var(--text-muted)]">
@@ -596,7 +595,7 @@ export function HistoryPage() {
                               {alertDetail.ack && (
                                 <p>
                                   Acknowledged by <strong>{alertDetail.ack.acknowledged_by ?? 'unknown'}</strong> on{' '}
-                                  {new Date(alertDetail.ack.acknowledged_at).toLocaleString()}
+                                  {formatDateTime(alertDetail.ack.acknowledged_at)}
                                   {alertDetail.ack.comment ? ` — “${alertDetail.ack.comment}”` : ''}
                                 </p>
                               )}
@@ -654,7 +653,7 @@ export function HistoryPage() {
                           {!detailError && !notificationDetail && <p className="text-sm text-[var(--text-muted)]">Loading detail…</p>}
                           {notificationDetail && (
                             <div className="space-y-3 text-sm">
-                              <p className="text-xs text-[var(--text-muted)]">{absoluteTime(notificationDetail.timestamp)}</p>
+                              <p className="text-xs text-[var(--text-muted)]">{formatDateTime(notificationDetail.timestamp * 1000)}</p>
                               <div>
                                 <p className="mb-1 font-medium">Message</p>
                                 <pre className="whitespace-pre-wrap break-words font-mono text-xs text-[var(--text-muted)]">

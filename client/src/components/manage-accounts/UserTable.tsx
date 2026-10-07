@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { ArrowUpDown, Filter, Search, Edit } from 'lucide-react'
 import type { User } from '../../types/user'
+import { useDisplayTime } from '../../hooks/useDisplayTime'
 
 type UserTableProps = { users: User[]; title: string; onEdit: (user: User) => void }
 
@@ -19,13 +20,6 @@ function StatusBadge({ status }: { status: User['status'] }) {
       {status}
     </span>
   )
-}
-
-function formatDate(iso: string) {
-  if (!iso) return '—'
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 const PAGE_SIZE = 10
@@ -56,6 +50,7 @@ function compareBy(field: SortField, a: User, b: User): number {
 }
 
 export function UserTable({ users, title, onEdit }: UserTableProps) {
+  const { formatDate } = useDisplayTime()
   const [query, setQuery] = useState('')
   const [sortAsc, setSortAsc] = useState(true)
   const [showFilter, setShowFilter] = useState(false)

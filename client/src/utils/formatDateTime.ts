@@ -4,8 +4,35 @@ function pad(n: number) {
   return String(n).padStart(2, '0')
 }
 
-/** Parses "UTC+08:00" / "UTC-05:00" into a minute offset (e.g. 480 / -300). */
-function parseUtcOffsetMinutes(timeZone: string): number {
+/** Time Zone setting value that follows the viewer's own computer instead of a fixed offset. */
+export const BROWSER_TIME_ZONE = 'Browser'
+
+/**
+ * A server timestamp as a Date. The API sometimes sends ISO strings with no
+ * offset ("2026-10-07T08:30:00"); those are UTC, but the browser would read
+ * them as local time, so the offset is added before parsing.
+ */
+export function parseServerDate(value: string | number | Date | null | undefined): Date | null {
+  if (value == null || value === '') return null
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value
+  if (typeof value === 'number') {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? null : date
+  }
+  const hasZone = /(Z|[+-]\d{2}:?\d{2})$/i.test(value)
+  const isDateTime = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(value)
+  const date = new Date(isDateTime && !hasZone ? `${value.replace(' ', 'T')}Z` : value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+/** Like parseServerDate, but an unreadable value gives an Invalid Date (as `new Date(value)` would) so typed Date fields stay non-null. */
+export function serverDate(value: string | number | Date): Date {
+  return parseServerDate(value) ?? new Date(Number.NaN)
+}
+
+/** Parses "UTC+08:00" / "UTC-05:00" into a minute offset (e.g. 480 / -300). The browser setting uses the date's own local offset. */
+function parseUtcOffsetMinutes(timeZone: string, date: Date): number {
+  if (timeZone === BROWSER_TIME_ZONE) return -date.getTimezoneOffset()
   const match = /^UTC([+-])(\d{2}):(\d{2})$/.exec(timeZone)
   if (!match) return 0
 
@@ -20,7 +47,7 @@ function parseUtcOffsetMinutes(timeZone: string): number {
 // only on the app's Time Zone setting, never on the viewer's own machine
 // clock/timezone.
 function toZoned(date: Date, timeZone: string): Date {
-  const offsetMinutes = parseUtcOffsetMinutes(timeZone)
+  const offsetMinutes = parseUtcOffsetMinutes(timeZone, date)
   return new Date(date.getTime() + offsetMinutes * 60 * 1000)
 }
 
@@ -46,6 +73,13 @@ export function formatDate(
   }
 }
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** Short weekday name ("Mon") in the given time zone. */
+export function formatWeekday(date: Date, timeZone = 'UTC+00:00'): string {
+  return WEEKDAYS[toZoned(date, timeZone).getUTCDay()]
+}
+
 /** Formats a time as e.g. "02:52 PM", in the given time zone. */
 export function formatTime(date: Date, timeZone = 'UTC+00:00'): string {
   const zoned = toZoned(date, timeZone)
@@ -63,6 +97,16 @@ export function formatDateTime(
   timeZone = 'UTC+00:00'
 ): string {
   return `${formatDate(date, format, timeZone)} ${formatTime(date, timeZone)}`
+}
+
+/** Formats a server timestamp (ISO string, epoch ms or Date) per the settings; "—" when missing or invalid. */
+export function formatServerDateTime(
+  value: string | number | Date | null | undefined,
+  format: DateTimeFormat,
+  timeZone = 'UTC+00:00'
+): string {
+  const date = parseServerDate(value)
+  return date ? formatDateTime(date, format, timeZone) : '—'
 }
 
 /** "Just now", "5 min ago", "2 hours ago", "3 days ago" — time since `date`. */

@@ -20,6 +20,7 @@ import {
   relativeTime,
   requestFor,
 } from './devicePortsLogic'
+import { useDisplayTime } from '../../hooks/useDisplayTime'
 
 type Props = {
   deviceId: number
@@ -270,6 +271,7 @@ type RowProps = {
 }
 
 function PortRow({ port, host, editable, canViewPlugins, busy, onAction }: RowProps) {
+  const { formatDateTime } = useDisplayTime()
   const flagged = port.expected_service_name !== null && !port.mismatch_acknowledged
   const actions = editable ? actionsFor(port) : []
 
@@ -321,7 +323,7 @@ function PortRow({ port, host, editable, canViewPlugins, busy, onAction }: RowPr
       )}
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs text-[var(--text-muted)]" title={port.last_seen_at ? new Date(port.last_seen_at).toLocaleString() : undefined}>
+        <span className="text-xs text-[var(--text-muted)]" title={port.last_seen_at ? formatDateTime(port.last_seen_at) : undefined}>
           Last seen {relativeTime(port.last_seen_at)}
         </span>
         {actions.length > 0 && (

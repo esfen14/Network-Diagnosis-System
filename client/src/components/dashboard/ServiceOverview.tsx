@@ -3,6 +3,8 @@ import type { DashboardStatus, DashboardSummary } from '../../types/dashboard'
 import type { PluginGroup } from '../../types/networkHealth'
 import type { ServiceRow } from '../../types/service'
 import { formatTimeAgo } from '../../utils/formatDateTime'
+import { useDisplayTime } from '../../hooks/useDisplayTime'
+import { serverDate } from '../../utils/formatDateTime'
 
 type StatusTone = 'green' | 'yellow' | 'red' | 'blue' | 'gray'
 
@@ -127,6 +129,7 @@ type ServiceOverviewProps = {
 }
 
 export function ServiceOverview({ status, summary, problemServices, pluginGroups, isLoading }: ServiceOverviewProps) {
+  const { formatDateTime } = useDisplayTime()
   const hasRealData = (summary?.hosts.total ?? 0) > 0 || (summary?.services.total ?? 0) > 0
 
   const [now, setNow] = useState(() => new Date())
@@ -136,7 +139,7 @@ export function ServiceOverview({ status, summary, problemServices, pluginGroups
   }, [])
 
   const nagios = status?.nagios
-  const lastUpdate = nagios?.lastStatusUpdate ? new Date(nagios.lastStatusUpdate) : null
+  const lastUpdate = nagios?.lastStatusUpdate ? serverDate(nagios.lastStatusUpdate) : null
 
   const hosts = summary?.hosts
   const services = summary?.services
@@ -175,7 +178,7 @@ export function ServiceOverview({ status, summary, problemServices, pluginGroups
               description="How recently Pinpoint last read status from Nagios."
               title={
                 lastUpdate
-                  ? `Pinpoint last read status from Nagios at ${lastUpdate.toLocaleString()}`
+                  ? `Pinpoint last read status from Nagios at ${formatDateTime(lastUpdate)}`
                   : 'Pinpoint has not read status from Nagios yet'
               }
             />
@@ -236,7 +239,7 @@ export function ServiceOverview({ status, summary, problemServices, pluginGroups
                       title={svc.pluginOutput}
                       description={[
                         svc.pluginOutput || 'No output was reported.',
-                        `${svc.stateType} ${svc.state.toLowerCase()} state${svc.lastCheck ? `, last checked ${formatTimeAgo(new Date(svc.lastCheck), now)}` : ''}.`,
+                        `${svc.stateType} ${svc.state.toLowerCase()} state${svc.lastCheck ? `, last checked ${formatTimeAgo(serverDate(svc.lastCheck), now)}` : ''}.`,
                         svc.isFlapping ? 'It is flapping.' : '',
                         svc.inDowntime ? 'It is in scheduled downtime.' : '',
                         svc.ack ? `Acknowledged by ${svc.ack.acknowledgedBy}: ${svc.ack.comment}` : '',

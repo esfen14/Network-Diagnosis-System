@@ -2,6 +2,7 @@
 // actions each port offers, what each action sends, and the wording of confirmations. They
 // follow spec files/Device_Inventory_Requirements.md (§3 grouping, §5 actions, §6 pin).
 import type { DevicePort, PortChange, PortProtocol, ServiceOption } from '../../types/devicePorts'
+import { serverDate } from '../../utils/formatDateTime'
 
 export type PortGroupId = 'attention' | 'monitored' | 'suggested' | 'stopped' | 'archived'
 
@@ -173,7 +174,7 @@ export function identifiedLabel(port: DevicePort) {
 // "just now", "5 min ago", "3 h ago", "2 d ago"; the exact time is shown on hover.
 export function relativeTime(iso: string | null, now: Date = new Date()): string {
   if (!iso) return '—'
-  const then = new Date(iso)
+  const then = serverDate(iso)
   if (Number.isNaN(then.getTime())) return iso
   const seconds = Math.max(0, Math.round((now.getTime() - then.getTime()) / 1000))
   if (seconds < 60) return 'just now'

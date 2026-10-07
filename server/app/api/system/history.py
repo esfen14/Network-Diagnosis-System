@@ -48,6 +48,7 @@ from app.nagios.notifications import (
     request_notifications_range,
     normalize_notification,
     normalize_alert,
+    fill_previous_states,
 )
 from app.nagios.pinpoint_events import (
     SOURCE_NAGIOS,
@@ -246,7 +247,7 @@ def alerts_history():
         if raw is None:
             return error("Failed to retrieve alert history from Nagios.", 502)
 
-        alerts = [normalize_alert(a) for a in normalize_nagios_list(raw)]
+        alerts = fill_previous_states([normalize_alert(a) for a in normalize_nagios_list(raw)])
 
         # Load all ack history records for annotating the list.
         # Keyed by (hostname, service_name) — service_name is None for host alerts.

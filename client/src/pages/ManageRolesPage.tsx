@@ -9,15 +9,9 @@ import {
   type Role,
   type RoleDetail,
 } from '../types/role'
+import { useDisplayTime } from '../hooks/useDisplayTime'
 
 type StatusFilter = 'all' | 'active' | 'inactive'
-
-function formatDate(iso: string) {
-  if (!iso) return '—'
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-}
 
 async function fetchRoles(): Promise<Role[]> {
   const data = await apiGet<{ items: Parameters<typeof fromRoleRecord>[0][] }>(
@@ -78,6 +72,7 @@ function RoleStatusField({
 }
 
 export function ManageRolesPage() {
+  const { formatDate } = useDisplayTime()
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [allRoles, setAllRoles] = useState<Role[]>([])

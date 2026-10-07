@@ -6,6 +6,7 @@ import { SettingsActions } from './SettingsActions'
 import {
   useSystemSettings,
 } from '../../contexts/SystemSettingsContext'
+import { BROWSER_TIME_ZONE } from '../../utils/formatDateTime'
 
 const themeOptions = [
   {
@@ -18,7 +19,20 @@ const themeOptions = [
   },
 ]
 
+// "Browser" follows the viewer's own computer; the others are fixed offsets.
+const browserZoneName = (() => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone
+  } catch {
+    return ''
+  }
+})()
+
 const timeZoneOptions = [
+  {
+    value: BROWSER_TIME_ZONE,
+    label: browserZoneName ? `Browser time zone (${browserZoneName})` : 'Browser time zone',
+  },
   {
     value: 'UTC+08:00',
     label: 'UTC+08:00',

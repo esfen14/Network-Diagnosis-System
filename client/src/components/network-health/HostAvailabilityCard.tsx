@@ -1,5 +1,6 @@
 import { Minus, TrendingDown, TrendingUp } from 'lucide-react'
 import type { HostAvailability } from '../../types/networkHealth'
+import { useDisplayTime } from '../../hooks/useDisplayTime'
 
 type HostAvailabilityCardProps = {
   // GET /network-health/availability — null while loading or on error.
@@ -17,6 +18,7 @@ function TrendIcon({ value, className }: { value: number | null; className: stri
 }
 
 export function HostAvailabilityCard({ data, error }: HostAvailabilityCardProps) {
+  const { formatDate } = useDisplayTime()
   const pct = data?.availabilityPct ?? null
 
   return (
@@ -53,7 +55,7 @@ export function HostAvailabilityCard({ data, error }: HostAvailabilityCardProps)
           {data.daily.map((day) => (
             <div
               key={day.start}
-              title={`${new Date(day.start).toLocaleDateString()}: ${day.availabilityPct != null ? `${day.availabilityPct.toFixed(1)}%` : 'no data'}`}
+              title={`${formatDate(day.start)}: ${day.availabilityPct != null ? `${day.availabilityPct.toFixed(1)}%` : 'no data'}`}
               className={`flex-1 rounded-sm ${day.availabilityPct != null ? 'bg-[#F4A90B]' : 'bg-[var(--border)]'}`}
               style={{ height: `${Math.max(day.availabilityPct ?? 0, 4)}%` }}
             />

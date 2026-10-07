@@ -3,6 +3,7 @@ import type { HostCpu } from '../../types/networkHealth'
 import { formatBucketLabel } from '../../utils/formatBucketLabel'
 import type { TrendHours } from './MetricGraphModal'
 import { TimeRangeSelect } from './TimeRangeSelect'
+import { useDisplayTime } from '../../hooks/useDisplayTime'
 
 type CpuUtilizationChartProps = {
   // GET /network-health/cpu — null while loading or on error.
@@ -18,8 +19,9 @@ function formatPct(value: number | null) {
 }
 
 export function CpuUtilizationChart({ data, error, hours, onHoursChange, onHostChange }: CpuUtilizationChartProps) {
+  const { timeZone } = useDisplayTime()
   const chartData = (data?.points ?? []).map((p) => ({
-    time: formatBucketLabel(p.bucketStart, hours),
+    time: formatBucketLabel(p.bucketStart, hours, timeZone),
     cpu: p.avgValue,
   }))
   const hasData = chartData.some((p) => p.cpu != null)

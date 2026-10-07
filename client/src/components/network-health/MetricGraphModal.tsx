@@ -4,6 +4,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import type { TrendPoint } from '../../types/dashboard'
 import { formatBucketLabel } from '../../utils/formatBucketLabel'
 import { TREND_HOURS_OPTIONS, type TrendHours } from '../../utils/trendHours'
+import { useDisplayTime } from '../../hooks/useDisplayTime'
 
 export type GraphSeriesConfig = {
   key: string
@@ -52,6 +53,7 @@ export function MetricGraphModal({
   emptyContent,
   onClose,
 }: MetricGraphModalProps) {
+  const { timeZone } = useDisplayTime()
   const [showRangePicker, setShowRangePicker] = useState(false)
 
   const chartData = useMemo(() => {
@@ -61,14 +63,14 @@ export function MetricGraphModal({
       const row: Record<string, string | number | null> = {
         // Not "time": a plugin metric can be called that (check_http reports
         // "time"), and its value would overwrite the label with null.
-        __label: bucketStart ? formatBucketLabel(bucketStart, hours) : '',
+        __label: bucketStart ? formatBucketLabel(bucketStart, hours, timeZone) : '',
       }
       series.forEach((s) => {
         row[s.key] = seriesData[s.key]?.[i]?.avgValue ?? null
       })
       return row
     })
-  }, [series, seriesData, hours])
+  }, [series, seriesData, hours, timeZone])
 
   const hasAnyData = series.some((s) => (seriesData[s.key] ?? []).some((p) => p.avgValue != null))
 

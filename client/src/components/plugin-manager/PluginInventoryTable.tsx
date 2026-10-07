@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ArrowUpDown, Filter, RefreshCw, Search } from 'lucide-react'
 import type { PluginListItem, PluginStatus, PluginType } from '../../types/plugin'
+import { useDisplayTime } from '../../hooks/useDisplayTime'
 
 type Props = {
   plugins: PluginListItem[]
@@ -85,13 +86,6 @@ export function monitoringLabel(plugin: PluginListItem) {
   return plugin.status === 'Enabled' || plugin.status === 'Active' ? 'No matching services yet' : '—'
 }
 
-function formatDateTime(iso: string | null) {
-  if (!iso) return '—'
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-}
-
 export function PluginInventoryTable({
   plugins,
   isLoading,
@@ -115,6 +109,7 @@ export function PluginInventoryTable({
   onScan,
   isScanning,
 }: Props) {
+  const { formatDateTime } = useDisplayTime()
   const [hover, setHover] = useState<{ plugin: PluginListItem; x: number; y: number } | null>(null)
 
   const showHover = (plugin: PluginListItem, event: React.MouseEvent) =>

@@ -115,9 +115,7 @@ export function Sidebar() {
       <aside className="fixed left-0 top-0 flex h-screen w-55 flex-col border-r border-gray-200 bg-white px-4 py-4">
         <div className="flex flex-1 flex-col">
           <div className="mb-6 flex items-center gap-2 px-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-pinpoint-btn">
-              <Wrench className="h-4 w-4 text-gray-100" />
-            </div>
+            <img src="/favicon.svg" alt="" className="h-8 w-8 shrink-0" />
 
             <span className="text-sm font-semibold text-gray-900">
               PinPoint

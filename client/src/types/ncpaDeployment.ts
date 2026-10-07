@@ -1,6 +1,7 @@
 // Wire records from /api/system/deployment/ncpa/* and the view models the
 // NCPA Deployment page uses. See spec files/NCPA_Deployment_UI_Plan.md §6.
 
+import { serverDate } from '../utils/formatDateTime'
 export type RunStatus = 'Running' | 'Success' | 'Partial Failure' | 'Failed' | 'Interrupted'
 
 export type DeviceOutcome =
@@ -171,11 +172,11 @@ export function fromRawRun(raw: RawDeploymentRun): DeploymentRun {
     progress: raw.progress,
     message: raw.message,
     error: raw.error,
-    startAt: new Date(raw.start_at),
-    completedAt: raw.completed_at ? new Date(raw.completed_at) : null,
+    startAt: serverDate(raw.start_at),
+    completedAt: raw.completed_at ? serverDate(raw.completed_at) : null,
     startedBy: raw.started_by,
     counts: raw.counts,
-    reviewedAt: raw.reviewed_at ? new Date(raw.reviewed_at) : null,
+    reviewedAt: raw.reviewed_at ? serverDate(raw.reviewed_at) : null,
     reviewedBy: raw.reviewed_by,
     needsReview: raw.needs_review,
     devices: (raw.devices ?? []).map(fromRawResult),

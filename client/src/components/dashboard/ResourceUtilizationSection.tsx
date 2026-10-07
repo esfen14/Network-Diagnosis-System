@@ -3,6 +3,7 @@ import { ChevronDown, MoreHorizontal } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { TrendPoint } from '../../types/dashboard'
 import { TREND_HOURS_OPTIONS, type TrendHours } from '../../utils/trendHours'
+import { useDisplayTime } from '../../hooks/useDisplayTime'
 
 export type { TrendHours }
 
@@ -16,12 +17,13 @@ type ResourceUtilizationSectionProps = {
 }
 
 export function ResourceUtilizationSection({ cpuTrend, isLoading, hours, onHoursChange }: ResourceUtilizationSectionProps) {
+  const { formatTime } = useDisplayTime()
   const [isOpen, setIsOpen] = useState(false)
 
   const chartData = cpuTrend
     .filter((p) => p.avgValue != null)
     .map((p) => ({
-      time: new Date(p.bucketStart).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }),
+      time: formatTime(p.bucketStart),
       cpu: p.avgValue,
     }))
 

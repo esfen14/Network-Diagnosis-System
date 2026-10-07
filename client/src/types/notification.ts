@@ -73,7 +73,7 @@ export type NotificationsResponse = {
   notifications: RawNotification[]
 }
 
-export function formatRelativeTime(unixSeconds: number): string {
+export function formatRelativeTime(unixSeconds: number, formatOlderDate?: (ms: number) => string): string {
   const diffMs = Date.now() - unixSeconds * 1000
   const diffMins = Math.floor(diffMs / 60000)
   const diffHours = Math.floor(diffMins / 60)
@@ -84,5 +84,5 @@ export function formatRelativeTime(unixSeconds: number): string {
   if (diffHours < 24) return `${diffHours}h ago`
   if (diffDays === 1) return 'Yesterday'
   if (diffDays < 7) return `${diffDays}d ago`
-  return new Date(unixSeconds * 1000).toLocaleDateString()
+  return formatOlderDate ? formatOlderDate(unixSeconds * 1000) : new Date(unixSeconds * 1000).toLocaleDateString()
 }

@@ -144,7 +144,10 @@ class TestReportAlerts:
         assert "period"  in data
         assert "count"   in data
         assert "alerts"  in data
-        assert data["alerts"] == alerts
+        assert len(data["alerts"]) == len(alerts)
+        for got, raw in zip(data["alerts"], alerts):
+            assert got["hostname"] == raw["host_name"]
+            assert got["state"] == raw["state"]
         assert data["count"]  == count
 
     def test_period_meta_keys(
@@ -351,7 +354,10 @@ class TestReportNotifications:
         assert "period"        in data
         assert "count"         in data
         assert "notifications" in data
-        assert data["notifications"] == notifs
+        # Normalized: the raw fields are kept and canonical ones added.
+        for got, raw in zip(data["notifications"], notifs):
+            assert got["hostname"] == (raw.get("host_name") or raw.get("hostname"))
+        assert len(data["notifications"]) == len(notifs)
         assert data["count"]         == count
 
     def test_period_meta_keys(
@@ -508,3 +514,34 @@ class TestReportNotifications:
         data = resp.get_json()["data"]
         assert data["notifications"] == []
         assert data["count"]["total"] == 0
+
+
+class TestReportRealNagiosShape:
+    """Numeric states, millisecond timestamps and host/service keys as Nagios sends them."""
+
+    def test_alerts_are_normalized_with_previous_state(self, logged_in_client, db_session, seeded_permissions):
+        alerts = [
+            {"timestamp": 1_700_000_000_000, "object_type": 2, "host_name": "web", "description": "http",
+             "state_type": 2, "state": 8, "plugin_output": "OK"},
+            {"timestamp": 1_700_000_600_000, "object_type": 2, "host_name": "web", "description": "http",
+             "state_type": 2, "state": 32, "plugin_output": "down"},
+            {"timestamp": 1_700_000_300_000, "object_type": 1, "name": "db",
+             "state_type": 2, "state": 2, "plugin_output": "unreachable"},
+        ]
+        with _patch_alerts(alerts=alerts, count={}):
+            data = logged_in_client.get(ALERTS_URL).get_json()["data"]
+        by_time = {a["timestamp"]: a for a in data["alerts"]}
+        crit = by_time[1_700_000_600]
+        assert (crit["hostname"], crit["service_description"], crit["state"], crit["last_state"]) == (
+            "web", "http", "CRITICAL", "OK")
+        host = by_time[1_700_000_300]
+        assert (host["hostname"], host["service_description"], host["state"]) == ("db", None, "DOWN")
+
+    def test_notifications_are_normalized(self, logged_in_client, db_session, seeded_permissions):
+        notifs = [{"timestamp": 1_700_000_000_000, "object_type": 2, "host_name": "web", "description": "http",
+                   "state": 32, "contact_name": "admin", "plugin_output": "HTTP CRITICAL"}]
+        with _patch_notifications(notifications=notifs, count={}):
+            data = logged_in_client.get(NOTIFICATIONS_URL).get_json()["data"]
+        n = data["notifications"][0]
+        assert (n["hostname"], n["servicedesc"], n["state"], n["contact"], n["output"], n["timestamp"]) == (
+            "web", "http", "CRITICAL", "admin", "HTTP CRITICAL", 1_700_000_000)

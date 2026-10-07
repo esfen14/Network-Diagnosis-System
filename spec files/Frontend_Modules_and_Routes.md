@@ -83,7 +83,7 @@ When adding a page:
   `src/lib/ncpaDeploymentApi.ts`; `ApiError.data` carries an error envelope's
   `data`.
 - `types/` owns TypeScript API records, view models, and conversion functions.
-- `formatDateTime.ts` applies display preferences to timestamps.
+- `formatDateTime.ts` applies display preferences to timestamps. The Time Zone preference is a fixed UTC offset or `Browser` (the viewer's own zone). `parseServerDate` reads API timestamps that carry no offset as UTC. Components get formatters from `hooks/useDisplayTime.ts`; do not call `toLocaleString` for displayed times.
 - `exportData.ts` performs client-side exports and records export actions.
 
 ## Frontend rules

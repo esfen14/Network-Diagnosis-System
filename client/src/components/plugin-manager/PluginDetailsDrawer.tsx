@@ -36,18 +36,12 @@ import type {
   PluginDetails,
   PluginValidationResult,
 } from '../../types/plugin'
+import { useDisplayTime } from '../../hooks/useDisplayTime'
 
 type Props = {
   pluginId: number
   onClose: () => void
   onChanged: () => void
-}
-
-function formatDateTime(iso: string | null) {
-  if (!iso) return '—'
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 // The plugins behind Nagios Core's own server checks (localhost.cfg). Pinpoint does
@@ -104,6 +98,7 @@ const DEPENDENCY_STYLES: Record<PluginDependency['status'], string> = {
 }
 
 export function PluginDetailsDrawer({ pluginId, onClose, onChanged }: Props) {
+  const { formatDateTime } = useDisplayTime()
   const [details, setDetails] = useState<PluginDetails | null>(null)
   const [commands, setCommands] = useState<PluginCommand[]>([])
   const [dependencies, setDependencies] = useState<PluginDependency[]>([])

@@ -16,6 +16,7 @@ import type {
   ServiceStatusKind,
 } from '../../types/plugin'
 import { CustomCheckDialog } from './CustomCheckDialog'
+import { useDisplayTime } from '../../hooks/useDisplayTime'
 
 type Props = {
   pluginId: number
@@ -51,13 +52,6 @@ const STATUS_LABELS: Record<ServiceStatusKind, string> = {
   paused: 'Paused',
 }
 
-function formatDateTime(iso: string | null) {
-  if (!iso) return '—'
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-}
-
 // The arguments of a check as the person typed them, for a one-line summary.
 function summarize(check: CustomCheckItem, fields: CustomCheckField[]) {
   const stored = new Set(check.secrets_set ?? [])
@@ -71,6 +65,7 @@ function summarize(check: CustomCheckItem, fields: CustomCheckField[]) {
 }
 
 export function PluginCustomChecksSection({ pluginId, pluginName, fields, target = 'device', onChanged }: Props) {
+  const { formatDateTime } = useDisplayTime()
   const onServer = target === 'server'
   const noun = onServer ? 'server check' : 'custom check'
   const [query, setQuery] = useState('')

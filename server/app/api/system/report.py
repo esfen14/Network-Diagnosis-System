@@ -64,11 +64,19 @@ from app.nagios.notifications import (
     request_alert_count_range,
     request_notifications_range,
     request_notification_count_range,
+    normalize_alert,
+    normalize_notification,
+    fill_previous_states,
 )
 
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
+def _as_list(raw):
+    """archivejson sends lists either as a list or as a dict keyed by index."""
+    return list(raw.values()) if isinstance(raw, dict) else list(raw or [])
+
 
 VALID_PERIODS = {"last_24h", "today", "last_7d", "last_30d", "last_90d", "custom"}
 
@@ -867,7 +875,7 @@ def report_alerts():
     {
         "period": { ... },
         "count":  { ... },   # raw Nagios alertcount object  (null on Nagios error)
-        "alerts": [ ... ]    # raw Nagios alertlist array    (null on Nagios error)
+        "alerts": [ ... ]    # normalized alerts: hostname, service_description, state, last_state, timestamp in seconds (null on Nagios error)
     }
     """
     try:
@@ -892,7 +900,9 @@ def report_alerts():
         return success({
             "period": _period_meta(period, start_dt, end_dt),
             "count":  count,
-            "alerts": alerts,
+            "alerts": None if alerts is None else fill_previous_states(
+                [normalize_alert(a) for a in _as_list(alerts)]
+            ),
         })
 
     except Exception:
@@ -919,7 +929,7 @@ def report_notifications():
     {
         "period": { ... },
         "count":         { ... },   # raw Nagios notificationcount object  (null on Nagios error)
-        "notifications": [ ... ]    # raw Nagios notificationlist array    (null on Nagios error)
+        "notifications": [ ... ]    # normalized notifications: hostname, servicedesc, state, contact, output (null on Nagios error)
     }
     """
     try:
@@ -948,7 +958,9 @@ def report_notifications():
         return success({
             "period": _period_meta(period, start_dt, end_dt),
             "count":         count,
-            "notifications": notifications,
+            "notifications": None if notifications is None else [
+                normalize_notification(n) for n in _as_list(notifications)
+            ],
         })
 
     except Exception:

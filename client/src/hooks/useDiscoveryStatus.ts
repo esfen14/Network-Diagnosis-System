@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiGet, apiPost, errorMessage } from '../lib/api'
+import { serverDate } from '../utils/formatDateTime'
 
 export type DiscoveryRunStatus = 'Running' | 'Success' | 'Failed' | 'Interrupted'
 
@@ -64,8 +65,8 @@ export function useDiscoveryStatus(enabled: boolean) {
           status: data.status,
           progress: data.progress,
           message: data.message,
-          startAt: new Date(data.start_at),
-          completedAt: data.completed_at ? new Date(data.completed_at) : null,
+          startAt: serverDate(data.start_at),
+          completedAt: data.completed_at ? serverDate(data.completed_at) : null,
           error: data.error,
         })
       }

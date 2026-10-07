@@ -3,6 +3,7 @@ import type { TrendPoint } from '../../types/dashboard'
 import { formatBucketLabel } from '../../utils/formatBucketLabel'
 import type { TrendHours } from './MetricGraphModal'
 import { TimeRangeSelect } from './TimeRangeSelect'
+import { useDisplayTime } from '../../hooks/useDisplayTime'
 
 const SERIES = [
   { key: 'load1', period: '1 min', color: '#0ea5e9' },
@@ -31,11 +32,12 @@ function loadStats(points: TrendPoint[]) {
 }
 
 export function CpuLoadChart({ load, hours, onHoursChange, isLoading }: CpuLoadChartProps) {
+  const { timeZone } = useDisplayTime()
   const length = Math.max(...SERIES.map((s) => load[s.key].length))
   const data = Array.from({ length }, (_, i) => {
     const bucketStart = SERIES.map((s) => load[s.key][i]?.bucketStart).find(Boolean)
     const row: Record<string, string | number | null> = {
-      time: bucketStart ? formatBucketLabel(bucketStart, hours) : '',
+      time: bucketStart ? formatBucketLabel(bucketStart, hours, timeZone) : '',
     }
     SERIES.forEach((s) => {
       row[s.key] = load[s.key][i]?.avgValue ?? null

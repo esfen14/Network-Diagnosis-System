@@ -2,6 +2,7 @@
 // (trends/plugins are covered by types/dashboard.ts's TrendsResponse, which
 // this page reuses.)
 import { fromCountBlock, type CountBlock, type TrendPoint } from './dashboard'
+import { serverDate } from '../utils/formatDateTime'
 
 export type NetworkHealthSummary = {
   hosts: CountBlock
@@ -28,7 +29,7 @@ export function fromNetworkHealthSummaryResponse(
     services: fromCountBlock(data.services),
     activeAlerts: data.active_alerts,
     lastScan: {
-      completedAt: data.last_scan?.completed_at ? new Date(data.last_scan.completed_at) : null,
+      completedAt: data.last_scan?.completed_at ? serverDate(data.last_scan.completed_at) : null,
       isRunning: data.last_scan?.is_running ?? false,
     },
   }
@@ -206,7 +207,7 @@ type InsightsApiResponse = {
 }
 
 export function fromInsightsResponse(data: InsightsApiResponse): Insight[] {
-  return data.insights.map((i) => ({ severity: i.severity, message: i.message, at: i.at ? new Date(i.at) : null }))
+  return data.insights.map((i) => ({ severity: i.severity, message: i.message, at: i.at ? serverDate(i.at) : null }))
 }
 
 // --- GET /network-health/plugins --------------------------------------------

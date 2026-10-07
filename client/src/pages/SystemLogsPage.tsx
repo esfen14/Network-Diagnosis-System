@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Search } from 'lucide-react'
 import { PageHeader } from '../components/shared/PageHeader'
 import { useSystemSettings } from '../contexts/SystemSettingsContext'
-import { formatDateTime } from '../utils/formatDateTime'
+import { formatServerDateTime } from '../utils/formatDateTime'
 import { exportRows } from '../utils/exportData'
 import { ExportMenu } from '../components/shared/ExportMenu'
 import { apiGet, errorMessage } from '../lib/api'
@@ -197,7 +197,7 @@ export function SystemLogsPage() {
                       </span>
                     </div>
                     <span className="text-[var(--text-muted)] text-sm">
-                      {formatDateTime(new Date(log.timestamp), settings.dateTimeFormat, settings.timeZone)}
+                      {formatServerDateTime(log.timestamp, settings.dateTimeFormat, settings.timeZone)}
                     </span>
                     <span className="text-[var(--text-muted)] text-sm">{log.tagId}</span>
                   </div>
@@ -238,7 +238,7 @@ export function SystemLogsPage() {
                 <div className="text-xs text-[var(--text-muted)] space-y-1">
                   <p>Tag ID: {selectedLog.tagId}</p>
                   <p>User: {selectedLog.user}</p>
-                  <p>Date &amp; Time: {formatDateTime(new Date(selectedLog.timestamp), settings.dateTimeFormat, settings.timeZone)}</p>
+                  <p>Date &amp; Time: {formatServerDateTime(selectedLog.timestamp, settings.dateTimeFormat, settings.timeZone)}</p>
                   {selectedLog.details && Object.entries(selectedLog.details).map(([key, value]) => (
                     value == null || value === '' || key === 'skipped_services' ? null : (
                       <p key={key} className="capitalize">

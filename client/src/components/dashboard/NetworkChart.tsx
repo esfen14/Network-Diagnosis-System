@@ -1,5 +1,6 @@
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { TrendPoint } from '../../types/dashboard'
+import { useDisplayTime } from '../../hooks/useDisplayTime'
 
 type NetworkChartProps = {
   data: TrendPoint[]
@@ -7,10 +8,11 @@ type NetworkChartProps = {
 }
 
 export function NetworkChart({ data, isLoading }: NetworkChartProps) {
+  const { formatTime } = useDisplayTime()
   const points = data
     .filter((p) => p.avgValue != null)
     .map((p) => ({
-      time: new Date(p.bucketStart).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }),
+      time: formatTime(p.bucketStart),
       value: p.avgValue,
     }))
 

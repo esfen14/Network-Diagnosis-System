@@ -8,6 +8,7 @@ import {
 } from '../../lib/pluginApi'
 import { useCurrentUser } from '../../contexts/CurrentUserContext'
 import type { PluginServiceItem, ServiceStatusKind } from '../../types/plugin'
+import { useDisplayTime } from '../../hooks/useDisplayTime'
 
 type Props = {
   pluginId: number
@@ -40,19 +41,13 @@ const STATUS_LABELS: Record<ServiceStatusKind, string> = {
   paused: 'Paused',
 }
 
-function formatDateTime(iso: string | null) {
-  if (!iso) return '—'
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-}
-
 // A port is identified by its device, protocol and number; a service name alone is not unique.
 function rowKey(item: PluginServiceItem) {
   return `${item.device.id}-${item.protocol}-${item.port}-${item.service}`
 }
 
 export function PluginServicesSection({ pluginId, refreshKey, onChanged }: Props) {
+  const { formatDateTime } = useDisplayTime()
   const { hasPermission } = useCurrentUser()
   const canStop = hasPermission('plugin.disable')
   const canResume = hasPermission('plugin.enable')

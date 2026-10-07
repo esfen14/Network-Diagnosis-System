@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react'
 
 import { useSystemSettings } from '../../contexts/SystemSettingsContext'
 import { apiGet, errorMessage } from '../../lib/api'
-import { formatDateTime } from '../../utils/formatDateTime'
+import { formatServerDateTime } from '../../utils/formatDateTime'
 import { exportRows } from '../../utils/exportData'
 import { ExportMenu } from '../shared/ExportMenu'
 
@@ -197,8 +197,8 @@ function buildReport(view: ExtraReportView, data: Record<string, unknown>): Repo
   const rows: Row[] = nagiosList(data.notifications).map((n) => ({
     time: eventTime(n.timestamp),
     hostname: text(n.hostname),
-    service: text(n.service_description),
-    state: text(n.notification_reason ?? n.state).toUpperCase(),
+    service: text(n.servicedesc ?? n.service_description),
+    state: text(n.state).toUpperCase(),
     contact: text(n.contact),
     message: text(n.output),
   }))
@@ -328,7 +328,7 @@ export function ExtraReports({ view, query, runKey, onStatus, onCards }: Props) 
     const value = row[col.key]
     if (col.kind === 'state') return <StateBadge state={String(value ?? '')} />
     if (col.kind === 'datetime') {
-      return value ? formatDateTime(new Date(String(value)), settings.dateTimeFormat, settings.timeZone) : '—'
+      return formatServerDateTime(value == null ? null : String(value), settings.dateTimeFormat, settings.timeZone)
     }
     if (col.kind === 'pct') return value == null ? '—' : value
     return value === '' || value == null ? '—' : value

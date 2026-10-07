@@ -8,6 +8,7 @@ import {
   isStaleSnapshot,
   type MonitoringFilter,
 } from './monitoringState'
+import { useDisplayTime } from '../../hooks/useDisplayTime'
 
 type HostTableProps = {
   hosts: Host[]
@@ -53,13 +54,6 @@ function StateBadge({ state }: { state: HostState }) {
   )
 }
 
-function formatDateTime(iso: string | null) {
-  if (!iso) return '—'
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-}
-
 export function HostTable({
   hosts,
   title,
@@ -84,6 +78,7 @@ export function HostTable({
   onUnacknowledge,
   onViewDetails,
 }: HostTableProps) {
+  const { formatDateTime } = useDisplayTime()
   const states: ('All' | HostState)[] = ['All', 'UP', 'DOWN', 'UNREACHABLE']
 
   return (

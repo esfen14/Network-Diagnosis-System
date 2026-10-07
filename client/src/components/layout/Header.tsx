@@ -8,6 +8,7 @@ import { fromRawNotification, formatRelativeTime as formatNotificationTime, type
 import { useDiscoveryStatus, type DiscoveryStatus } from '../../hooks/useDiscoveryStatus'
 import { useNcpaDeploymentStatus } from '../../hooks/useNcpaDeploymentStatus'
 import { DeploymentStatusItem } from '../ncpa-deployment/DeploymentStatusItem'
+import { useDisplayTime } from '../../hooks/useDisplayTime'
 
 const pageTitles: Record<string, { section: string; page: string }> = {
   '/dashboard': { section: 'Dashboards', page: 'Overview' },
@@ -51,7 +52,7 @@ function useOutsideClick(onOutside: () => void) {
 }
 
 // para readable yung timestamp sa History dropdown, e.g. "Just now", "12m ago", "Yesterday"
-function formatRelativeTime(timestamp: number) {
+function formatRelativeTime(timestamp: number, formatOlderDate?: (ms: number) => string) {
   const diffMs = Date.now() - timestamp
   const diffMins = Math.floor(diffMs / 60000)
   const diffHours = Math.floor(diffMins / 60)
@@ -62,7 +63,7 @@ function formatRelativeTime(timestamp: number) {
   if (diffHours < 24) return `${diffHours}h ago`
   if (diffDays === 1) return 'Yesterday'
   if (diffDays < 7) return `${diffDays}d ago`
-  return new Date(timestamp).toLocaleDateString()
+  return formatOlderDate ? formatOlderDate(timestamp) : new Date(timestamp).toLocaleDateString()
 }
 
 // pag naiwan yung lumang data (yung dati stringsAra lang na array, wala pang timestamp)
@@ -203,7 +204,8 @@ function NotificationDetailModal({
   onClose: () => void
   onViewHistory?: () => void
 }) {
-  const when = new Date(notification.timestamp * 1000).toLocaleString()
+  const { formatDateTime } = useDisplayTime()
+  const when = formatDateTime(notification.timestamp * 1000)
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
@@ -260,6 +262,7 @@ function NotificationDetailModal({
 }
 
 export function Header() {
+  const { formatDate } = useDisplayTime()
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const { hasPermission } = useCurrentUser()
@@ -467,8 +470,8 @@ export function Header() {
             >
               <Bell className="h-5 w-5" />
               {notificationsEnabled && unreadCount > 0 ? (
-                <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium text-white">
-                  {unreadCount > 99 ? '99+' : unreadCount}
+                <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-medium text-white">
+                  {unreadCount}
                 </span>
               ) : showActivityDot && (
                 <span
@@ -547,7 +550,7 @@ export function Header() {
                         </div>
                         <p className="mt-1 text-sm font-medium text-gray-900 dark:text-white">{notificationTitle(n)}</p>
                         <p className="mt-0.5 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">{n.message}</p>
-                        <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{formatNotificationTime(n.timestamp)}</p>
+                        <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{formatNotificationTime(n.timestamp, formatDate)}</p>
                       </button>
                     ))
                   )}
@@ -600,7 +603,7 @@ export function Header() {
                       >
                         <span>{meta ? `${meta.section} / ${meta.page}` : entry.path}</span>
                         <span className="ml-3 shrink-0 text-xs text-gray-400 dark:text-gray-500">
-                          {formatRelativeTime(entry.visitedAt)}
+                          {formatRelativeTime(entry.visitedAt, formatDate)}
                         </span>
                       </button>
                     )

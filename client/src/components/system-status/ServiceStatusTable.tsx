@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowUpDown, Filter, Search } from 'lucide-react'
 import type { ServiceRow, ServiceState } from '../../types/service'
+import { useDisplayTime } from '../../hooks/useDisplayTime'
 
 type ServiceStatusTableProps = {
   services: ServiceRow[]
@@ -131,13 +132,6 @@ function StatusWithDescription({ service }: { service: ServiceRow }) {
   )
 }
 
-function formatDateTime(iso: string | null) {
-  if (!iso) return '—'
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-}
-
 export function ServiceStatusTable({
   services,
   title = 'Service Status Details For All Hosts',
@@ -159,6 +153,7 @@ export function ServiceStatusTable({
   onAcknowledge,
   onUnacknowledge,
 }: ServiceStatusTableProps) {
+  const { formatDateTime } = useDisplayTime()
   const states: ('All' | ServiceState)[] = ['All', 'OK', 'WARNING', 'CRITICAL', 'UNKNOWN']
 
   return (
