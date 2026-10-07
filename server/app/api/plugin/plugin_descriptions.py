@@ -17,6 +17,7 @@ import re
 import subprocess
 
 from app.api.plugin.plugin_catalog_data import PLUGIN_CATALOG
+from app.network_discovery.plugin_registry import normalize_plugin_name
 
 HELP_TIMEOUT_SECONDS = 5
 MAX_DESCRIPTION_LENGTH = 500   # PLUGIN.Description column size
@@ -35,7 +36,7 @@ def get_catalog_entry(name):
     {"description", "category", "documentation_url"}, or None if the plugin is
     not part of the bundled set. Does not touch the database or filesystem.
     """
-    return PLUGIN_CATALOG.get(name)
+    return PLUGIN_CATALOG.get(normalize_plugin_name(name))
 
 
 def documentation_url(name):

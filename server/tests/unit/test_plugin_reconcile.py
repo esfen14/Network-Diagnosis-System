@@ -621,3 +621,25 @@ class TestContinuityWhenTheInventoryIsFirstCreated:
         db_session.session.commit()
 
         assert plugins_backing_monitored_ports() == set()
+
+
+class TestPluginStoredWithScriptExtension:
+    def test_check_ncpa_py_gates_the_ncpa_service(self, app, db_session, admin_user, status, writer):
+        from app.system_models import AgentStatus, NCPADeployment
+        from app.network_discovery.port_lifecycle import enabled_plugin_names, mark_ncpa_port
+        device = new_device(status, tcp={22: "ssh"})
+        db_session.session.add(NCPADeployment(
+            Token="t" * 32, Agent_Status=AgentStatus.DEPLOYED, NetworkDiscoveryID=device.NetDiscoveryID))
+        db_session.session.commit()
+        mark_ncpa_port(device.NetDiscoveryID)
+        db_session.session.commit()
+        ncpa = add_plugin("check_ncpa.py", PluginStatus.INSTALLED)
+
+        reconcile_plugin_monitoring(admin_user.UserID)
+        assert rows() == []
+
+        ncpa.Status = PluginStatus.ENABLED
+        db_session.session.commit()
+        assert "check_ncpa" in enabled_plugin_names()
+        reconcile_plugin_monitoring(admin_user.UserID)
+        assert names() and all(n.startswith("ncpa-") for n in names())

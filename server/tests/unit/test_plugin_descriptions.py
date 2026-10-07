@@ -341,3 +341,9 @@ class TestDetailsRoute:
 
         assert data["documentation_url"] is None
         assert data["description"] is None
+
+
+def test_the_catalog_entry_is_found_for_the_script_filename():
+    from app.api.plugin.plugin_descriptions import get_catalog_entry
+    assert get_catalog_entry("check_ncpa.py") is get_catalog_entry("check_ncpa")
+    assert get_catalog_entry("check_ncpa.py") is not None
