@@ -175,6 +175,12 @@ source so they cannot drift from one another.
 host/service/program data, strips arguments from stored service check commands
 to avoid persisting secrets, and writes snapshots to `history.db`.
 
+A host Nagios lists as pending (no check has run yet) has no state to record, so the
+poller skips it without an error and records it once its first check completes; a
+pending service is stored as Unknown. A host status that is not up, down, unreachable
+or pending is logged as an error and that host is skipped for that poll; the rest of
+the poll continues.
+
 `app/nagios/notifications.py` reads `archivejson.cgi` for durable alert and
 notification event ranges.
 
