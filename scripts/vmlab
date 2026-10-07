@@ -164,6 +164,16 @@ ip -br -4 addr show "\$iface"
 EOS
 }
 
+# The unattended install creates no swap, so Nagios's stock localhost "Swap Usage"
+# check is CRITICAL forever and every dashboard looks broken. Give the appliance a
+# 1 GB swap file, as a default Ubuntu Server install would. Safe to repeat.
+ensure_swap() {
+  vm_ssh "if ! swapon --show=NAME --noheadings | grep -q .; then
+    sudo fallocate -l 1G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile >/dev/null && sudo swapon /swapfile
+    grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+  fi"
+}
+
 # Install our SSH key and passwordless sudo using the generated lab password. The
 # password reaches ssh through an askpass helper and sudo through stdin, never in a
 # command line.
@@ -276,6 +286,7 @@ case "$cmd" in
     vm_ssh true 2>/dev/null || bootstrap_key || die "cannot log in to the appliance (key or lab password)"
     echo "Preparing apt sources and the lab network ($VMLAB_LAB_ADDRESS) ..."
     prepare_script | vm_ssh "bash -s"
+    ensure_swap
     VBoxManage storageattach "$VMLAB_VM" --storagectl IDE --port 1 --device 0 --medium emptydrive 2>/dev/null || true
     ;;
 
@@ -327,6 +338,7 @@ case "$cmd" in
     installer_checkout >/dev/null
     snapshot_exists || die "no snapshot '$VMLAB_SNAPSHOT' (run: scripts/vmlab provision)"
     power_off; VBoxManage snapshot "$VMLAB_VM" restore "$VMLAB_SNAPSHOT"; start_vm
+    ensure_swap
     push_setup
     echo "Installing Pinpoint from $repo_url branch $branch ..."
     # The deploy step has the repository and branch hardcoded; patch a copy in the VM only.
