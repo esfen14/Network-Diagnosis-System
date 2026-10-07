@@ -1,6 +1,6 @@
 # VM Lab Plan (faithful lane)
 
-Status: **working; NCPA, alerts and the `break` commands not yet run.** Design agreed
+Status: **working; alerts and the `break` commands not yet run; NCPA run done (partial, #45).** Design agreed
 2026-10-08. The first end-to-end run passed (create, provision, fresh install of `main`,
 healthcheck 59/0, discovery and monitoring of five targets, sync); see
 [`docs/test-runs/2026-10-08-vm-lab-first-run/`](../test-runs/2026-10-08-vm-lab-first-run/REPORT.md). Feeds
@@ -53,7 +53,7 @@ signal to run `provision --force`.
 |---|---|
 | Targets: `demo/demo_lab.py` (five Ubuntu 24.04 VMs on internal network `pinpoint-demo`, `10.77.0.0/28`; break, fix, load, reset, wall, NCPA login) | Built; `up` verified |
 | Appliance VM `pinpoint-appliance` (4 GB, 4 CPUs; NIC 1 NAT with SSH and web port forwards, NIC 2 on `pinpoint-demo`), built by `scripts/vmlab create` from the stock Ubuntu 22.04.5 live-server ISO, unattended | Built and verified. Your existing `pinpoint-demo` VM was left alone |
-| `scripts/vmlab`: iso, create, prepare, status, provision, fresh, sync, health, setup-admin, smoke, creds, up, down, revert, targets | `create`, `prepare`, `provision`, `fresh`, `health`, `setup-admin`, `smoke`, `sync` verified. Not run on their own: `status` with a live VM, `sync --client`, `revert`, `up`, `down` |
+| `scripts/vmlab`: iso, create, prepare, status, provision, fresh, sync, health, setup-admin, smoke, creds, up, down, revert, targets | `create`, `prepare`, `provision`, `fresh`, `health`, `setup-admin`, `smoke`, `sync`, `ncpa` verified. Not run on their own: `status` with a live VM, `sync --client`, `revert`, `up`, `down` |
 | `lab/smoke.py`: `--email`, `--password`/`SMOKE_PASSWORD`, `--set-network`, `--expect-ips` | Verified on the appliance and, as a regression, on the Docker lab |
 | `lab/vmlab.env.example` | Written |
 
@@ -111,7 +111,8 @@ Test that by hand with `PinPoint-Installer-v1.1.iso` before a release.
 - `scripts/vmlab provision` and `fresh` complete on a clean VM and the healthcheck
   reports 0 failed checks.
 - `scripts/vmlab smoke` passes against the five demo targets from a fresh install.
-- NCPA deployment to one target succeeds through the wizard, and the run is recorded
-  in `docs/test-runs/`.
+- NCPA deployment succeeds and NCPA monitoring is OK. Deployment passed (two targets, one on SSH port 2222, 70 s);
+  monitoring failed on installer-built appliances (#45). Recorded in
+  [`docs/test-runs/2026-10-08-ncpa-run/`](../test-runs/2026-10-08-ncpa-run/REPORT.md). Repeat after #45.
 - `status` correctly warns after the installer's base steps change.
 - This plan is folded into a manual (`docs/manuals/`) and closed.
