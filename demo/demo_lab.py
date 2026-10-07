@@ -740,6 +740,11 @@ def cmd_build_base(args):
         vbox_do(apply, "storagectl", name, "--name", "SATA", "--add", "sata", "--controller", "IntelAhci")
         vbox_do(apply, "storageattach", name, "--storagectl", "SATA", "--port", 0, "--device", 0,
                 "--type", "hdd", "--medium", str(disk))
+        # createvm leaves the VM with no optical drive, so the installer media would
+        # have nowhere to mount. Give it an IDE controller with an empty DVD drive.
+        vbox_do(apply, "storagectl", name, "--name", "IDE", "--add", "ide", "--controller", "PIIX4")
+        vbox_do(apply, "storageattach", name, "--storagectl", "IDE", "--port", 1, "--device", 0,
+                "--type", "dvddrive", "--medium", "emptydrive")
         vbox_do(apply, "unattended", "install", name, "--iso=" + str(args.iso),
                 "--user=" + DEMO_USER, "--user-password-file=" + str(password_path(state_dir)),
                 "--full-user-name=Pinpoint Demo", "--hostname=demo-base.lab.local",
