@@ -18,6 +18,8 @@ docs() {
   python3 -I "$root/scripts/check_env_drift.py"
   echo "==> docs: browser routes match App.tsx, pageAccess.ts and the spec"
   python3 -I "$root/scripts/check_frontend_route_drift.py"
+  echo "==> docs: agent progress files are well formed"
+  python3 -I "$root/scripts/check_agent_progress.py"
 }
 
 backend() {
