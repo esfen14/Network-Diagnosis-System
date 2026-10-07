@@ -202,6 +202,8 @@ class PluginDefinition:
     executable: str = ""
     # Custom checks (custom_checks.py) use their own command prefix.
     command_prefix: str = COMMAND_NAME_PREFIX
+    # False for a plugin that checks the machine Nagios runs on and takes no -H (server checks).
+    takes_host: bool = True
 
     @property
     def command_name(self):
@@ -209,7 +211,9 @@ class PluginDefinition:
 
     @property
     def command_line(self):
-        parts = [f"$USER1$/{self.executable or self.check_plugin}", self.host_flag, "$HOSTADDRESS$"]
+        parts = [f"$USER1$/{self.executable or self.check_plugin}"]
+        if self.takes_host:
+            parts += [self.host_flag, "$HOSTADDRESS$"]
         if self.fixed_flags:
             parts.append(self.fixed_flags)
         for index, (flag, _variable) in enumerate(self.arguments, start=1):

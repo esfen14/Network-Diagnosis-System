@@ -216,11 +216,76 @@ Open each plugin in the drawer as Admin.
 | Plugin | Expected in the drawer |
 |---|---|
 | `check_by_ssh`, `check_ups`, `check_clamd` | "Not service-driven. There is no port for discovery to attach this plugin to. Add a custom check to run it against a device." and a **Custom checks** section with **Add check**. No Enable button |
-| `check_apt`, `check_uptime`, `check_sensors` | "Not service-driven. Runs on the Nagios server. Not available yet." No Custom checks section |
-| `check_ping`, `check_icmp` | "Not service-driven. Checks the device itself rather than a port. Not available yet." |
-| `check_radius`, `check_mysql_query` | "Not service-driven. Needs a password, which custom checks cannot store yet." |
-| `check_load`, `check_disk` | "Checks the Nagios server itself through Nagios Core. Not managed here." |
+| `check_apt`, `check_uptime`, `check_sensors`, `check_file_age` | "Not service-driven. This plugin checks the Nagios server itself. Add a server check to run it there." and a **Server checks** section (no device picker) |
+| `check_log`, `check_mrtg`, `check_dummy`, `check_dhcp` | "Not service-driven. Needs arguments Pinpoint cannot build yet." No section |
+| `check_ping`, `check_icmp`, `check_fping`, `check_dig` | The Custom checks section with **Add check**. `check_ping`, `check_icmp` and `check_fping` require warning and critical thresholds (placeholders `100.0,20%` / `500.0,60%`, `20%,100` / `40%,200` for `check_fping`); `check_dig` requires nothing |
+| `check_radius`, `check_mysql_query`, `check_nt`, `check_disk_smb` | The Custom checks section; the password field is masked and the dialog carries an amber note about where passwords go |
+| `check_dbi`, `check_oracle` | "Not service-driven. Its password cannot be passed to the plugin yet." No section |
+| `check_load`, `check_disk`, `check_swap`, `check_procs`, `check_users` | "Checks the Nagios server itself through Nagios Core. Not managed here." No section |
 | `check_ssh` | Enable and Disable buttons; no Custom checks section |
+
+### S-01: add a server check (check_apt)
+
+1. `sha256sum localhost.cfg` and keep it. Open `check_apt` → **Server checks** → **Add check**. Name `Package updates`. Leave the arguments empty. **Add check**.
+
+| Expected | The dialog has no device picker and says it runs on the Nagios server. The list shows **Package updates** under **Nagios server** (no IP), status **Waiting**, then OK or Warning with the package count within about 5 minutes. `hosts.cfg` has a section `# Define Server Checks (Nagios server: localhost)` with a service `server-apt-package_updates` on host `localhost` and command `pinpoint_custom_check_apt` (`command_line $USER1$/check_apt $ARG1$`, no `-H`). `nagios -v` reports 0 errors. **`localhost.cfg` has the same sha256 as before.** The Nagios web UI shows the service on the `localhost` host next to the stock ones. Network Health lists it under **APT** |
+|---|---|
+| Fail if | The check is filed under a device, `localhost.cfg` changed, or `nagios -v` complains about an unknown host `localhost` (then the server's host object has another name; record it and the name) |
+
+### S-02: more server checks
+
+1. Add `check_uptime` (warning `86400`, unit `seconds`), `check_file_age` (file a file that exists, critical `60`), `check_nagios` (status log path, max age `5`, process `/usr/local/nagios/bin/nagios`).
+
+| Expected | Each appears with its own service. `check_file_age` on a file older than 60 s turns **Critical** with the plugin's message; `check_nagios` is **OK**. A path with a forbidden character (for example `;`) is refused: the button stays disabled and the API returns 400 without echoing the value |
+|---|---|
+
+### S-03: server check rules
+
+| Step | Expected |
+|---|---|
+| Add a second server check named `Package updates` | Refused: "The Nagios server already has a check named 'Package updates'." |
+| API: `POST /api/plugin/<check_apt id>/custom-checks` with a `device_id` | 400 "check_apt checks the Nagios server, so it takes no device." |
+| API: `POST` on `check_ups` with no `device_id` | 400 "Choose a device." |
+| Pause, resume, change, remove a server check | As C-06 to C-08: the service leaves and returns in `hosts.cfg` and Nagios; the stock `localhost` services are never touched |
+| Merge two devices, retire a device, run a Rescan | The server checks are unchanged |
+| Make Nagios reject the next reload (lab plan §6.2) and add one | Same refusal and rollback as C-05 |
+### W-01: a password is stored encrypted and is never shown
+
+1. Set `PINPOINT_SECRETS_KEY` (or confirm `SECRET_KEY` is fixed in `/etc/pinpoint/pinpoint.env`) and restart. Open `check_radius` (or `check_mysql_query`) → **Add check**, device target01, a password `Lab-Pw_1`, and the other required fields.
+2. Query the row: `select Configuration_Data from PLUGIN_CONFIGURATION where Origin='CUSTOM' order by 1 desc limit 1;`. Also open the list in the UI and `GET /api/plugin/<id>/custom-checks`.
+
+| Expected | The stored JSON has `"secrets": {"password": "v1:..."}` and does not contain `Lab-Pw_1` anywhere. The list and the API show `-p ••••••` and `secrets_set: ["password"]`, never the password; the browser's network tab shows it only in the request that added it. The plugin history message and `journalctl -u pinpoint-gunicorn` do not contain it. The list shows no warning (`secrets_readable` true) |
+|---|---|
+
+### W-02: Nagios gets the password; the file is protected
+
+1. `grep -n "pinpoint_custom_check_radius" hosts.cfg` and `ls -l hosts.cfg`; then check the Nagios web UI's service command view.
+
+| Expected | The service command contains the password in plain text (this is how Nagios plugins work). `hosts.cfg` is not readable by users outside the Nagios user and group; if it is world-readable the Pinpoint log has "holds a custom check password and is readable by every user" (record it and run `chmod 640` with the right group). The check reaches a real state |
+|---|---|
+
+### W-03: change, keep, replace, remove
+
+| Step | Expected |
+|---|---|
+| **Change** the check; leave the password blank; save | Saved; the check keeps working; the password field showed "Stored. Leave blank to keep it" |
+| Type a new password; save | The new password is used (the command in `hosts.cfg` changes); the old one is gone from the file |
+| `check_mysql_query` (password optional): tick "Remove the stored mysql password"; save | The password is removed and the check runs without `-p`; the list shows no stored password. For a required password there is no such option |
+| Add a password containing `'` or `;` | Refused: the button is disabled and the API returns 400 naming the argument without echoing the value |
+
+### W-04: the key changes
+
+1. Change `SECRET_KEY` (or `PINPOINT_SECRETS_KEY`) and restart the service.
+
+| Expected | The check is no longer in `hosts.cfg` after the next apply (Pinpoint logs a warning with no password). The drawer shows "A stored password can no longer be read, so this check is not running." Opening **Change** shows the same message; saving without typing the password is refused; typing it again restores the check |
+|---|---|
+
+### W-05: no fixed key, no passwords
+
+1. Start the backend in debug mode with no `SECRET_KEY` and try to add a check that has a password.
+
+| Expected | Refused: "Passwords cannot be stored because the server has no fixed SECRET_KEY…". Nothing is saved. A check without passwords is still accepted |
+|---|---|
 
 ### C-02: add a check and watch it run (the key case)
 

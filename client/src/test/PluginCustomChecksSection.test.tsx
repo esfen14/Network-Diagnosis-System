@@ -201,3 +201,207 @@ describe('PluginCustomChecksSection', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Nagios did not accept the change')
   })
 })
+
+describe('PluginCustomChecksSection for a plugin that runs on the Nagios server', () => {
+  const APT_FIELDS: CustomCheckField[] = [
+    { name: 'warning', flag: '-w', label: 'Warn if this many packages need upgrading', required: false, placeholder: '' },
+  ]
+  const serverCheck = (overrides: Partial<CustomCheckItem> = {}) =>
+    check({
+      name: 'Package updates',
+      service: 'server-apt-package_updates',
+      device: { id: null, hostname: 'Nagios server', ip_address: '' },
+      variables: { warning: '5' },
+      ...overrides,
+    })
+
+  function renderServer(onChanged = vi.fn()) {
+    return render(
+      <PluginCustomChecksSection pluginId={7} pluginName="check_apt" fields={APT_FIELDS} target="server" onChanged={onChanged} />,
+    )
+  }
+
+  beforeEach(() => {
+    Object.values(api).forEach((fn) => fn.mockReset())
+    api.getCustomChecks.mockResolvedValue(response([serverCheck()]))
+  })
+
+  it('is called Server checks and shows the Nagios server without an IP', async () => {
+    renderServer()
+
+    expect(await screen.findByRole('heading', { name: 'Server checks' })).toBeInTheDocument()
+    expect(screen.getByText('Package updates')).toBeInTheDocument()
+    expect(screen.getByText('Nagios server')).toBeInTheDocument()
+    expect(screen.queryByText(/Nagios server ·/)).not.toBeInTheDocument()
+  })
+
+  it('says what to do when there are none', async () => {
+    api.getCustomChecks.mockResolvedValue(response([]))
+    renderServer()
+
+    expect(await screen.findByText(/Add one to run this plugin on the Nagios server\./)).toBeInTheDocument()
+  })
+
+  it('adds a check without asking for a device and sends none', async () => {
+    api.addCustomCheck.mockResolvedValue({ ...serverCheck(), changed: true, message: '' })
+    renderServer()
+    await screen.findByText('Package updates')
+
+    fireEvent.click(screen.getByRole('button', { name: /Add check/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Add a check_apt server check' })
+    expect(within(dialog).queryByLabelText('Device')).not.toBeInTheDocument()
+    expect(within(dialog).getByText(/runs on the Nagios server itself/)).toBeInTheDocument()
+    expect(api.searchCustomCheckDevices).not.toHaveBeenCalled()
+
+    const add = within(dialog).getByRole('button', { name: 'Add check' })
+    expect(add).toBeDisabled() // no name yet
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Weekly updates' } })
+    expect(add).toBeEnabled() // apt has no required argument
+    fireEvent.click(add)
+
+    await waitFor(() => expect(api.addCustomCheck).toHaveBeenCalledWith(7, { name: 'Weekly updates', variables: {} }))
+  })
+
+  it('changes and pauses a server check by id', async () => {
+    api.changeCustomCheck.mockResolvedValue({ ...serverCheck(), changed: true, message: '' })
+    api.pauseCustomCheck.mockResolvedValue({})
+    renderServer()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Pause Package updates on Nagios server' }))
+    await waitFor(() => expect(api.pauseCustomCheck).toHaveBeenCalledWith(7, 12))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change Package updates on Nagios server' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Change Package updates' })
+    expect(within(dialog).queryByText(/remove this check and add/)).not.toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(api.changeCustomCheck).toHaveBeenCalledWith(7, 12, { name: 'Package updates', variables: { warning: '5' } }))
+  })
+})
+
+describe('PluginCustomChecksSection with passwords', () => {
+  const FIELDS_WITH_PASSWORD: CustomCheckField[] = [
+    { name: 'user', flag: '-u', label: 'Username to test with', required: true, placeholder: '' },
+    { name: 'password', flag: '-p', label: 'Password to test with', required: true, placeholder: '', secret: true },
+    { name: 'note', flag: '-n', label: 'Optional token', required: false, placeholder: '', secret: true },
+  ]
+  const stored = (overrides: Partial<CustomCheckItem> = {}) =>
+    check({
+      name: 'Auth probe',
+      variables: { user: 'probe' },
+      secrets_set: ['password', 'note'],
+      secrets_readable: true,
+      ...overrides,
+    })
+
+  function renderWithPasswords() {
+    return render(
+      <PluginCustomChecksSection pluginId={9} pluginName="check_radius" fields={FIELDS_WITH_PASSWORD} onChanged={vi.fn()} />,
+    )
+  }
+
+  beforeEach(() => {
+    Object.values(api).forEach((fn) => fn.mockReset())
+    api.getCustomChecks.mockResolvedValue(response([stored()]))
+    api.searchCustomCheckDevices.mockResolvedValue([{ id: 4, hostname: 'rack-01', ip_address: '10.0.0.5' }])
+  })
+
+  it('shows a stored password as dots, never its value', async () => {
+    renderWithPasswords()
+
+    expect(await screen.findByText('-u probe  -p ••••••  -n ••••••'.replace(/  /g, ' '))).toBeInTheDocument()
+  })
+
+  it('masks the field, warns about where the password goes, and requires it when adding', async () => {
+    renderWithPasswords()
+    await screen.findByText('Auth probe')
+    fireEvent.click(screen.getByRole('button', { name: /Add check/ }))
+    const dialog = await screen.findByRole('dialog')
+
+    expect(within(dialog).getByLabelText(/Password to test with/)).toHaveAttribute('type', 'password')
+    expect(within(dialog).getByLabelText(/Username to test with/)).toHaveAttribute('type', 'text')
+    expect(within(dialog).getByText(/stored encrypted and are never shown again/)).toBeInTheDocument()
+
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'x' } })
+    fireEvent.change(within(dialog).getByLabelText(/Username to test with/), { target: { value: 'probe' } })
+    fireEvent.click(await within(dialog).findByRole('button', { name: /rack-01/ }))
+    expect(within(dialog).getByRole('button', { name: 'Add check' })).toBeDisabled()
+    fireEvent.change(within(dialog).getByLabelText(/Password to test with/), { target: { value: 'S3cret' } })
+    expect(within(dialog).getByRole('button', { name: 'Add check' })).toBeEnabled()
+  })
+
+  it('sends the typed password with the add request', async () => {
+    api.addCustomCheck.mockResolvedValue({ ...stored(), changed: true, message: '' })
+    renderWithPasswords()
+    await screen.findByText('Auth probe')
+    fireEvent.click(screen.getByRole('button', { name: /Add check/ }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'New probe' } })
+    fireEvent.change(within(dialog).getByLabelText(/Username to test with/), { target: { value: 'probe' } })
+    fireEvent.change(within(dialog).getByLabelText(/Password to test with/), { target: { value: 'S3cret' } })
+    fireEvent.click(await within(dialog).findByRole('button', { name: /rack-01/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add check' }))
+
+    await waitFor(() =>
+      expect(api.addCustomCheck).toHaveBeenCalledWith(9, {
+        device_id: 4, name: 'New probe', variables: { user: 'probe', password: 'S3cret' },
+      }),
+    )
+  })
+
+  it('keeps a stored password when it is left blank on a change', async () => {
+    api.changeCustomCheck.mockResolvedValue({ ...stored(), changed: true, message: '' })
+    renderWithPasswords()
+    fireEvent.click(await screen.findByRole('button', { name: 'Change Auth probe on rack-01' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Change Auth probe' })
+
+    const password = within(dialog).getByLabelText(/Password to test with/)
+    expect(password).toHaveValue('')
+    expect(password).toHaveAttribute('placeholder', 'Stored. Leave blank to keep it')
+    const save = within(dialog).getByRole('button', { name: 'Save changes' })
+    expect(save).toBeEnabled() // the required password is already stored
+    fireEvent.click(save)
+
+    await waitFor(() => expect(api.changeCustomCheck).toHaveBeenCalledWith(9, 12, { name: 'Auth probe', variables: { user: 'probe' } }))
+  })
+
+  it('sends a new password to replace the stored one', async () => {
+    api.changeCustomCheck.mockResolvedValue({ ...stored(), changed: true, message: '' })
+    renderWithPasswords()
+    fireEvent.click(await screen.findByRole('button', { name: 'Change Auth probe on rack-01' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText(/Password to test with/), { target: { value: 'N3w' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() =>
+      expect(api.changeCustomCheck).toHaveBeenCalledWith(9, 12, { name: 'Auth probe', variables: { user: 'probe', password: 'N3w' } }),
+    )
+  })
+
+  it('offers to remove an optional stored password and never a required one', async () => {
+    api.changeCustomCheck.mockResolvedValue({ ...stored(), changed: true, message: '' })
+    renderWithPasswords()
+    fireEvent.click(await screen.findByRole('button', { name: 'Change Auth probe on rack-01' }))
+    const dialog = await screen.findByRole('dialog')
+
+    expect(within(dialog).getAllByRole('checkbox')).toHaveLength(1)
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /Remove the stored optional token/ }))
+    expect(within(dialog).getByLabelText(/Optional token/)).toHaveAttribute('placeholder', '')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() =>
+      expect(api.changeCustomCheck).toHaveBeenCalledWith(9, 12, {
+        name: 'Auth probe', variables: { user: 'probe' }, clear_secrets: ['note'],
+      }),
+    )
+  })
+
+  it('says when a stored password can no longer be read and asks for it again', async () => {
+    api.getCustomChecks.mockResolvedValue(response([stored({ secrets_readable: false })]))
+    renderWithPasswords()
+
+    expect(await screen.findByText(/A stored password can no longer be read, so this check is not running/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Change Auth probe on rack-01' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/The stored password can no longer be read \(the server key changed\)/)).toBeInTheDocument()
+  })
+})

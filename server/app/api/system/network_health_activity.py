@@ -67,6 +67,7 @@ from app.api.system.statistics import (
     DISK_PLUGIN,
     _plugin_key,
 )
+from app.network_discovery.custom_checks import plugin_for_custom_command
 from app.network_discovery.plugin_registry import normalize_plugin_name
 from app.network_discovery.port_lifecycle import ENABLED_PLUGIN_STATES
 from app.history_models import (
@@ -241,6 +242,10 @@ def added_plugin_name(service, enabled_plugins):
     """
     command = (service.Check_Command or "").split("!")[0].strip()
     key = normalize_plugin_name(_plugin_key(service.Service, service.Check_Command))
+    # A custom check an administrator added always gets its own widget, even for a plugin
+    # (check_ping) whose discovered services are drawn by a dedicated one.
+    if plugin_for_custom_command(command):
+        return key
     if key in DEDICATED_WIDGET_PLUGINS:
         return None
     is_manual = command.startswith(PLUGIN_MANAGER_COMMAND_PREFIX) and not command.startswith(DISCOVERY_COMMAND_PREFIX)

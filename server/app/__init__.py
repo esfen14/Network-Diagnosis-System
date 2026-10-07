@@ -27,6 +27,8 @@ if not app.config.get("SECRET_KEY"):
             "(e.g. /etc/pinpoint/pinpoint.env or server/.env)."
         )
     app.config["SECRET_KEY"] = secrets.token_hex(32)
+    # secrets_store refuses to store a password under a key the next start would not have.
+    app.config["SECRET_KEY_IS_TEMPORARY"] = True
     app.logger.warning("SECRET_KEY is not set; using a temporary key for this debug session.")
 
 # Runtime folders are not tracked in git, so make sure they exist.

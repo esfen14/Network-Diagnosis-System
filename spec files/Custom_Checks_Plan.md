@@ -106,9 +106,10 @@ using their default command in `plugin_command_defaults.py`. Four outcomes:
 | Class | Meaning | Plugins | What happens |
 |---|---|---|---|
 | **A. Port-driven, missing from the registry** | Check a well-known port and can run with only host and port | `check_pgsql` (5432), `check_ldap` / `check_ldaps` (389 / 636; they need a base DN, so without one they fall back to the generic TCP check, as MySQL does without a user), `check_ircd` (6667), `check_rpc` (111), `check_time` (37), `check_ntp_peer` (UDP 123, an alternative to `check_ntp_time`) | **Add to the registry**, not as custom checks. Each is a `PluginDefinition`, a Port → Service rule and tests; enabling then works like `check_ssh`. These seven are the approved set (Q-C6) |
-| **B. Host-driven** | Probe the device, not a port | `check_ping`, `check_icmp`, `check_fping`, `check_dig` (a lookup, overlaps `check_dns`) | Not custom checks. Host aliveness is already a Nagios host check; a per-host service is a separate small feature (Q-C7). Until then they stay inventory-only |
+| **B. Host-driven** | Probe the device, not a port | `check_ping`, `check_icmp`, `check_fping`, `check_dig` (a lookup, overlaps `check_dns`) | **Now custom checks** (Q-C7, branch `feature/host-level-checks`): an optional per-device service, so a ping or lookup can be tracked next to the host's own alive check. They take thresholds or a record to look up like any class C plugin |
 | **C. Probes a device over the network but needs arguments or credentials** | The target is the device; only an admin knows the arguments | `check_by_ssh`, `check_breeze`, `check_wave`, `check_hpjd`, `check_ifstatus`, `check_ifoperstatus` (needs an interface index), `check_ups` (needs the UPS name), `check_nt`, `check_nwstat`, `check_overcr` and `check_real` (rare services that each need a mandatory argument: `-v` or `-u`; Q-C6), `check_radius` (needs a shared secret), `check_ssl_validity`, `check_disk_smb` (needs a share), `check_mysql_query`, `check_oracle`, `check_dbi`, `check_game`, `check_clamd` | **Custom checks** (this plan). Those that need a secret (`check_radius`, database passwords) are blocked until a secrets store exists (§9), and the dialog says so |
-| **D. Checks the machine it runs on** | Local to the Nagios server, whatever device you pick | `check_apt`, `check_uptime`, `check_sensors`, `check_ide_smart`, `check_file_age`, `check_log`, `check_mailq`, `check_mrtg`, `check_mrtgtraf`, `check_flexlm`, `check_nagios`, `check_dummy`, and the five stock local plugins | **Not offered on other devices**, because the result would be the server's, filed under another device's name. They wait for the server-host feature (§2.6). `check_cluster` (aggregates service states) is out of scope for now |
+| **D. Checks the machine it runs on** | Local to the Nagios server, whatever device you pick | `check_apt`, `check_uptime`, `check_sensors`, `check_ide_smart`, `check_file_age`, `check_mailq`, `check_flexlm`, `check_nagios` | **Server checks** (§2.6, branch `feature/server-host-checks`): one service on the Nagios server's own host, with no device to pick. Not offered on other devices, because the result would be the server's, filed under another device's name |
+| **D2. Not offered** | Left with Nagios Core, or needs arguments Pinpoint cannot build yet | the five stock plugins (`check_load`, `check_disk`, `check_swap`, `check_procs`, `check_users`) are Nagios Core's (`stock`); `check_log`, `check_mrtg`, `check_mrtgtraf`, `check_dummy`, `check_dhcp` (`advanced`: `check_log` writes a state file at a path the administrator chooses, `check_dummy` takes a positional argument); `check_cluster` (aggregates service states) is out of scope for now | The drawer says why |
 
 Where the audit table in code (`PLUGIN_CLASSES`) differs from the list above: `check_dhcp` is
 class D (it broadcasts from the server's own interface), and the deprecated `check_ntp` has a
@@ -139,9 +140,22 @@ The monitoring server itself is **not** a target in this plan. The reconciler is
 allowed to write anything for it (§2.3, §2.6 of the monitoring plan). That is the
 server-host feature, §2.6 below.
 
-### 2.6 Server-host checks: a separate follow-up (Q-C1, agreed)
+### 2.6 Server-host checks (Q-C1, agreed) — built on `feature/server-host-checks`
 
-Class D plugins (`check_apt` and friends) belong to the Nagios server, so they need their
+> **As built.** A server check is a `PLUGIN_CONFIGURATION` row with `Origin = Custom` and
+> `NetDiscoveryID` empty. It is written as a service of the host `localhost` (the Nagios server's
+> own host object, defined by `localhost.cfg`) in a separate "Define Server Checks" section of
+> `hosts.cfg`, through the same writer, validation and rollback as every other check.
+> `localhost.cfg` is never read or edited. Commands have no `-H`
+> (`$USER1$/check_apt $ARG1$`). Service names start `server-` (`server-apt-weekly_updates`) and
+> are unique among the server's checks. The same routes, permission (`plugin.custom_check`) and
+> argument validation are used; the plugin's `custom_checks.target` says `server`, and such a
+> plugin takes no `device_id`. The Nagios host name is the constant `SERVER_HOST_NAME`
+> (`localhost`); if the install's host object has another name, `nagios -v` rejects the config and
+> the change rolls back with Nagios's message. Checks run as the Nagios user on the Nagios server,
+> so only administrators holding the permission can add them.
+
+The text below is the plan as first written. Class D plugins (`check_apt` and friends) belong to the Nagios server, so they need their
 own feature, planned separately and built after this one. What this plan fixes now, so the
 two do not conflict:
 
@@ -259,10 +273,34 @@ Answered by the owner, second round:
 
 ---
 
+## 8b. Passwords (built on `feature/custom-check-secrets`)
+
+A password field of a plugin (`secret` in `CUSTOM_CHECK_FIELDS`) is handled as follows.
+
+- **Stored encrypted.** `app/secrets_store.py` encrypts it with Fernet; the key is derived (HKDF-SHA256)
+  from `PINPOINT_SECRETS_KEY` when set, otherwise from the app's `SECRET_KEY`. The token is kept in
+  `Configuration_Data["secrets"]` as `v1:<token>`. No migration is needed.
+- **Never returned or logged.** The API lists only `secrets_set` (which are stored) and
+  `secrets_readable`; history messages, errors and logs never contain a value (an invalid value is
+  reported by argument name only).
+- **Write-only in the UI.** A masked box; on a change, blank keeps the stored password and an optional
+  one can be removed (`clear_secrets`). A required password cannot be removed.
+- **Decrypted only to build the command**, when `hosts.cfg` is generated. If it cannot be read (the key
+  changed), the check is left out of the file with a warning, the list says so, and the administrator types
+  the password again. Without a fixed `SECRET_KEY` (the debug session's random one) nothing is stored.
+- **What it does not protect.** Nagios needs the password in the check's command, so it is in `hosts.cfg`
+  in plain text, in the Nagios web UI's command view, and in the process list while the check runs. Keep
+  `hosts.cfg` readable only by the Nagios user and group; Pinpoint logs a warning when a host file that
+  holds a password is world-readable (POSIX). Moving passwords into Nagios resource macros is a possible
+  later step; it would mean editing `resource.cfg`, which Pinpoint does not touch.
+- **Plugins.** `check_radius` and `check_mysql_query` (previously "needs a password") now take custom
+  checks, and `check_nt` (`-s`) and `check_disk_smb` (`-p`) gain an optional password. `check_dbi` and
+  `check_oracle` stay unavailable: their credentials are not passed as a plain argument.
+
 ## 9. Out of scope
 
 Server-local checks (§2.6, its own plan), per-check notification rules, check groups or templates,
-importing existing Nagios services, secrets storage, and plugins that need a daemon or
+importing existing Nagios services, keeping passwords out of `hosts.cfg` (§8b), and plugins that need a daemon or
 install step. The five stock local plugins stay "Not managed here".
 
 ---
