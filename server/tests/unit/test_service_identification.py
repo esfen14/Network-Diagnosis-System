@@ -278,30 +278,6 @@ class TestServiceChangedReview:
         assert item.IP_Address == "10.0.0.5"
         assert "tcp/8080" in item.Message and "monitored as http" in item.Message and "ssh" in item.Message
 
-    def test_item_resolves_itself_when_the_port_matches_its_plugin_again(self, device):
-        scan_port(device, 8080, "http", FINGERPRINT)
-        scan_port(device, 8080, "ssh", FINGERPRINT)
-        (item,) = review_items()
-        assert item.Resolved_At is None
-
-        scan_port(device, 8080, "http", FINGERPRINT)
-        assert item.Resolved_At is not None
-
-    def test_item_stays_open_while_the_port_still_mismatches(self, device):
-        scan_port(device, 8080, "http", FINGERPRINT)
-        scan_port(device, 8080, "ssh", FINGERPRINT)
-        scan_port(device, 8080, "ssh", FINGERPRINT)
-        (item,) = review_items()
-        assert item.Resolved_At is None
-
-    def test_a_match_on_another_port_leaves_the_item_open(self, device):
-        scan_port(device, 8080, "http", FINGERPRINT)
-        scan_port(device, 8080, "ssh", FINGERPRINT)
-        scan_port(device, 8081, "http", FINGERPRINT)
-        scan_port(device, 8081, "http", FINGERPRINT)
-        (item,) = review_items()
-        assert item.Resolved_At is None
-
     def test_a_changed_guess_raises_nothing(self, device):
         scan_port(device, 8080, "http", FINGERPRINT)
         scan_port(device, 8080, "http-proxy", PORT_HINT)

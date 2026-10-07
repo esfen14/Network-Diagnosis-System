@@ -538,32 +538,13 @@ def acknowledge_port_mismatch(device_id, protocol, port_number):
     return port
 
 
-def resolve_service_changes(message_start):
-    """
-    Close the unresolved SERVICE_CHANGED items of one port, found by the start of
-    their message ("tcp/8080 on host is monitored as "), because the port matches
-    its frozen plugin again. Does not commit.
-    """
-    now = utcnow()
-    items = db.session.scalars(
-        sa.select(DeviceReviewItem).where(
-            DeviceReviewItem.Kind == ReviewKind.SERVICE_CHANGED,
-            DeviceReviewItem.Resolved_At.is_(None),
-            DeviceReviewItem.Message.startswith(message_start, autoescape=True),
-        )
-    ).all()
-    for item in items:
-        item.Resolved_At = now
-
-
 def flag_service_change(port, protocol, device_id, service_name, identified_by):
     """
     Raise a SERVICE_CHANGED review item when a monitored port now
     fingerprints (or is ruled) as a service its frozen plugin does not match,
     e.g. a port monitored as http that now answers as ssh. The port is not
     renamed; an operator decides. Guesses from the port number never raise
-    one, and an unresolved item with the same message is not repeated. When the
-    port matches its frozen plugin again, its unresolved items are resolved.
+    one, and an unresolved item with the same message is not repeated.
     Does not commit.
     """
     if identified_by is ServiceIdentification.PORT_HINT or port.Plugin_Name is None:
@@ -571,18 +552,18 @@ def flag_service_change(port, protocol, device_id, service_name, identified_by):
     # The agent PinPoint deployed was verified by deployment itself.
     if is_protected_ncpa_port(port, device_id):
         return None
+    observed_plugin = resolve_plugin_name(service_name, transport_for(protocol))
+    if observed_plugin == port.Plugin_Name:
+        return None
+
     device = db.session.get(NetworkDiscovery, device_id)
     host = str(device_id)
     if device is not None:
         host = device.Nagios_Host_Name or device.Hostname or device.IP_Address
-    message_start = f"{protocol.lower()}/{port.Port_Number} on {host} is monitored as "
-
-    observed_plugin = resolve_plugin_name(service_name, transport_for(protocol))
-    if observed_plugin == port.Plugin_Name:
-        resolve_service_changes(message_start)
-        return None
-
-    message = f"{message_start}{port.Plugin_Name} but now identifies as {service_name}."[:255]
+    message = (
+        f"{protocol.lower()}/{port.Port_Number} on {host} is monitored as {port.Plugin_Name} "
+        f"but now identifies as {service_name}."
+    )[:255]
 
     existing = db.session.scalar(
         sa.select(DeviceReviewItem).where(
