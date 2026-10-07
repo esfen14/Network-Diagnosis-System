@@ -36,6 +36,17 @@ in [`spec files/`](spec%20files/).
 | Frontend tests | **Required:** [`Frontend_Modules_and_Routes.md`](spec%20files/Frontend_Modules_and_Routes.md), [`Engineering_Standards.md`](spec%20files/Engineering_Standards.md) | The page/domain specification for the behavior under test |
 | Scope, unfinished work, or exclusions | **Required:** [`Implementation_Status.md`](spec%20files/Implementation_Status.md) | Relevant domain specification |
 
+## Working an issue
+
+To work a GitHub issue, follow [`.agent/workflows/work-issue.md`](.agent/workflows/work-issue.md).
+It is the one procedure for every agent. The commands below only load it:
+
+| Tool | Command |
+|---|---|
+| Claude Code | `/work-issue <n>` (`.claude/skills/work-issue/SKILL.md`) |
+| OpenCode | `/work-issue <n>` (`.opencode/commands/work-issue.md`) |
+| Any other agent | Tell it: "Follow `.agent/workflows/work-issue.md` for issue #<n>." |
+
 ## Verify before you finish
 
 Run `scripts/verify.sh <docs|backend|frontend|all>` (the same commands CI runs)
