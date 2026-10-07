@@ -1,0 +1,339 @@
+#!/usr/bin/env bash
+# Pinpoint VM lab (faithful lane): a real installer-built appliance in VirtualBox
+# plus the demo target servers. See docs/plans/VM_Lab_Plan.md.
+#
+# The snapshot holds Ubuntu + Nagios only, never the app, so it cannot go stale
+# when the code changes. A fresh test installs the app on it with the installer's
+# own deploy steps; a quick test syncs the working tree into the running VM.
+#
+#   scripts/vmlab iso                  download the stock Ubuntu 22.04.5 live-server ISO (once)
+#   scripts/vmlab create               build the appliance VM from that ISO, unattended (no console)
+#   scripts/vmlab status               VM state, snapshots, snapshot stamp vs installer
+#   scripts/vmlab provision [--force]  one time, on the fresh VM: run installer steps 1 to 5,
+#                                      power off, take the snapshot (default os-nagios-ready)
+#   scripts/vmlab fresh [branch]       restore the snapshot, start, install the app from the pushed
+#                                      branch (default: current branch), healthcheck
+#   scripts/vmlab sync [--client]      copy the working tree into the running appliance, restart
+#                                      Gunicorn (--client also builds and copies client/dist)
+#   scripts/vmlab health               installer healthcheck on the running appliance
+#   scripts/vmlab smoke                log in, add the lab network, run discovery, wait for hosts up
+#   scripts/vmlab creds                print the installer's administrator credentials (lab only)
+#   scripts/vmlab up | down | revert   start (headless), power off, restore the snapshot only
+#   scripts/vmlab targets <cmd...>     pass through to demo/demo_lab.py (up, down, wall, break, ...)
+#
+# The installer's own repository supplies the setup steps. Point VMLAB_INSTALLER_DIR at
+# your local clone to test installer changes before pushing them (it is only read).
+# Settings live outside the repository, in ~/.config/pinpoint-vmlab/env
+# (override with VMLAB_CONFIG); every setting has a default, so the file is optional.
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+config="${VMLAB_CONFIG:-$HOME/.config/pinpoint-vmlab/env}"
+state_dir="${VMLAB_STATE_DIR:-$HOME/.local/share/pinpoint-vmlab}"
+default_installer_dir="$HOME/.cache/pinpoint-vmlab/PinPoint-Installer"
+
+# Defaults, then the user's file.
+VMLAB_VM="pinpoint-appliance"
+VMLAB_SNAPSHOT="os-nagios-ready"
+VMLAB_SSH_TARGET="lab@127.0.0.1"
+VMLAB_SSH_PORT="2250"
+VMLAB_WEB_PORT="8080"
+VMLAB_SSH_KEY="$state_dir/id_ed25519"
+VMLAB_ISO="$HOME/Downloads/ubuntu-22.04.5-live-server-amd64.iso"
+VMLAB_ISO_URL="https://releases.ubuntu.com/22.04/ubuntu-22.04.5-live-server-amd64.iso"
+VMLAB_RAM_MB="4096"
+VMLAB_CPUS="4"
+VMLAB_DISK_MB="40960"
+VMLAB_LAB_ADDRESS="10.77.0.1/28"
+VMLAB_LAB_INTNET="pinpoint-demo"
+VMLAB_ADMIN_EMAIL=""
+VMLAB_ADMIN_PASSWORD=""
+VMLAB_LAB_NETWORK="10.77.0.0/28"
+VMLAB_INSTALLER_REPO="https://github.com/lorraine-pangilinan/PinPoint-Installer.git"
+VMLAB_INSTALLER_DIR="$default_installer_dir"
+# shellcheck disable=SC1090
+[ -f "$config" ] && . "$config"
+
+app_dir=/opt/pinpoint/Network-Diagnosis-System
+remote_setup=/tmp/vmlab-setup
+# Installer steps that do not depend on Pinpoint's code (the snapshot layer).
+base_modules="install-packages.sh install-nagios-core.sh install-nagios-plugins.sh configure-snmp.sh configure-nagios.sh"
+# Steps that install and wire the app (run fresh on every test).
+app_modules="deploy-pinpoint-web.sh configure-pinpoint-privileges.sh"
+
+die() { echo "vmlab: $*" >&2; exit 1; }
+need_config() {
+  command -v VBoxManage >/dev/null || die "VBoxManage not found"
+  [ -n "$VMLAB_SSH_TARGET" ] || die "VMLAB_SSH_TARGET is empty (see lab/vmlab.env.example)"
+}
+
+ssh_opts=(-p "$VMLAB_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+          -o ConnectTimeout=5 -o ServerAliveInterval=15 -o LogLevel=ERROR)
+ssh_args() {
+  if [ -n "$VMLAB_SSH_KEY" ]; then printf -- '-i\n%s\n' "$VMLAB_SSH_KEY"; fi
+  printf '%s\n' "${ssh_opts[@]}"
+}
+vm_ssh() {
+  local extra=(); mapfile -t extra < <(ssh_args)
+  ssh "${extra[@]}" "$VMLAB_SSH_TARGET" "$@"
+}
+web_url() { echo "http://127.0.0.1:$VMLAB_WEB_PORT"; }
+
+vm_state() { VBoxManage showvminfo "$VMLAB_VM" --machinereadable 2>/dev/null | sed -n 's/^VMState="\(.*\)"/\1/p'; }
+snapshot_exists() { VBoxManage snapshot "$VMLAB_VM" list --machinereadable 2>/dev/null | grep -q "^SnapshotName.*=\"$VMLAB_SNAPSHOT\""; }
+
+wait_state() { # wait_state <state> <seconds>
+  local want="$1" limit="$2" i
+  for i in $(seq 1 "$limit"); do [ "$(vm_state)" = "$want" ] && return 0; sleep 1; done
+  return 1
+}
+power_off() {
+  [ "$(vm_state)" = "poweroff" ] && return 0
+  VBoxManage controlvm "$VMLAB_VM" acpipowerbutton 2>/dev/null || true
+  wait_state poweroff 90 || { echo "graceful shutdown timed out; powering off"; VBoxManage controlvm "$VMLAB_VM" poweroff; wait_state poweroff 30; }
+}
+start_vm() {
+  [ "$(vm_state)" = "running" ] || VBoxManage startvm "$VMLAB_VM" --type headless >/dev/null
+  echo "waiting for SSH on $VMLAB_SSH_TARGET (port $VMLAB_SSH_PORT) ..."
+  local i
+  for i in $(seq 1 120); do vm_ssh true 2>/dev/null && return 0; sleep 3; done
+  die "the appliance did not answer on SSH within 6 minutes"
+}
+
+installer_checkout() { # prepare the installer repo; echo its short commit (+dirty if edited)
+  if [ "$VMLAB_INSTALLER_DIR" = "$default_installer_dir" ]; then
+    # Our own cache: safe to clone and fast-forward.
+    mkdir -p "$(dirname "$VMLAB_INSTALLER_DIR")"
+    if [ -d "$VMLAB_INSTALLER_DIR/.git" ]; then
+      git -C "$VMLAB_INSTALLER_DIR" fetch -q origin && git -C "$VMLAB_INSTALLER_DIR" reset -q --hard origin/HEAD
+    else
+      git clone -q "$VMLAB_INSTALLER_REPO" "$VMLAB_INSTALLER_DIR"
+    fi
+  else
+    # The user's own clone: used as it is, never fetched, reset or modified.
+    [ -d "$VMLAB_INSTALLER_DIR/setup" ] || die "VMLAB_INSTALLER_DIR has no setup/ directory: $VMLAB_INSTALLER_DIR"
+  fi
+  local rev dirty=""
+  rev="$(git -C "$VMLAB_INSTALLER_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  if [ -n "$(git -C "$VMLAB_INSTALLER_DIR" status --porcelain 2>/dev/null)" ]; then dirty="+dirty"; fi
+  echo "$rev$dirty"
+}
+base_hash() { # a hash of the installer files behind the snapshot layer
+  ( cd "$VMLAB_INSTALLER_DIR/setup" && cat $base_modules | sha256sum | cut -c1-12 )
+}
+push_setup() { # copy the installer's setup/ directory into the VM
+  vm_ssh "rm -rf $remote_setup && mkdir -p $remote_setup"
+  tar -C "$VMLAB_INSTALLER_DIR" -cf - setup | vm_ssh "tar -C $remote_setup -xf -"
+}
+
+# Apt sources and the lab NIC, run in the VM by `create`. Kept as a file so no
+# quoting has to survive the trip over SSH.
+prepare_script() {
+  cat <<EOS
+set -e
+sudo tee /etc/apt/sources.list >/dev/null <<'SRC'
+deb https://archive.ubuntu.com/ubuntu jammy main restricted universe multiverse
+deb https://archive.ubuntu.com/ubuntu jammy-updates main restricted universe multiverse
+deb https://archive.ubuntu.com/ubuntu jammy-backports main restricted universe multiverse
+deb https://security.ubuntu.com/ubuntu jammy-security main restricted universe multiverse
+SRC
+sudo rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources
+iface=""
+for i in \$(ls /sys/class/net); do
+  [ "\$i" = lo ] && continue
+  ip -4 addr show "\$i" | grep -q inet || { iface="\$i"; break; }
+done
+[ -n "\$iface" ] || { echo "no spare network interface for the lab network" >&2; exit 1; }
+printf 'network:\n  version: 2\n  ethernets:\n    %s:\n      addresses: [$VMLAB_LAB_ADDRESS]\n' "\$iface" | sudo tee /etc/netplan/60-pinpoint-lab.yaml >/dev/null
+sudo chmod 600 /etc/netplan/60-pinpoint-lab.yaml
+sudo netplan apply
+ip -br -4 addr show "\$iface"
+EOS
+}
+
+# The one-line command VirtualBox runs at the end of the unattended install.
+post_install_command() { # post_install_command <user> <public key>
+  local script
+  script="set -e
+install -d -m 700 -o $1 -g $1 /home/$1/.ssh
+echo '$2' > /home/$1/.ssh/authorized_keys
+chown $1:$1 /home/$1/.ssh/authorized_keys
+chmod 600 /home/$1/.ssh/authorized_keys
+echo '$1 ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-vmlab
+chmod 440 /etc/sudoers.d/90-vmlab
+systemctl enable ssh"
+  echo "echo $(printf '%s' "$script" | base64 -w0) | base64 -d | bash"
+}
+
+# Same apt fix demo/demo_lab.py applies: the installer fetches only the main section.
+patch_user_data() { # patch_user_data <file>
+  python3 -I -c '
+import sys
+path = sys.argv[1]
+text = open(path).read()
+old = "  apt:\n    fallback: offline-install\n"
+new = ("  apt:\n    geoip: false\n    fallback: offline-install\n    primary:\n      - arches: [default]\n"
+       "        uri: https://archive.ubuntu.com/ubuntu\n    disable_components: [restricted, universe, multiverse]\n"
+       "    disable_suites: [updates, backports, security]\n  ssh:\n    install-server: true\n")
+if old not in text:
+    sys.exit("the installer user-data has no apt section in the expected form (VirtualBox version changed?)")
+open(path, "w").write(text.replace(old, new))
+' "$1"
+}
+
+cmd="${1:-help}"; shift || true
+case "$cmd" in
+  help|-h|--help) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//' ;;
+
+  iso)
+    if [ -f "$VMLAB_ISO" ]; then echo "already present: $VMLAB_ISO"; exit 0; fi
+    mkdir -p "$(dirname "$VMLAB_ISO")"
+    echo "Downloading Ubuntu 22.04.5 live-server (about 2 GB) to $VMLAB_ISO ..."
+    curl -fL -C - -o "$VMLAB_ISO.part" "$VMLAB_ISO_URL"
+    mv "$VMLAB_ISO.part" "$VMLAB_ISO"
+    echo "Compare with https://releases.ubuntu.com/22.04/SHA256SUMS :"
+    sha256sum "$VMLAB_ISO"
+    ;;
+
+  create)
+    command -v VBoxManage >/dev/null || die "VBoxManage not found"
+    [ -z "$(vm_state)" ] || die "VM '$VMLAB_VM' already exists. Use another VMLAB_VM, or remove it yourself first (this command never deletes VMs)."
+    [ -f "$VMLAB_ISO" ] || die "ISO not found: $VMLAB_ISO (run: scripts/vmlab iso)"
+    command -v ssh-keygen >/dev/null || die "ssh-keygen not found"
+    mkdir -p "$state_dir"; chmod 700 "$state_dir"
+    [ -f "$VMLAB_SSH_KEY" ] || ssh-keygen -q -t ed25519 -N "" -C "pinpoint-vmlab" -f "$VMLAB_SSH_KEY"
+    pw="$state_dir/lab-password"
+    if [ ! -f "$pw" ]; then head -c 18 /dev/urandom | base64 | tr -d '/+=' > "$pw"; chmod 600 "$pw"; fi
+    user="${VMLAB_SSH_TARGET%@*}"
+    disk="$(VBoxManage list systemproperties | sed -n 's/^Default machine folder: *//p')/$VMLAB_VM/$VMLAB_VM.vdi"
+    echo "Creating '$VMLAB_VM' ($VMLAB_RAM_MB MB, $VMLAB_CPUS CPUs, $VMLAB_DISK_MB MB disk); SSH on 127.0.0.1:$VMLAB_SSH_PORT, web on 127.0.0.1:$VMLAB_WEB_PORT"
+    VBoxManage createvm --name "$VMLAB_VM" --ostype Ubuntu_64 --register >/dev/null
+    VBoxManage modifyvm "$VMLAB_VM" --memory "$VMLAB_RAM_MB" --cpus "$VMLAB_CPUS" --audio-driver=none \
+      --graphicscontroller=vmsvga --rtc-use-utc=on --nic1=nat --nic2=intnet --intnet2="$VMLAB_LAB_INTNET"
+    VBoxManage modifyvm "$VMLAB_VM" "--nat-pf1=ssh,tcp,127.0.0.1,$VMLAB_SSH_PORT,,22"
+    VBoxManage modifyvm "$VMLAB_VM" "--nat-pf1=web,tcp,127.0.0.1,$VMLAB_WEB_PORT,,80"
+    VBoxManage createmedium disk --filename "$disk" --size "$VMLAB_DISK_MB" >/dev/null
+    VBoxManage storagectl "$VMLAB_VM" --name SATA --add sata --controller IntelAhci
+    VBoxManage storageattach "$VMLAB_VM" --storagectl SATA --port 0 --device 0 --type hdd --medium "$disk"
+    VBoxManage storagectl "$VMLAB_VM" --name IDE --add ide --controller PIIX4
+    VBoxManage storageattach "$VMLAB_VM" --storagectl IDE --port 1 --device 0 --type dvddrive --medium emptydrive
+    VBoxManage unattended install "$VMLAB_VM" --iso="$VMLAB_ISO" --user="$user" --user-password-file="$pw" \
+      --full-user-name="Pinpoint Lab" --hostname=pinpoint-lab.lab.local --locale=en_US --time-zone=UTC \
+      --no-install-additions "--post-install-command=$(post_install_command "$user" "$(cat "$VMLAB_SSH_KEY.pub")")"
+    user_data="$(ls "$(dirname "$disk")"/Unattended-*-user-data 2>/dev/null | head -1)"
+    [ -n "$user_data" ] || die "VirtualBox did not write the installer's user-data file"
+    patch_user_data "$user_data"
+    VBoxManage modifyvm "$VMLAB_VM" --boot1=disk --boot2=dvd --boot3=none --boot4=none
+    VBoxManage startvm "$VMLAB_VM" --type headless >/dev/null
+    echo "Installing Ubuntu unattended (10 to 25 minutes) ..."
+    for i in $(seq 1 180); do
+      vm_ssh true 2>/dev/null && break
+      if [ "$i" -gt 5 ] && [ "$(vm_state)" != "running" ]; then die "the VM stopped during the install; open its console: VBoxManage startvm $VMLAB_VM --type separate"; fi
+      sleep 15
+    done
+    vm_ssh true 2>/dev/null || die "no SSH after 45 minutes"
+    echo "Ubuntu is up. Preparing apt sources and the lab network ($VMLAB_LAB_ADDRESS) ..."
+    prepare_script | vm_ssh "bash -s"
+    VBoxManage storageattach "$VMLAB_VM" --storagectl IDE --port 1 --device 0 --medium emptydrive 2>/dev/null || true
+    echo "Created. Next: scripts/vmlab provision   (user '$user'; password file: $pw)"
+    ;;
+
+  status)
+    command -v VBoxManage >/dev/null || die "VBoxManage not found"
+    echo "VM:        $VMLAB_VM ($(vm_state || echo missing))"
+    echo "Snapshots:"; VBoxManage snapshot "$VMLAB_VM" list 2>&1 | sed 's/^/  /' | head -12
+    if snapshot_exists; then echo "Base snapshot '$VMLAB_SNAPSHOT': present"; else echo "Base snapshot '$VMLAB_SNAPSHOT': MISSING (run: scripts/vmlab provision)"; fi
+    if [ "$(vm_state)" = "running" ] && vm_ssh true 2>/dev/null; then
+      stamp="$(vm_ssh 'cat /etc/pinpoint-vmlab-stamp 2>/dev/null' || true)"
+      echo "Snapshot stamp (from the running VM): ${stamp:-none}"
+      latest="$(installer_checkout)"; now="$(base_hash)"
+      echo "Installer: $latest ($VMLAB_INSTALLER_DIR)   base-step hash now: $now"
+      case "$stamp" in
+        *"base_hash=$now"*) echo "Stamp matches the installer's base steps." ;;
+        *) echo "WARNING: the installer's base steps changed since the snapshot (or there is no stamp). Consider: scripts/vmlab provision --force" ;;
+      esac
+    fi
+    ;;
+
+  provision)
+    need_config; force=0; [ "${1:-}" = "--force" ] && force=1
+    if snapshot_exists && [ "$force" = 0 ]; then die "snapshot '$VMLAB_SNAPSHOT' exists; use --force to replace it"; fi
+    [ "$(vm_state)" = "running" ] || start_vm
+    echo "Installer: $(installer_checkout) ($VMLAB_INSTALLER_DIR)"
+    push_setup
+    for m in $base_modules; do
+      echo "=== $m"
+      vm_ssh "cd $remote_setup/setup && sudo bash ./$m" || die "$m failed; fix it, then run provision again (it re-runs the steps)"
+    done
+    vm_ssh "echo 'installer=$(installer_checkout) base_hash=$(base_hash) date=$(date -u +%FT%TZ)' | sudo tee /etc/pinpoint-vmlab-stamp >/dev/null"
+    power_off
+    if snapshot_exists; then VBoxManage snapshot "$VMLAB_VM" delete "$VMLAB_SNAPSHOT"; fi
+    VBoxManage snapshot "$VMLAB_VM" take "$VMLAB_SNAPSHOT" --description "Ubuntu + Nagios, no Pinpoint (scripts/vmlab)"
+    echo "Snapshot '$VMLAB_SNAPSHOT' taken."
+    ;;
+
+  up)     need_config; start_vm ;;
+  down)   need_config; power_off ;;
+  revert) need_config; power_off; snapshot_exists || die "no snapshot '$VMLAB_SNAPSHOT'"; VBoxManage snapshot "$VMLAB_VM" restore "$VMLAB_SNAPSHOT" ;;
+
+  fresh)
+    need_config
+    branch="${1:-$(git -C "$root" rev-parse --abbrev-ref HEAD)}"
+    git -C "$root" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1 \
+      || die "branch '$branch' is not pushed to origin; the installer's deploy step fetches it from GitHub (push it, or use: scripts/vmlab sync)"
+    repo_url="$(git -C "$root" remote get-url origin)"
+    case "$repo_url" in git@github.com:*) repo_url="https://github.com/${repo_url#git@github.com:}" ;; esac
+    installer_checkout >/dev/null
+    snapshot_exists || die "no snapshot '$VMLAB_SNAPSHOT' (run: scripts/vmlab provision)"
+    power_off; VBoxManage snapshot "$VMLAB_VM" restore "$VMLAB_SNAPSHOT"; start_vm
+    push_setup
+    echo "Installing Pinpoint from $repo_url branch $branch ..."
+    # The deploy step has the repository and branch hardcoded; patch a copy in the VM only.
+    vm_ssh "sed -i -e 's|^REPO_URL=.*|REPO_URL=\"$repo_url\"|' -e 's|^REPO_BRANCH=.*|REPO_BRANCH=\"$branch\"|' $remote_setup/setup/deploy-pinpoint-web.sh"
+    for m in $app_modules; do
+      echo "=== $m"
+      vm_ssh "cd $remote_setup/setup && sudo bash ./$m" || die "$m failed (logs: sudo ls /var/log/pinpoint-*.log on the appliance)"
+    done
+    "$0" health
+    echo "Fresh install of '$branch' is up: $(web_url)  (credentials: scripts/vmlab creds)"
+    ;;
+
+  sync)
+    need_config; with_client=0; [ "${1:-}" = "--client" ] && with_client=1
+    command -v rsync >/dev/null || die "rsync is not installed on this machine"
+    vm_ssh true || die "cannot reach the appliance (scripts/vmlab up)"
+    extra=(); mapfile -t extra < <(ssh_args)
+    rsync -az --delete \
+      --exclude='.venv' --exclude='venv' --exclude='__pycache__' --exclude='*.db' --exclude='*.db.*' --exclude='tests' \
+      --exclude='host-config-files' --exclude='running-host-config-backup' --exclude='database-backups' --exclude='backups' --exclude='.env' \
+      -e "ssh ${extra[*]}" --rsync-path="sudo rsync" "$root/server/" "$VMLAB_SSH_TARGET:$app_dir/server/"
+    if [ "$with_client" = 1 ]; then
+      ( cd "$root/client" && { [ -d node_modules ] || npm ci; } && npm run build )
+      rsync -az --delete -e "ssh ${extra[*]}" --rsync-path="sudo rsync" "$root/client/dist/" "$VMLAB_SSH_TARGET:$app_dir/client/dist/"
+    fi
+    vm_ssh "sudo chown -R pinpoint:pinpoint $app_dir/server $app_dir/client/dist 2>/dev/null; sudo systemctl restart pinpoint-gunicorn && systemctl is-active pinpoint-gunicorn"
+    echo "synced (migrations are NOT run by sync; use 'fresh' when models change)"
+    ;;
+
+  health)
+    need_config
+    vm_ssh "test -f $remote_setup/setup/pinpoint-healthcheck.sh" 2>/dev/null || { installer_checkout >/dev/null; push_setup; }
+    vm_ssh "sudo bash $remote_setup/setup/pinpoint-healthcheck.sh"
+    ;;
+
+  creds)
+    need_config
+    vm_ssh "sudo cat /root/pinpoint-install-credentials.txt 2>/dev/null || echo 'No stored credentials (confirmed and removed already?). Set VMLAB_ADMIN_EMAIL and VMLAB_ADMIN_PASSWORD.'"
+    ;;
+
+  smoke)
+    need_config
+    [ -n "$VMLAB_ADMIN_EMAIL" ] && [ -n "$VMLAB_ADMIN_PASSWORD" ] || die "set VMLAB_ADMIN_EMAIL and VMLAB_ADMIN_PASSWORD in $config (read them with: scripts/vmlab creds)"
+    exec python3 -I "$root/lab/smoke.py" --base-url "$(web_url)" --email "$VMLAB_ADMIN_EMAIL" \
+      --password "$VMLAB_ADMIN_PASSWORD" --set-network "$VMLAB_LAB_NETWORK" "$@"
+    ;;
+
+  targets) exec python3 "$root/demo/demo_lab.py" "$@" ;;
+
+  *) die "unknown command '$cmd' (try: scripts/vmlab help)" ;;
+esac

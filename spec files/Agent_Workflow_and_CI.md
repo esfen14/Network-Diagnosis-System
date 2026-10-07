@@ -104,7 +104,7 @@ Where results go is defined in [`docs/test-runs/README.md`](../docs/test-runs/RE
 |---|---|---|
 | Unit and mocked API tests | Nothing | `scripts/verify.sh`, and CI on every PR |
 | Local lab (fast lane) | Docker | `scripts/lab up`, `scripts/lab smoke`; see [`docs/manuals/Local_Lab.md`](../docs/manuals/Local_Lab.md). A real Nagios and five target servers on an isolated network; not the installer, systemd, DHCP or NCPA installs |
-| Real appliance and VM lab | Installer build, libvirt or VirtualBox | The e2e harness in `server/tests/e2e/network_discovery/` and `demo/`; manual or scheduled, never on pull requests from forks |
+| Real appliance and VM lab | Installer build, VirtualBox (this laptop) or libvirt (the retained lab) | `scripts/vmlab` with the `demo/` target VMs; plan in [`docs/plans/VM_Lab_Plan.md`](../docs/plans/VM_Lab_Plan.md). The snapshot holds Ubuntu + Nagios only, so it cannot go stale. The libvirt e2e harness in `server/tests/e2e/network_discovery/` is separate. Manual or scheduled, never on pull requests from forks |
 
 An agent loop may use the local lab; it must not run the real-lab harness.
 Record results of lab runs in `docs/test-runs/`.
