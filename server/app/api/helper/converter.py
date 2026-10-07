@@ -11,8 +11,13 @@ def convert_user_status(status):
     status = status.strip().upper()
     return getattr(UserStatus, status)
 
-def convert_host_state_type_enum(str):
-    return getattr(HostStateType, str.upper())
+def convert_host_state_type_enum(val):
+    if val is None:
+        return None
+    s = str(val).strip().upper()
+    if s == "PENDING":
+        return None
+    return getattr(HostStateType, s)
 
 def convert_connection_state_type_enum(val):
     """Convert Nagios state_type to ConnectionStateType enum.
