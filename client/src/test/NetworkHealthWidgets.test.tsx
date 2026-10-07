@@ -170,15 +170,31 @@ describe('NetworkHealthPage backend-driven cards', () => {
   it('opens the graph with per-service values, including ones not averaged', async () => {
     await renderPage()
     fireEvent.click(screen.getByText('DNS Lookup (dig)'))
-    expect(screen.getByText('check_dig — average across services')).toBeInTheDocument()
-    expect(screen.getByText('Current values per service')).toBeInTheDocument()
+    expect(screen.getByText('DNS Lookup (dig) — average across services')).toBeInTheDocument()
+    expect(screen.getByText('Latest readings by host')).toBeInTheDocument()
     expect(screen.getByText('512 B')).toBeInTheDocument()
     expect(screen.getByText('0.400 s')).toBeInTheDocument()
+  })
+
+  it('explains a plugin with nothing to graph in plain language', async () => {
+    RESPONSES['/api/system/network-health/plugin-trends'] = {
+      hours: 24,
+      plugins: [{
+        plugin_name: 'check_ssh', display_name: 'check_ssh',
+        total: 3, ok: 2, warning: 0, critical: 1, unknown: 0, worst_state: 'critical', metrics: [],
+      }],
+    }
+    await renderPage()
+    expect(screen.getByText('Not working')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('SSH'))
+    expect(screen.getByText('SSH — status of 3 checks')).toBeInTheDocument()
+    expect(screen.getAllByText('2 of 3 checks passing. 1 failing.').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/no time or percentage metric/i)).not.toBeInTheDocument()
   })
 
   it('explains the section when no plugins have been added', async () => {
     RESPONSES['/api/system/network-health/plugin-trends'] = { hours: 24, plugins: [] }
     await renderPage()
-    expect(screen.getByText(/no plugins have been added yet/i)).toBeInTheDocument()
+    expect(screen.getByText(/no plugin widgets yet/i)).toBeInTheDocument()
   })
 })
