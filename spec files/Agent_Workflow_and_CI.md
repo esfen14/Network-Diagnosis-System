@@ -98,6 +98,17 @@ Where results go is defined in [`docs/test-runs/README.md`](../docs/test-runs/RE
 | Live-lab and acceptance runs | A committed, sanitized `docs/test-runs/<date>-<slug>/REPORT.md` from `scripts/new_test_run.sh`, naming the commit tested, one row per case and an issue for every failure |
 | Raw lab evidence | The harness `output_root` on the lab host; never committed |
 
+## Test environments
+
+| Layer | What it needs | How |
+|---|---|---|
+| Unit and mocked API tests | Nothing | `scripts/verify.sh`, and CI on every PR |
+| Local lab (fast lane) | Docker | `scripts/lab up`, `scripts/lab smoke`; see [`docs/manuals/Local_Lab.md`](../docs/manuals/Local_Lab.md). A real Nagios and five target servers on an isolated network; not the installer, systemd, DHCP or NCPA installs |
+| Real appliance and VM lab | Installer build, libvirt or VirtualBox | The e2e harness in `server/tests/e2e/network_discovery/` and `demo/`; manual or scheduled, never on pull requests from forks |
+
+An agent loop may use the local lab; it must not run the real-lab harness.
+Record results of lab runs in `docs/test-runs/`.
+
 ## Verification commands
 
 | Stage | Command | Notes |

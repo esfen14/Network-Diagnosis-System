@@ -1,0 +1,12 @@
+#!/bin/sh
+# Lab stand-in for sudo: the container runs the app as `pinpoint` and the few
+# commands it needs (systemctl shim, nmap-sudo) already work without root.
+# Drops sudo's own options (-n, -S, -p PROMPT) and runs the command.
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -p) shift 2 ;;
+    -*) shift ;;
+    *) break ;;
+  esac
+done
+exec "$@"

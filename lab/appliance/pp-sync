@@ -1,0 +1,15 @@
+#!/bin/sh
+# Copy the read-only working tree (/src/server) into the appliance's own app
+# directory and restart Gunicorn. State (databases, generated configs) stays.
+set -e
+dest=/opt/pinpoint/Network-Diagnosis-System/server
+rsync -a --delete \
+  --exclude='.venv' --exclude='venv' --exclude='__pycache__' --exclude='*.db' --exclude='*.db.*' \
+  --exclude='tests' --exclude='host-config-files' --exclude='running-host-config-backup' \
+  --exclude='database-backups' --exclude='backups' --exclude='.env' \
+  /src/server/ "$dest"/
+chown -R pinpoint:pinpoint /opt/pinpoint/Network-Diagnosis-System
+if [ "$1" != "--no-restart" ]; then
+  supervisorctl -c /etc/supervisor/supervisord.conf restart gunicorn >/dev/null 2>&1 || true
+fi
+echo "synced $(cd /src && git rev-parse --short HEAD 2>/dev/null || echo working-tree)"
