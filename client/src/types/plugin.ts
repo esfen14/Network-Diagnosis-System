@@ -219,7 +219,7 @@ export type CustomCheckField = {
 
 // Which class the plugin is in (Custom_Checks_Plan.md section 2.4) and what a custom check of it takes.
 export type PluginCustomSupport = {
-  class: 'service' | 'custom' | 'credentials' | 'host' | 'server' | 'unsupported' | 'replaced' | null
+  class: 'service' | 'custom' | 'credentials' | 'server' | 'unsupported' | 'replaced' | null
   supported: boolean
   // Why the plugin takes no custom check, when it does not.
   note: string | null

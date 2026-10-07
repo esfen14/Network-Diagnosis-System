@@ -323,7 +323,7 @@ describe('PluginDetailsDrawer not service-driven', () => {
 
   it.each([
     ['check_apt', 'server', 'Runs on the Nagios server. Not available yet.'],
-    ['check_ping', 'host', 'Checks the device itself rather than a port. Not available yet.'],
+    ['check_cluster', 'unsupported', 'Aggregates other services. Not available yet.'],
     ['check_radius', 'credentials', 'Needs a password, which custom checks cannot store yet.'],
   ] as const)('explains why %s takes no custom check', async (name, plugin_class, note) => {
     api.getPluginDetails.mockResolvedValue(details({

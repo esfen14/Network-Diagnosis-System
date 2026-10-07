@@ -217,7 +217,7 @@ Open each plugin in the drawer as Admin.
 |---|---|
 | `check_by_ssh`, `check_ups`, `check_clamd` | "Not service-driven. There is no port for discovery to attach this plugin to. Add a custom check to run it against a device." and a **Custom checks** section with **Add check**. No Enable button |
 | `check_apt`, `check_uptime`, `check_sensors` | "Not service-driven. Runs on the Nagios server. Not available yet." No Custom checks section |
-| `check_ping`, `check_icmp` | "Not service-driven. Checks the device itself rather than a port. Not available yet." |
+| `check_ping`, `check_icmp`, `check_fping`, `check_dig` | The Custom checks section with **Add check**. `check_ping`, `check_icmp` and `check_fping` require warning and critical thresholds (placeholders `100.0,20%` / `500.0,60%`, `20%,100` / `40%,200` for `check_fping`); `check_dig` requires nothing |
 | `check_radius`, `check_mysql_query` | "Not service-driven. Needs a password, which custom checks cannot store yet." |
 | `check_load`, `check_disk` | "Checks the Nagios server itself through Nagios Core. Not managed here." |
 | `check_ssh` | Enable and Disable buttons; no Custom checks section |

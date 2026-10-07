@@ -19,7 +19,6 @@ Plugin classes (Custom_Checks_Plan.md section 2.4)
 service      Discovery drives it from a port (the registry); enable it.
 custom       Probes a device over the network; takes a custom check.
 credentials  Would take a custom check but needs a password nothing can store yet.
-host         Probes the device, not a port; a future feature.
 server       Checks the machine Nagios runs on; a separate follow-up feature.
 unsupported  Aggregates other services; out of scope for now.
 replaced     Superseded by a plugin discovery already drives.
@@ -101,6 +100,23 @@ CUSTOM_CHECK_FIELDS = {
                    field("critical", "-c", "Critical response time (s)")),
     "check_game": (field("game", "-G", "Game type (qstat name)", True), field("port", "-P", "Game server port")),
     "check_clamd": (field("port", "-p", "Port", placeholder="3310"), WARNING, CRITICAL),
+    # The ping family (Q-C7): a service that tracks the device itself rather than a port.
+    # Thresholds are "round-trip ms,packet loss %" (check_fping: loss first), as the plugins take them.
+    "check_ping": (field("warning", "-w", "Warning (round trip ms, loss %)", True, "100.0,20%"),
+                   field("critical", "-c", "Critical (round trip ms, loss %)", True, "500.0,60%"),
+                   field("packets", "-p", "Packets to send", placeholder="5")),
+    "check_icmp": (field("warning", "-w", "Warning (round trip ms, loss %)", True, "100.0,20%"),
+                   field("critical", "-c", "Critical (round trip ms, loss %)", True, "200.0,40%"),
+                   field("packets", "-n", "Packets to send", placeholder="5")),
+    "check_fping": (field("warning", "-w", "Warning (loss %, round trip ms)", True, "20%,100"),
+                    field("critical", "-c", "Critical (loss %, round trip ms)", True, "40%,200"),
+                    field("packets", "-n", "Packets to send", placeholder="1")),
+    "check_dig": (field("lookup", "-l", "DNS record to look up", False, "example.com"),
+                  field("record_type", "-T", "Record type", placeholder="A"),
+                  field("expected", "-a", "Expected address in the answer"),
+                  field("port", "-p", "DNS port", placeholder="53"),
+                  field("warning", "-w", "Warning response time (s)"),
+                  field("critical", "-c", "Critical response time (s)")),
     "check_disk_smb": (field("share", "-s", "Share name", True), field("user", "-u", "SMB user", placeholder="guest"),
                        field("workgroup", "-W", "Workgroup or domain"),
                        field("warning", "-w", "Warning free-space threshold (%)"),
@@ -112,7 +128,6 @@ CUSTOM_CHECK_FIELDS = {
 PLUGIN_CLASSES = {
     **{name: "custom" for name in CUSTOM_CHECK_FIELDS},
     **{name: "credentials" for name in ("check_mysql_query", "check_dbi", "check_oracle", "check_radius")},
-    **{name: "host" for name in ("check_ping", "check_icmp", "check_fping", "check_dig")},
     **{name: "server" for name in (
         "check_apt", "check_uptime", "check_sensors", "check_ide_smart", "check_file_age", "check_log",
         "check_mailq", "check_mrtg", "check_mrtgtraf", "check_flexlm", "check_nagios", "check_dummy",
@@ -124,7 +139,6 @@ PLUGIN_CLASSES = {
 
 PLUGIN_CLASS_NOTES = {
     "credentials": "Needs a password, which custom checks cannot store yet.",
-    "host": "Checks the device itself rather than a port. Not available yet.",
     "server": "Runs on the Nagios server. Not available yet.",
     "unsupported": "Aggregates other services. Not available yet.",
     "replaced": "Replaced by check_ntp_time, which discovery already uses for NTP ports.",
@@ -134,7 +148,7 @@ PLUGIN_CLASS_NOTES = {
 def plugin_class(plugin_name):
     """
     The class of a Plugin Manager plugin (extension ignored): "service", "custom",
-    "credentials", "host", "server", "unsupported", or None for a plugin the audit
+    "credentials", "server", "unsupported", "replaced", or None for a plugin the audit
     does not cover (a custom upload).
     """
     key = normalize_plugin_name(plugin_name)

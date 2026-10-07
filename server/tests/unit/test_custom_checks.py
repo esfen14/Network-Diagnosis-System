@@ -81,11 +81,39 @@ class TestPluginClasses:
 
     @pytest.mark.parametrize("name, expected", [
         ("check_ssh", "service"), ("check_ncpa.py", "service"), ("check_by_ssh", "custom"),
-        ("check_apt", "server"), ("check_ping", "host"), ("check_radius", "credentials"),
+        ("check_apt", "server"), ("check_ping", "custom"), ("check_dig", "custom"), ("check_radius", "credentials"),
         ("check_cluster", "unsupported"), ("check_company", None),
     ])
     def test_plugin_class(self, name, expected):
         assert custom_checks.plugin_class(name) == expected
+
+
+class TestPingFamily:
+    """check_ping, check_icmp, check_fping and check_dig take custom checks (Q-C7)."""
+
+    @pytest.mark.parametrize("plugin, warning, critical", [
+        ("check_ping", "100.0,20%", "500.0,60%"),
+        ("check_icmp", "100.0,20%", "200.0,40%"),
+        ("check_fping", "20%,100", "40%,200"),
+    ])
+    def test_thresholds_are_required_and_passed_as_given(self, plugin, warning, critical):
+        with pytest.raises(PluginConfigurationError, match="Warning"):
+            custom_checks.clean_variables(plugin, {})
+        command = custom_checks.resolve_plugin_command_for(plugin, {"warning": warning, "critical": critical})
+        assert command == f"pinpoint_custom_{plugin}!{warning}!{critical}!"
+
+    def test_a_ping_command_runs_the_plugin_against_the_device(self):
+        assert "$USER1$/check_ping -H $HOSTADDRESS$ -w '$ARG1$' -c '$ARG2$' $ARG3$" in (
+            custom_checks.render_command_definition("check_ping"))
+
+    def test_check_dig_needs_nothing_and_takes_what_it_is_given(self):
+        assert custom_checks.clean_variables("check_dig", {}) == {}
+        command = custom_checks.resolve_plugin_command_for("check_dig", {"lookup": "example.com", "port": "5353"})
+        assert command == "pinpoint_custom_check_dig!-l 'example.com' -p '5353'"
+
+    def test_every_catalog_plugin_still_has_one_class(self):
+        from app.api.plugin.plugin_catalog_data import PLUGIN_CATALOG
+        assert [name for name in PLUGIN_CATALOG if custom_checks.plugin_class(name) is None] == []
 
 
 class TestArguments:

@@ -367,6 +367,20 @@ class TestPluginTrends:
         assert size_metric["points"] == []
         assert [c["hostname"] for c in size_metric["current"]] == ["db", "web"]
 
+    def test_a_custom_ping_check_gets_a_widget_though_discovery_pings_do_not(self, logged_in_client, db_session):
+        self.add_plugin(db_session, "check_ping", "Ping")
+        custom = _make_service(db_session, "web", "custom-ping-uplink", ServiceStateType.OK,
+                               check_command="pinpoint_custom_check_ping")
+        _make_service_perf(db_session, custom, "rta", 3.0, "ms")
+        # A ping from discovery's own host check has a dedicated widget and none here.
+        _make_service(db_session, "web", "ping-0-ICMP", check_command="check_ping")
+        db_session.session.commit()
+
+        data = logged_in_client.get(self.URL).get_json()["data"]
+
+        assert [plugin["plugin_name"] for plugin in data["plugins"]] == ["check_ping"]
+        assert data["plugins"][0]["total"] == 1
+
     def test_enabled_plugin_gets_widget_for_discovery_services(self, logged_in_client, db_session):
         from app.plugin_models import Plugin, PluginSource, PluginStatus, PluginType
         db_session.session.add(Plugin(
