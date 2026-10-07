@@ -29,10 +29,12 @@ See `docs/README.md` for the rules and lifecycle.
 
 ## The agent loop
 
-The executable version is the `work-issue` skill
-(`.claude/skills/work-issue/SKILL.md`, run as `/work-issue <issue number>`).
-It carries the loop, the 5-round limit and the stop conditions below; keep the
-two in sync.
+The executable version is `.agent/workflows/work-issue.md`, written for any agent.
+Claude Code (`.claude/skills/work-issue/`) and OpenCode (`.opencode/commands/work-issue.md`)
+load it through thin adapters, run as `/work-issue <issue number>`; any other agent is
+told to follow the file. It carries the loop, the 5-round limit and the stop conditions
+below. Change the procedure only in that file; the adapters must stay a few lines long
+so they cannot drift.
 
 For every task, an agent repeats until the finish condition holds:
 
@@ -76,7 +78,7 @@ Rules:
 - After every round, update the file, then run
   `scripts/agent_checkpoint.sh <n> "<what changed>"`. The script validates the
   file, commits as `wip(#<n>): ...` and pushes. It refuses to run on `main`.
-- To resume, run `/work-issue <n>` again. It finds the branch, reads the file,
+- To resume, run `/work-issue <n>` again (or tell your agent to follow the workflow file for issue `<n>`). It finds the branch, reads the file,
   re-runs the last check to see the real state, and continues at "Next action"
   without redoing ticked steps.
 - The file is scaffolding, not documentation. Delete it (`git rm`) before the

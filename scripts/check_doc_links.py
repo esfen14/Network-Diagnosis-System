@@ -12,6 +12,7 @@ def main(root):
     files = [root / "AGENTS.md", root / "README.md"]
     files.extend(sorted((root / "spec files").glob("*.md")))
     files.extend(sorted((root / "docs").rglob("*.md")))
+    files.extend(sorted((root / ".agent").rglob("*.md")))
     files.extend(sorted((root / "server" / "tests").rglob("*.md")))
     broken = []
     for doc in files:
