@@ -1,4 +1,4 @@
-# Device Inventory Requirements — Ports
+# Device Inventory Requirements — Ports and Monitoring State
 **Detech-IT / 4D-G2 Capstone**
 **Status:** Approved by the owner with the answers to O1–O3 (2026-10-06): a **Remove pin** action and route are included. Built (backend and drawer); the browser check in light and dark mode is still to do on the lab.
 **Companion:** [`Device_Ports_UI_Plan.md`](Device_Ports_UI_Plan.md) (how and in what order it is built)
@@ -279,6 +279,89 @@ Plugin Manager beyond the one hint line in §7.
     port the Nagios service is unchanged; the port's state and hold are never changed by it.
 23. Remove pin on a port that is not pinned is refused with "This port is not pinned."; a scan
     after the pin is removed may change the service again.
+
+---
+
+## 12. Monitoring state
+
+Companion plan: [`Device_Monitoring_State_Plan.md`](Device_Monitoring_State_Plan.md).
+Decisions Q1–Q3 of that plan (owner, 2026-10-07): pause keeps the device's ports and
+history and scans still track it; a host row stays visible with a chip and a filter;
+every non-Active case has a label.
+
+### 12.1 One label per device
+
+Derived by the server, first match wins:
+
+| Label | When |
+|---|---|
+| Merged | `Device_State` is MERGED |
+| Retired | `Device_State` is RETIRED |
+| Paused | `Include_Device_In_Scanning` is false |
+| Address unknown | `Device_State` is ADDRESS_UNKNOWN |
+| Missing | `Device_State` is MISSING |
+| Monitored | otherwise |
+
+A host with no device record (for example `localhost`) has no label: no chip, "—" in the
+table, and it counts as monitored for the filter.
+
+Reasons (shown in the drawer, and as the chip tooltip in the table):
+
+| Label | Reason |
+|---|---|
+| Monitored | "Nagios is checking this device." |
+| Missing | "Not seen in the last few scans. It is still being checked, so Nagios reports it as down." |
+| Address unknown | "Its address now belongs to another device. Checks are off until it is found again." |
+| Paused | "An administrator paused monitoring. Scans still track the device, but Nagios does not check it." |
+| Retired | "Retired: Nagios no longer checks it. The status shown is the last one Nagios reported." |
+| Merged | "Merged into another device: Nagios no longer checks it. The status shown is the last one Nagios reported." |
+
+### 12.2 Where it appears
+
+- **Table:** a Monitoring column with the chip. Retired and Merged rows add "last known
+  status" under the chip, because their Nagios snapshot is stale (Q2 point: the row stays
+  visible but must not be read as live).
+- **Filter:** the table's filter menu has a Monitoring group: All, Monitored, Not
+  monitored (every label except Monitored), and one option per other label. It combines
+  with the state filter, the search and paging.
+- **Drawer:** a Monitoring section (host view, not the service view) for a host with a
+  device record, showing the chip, the reason and the action below.
+
+### 12.3 Pause and resume
+
+- Shown only with `system.hosts.edit`, and only for a device that is not Retired or
+  Merged. Without the permission the chip and reason are still shown.
+- **Pause monitoring** confirms with: "Pause monitoring of {host}? Nagios will stop
+  checking the device and all its services. Scans keep tracking it, and you can resume at
+  any time." **Resume monitoring** confirms with: "Resume monitoring of {host}? Nagios
+  will start checking the device and its services again."
+- Pause only clears `Include_Device_In_Scanning`. The device keeps its ports and history
+  and scans still follow its address, hostname and identifiers. A scan, a missed-scan
+  count or a lifecycle change never turns a pause off; only Resume does.
+- Resume puts the device back in the Nagios config in the state it has then (monitored,
+  missing or address unknown). A Retired device comes back only by being found again.
+- Ports of a paused device: the port-edit route still works and takes effect on resume;
+  no port is promoted to monitored while the device is paused.
+- A saved-but-not-applied change shows "The change was saved but Nagios was not updated:
+  {message}", as for ports. A refused change shows the server's message.
+- After a change the drawer and the table load again.
+
+### 12.4 Acceptance criteria
+
+24. The label for every state and combination follows §12.1 (paused beats missing and
+    address unknown; retired and merged beat paused).
+25. The host list and detail carry `monitoring_state` and `monitored`, and both are null for
+    a host with no device record.
+26. The Monitoring filter returns the hosts of the chosen label; "Not monitored" returns
+    every host with a label other than Monitored; "Monitored" includes hosts with no device
+    record; an unknown value is refused with 400.
+27. Pause removes the device from the generated Nagios config; Resume puts it back.
+28. A scan that moves a paused device, or lets it go missing, leaves it paused.
+29. Pause on a Retired or Merged device, a second Pause, and Resume on a device that is not
+    paused are each refused with 400 and change nothing.
+30. Pause and Resume write a user-log entry and need `system.hosts.edit`.
+31. Cancelling the confirmation changes nothing.
+32. A Retired or Merged row shows "last known status".
 
 ---
 

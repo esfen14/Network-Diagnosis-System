@@ -1,5 +1,13 @@
 import { ArrowUpDown, Filter, Search } from 'lucide-react'
 import type { Host, HostState } from '../../types/host'
+import {
+  MONITORING_FILTERS,
+  MONITORING_LABELS,
+  MONITORING_REASONS,
+  MONITORING_STYLES,
+  isStaleSnapshot,
+  type MonitoringFilter,
+} from './monitoringState'
 
 type HostTableProps = {
   hosts: Host[]
@@ -9,6 +17,8 @@ type HostTableProps = {
   onQueryChange: (query: string) => void
   stateFilter: 'All' | HostState
   onStateFilterChange: (state: 'All' | HostState) => void
+  monitoringFilter: MonitoringFilter
+  onMonitoringFilterChange: (filter: MonitoringFilter) => void
   showFilter: boolean
   onToggleFilter: () => void
   sortAsc: boolean
@@ -58,6 +68,8 @@ export function HostTable({
   onQueryChange,
   stateFilter,
   onStateFilterChange,
+  monitoringFilter,
+  onMonitoringFilterChange,
   showFilter,
   onToggleFilter,
   sortAsc,
@@ -99,7 +111,7 @@ export function HostTable({
               onClick={onToggleFilter}
               aria-label="Filter"
               className={`rounded-lg p-2 ${
-                showFilter || stateFilter !== 'All'
+                showFilter || stateFilter !== 'All' || monitoringFilter !== 'all'
                   ? 'bg-gray-200 text-gray-900 dark:bg-white/20 dark:text-white'
                   : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white'
               }`}
@@ -121,6 +133,20 @@ export function HostTable({
                     }`}
                   >
                     {s}
+                  </button>
+                ))}
+                <span className="mt-1 block px-2 py-1 text-xs font-medium text-gray-400">Monitoring</span>
+                {MONITORING_FILTERS.map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => onMonitoringFilterChange(option.value)}
+                    className={`block w-full rounded-lg px-2 py-1.5 text-left text-sm ${
+                      monitoringFilter === option.value
+                        ? 'bg-[#ffb100]/20 text-[#ffb100]'
+                        : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/10'
+                    }`}
+                  >
+                    {option.label}
                   </button>
                 ))}
               </div>
@@ -146,6 +172,7 @@ export function HostTable({
               <th className="px-4 py-3 font-normal">Hostname</th>
               <th className="px-4 py-3 font-normal">IP Address</th>
               <th className="px-4 py-3 font-normal">State</th>
+              <th className="px-4 py-3 font-normal">Monitoring</th>
               <th className="px-4 py-3 font-normal">Latency</th>
               <th className="px-4 py-3 font-normal">Last Check</th>
               <th className="px-4 py-3 font-normal">Flags</th>
@@ -157,13 +184,13 @@ export function HostTable({
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={9} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                   Loading hosts…
                 </td>
               </tr>
             ) : hosts.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={9} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                   No hosts match your search or filter
                 </td>
               </tr>
@@ -189,6 +216,23 @@ export function HostTable({
                   </td>
                   <td className="px-4 py-3 font-mono text-gray-900 dark:text-white">{host.ipAddress ?? '—'}</td>
                   <td className="px-4 py-3"><StateBadge state={host.state} /></td>
+                  <td className="px-4 py-3">
+                    {host.monitoringState ? (
+                      <div className="flex flex-col items-start gap-0.5">
+                        <span
+                          title={MONITORING_REASONS[host.monitoringState]}
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${MONITORING_STYLES[host.monitoringState]}`}
+                        >
+                          {MONITORING_LABELS[host.monitoringState]}
+                        </span>
+                        {isStaleSnapshot(host.monitoringState) && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400">last known status</span>
+                        )}
+                      </div>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-gray-900 dark:text-white">{host.checkLatency.toFixed(3)}s</td>
                   <td className="px-4 py-3 text-gray-900 dark:text-white">{formatDateTime(host.lastCheck)}</td>
                   <td className="px-4 py-3 text-gray-500 dark:text-gray-400">

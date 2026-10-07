@@ -80,6 +80,8 @@ class TestAuth:
         ("put", "/hosts/1"),
         ("post", "/hosts/1/merge"),
         ("post", "/hosts/1/retire"),
+        ("post", "/hosts/1/pause"),
+        ("post", "/hosts/1/resume"),
         ("put", "/hosts/1/ports/tcp/22"),
         ("get", "/discover/review"),
         ("post", "/discover/review/1/resolve"),
@@ -94,6 +96,8 @@ class TestAuth:
         ("put", "/hosts/1"),
         ("post", "/hosts/1/merge"),
         ("post", "/hosts/1/retire"),
+        ("post", "/hosts/1/pause"),
+        ("post", "/hosts/1/resume"),
         ("put", "/hosts/1/ports/tcp/22"),
         ("get", "/discover/review"),
         ("post", "/discover/review/1/resolve"),
@@ -120,6 +124,7 @@ class TestAuth:
         assert client.get(f"{BASE}/hosts/{device.NetDiscoveryID}/addresses").status_code == 200
         assert client.put(f"{BASE}/hosts/{device.NetDiscoveryID}", json={"display_name": "x"}).status_code == 403
         assert client.post(f"{BASE}/hosts/{device.NetDiscoveryID}/retire").status_code == 403
+        assert client.post(f"{BASE}/hosts/{device.NetDiscoveryID}/pause").status_code == 403
 
 
 # ==========================================================

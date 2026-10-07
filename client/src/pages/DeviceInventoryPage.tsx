@@ -6,6 +6,7 @@ import { PageHeader } from '../components/shared/PageHeader'
 import { SummaryStatCard } from '../components/shared/SummaryStatCard'
 import { useSystemSettings } from '../contexts/SystemSettingsContext'
 import { apiDelete, apiGet, apiPost, errorMessage } from '../lib/api'
+import type { MonitoringFilter } from '../components/device-inventory/monitoringState'
 import { fromHostRecord, type Host, type HostListResponse, type HostState } from '../types/host'
 
 const PER_PAGE = 10
@@ -25,6 +26,7 @@ export function DeviceInventoryPage() {
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [stateFilter, setStateFilter] = useState<'All' | HostState>('All')
+  const [monitoringFilter, setMonitoringFilter] = useState<MonitoringFilter>('all')
   const [showFilter, setShowFilter] = useState(false)
   const [sortAsc, setSortAsc] = useState(true)
   const [page, setPage] = useState(1)
@@ -49,7 +51,7 @@ export function DeviceInventoryPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [stateFilter, sortAsc])
+  }, [stateFilter, monitoringFilter, sortAsc])
 
   async function loadHosts() {
     setIsLoading(true)
@@ -62,6 +64,7 @@ export function DeviceInventoryPage() {
         order: sortAsc ? 'asc' : 'desc',
         search: debouncedQuery,
         state: stateFilter === 'All' ? '' : stateFilter,
+        monitoring: monitoringFilter === 'all' ? '' : monitoringFilter,
       })
       const data = await apiGet<HostListResponse>(`/api/system/network-health/hosts?${qs}`)
       setHosts(data.items.map(fromHostRecord))
@@ -88,7 +91,7 @@ export function DeviceInventoryPage() {
   useEffect(() => {
     loadHosts()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, debouncedQuery, stateFilter, sortAsc])
+  }, [page, debouncedQuery, stateFilter, monitoringFilter, sortAsc])
 
   useEffect(() => {
     loadCounts()
@@ -174,6 +177,8 @@ export function DeviceInventoryPage() {
           onQueryChange={setQuery}
           stateFilter={stateFilter}
           onStateFilterChange={(s) => { setStateFilter(s); setShowFilter(false) }}
+          monitoringFilter={monitoringFilter}
+          onMonitoringFilterChange={(f) => { setMonitoringFilter(f); setShowFilter(false) }}
           showFilter={showFilter}
           onToggleFilter={() => setShowFilter((v) => !v)}
           sortAsc={sortAsc}
@@ -199,7 +204,11 @@ export function DeviceInventoryPage() {
       )}
 
       {detailHostname && (
-        <StatusDetailDrawer hostname={detailHostname} onClose={() => setDetailHostname(null)} />
+        <StatusDetailDrawer
+          hostname={detailHostname}
+          onClose={() => setDetailHostname(null)}
+          onMonitoringChanged={() => { void loadHosts() }}
+        />
       )}
     </main>
   )

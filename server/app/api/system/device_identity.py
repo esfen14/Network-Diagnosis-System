@@ -20,6 +20,11 @@ GET  /system/hosts/<id>/identifiers
 PUT  /system/hosts/<id>
     Change a device's display name and/or addressing mode.
 
+POST /system/hosts/<id>/pause
+POST /system/hosts/<id>/resume
+    Pause or resume monitoring (out of / back in the Nagios config; scans still
+    track a paused device).
+
 POST /system/hosts/<id>/merge
     Merge this device into another.
 
@@ -54,6 +59,7 @@ from app.logging.user_activity import create_user_log
 from app.api.plugin.reconcile import reconcile_plugin_monitoring
 from app.network_discovery.device_identity import (
     close_address,
+    monitoring_state,
     nagios_host_name,
     recompute_confidence,
 )
@@ -135,6 +141,8 @@ def serialize_device_summary(device):
         "display_name": device.Display_Name,
         "ip_address": device.IP_Address,
         "state": device.Device_State.name,
+        "monitoring_state": monitoring_state(device),
+        "monitored": monitoring_state(device) == "monitored",
     }
 
 
@@ -333,6 +341,61 @@ def retire_device(id):
     db.session.commit()
 
     return success(apply_config_change(), message="Device retired.")
+
+
+@system_bp.post('/hosts/<int:id>/pause')
+@login_required
+@require_permission('system.hosts.edit')
+def pause_device(id):
+    """
+    Pause monitoring of a device: it is removed from the Nagios config (so
+    none of its services are checked) but scans still find it, follow its
+    address and keep its ports and history. Resume undoes it. A scan never
+    turns the pause off. A retired or merged device is already out of the
+    config. No body.
+    """
+    device, err = get_device_or_404(id)
+    if err is not None:
+        return err
+
+    if device.Device_State in (DeviceState.RETIRED, DeviceState.MERGED):
+        return error("A retired or merged device is not monitored, so it cannot be paused.", 400)
+    if not device.Include_Device_In_Scanning:
+        return error("Device is already paused.", 400)
+
+    device.Include_Device_In_Scanning = False
+    create_user_log(current_user.UserID, f"Paused monitoring of device {nagios_host_name(device)}")
+    db.session.commit()
+
+    return success(
+        {**apply_config_change(), "device": serialize_device_summary(device)},
+        message="Monitoring paused.",
+    )
+
+
+@system_bp.post('/hosts/<int:id>/resume')
+@login_required
+@require_permission('system.hosts.edit')
+def resume_device(id):
+    """
+    Resume monitoring of a paused device: it goes back into the Nagios config
+    with the state it has now (active, missing or address unknown). No body.
+    """
+    device, err = get_device_or_404(id)
+    if err is not None:
+        return err
+
+    if device.Include_Device_In_Scanning:
+        return error("Device is not paused.", 400)
+
+    device.Include_Device_In_Scanning = True
+    create_user_log(current_user.UserID, f"Resumed monitoring of device {nagios_host_name(device)}")
+    db.session.commit()
+
+    return success(
+        {**apply_config_change(), "device": serialize_device_summary(device)},
+        message="Monitoring resumed.",
+    )
 
 
 @system_bp.post('/hosts/<int:id>/merge')
