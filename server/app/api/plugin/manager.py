@@ -15,6 +15,11 @@ GET  /plugin/<id>/enable-preview - What enabling would monitor (counts)
 GET  /plugin/<id>/services   - What a plugin monitors, with live status
 POST /plugin/<id>/services/stop   - Stop monitoring one port on one device
 POST /plugin/<id>/services/resume - Resume a stopped port
+GET  /plugin/<id>/custom-checks - A plugin's custom checks with live status
+POST /plugin/<id>/custom-checks - Add a custom check on a device
+PUT  /plugin/<id>/custom-checks/<check_id> - Change a custom check
+POST /plugin/<id>/custom-checks/<check_id>/pause|resume - Pause or resume one
+DELETE /plugin/<id>/custom-checks/<check_id> - Remove a custom check
 POST /plugin/<id>/enable     - Enable and attach discovered ports
 POST /plugin/<id>/disable    - Disable and remove its services
 (POST /plugin/custom is disabled — its route is commented out below.)
@@ -33,6 +38,7 @@ import json
 
 from app.api.plugin import plugin_bp
 from app.api.plugin import service
+from app.api.plugin import custom_checks as custom_checks_service
 from app.api.helper import success, error, validate_json_data, validate_json_fields
 from app.api.helper.database_access.permissions import require_permission
 from app.api.plugin.scanner import scan_plugin_directory, sync_plugin_inventory, get_plugin_dir
@@ -560,6 +566,173 @@ def plugin_dependencies(plugin_id):
             "An unexpected error occurred while retrieving plugin dependencies."
         )
         return error("An unexpected error occurred.", 500)
+
+
+# ==========================================================
+# CUSTOM CHECKS
+# ==========================================================
+
+def run_custom_check_change(change):
+    """
+    Run one custom check change (a callable returning the response data) and map its
+    errors to responses: 404 unknown plugin or check, 400 invalid request, 409 Nagios did
+    not accept it (nothing changed), 500 anything else.
+    """
+    try:
+        return success(change())
+    except service.PluginNotFoundError:
+        return error("Plugin not found.", 404)
+    except custom_checks_service.CustomCheckNotFoundError as e:
+        return error(e.message, 404)
+    except custom_checks_service.CustomCheckError as e:
+        return error(e.message, 400)
+    except service.MonitoringChangeError as e:
+        return error(f"Nagios did not accept the change, so nothing was changed: {e.message}", 409)
+    except Exception:
+        service.db.session.rollback()
+        current_app.logger.exception("An unexpected error occurred while changing a custom check.")
+        return error("An unexpected error occurred.", 500)
+
+
+def parse_custom_check_body(require_device):
+    """
+    Parse the JSON body of a create or update: (name, variables, device_id, None), or
+    (None, None, None, error response). Values are validated by the service, which knows the plugin.
+    """
+    data = request.get_json(silent=True)
+    err = validate_json_data(data)
+    if err is not None:
+        return None, None, None, err
+    name, variables, device_id = data.get("name"), data.get("variables", {}), data.get("device_id")
+    if not isinstance(name, str):
+        return None, None, None, error("name must be text.", 400)
+    if not isinstance(variables, dict):
+        return None, None, None, error("variables must be an object.", 400)
+    if require_device and (not isinstance(device_id, int) or isinstance(device_id, bool)):
+        return None, None, None, error("device_id must be a number.", 400)
+    return name, variables, device_id, None
+
+
+@plugin_bp.get('/<int:plugin_id>/custom-checks')
+@login_required
+@require_permission('plugin.custom_check')
+def list_custom_checks_route(plugin_id):
+    """
+    List a plugin's custom checks: one row per check with its device, arguments and the live
+    status read from the latest Nagios result (``paused`` checks have kind ``paused``).
+
+    **Query Parameters**
+
+    page (int, default 1), per_page (int, default 10, max 100)
+    search (str, optional): matched against name, service, device hostname and IP
+
+    **Returns (JSON via success())**
+
+    .. code-block:: json
+
+        {"success": true, "data": {
+            "items": [{
+                "id": 12, "name": "Weekly updates", "service": "custom-by_ssh-weekly_updates",
+                "device": {"id": 4, "hostname": "web-01", "ip_address": "192.168.130.20"},
+                "variables": {"command": "/usr/lib/nagios/plugins/check_apt"},
+                "paused": false, "running_since": "2026-10-07T09:30:00+00:00",
+                "status": {"kind": "ok", "state": "OK", "output": "APT OK", "last_check": "2026-10-07T09:35:00+00:00"}}],
+            "page": 1, "per_page": 10, "pages": 1, "total": 1, "has_next": false, "has_prev": false}}
+
+    **Errors**
+
+    * ``400`` - invalid page or per_page.
+    * ``404`` - no plugin with that id.
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    try:
+        page = request.args.get("page", default=1, type=int)
+        per_page = request.args.get("per_page", default=10, type=int)
+        search = request.args.get("search", default="", type=str)
+        return success(custom_checks_service.list_custom_checks(plugin_id, page, per_page, search))
+    except service.InvalidQueryError as e:
+        return error(str(e), 400)
+    except service.PluginNotFoundError:
+        return error("Plugin not found.", 404)
+    except Exception:
+        current_app.logger.exception("An unexpected error occurred while listing custom checks.")
+        return error("An unexpected error occurred.", 500)
+
+
+@plugin_bp.post('/<int:plugin_id>/custom-checks')
+@login_required
+@require_permission('plugin.custom_check')
+def create_custom_check_route(plugin_id):
+    """
+    Add a custom check: run this plugin against one device with the given arguments, then apply
+    it to Nagios. Only plugins the plugin details list as supported (``custom_checks.supported``)
+    take one.
+
+    **JSON Format**
+
+    .. code-block:: json
+
+        {"device_id": 4, "name": "Weekly updates",
+         "variables": {"command": "/usr/lib/nagios/plugins/check_apt"}}
+
+    **Returns (JSON via success())** the check as listed above plus ``changed`` and ``message``.
+
+    **Errors**
+
+    * ``400`` - invalid body, unsupported plugin, unknown device, missing or unsafe argument, or
+      the device already has a check with that name.
+    * ``404`` - no plugin with that id.
+    * ``409`` - Nagios did not accept the change; nothing was saved.
+    * ``500`` - unexpected internal error (logged with traceback).
+    """
+    name, variables, device_id, err = parse_custom_check_body(require_device=True)
+    if err is not None:
+        return err
+    return run_custom_check_change(lambda: custom_checks_service.create_custom_check(
+        plugin_id, device_id, name, variables, current_user.UserID))
+
+
+@plugin_bp.put('/<int:plugin_id>/custom-checks/<int:check_id>')
+@login_required
+@require_permission('plugin.custom_check')
+def update_custom_check_route(plugin_id, check_id):
+    """
+    Rename a custom check and replace its arguments. The device cannot change; remove the check
+    and add it again instead. Body ``{"name": ..., "variables": {...}}``; errors as for create,
+    plus ``404`` when the check is not this plugin's.
+    """
+    name, variables, _device_id, err = parse_custom_check_body(require_device=False)
+    if err is not None:
+        return err
+    return run_custom_check_change(lambda: custom_checks_service.update_custom_check(
+        plugin_id, check_id, name, variables, current_user.UserID))
+
+
+@plugin_bp.post('/<int:plugin_id>/custom-checks/<int:check_id>/pause')
+@login_required
+@require_permission('plugin.custom_check')
+def pause_custom_check_route(plugin_id, check_id):
+    """Pause a custom check: its service leaves Nagios, the check stays listed. No body."""
+    return run_custom_check_change(lambda: custom_checks_service.set_check_paused(
+        plugin_id, check_id, True, current_user.UserID))
+
+
+@plugin_bp.post('/<int:plugin_id>/custom-checks/<int:check_id>/resume')
+@login_required
+@require_permission('plugin.custom_check')
+def resume_custom_check_route(plugin_id, check_id):
+    """Resume a paused custom check. No body."""
+    return run_custom_check_change(lambda: custom_checks_service.set_check_paused(
+        plugin_id, check_id, False, current_user.UserID))
+
+
+@plugin_bp.delete('/<int:plugin_id>/custom-checks/<int:check_id>')
+@login_required
+@require_permission('plugin.custom_check')
+def delete_custom_check_route(plugin_id, check_id):
+    """Remove a custom check and its service from Nagios. No body. Returns ``{"id", "changed", "message"}``."""
+    return run_custom_check_change(lambda: custom_checks_service.delete_custom_check(
+        plugin_id, check_id, current_user.UserID))
 
 
 # ==========================================================

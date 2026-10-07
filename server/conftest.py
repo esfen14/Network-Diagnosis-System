@@ -147,6 +147,7 @@ PERMISSION_NAMES = [
     "plugin.command_restore",
     "plugin.validate",
     "plugin.custom_add",
+    "plugin.custom_check",
     "plugin.update",
     "plugin.update_rollback",
     "settings.security",

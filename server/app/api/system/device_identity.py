@@ -501,6 +501,16 @@ def merge_device(id):
             # Derived from ports: the reconciler rebuilds it for the target, and
             # moving it could collide with the target's own row for that service.
             db.session.delete(config)
+        elif config.Origin is PluginConfigurationOrigin.CUSTOM and db.session.scalar(
+            sa.select(PluginConfiguration.PluginConfigurationID).where(
+                PluginConfiguration.NetDiscoveryID == target_id,
+                PluginConfiguration.PluginID == config.PluginID,
+                PluginConfiguration.Nagios_Service_Name == config.Nagios_Service_Name,
+            )
+        ) is not None:
+            # The target already has a check of that name: moving this one would break the
+            # one-service-per-name rule, so the target's own check wins.
+            db.session.delete(config)
         else:
             config.NetDiscoveryID = target_id
 

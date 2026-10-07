@@ -38,6 +38,7 @@ from app.network_discovery.plugin_registry import (
     find_plugin_by_name_or_alias,
     plugin_for_command,
 )
+from app.network_discovery.custom_checks import plugin_for_custom_command
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -126,7 +127,7 @@ def _plugin_key(service_name: str, check_command: Optional[str] = None) -> str:
     """
     command = (check_command or "").split("!")[0].strip()
     if command:
-        registry_plugin = plugin_for_command(command)
+        registry_plugin = plugin_for_command(command) or plugin_for_custom_command(command)
         if registry_plugin:
             return registry_plugin
         if command.startswith(DISCOVERY_COMMAND_PREFIX):

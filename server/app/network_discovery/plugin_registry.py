@@ -200,10 +200,12 @@ class PluginDefinition:
     # The file under $USER1$ when it differs from check_plugin (check_plugin is the
     # normalized name used for comparisons, e.g. "check_ncpa" for check_ncpa.py).
     executable: str = ""
+    # Custom checks (custom_checks.py) use their own command prefix.
+    command_prefix: str = COMMAND_NAME_PREFIX
 
     @property
     def command_name(self):
-        return f"{COMMAND_NAME_PREFIX}{self.name}"
+        return f"{self.command_prefix}{self.name}"
 
     @property
     def command_line(self):
@@ -576,7 +578,7 @@ def validate_variable_value(variable, value):
     return text
 
 
-def resolve_plugin_command(plugin_name, variables, transport=None):
+def resolve_plugin_command(plugin_name, variables, transport=None, definitions=None):
     """
     Build the Nagios check_command string for one service of plugin_name,
     e.g. "pinpoint_nd_snmp!161!public!1.3.6.1.2.1.1.3.0!".
@@ -584,9 +586,10 @@ def resolve_plugin_command(plugin_name, variables, transport=None):
     Validates that the plugin supports the requested transport, that every
     required variable is present, and that every value is safe. Optional
     variables the plugin knows a flag for are rendered into the final
-    argument; unknown variables are ignored.
+    argument; unknown variables are ignored. definitions replaces PLUGIN_DEFINITIONS
+    (custom checks pass their own).
     """
-    definition = get_plugin_definition(plugin_name)
+    definition = definitions[plugin_name] if definitions is not None else get_plugin_definition(plugin_name)
 
     if transport is not None and transport not in definition.transports:
         raise PluginConfigurationError(

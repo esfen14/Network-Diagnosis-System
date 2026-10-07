@@ -151,6 +151,16 @@ def get_applied_usage(plugin_ids):
     return {plugin_id: {"services": services, "devices": devices} for plugin_id, services, devices in rows}
 
 
+def describe_custom_support(plugin):
+    """
+    Whether and how the plugin takes custom checks: {"class", "supported", "note", "fields"}
+    (see api/plugin/custom_checks.describe_custom_support). Imported here because that module
+    imports this one.
+    """
+    from app.api.plugin.custom_checks import describe_custom_support as describe
+    return describe(plugin)
+
+
 def get_plugin_inventory(page, per_page, search, plugin_type, status, sort_by, order):
     """
     Paginated plugin inventory (UI Flow Section 7).
@@ -269,6 +279,7 @@ def get_plugin_details(plugin_id):
         "category": catalog_fallback(plugin, "category"),
         "documentation_url": documentation_url(plugin.Name),
         "service_driven": is_service_driven(plugin.Name),
+        "custom_checks": describe_custom_support(plugin),
         "type": plugin.Plugin_Type.value,
         "source": plugin.Source.value,
         "status": plugin.Status.value,

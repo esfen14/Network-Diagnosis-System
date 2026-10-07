@@ -274,10 +274,14 @@ class PluginConfigurationOrigin(Enum):
     Who created a PluginConfiguration row. AUTO rows are derived from a
     discovered port by the plugin reconciler and are the reconciler's to
     add and remove. MANUAL rows predate the reconciler (admin-picked
-    devices) and are never touched by it.
+    devices) and are never touched by it. CUSTOM rows are checks an administrator
+    added to a device for a plugin discovery cannot drive (network_discovery/
+    custom_checks.py); they are written to hosts.cfg and, like MANUAL rows, never
+    read or changed by the reconciler.
     """
     AUTO = "Auto"
     MANUAL = "Manual"
+    CUSTOM = "Custom"
 
 
 class PluginConfiguration(db.Model):

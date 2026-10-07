@@ -1,0 +1,341 @@
+"""
+custom_checks.py — storage and Nagios changes for custom checks.
+
+A custom check is one PLUGIN_CONFIGURATION row (Origin CUSTOM): an administrator
+runs a plugin discovery cannot attach to a port against one discovered device,
+with arguments they supply (spec files/Custom_Checks_Plan.md). Plugins that
+take them, and what each accepts, are in network_discovery/custom_checks.py.
+
+Every change saves the row, regenerates hosts.cfg through the shared writer
+(validated, backed up, rolled back on failure) and, if Nagios does not accept
+it, undoes the change and raises MonitoringChangeError, so the database never
+claims a check Nagios is not running. Each change is written to the plugin
+history. Kept apart from service.py as manager.py's routes call it directly.
+"""
+from datetime import datetime, timezone
+
+import sqlalchemy as sa
+
+from app import db
+from app.api.plugin.service import (
+    BLOCKED_TRANSITION_STATUSES,
+    InvalidQueryError,
+    MonitoringChangeError,
+    PluginNotFoundError,
+    describe_service_status,
+    latest_service_results,
+    record_plugin_action,
+)
+from app.network_discovery import custom_checks
+from app.network_discovery.create_host_cfg import regenerate_and_apply_config_status
+from app.network_discovery.device_identity import nagios_host_name
+from app.network_discovery.plugin_registry import PluginConfigurationError
+from app.plugin_models import (
+    Plugin, PluginActionResult, PluginConfiguration, PluginConfigurationOrigin,
+    PluginConfigurationStatus, PluginHistoryAction,
+)
+from app.system_models import DeviceState, NetworkDiscovery
+
+# Devices that are no longer monitored take no new checks.
+UNMONITORED_DEVICE_STATES = (DeviceState.RETIRED, DeviceState.MERGED)
+
+
+class CustomCheckError(Exception):
+    """The request is not valid (unknown device, bad argument, name taken, plugin not supported)."""
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
+class CustomCheckNotFoundError(Exception):
+    """No such custom check on this plugin."""
+    def __init__(self, message="Custom check not found."):
+        super().__init__(message)
+        self.message = message
+
+
+# ==========================================================
+# READING
+# ==========================================================
+
+def get_plugin_or_raise(plugin_id):
+    """The Plugin row, or PluginNotFoundError."""
+    plugin = db.session.get(Plugin, plugin_id)
+    if plugin is None:
+        raise PluginNotFoundError()
+    return plugin
+
+
+def describe_custom_support(plugin):
+    """
+    What the plugin drawer needs to know about custom checks for this plugin:
+    {"class": ..., "supported": bool, "note": str | None, "fields": [...]}. fields lists each
+    argument as {"name", "flag", "label", "required", "placeholder"} in the order the form shows them.
+    """
+    plugin_class = custom_checks.plugin_class(plugin.Name)
+    supported = plugin_class == "custom"
+    return {
+        "class": plugin_class,
+        "supported": supported,
+        "note": custom_checks.PLUGIN_CLASS_NOTES.get(plugin_class),
+        "fields": [
+            {"name": f.name, "flag": f.flag, "label": f.label, "required": f.required, "placeholder": f.placeholder}
+            for f in custom_checks.plugin_fields(plugin.Name)
+        ],
+    }
+
+
+def serialize_check(row, device, result, now):
+    """One check as the API returns it, with its device and live status."""
+    data = row.Configuration_Data or {}
+    paused = bool(data.get("paused"))
+    if paused:
+        status = {"kind": "paused", "state": None, "last_check": None, "output": "Paused. Nothing is checking this."}
+    else:
+        status = describe_service_status(result, row.Applied_At, now)
+    return {
+        "id": row.PluginConfigurationID,
+        "name": row.Service_Description,
+        "service": row.Nagios_Service_Name,
+        "device": {"id": device.NetDiscoveryID, "hostname": nagios_host_name(device), "ip_address": device.IP_Address},
+        "variables": data.get("variables") or {},
+        "paused": paused,
+        "running_since": row.Applied_At.isoformat() if row.Applied_At and not paused else None,
+        "status": status,
+    }
+
+
+def list_custom_checks(plugin_id, page, per_page, search):
+    """
+    Paginated custom checks of a plugin, sorted by device then name, each with its device, arguments
+    and live status (describe_service_status; "paused" for a paused one). search matches name,
+    service, device hostname and IP. Raises PluginNotFoundError, InvalidQueryError.
+    """
+    get_plugin_or_raise(plugin_id)
+    if page < 1:
+        raise InvalidQueryError("Page must be greater than 0")
+    if per_page < 1 or per_page > 100:
+        raise InvalidQueryError("per_page must be between 1 and 100")
+
+    pairs = []
+    for row in db.session.scalars(sa.select(PluginConfiguration).where(
+        PluginConfiguration.PluginID == plugin_id,
+        PluginConfiguration.Origin == PluginConfigurationOrigin.CUSTOM,
+    )).all():
+        device = db.session.get(NetworkDiscovery, row.NetDiscoveryID) if row.NetDiscoveryID else None
+        if device is not None:
+            pairs.append((row, device))
+
+    if search:
+        needle = search.lower()
+        pairs = [
+            (row, device) for row, device in pairs
+            if needle in (row.Service_Description or "").lower()
+            or needle in (row.Nagios_Service_Name or "").lower()
+            or needle in nagios_host_name(device).lower()
+            or needle in device.IP_Address
+        ]
+    pairs.sort(key=lambda pair: (nagios_host_name(pair[1]).lower(), (pair[0].Service_Description or "").lower()))
+
+    total = len(pairs)
+    pages = max(1, -(-total // per_page))
+    window = pairs[(page - 1) * per_page: page * per_page]
+    results = latest_service_results({(nagios_host_name(device), row.Nagios_Service_Name) for row, device in window})
+    now = datetime.now(timezone.utc)
+    return {
+        "items": [
+            serialize_check(row, device, results.get((nagios_host_name(device), row.Nagios_Service_Name)), now)
+            for row, device in window
+        ],
+        "page": page, "per_page": per_page, "pages": pages, "total": total,
+        "has_next": page < pages, "has_prev": page > 1,
+    }
+
+
+# ==========================================================
+# CHANGING
+# ==========================================================
+
+def require_custom_plugin(plugin):
+    """Raise CustomCheckError unless this plugin can take custom checks right now."""
+    if not custom_checks.is_custom_checkable(plugin.Name):
+        note = custom_checks.PLUGIN_CLASS_NOTES.get(custom_checks.plugin_class(plugin.Name))
+        raise CustomCheckError(f"{plugin.Name} does not take custom checks." + (f" {note}" if note else ""))
+    if plugin.Status in BLOCKED_TRANSITION_STATUSES:
+        raise CustomCheckError(f"{plugin.Name} is in '{plugin.Status.value}' state; fix or validate it first.")
+
+
+def get_device(device_id):
+    """The monitored device, or CustomCheckError."""
+    device = db.session.get(NetworkDiscovery, device_id) if isinstance(device_id, int) else None
+    if device is None or device.Device_State in UNMONITORED_DEVICE_STATES:
+        raise CustomCheckError("Device not found.")
+    return device
+
+
+def get_check(plugin_id, check_id):
+    """The CUSTOM row of this plugin, or CustomCheckNotFoundError."""
+    row = db.session.get(PluginConfiguration, check_id)
+    if row is None or row.PluginID != plugin_id or row.Origin is not PluginConfigurationOrigin.CUSTOM:
+        raise CustomCheckNotFoundError()
+    return row
+
+
+def apply_to_nagios(plugin_id, user_id, summary):
+    """
+    Regenerate and apply hosts.cfg for a change already flushed to the session. On success returns
+    {"changed": bool, "message": str} (the caller commits). If Nagios does not accept it, rolls the
+    session back, writes a Failed history row and raises MonitoringChangeError.
+    """
+    try:
+        status, message = regenerate_and_apply_config_status()
+    except Exception:
+        db.session.rollback()
+        raise
+    if status == "failed":
+        db.session.rollback()
+        record_plugin_action(
+            get_plugin_or_raise(plugin_id), PluginHistoryAction.CONFIGURE, PluginActionResult.FAILED, user_id,
+            message=f"{summary}: {message[:380]}",
+        )
+        db.session.commit()
+        raise MonitoringChangeError(message)
+    return {"changed": status == "applied", "message": message}
+
+
+def record_success(plugin, user_id, new_value, message):
+    """Write the Success history row for a custom check change. Does not commit."""
+    record_plugin_action(
+        plugin, PluginHistoryAction.CONFIGURE, PluginActionResult.SUCCESS, user_id,
+        new_value=new_value, message=message,
+    )
+
+
+def mark_applied(row):
+    """Mark a row Applied now (keeps the original Applied_At when it has one)."""
+    row.Status = PluginConfigurationStatus.APPLIED
+    if row.Applied_At is None:
+        row.Applied_At = datetime.now(timezone.utc)
+
+
+def create_custom_check(plugin_id, device_id, name, variables, user_id):
+    """
+    Add a custom check of plugin_id on a device and apply it. Returns the serialized check plus
+    {"changed", "message"} from Nagios. Raises PluginNotFoundError, CustomCheckError (plugin not
+    supported, unknown device, bad name or argument, name already used on the device) and
+    MonitoringChangeError (Nagios refused; nothing changed).
+    """
+    plugin = get_plugin_or_raise(plugin_id)
+    require_custom_plugin(plugin)
+    device = get_device(device_id)
+    try:
+        name = custom_checks.validate_check_name(name)
+        cleaned = custom_checks.clean_variables(plugin.Name, variables)
+    except PluginConfigurationError as error:
+        raise CustomCheckError(str(error))
+
+    service_name = custom_checks.service_name(plugin.Name, name)
+    taken = db.session.scalar(sa.select(PluginConfiguration.PluginConfigurationID).where(
+        PluginConfiguration.NetDiscoveryID == device.NetDiscoveryID,
+        PluginConfiguration.Nagios_Service_Name == service_name,
+    ))
+    if taken is not None:
+        raise CustomCheckError(f"This device already has a check named '{name}'.")
+
+    row = PluginConfiguration(
+        PluginID=plugin.PluginID, NetDiscoveryID=device.NetDiscoveryID, Service_Description=name,
+        Nagios_Service_Name=service_name, Origin=PluginConfigurationOrigin.CUSTOM,
+        Status=PluginConfigurationStatus.PENDING, Configuration_Data={"variables": cleaned, "paused": False},
+    )
+    db.session.add(row)
+    db.session.flush()
+
+    applied = apply_to_nagios(plugin_id, user_id, f"Adding check '{name}' failed")
+    mark_applied(row)
+    record_success(plugin, user_id, service_name, f"Added check '{name}' on {nagios_host_name(device)}.")
+    db.session.commit()
+    return {**serialize_check(row, device, None, datetime.now(timezone.utc)), **applied}
+
+
+def update_custom_check(plugin_id, check_id, name, variables, user_id):
+    """
+    Rename a check and replace its arguments (the device cannot change; remove and add instead).
+    Same errors as create_custom_check, plus CustomCheckNotFoundError.
+    """
+    plugin = get_plugin_or_raise(plugin_id)
+    require_custom_plugin(plugin)
+    row = get_check(plugin_id, check_id)
+    device = db.session.get(NetworkDiscovery, row.NetDiscoveryID)
+    try:
+        name = custom_checks.validate_check_name(name)
+        cleaned = custom_checks.clean_variables(plugin.Name, variables)
+    except PluginConfigurationError as error:
+        raise CustomCheckError(str(error))
+
+    service_name = custom_checks.service_name(plugin.Name, name)
+    clash = db.session.scalar(sa.select(PluginConfiguration.PluginConfigurationID).where(
+        PluginConfiguration.NetDiscoveryID == row.NetDiscoveryID,
+        PluginConfiguration.Nagios_Service_Name == service_name,
+        PluginConfiguration.PluginConfigurationID != row.PluginConfigurationID,
+    ))
+    if clash is not None:
+        raise CustomCheckError(f"This device already has a check named '{name}'.")
+
+    data = dict(row.Configuration_Data or {})
+    data["variables"] = cleaned
+    row.Configuration_Data = data
+    row.Service_Description = name
+    row.Nagios_Service_Name = service_name
+    db.session.flush()
+
+    applied = apply_to_nagios(plugin_id, user_id, f"Changing check '{name}' failed")
+    mark_applied(row)
+    record_success(plugin, user_id, service_name, f"Changed check '{name}'.")
+    db.session.commit()
+    return {**serialize_check(row, device, None, datetime.now(timezone.utc)), **applied}
+
+
+def set_check_paused(plugin_id, check_id, paused, user_id):
+    """
+    Pause a check (its service leaves Nagios, the row stays) or resume it. Repeating it reports
+    changed false. Raises PluginNotFoundError, CustomCheckNotFoundError, CustomCheckError,
+    MonitoringChangeError.
+    """
+    plugin = get_plugin_or_raise(plugin_id)
+    row = get_check(plugin_id, check_id)
+    device = db.session.get(NetworkDiscovery, row.NetDiscoveryID)
+    if bool((row.Configuration_Data or {}).get("paused")) == paused:
+        return {**serialize_check(row, device, None, datetime.now(timezone.utc)), "changed": False, "message": ""}
+    if not paused:
+        require_custom_plugin(plugin)
+
+    data = dict(row.Configuration_Data or {})
+    data["paused"] = paused
+    row.Configuration_Data = data
+    db.session.flush()
+
+    verb = "Pausing" if paused else "Resuming"
+    applied = apply_to_nagios(plugin_id, user_id, f"{verb} check '{row.Service_Description}' failed")
+    if not paused:
+        mark_applied(row)
+    record_success(plugin, user_id, row.Nagios_Service_Name,
+                   f"{'Paused' if paused else 'Resumed'} check '{row.Service_Description}'.")
+    db.session.commit()
+    return {**serialize_check(row, device, None, datetime.now(timezone.utc)), **applied}
+
+
+def delete_custom_check(plugin_id, check_id, user_id):
+    """
+    Remove a check and its service. Returns {"id", "changed", "message"}. Raises PluginNotFoundError,
+    CustomCheckNotFoundError, MonitoringChangeError.
+    """
+    plugin = get_plugin_or_raise(plugin_id)
+    row = get_check(plugin_id, check_id)
+    name, service_name, device_id = row.Service_Description, row.Nagios_Service_Name, row.NetDiscoveryID
+    db.session.delete(row)
+    db.session.flush()
+
+    applied = apply_to_nagios(plugin_id, user_id, f"Removing check '{name}' failed")
+    record_success(plugin, user_id, None, f"Removed check '{name}' ({service_name}) from device {device_id}.")
+    db.session.commit()
+    return {"id": check_id, **applied}

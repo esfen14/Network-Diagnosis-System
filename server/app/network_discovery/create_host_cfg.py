@@ -49,6 +49,8 @@ from app.logging.deployment_history import update_ncpa_deployment_status
 from app.system_models import DiscoveryStatus, DeploymentStatus, NetworkDiscoveryStatus, ServiceIdentification
 from app.network_discovery.discovery_settings import get_port_services, ncpa_port_key
 from app.network_discovery.plugin_settings import plugin_config
+from app.network_discovery import custom_checks
+from app.plugin_models import PluginConfiguration, PluginConfigurationOrigin
 import socket
 import ipaddress
 import tempfile
@@ -125,6 +127,37 @@ def load_host_plugin_facts():
             "partitions": partitions_by_deployment.get(deployment.NCPADeployID, []),
         }
     return facts
+
+
+def load_custom_checks():
+    """
+    The services of the custom checks an administrator added (Origin CUSTOM),
+    that are not paused, keyed by NetDiscoveryID: {12: [(service_name, command,
+    plugin), ...]} with plugin the check plugin (e.g. "check_by_ssh"). A check
+    whose arguments no longer build a command is skipped with a warning rather
+    than failing the whole file. Read-only; does not touch the session.
+    """
+    checks = {}
+    rows = db.session.scalars(
+        sa.select(PluginConfiguration)
+        .where(PluginConfiguration.Origin == PluginConfigurationOrigin.CUSTOM,
+               PluginConfiguration.NetDiscoveryID.is_not(None))
+        .order_by(PluginConfiguration.PluginConfigurationID)
+    ).all()
+    for row in rows:
+        data = row.Configuration_Data or {}
+        if data.get("paused"):
+            continue
+        plugin = custom_checks.normalize_plugin_name(row.Plugin_Configuration.Name)
+        try:
+            command = custom_checks.resolve_plugin_command_for(plugin, data.get("variables") or {})
+        except (custom_checks.PluginConfigurationError, KeyError) as error:
+            current_app.logger.warning(
+                f"Skipping custom check {row.Nagios_Service_Name} (device {row.NetDiscoveryID}): {error}"
+            )
+            continue
+        checks.setdefault(row.NetDiscoveryID, []).append((row.Nagios_Service_Name, command, plugin))
+    return checks
 
 
 def plan_plugin_services(plugin_name, service_label, port, transport, facts, overrides, app_config):
@@ -494,6 +527,9 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
     # fetched once for all hosts rather than once per host.
     plugin_facts = load_host_plugin_facts()
     enabled_plugins = enabled_plugin_names()
+    # Checks administrators added by hand for plugins discovery cannot drive.
+    custom_by_device = load_custom_checks()
+    used_custom_plugins = set()
     # config.py with the plugin settings saved from Settings -> Plugins (e.g. SNMP OIDs) in place.
     app_config = plugin_config()
 
@@ -561,6 +597,23 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
                     skipped.append({**entry, "ip_address": ip})
 
             generated_names[host_data["data"]["hostname"]] = [name for name, _c, _p in host_services]
+
+            # Custom checks follow the discovered services of their device. Their
+            # names carry a "custom-" prefix, so they cannot collide with those.
+            for service_name, command, plugin_name in custom_by_device.get(
+                host_data["data"].get("net_discovery_id"), []
+            ):
+                used_custom_plugins.add(plugin_name)
+                service = {
+                    "host_name": host_data["data"]["hostname"],
+                    "service_name": service_name,
+                    "contact_groups": "system_users"
+                }
+                if not active_checks:
+                    service["active_checks_enabled"] = False
+                    service["notes"] = inactive_note
+                host_config.append(create_service(service, command))
+                host_config.append(_add_space(4))
 
             for service_name, command, plugin_name in host_services:
                 # Remember the plugin so its `define command` is written once
@@ -634,6 +687,10 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
 
     for plugin_name in sorted(used_plugins):
         host_config.append(render_command_definition(plugin_name))
+        host_config.append(_add_space(2))
+
+    for plugin_name in sorted(used_custom_plugins):
+        host_config.append(custom_checks.render_command_definition(plugin_name))
         host_config.append(_add_space(2))
 
     with open(cfg_path, "w") as f:
