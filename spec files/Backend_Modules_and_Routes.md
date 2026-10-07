@@ -1,6 +1,6 @@
 # Backend Modules and Route Catalog
 
-**Last verified against the repository:** 2026-09-27
+**Last verified against the repository:** 2026-10-08
 
 ## API composition
 
@@ -119,6 +119,20 @@ Detailed fields and behavior are normative in `Display_Requirements.md`.
 | `GET /api/system/network-health/plugins` | `system.network_health` | Service health grouped by plugin type |
 
 Valid trend windows are `hours=1`, `6`, `24`, or `168`.
+
+### `app/api/system/network_health_activity.py`
+
+All routes require login and `system.network_health`. Response shapes are in
+each route's docstring.
+
+| Method and path | Permission | Purpose |
+|---|---|---|
+| `GET /api/system/network-health/availability` | `system.network_health` | Network-wide host availability per day for the last `days` (1 to 30, default 7), from Nagios `archivejson.cgi` |
+| `GET /api/system/network-health/system-activity` | `system.network_health` | Process and logged-in user counts from the latest `check_procs` and `check_users` results; a section is `null` when no device runs that check |
+| `GET /api/system/network-health/cpu` | `system.network_health` | CPU utilization trend for one host with an NCPA CPU check (`hostname` optional) |
+| `GET /api/system/network-health/connections` | `system.network_health` | TCP connection counts by state on the Nagios/Pinpoint server, read from `/proc/net/tcp`; `available` is false without `/proc` |
+| `GET /api/system/network-health/insights` | `system.network_health` | Plain-language observations from the latest snapshot, most severe first |
+| `GET /api/system/network-health/plugin-trends` | `system.network_health` | One entry per plugin enabled in Plugin Manager: state counts, current values and averaged trends for time and percentage metrics |
 
 ### `app/api/system/network_hosts.py`
 
@@ -268,7 +282,8 @@ update/custom-plugin modules.
 | `GET /api/plugin/<plugin_id>/custom-checks` | `plugin.custom_check` | The plugin's custom checks (`page`, `per_page`, `search`): `id`, `name`, `service`, `device`, `variables`, `paused`, `running_since` and live `status` (`kind` as for services, or `paused`) |
 | `POST /api/plugin/<plugin_id>/custom-checks` | `plugin.custom_check` | Body `{device_id, name, variables}`: run a plugin discovery cannot attach to a port against one device, then apply it. Only plugins whose details report `custom_checks.supported` take one. A plugin whose `custom_checks.target` is `server` (`check_apt`, `check_uptime`, ...) runs on the Nagios server itself and takes no `device_id` (400 if one is sent); every other one needs it (400 "Choose a device"). 400 for an unsupported plugin, unknown or retired device, missing or unsafe argument, or a name already used on that device; 409 if Nagios rejects it (nothing is saved, a Failed history row is written) |
 | `PUT /api/plugin/<plugin_id>/custom-checks/<check_id>` | `plugin.custom_check` | Body `{name, variables, clear_secrets?}`: rename a check and replace its arguments; the device cannot change. A password left blank keeps the stored one; names in `clear_secrets` remove an optional one. Passwords are stored encrypted (`app/secrets_store.py`) and never returned: each check lists `secrets_set` and `secrets_readable` (false if the server key changed). Same errors, plus 404 for a check of another plugin |
-| `POST /api/plugin/<plugin_id>/custom-checks/<check_id>/pause` and `/resume` | `plugin.custom_check` | Pause (the service leaves Nagios, the check stays listed) or resume; repeating reports `changed` false |
+| `POST /api/plugin/<plugin_id>/custom-checks/<check_id>/pause` | `plugin.custom_check` | Pause: the service leaves Nagios, the check stays listed; repeating reports `changed` false |
+| `POST /api/plugin/<plugin_id>/custom-checks/<check_id>/resume` | `plugin.custom_check` | Resume a paused check; repeating reports `changed` false |
 | `DELETE /api/plugin/<plugin_id>/custom-checks/<check_id>` | `plugin.custom_check` | Remove a check and its service; 409 if Nagios rejects it (the check stays) |
 | `POST /api/plugin/<plugin_id>/enable` | `plugin.enable` | Enable a plugin, then run the plugin reconciler (`reconcile_plugin_monitoring`): identified ports whose plugin is now enabled are promoted and attached, hosts.cfg is regenerated once through the shared writer, and the plugin becomes Active if anything is attached. No device is picked by hand. The same reconcile runs after every network discovery, port edit, merge or retire, NCPA deployment and NCPA disk refresh. Plugin names are compared without a script extension (`check_ncpa.py` is `check_ncpa`). Only service-driven plugins (those a registry definition uses: `check_ssh`, `check_http`, `check_snmp`, `check_ncpa`, `check_tcp`, ...) can be enabled; any other returns 409. A failed attach does not undo the enable; the response carries `auto_apply` (`success`, `changed`, `applied`, `removed`, `promoted`, `message`) |
 | `POST /api/plugin/<plugin_id>/disable` | `plugin.disable` | Disable a plugin, then reconcile: its services leave Nagios, its ports keep their state and frozen plugin so enabling restores them. If Nagios rejects the change the plugin goes back to its previous state, a failed history row is written and the route returns 409. A plugin enabled before the service-driven rule can still be disabled. The response carries `auto_apply` |

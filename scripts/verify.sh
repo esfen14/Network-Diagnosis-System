@@ -21,6 +21,8 @@ backend() {
   cd "$root/server"
   local py=python
   if [ -x .venv/bin/python ]; then py=.venv/bin/python; fi
+  echo "==> backend: route catalog matches the Flask routes"
+  FLASK_DEBUG=1 "$py" "$root/scripts/check_route_drift.py"
   FLASK_DEBUG=1 "$py" -m pytest tests/unit -q
 }
 

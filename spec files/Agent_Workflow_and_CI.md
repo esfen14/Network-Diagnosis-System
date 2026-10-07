@@ -46,7 +46,7 @@ different fixes.
 | Stage | Command | Notes |
 |---|---|---|
 | Docs | `scripts/verify.sh docs` | Relative links in `AGENTS.md`, `README.md`, `spec files/` resolve |
-| Backend | `scripts/verify.sh backend` | `pytest tests/unit` in `server/`, with `FLASK_DEBUG=1`; ~4 min, 2,167 passed / 14 skipped on 2026-10-08 |
+| Backend | `scripts/verify.sh backend` | Route drift check, then `pytest tests/unit` in `server/` with `FLASK_DEBUG=1`; ~4 min, 2,167 passed / 14 skipped on 2026-10-08 |
 | Frontend | `scripts/verify.sh frontend` | `npm run test`, `npm run build`, `npm run lint` (errors fail; warnings do not) |
 | Everything | `scripts/verify.sh all` | Same stages as CI |
 
@@ -69,6 +69,22 @@ is fixed in the PR, never skipped. Protect `main` by requiring the three jobs.
 
 Not yet automated (see `Implementation_Status.md`): deployment, installer ISO
 build and install test, spec-vs-code drift checks.
+
+## Drift checks
+
+A drift check fails when documentation and code disagree, so an agent can trust
+the specs. `scripts/check_route_drift.py` compares every `/api` route registered
+in Flask with the `METHOD /api/...` entries in `Backend_Modules_and_Routes.md`
+(path parameters match by position; a first cell struck through with `~~` marks
+a documented-disabled route). It fails on a route missing from the catalog, a
+catalog route missing from the code, or a route documented as disabled that is
+registered. When it fails, fix the catalog in the same change as the route.
+Put a route in its own table row; a combined row such as "`/pause` and
+`/resume`" cannot be checked.
+
+Not yet checked: frontend routes versus `Frontend_Modules_and_Routes.md`,
+`config.py` environment variables versus the `README.md` table, and seeded
+permissions versus the permission list.
 
 ## Reproducible environment
 
