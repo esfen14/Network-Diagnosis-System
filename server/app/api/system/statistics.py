@@ -32,6 +32,7 @@ from app.history_models import (
     HostStateType,
     ServiceStateType,
 )
+from app.network_discovery.device_identity import unchecked_host_names
 from app.network_discovery.plugin_registry import (
     COMMAND_NAME_PREFIX as DISCOVERY_COMMAND_PREFIX,
     find_plugin_by_name_or_alias,
@@ -168,7 +169,9 @@ def get_latest_hosts() -> list[HostStatus]:
     Return one HostStatus row per hostname (the most recent snapshot).
 
     Two polls can store the same Nagios timestamp for a host; only the
-    newest row (highest ID) is kept so nothing is counted twice.
+    newest row (highest ID) is kept so nothing is counted twice. Hosts whose
+    device is paused, retired or merged are left out: Nagios no longer checks
+    them, so their last snapshot is stale and must not count as live.
     """
     subq = _latest_host_subquery()
     rows = db.session.scalars(
@@ -178,7 +181,9 @@ def get_latest_hosts() -> list[HostStatus]:
                 HostStatus.Hostname == subq.c.Hostname,
                 HostStatus.Timestamp == subq.c.max_ts,
             ),
-        ).order_by(HostStatus.HostStatusID)
+        )
+        .where(HostStatus.Hostname.notin_(unchecked_host_names()))
+        .order_by(HostStatus.HostStatusID)
     ).all()
     return list({row.Hostname: row for row in rows}.values())
 
@@ -188,7 +193,8 @@ def get_latest_services() -> list[ServiceStatus]:
     Return one ServiceStatus row per (hostname, service) pair (most recent snapshot).
 
     Two polls can store the same Nagios timestamp for a service; only the
-    newest row (highest ID) is kept so nothing is counted twice.
+    newest row (highest ID) is kept so nothing is counted twice. Services of
+    paused, retired or merged devices are left out, as in get_latest_hosts().
     """
     subq = _latest_service_subquery()
     rows = db.session.scalars(
@@ -199,7 +205,9 @@ def get_latest_services() -> list[ServiceStatus]:
                 ServiceStatus.Service  == subq.c.Service,
                 ServiceStatus.Timestamp == subq.c.max_ts,
             ),
-        ).order_by(ServiceStatus.ServiceStatusID)
+        )
+        .where(ServiceStatus.Hostname.notin_(unchecked_host_names()))
+        .order_by(ServiceStatus.ServiceStatusID)
     ).all()
     return list({(row.Hostname, row.Service): row for row in rows}.values())
 

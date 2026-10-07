@@ -157,6 +157,13 @@ monitored network. Always visible.
 | Hosts in Downtime | Count of hosts with scheduled downtime currently active | Can include services in downtime as a sub-count |
 
 **Notes:**
+- "Monitored" excludes hosts whose device is paused, retired or merged
+  (`Device_Inventory_Requirements.md` §12): Nagios no longer checks them, so their
+  last `history.db` snapshot is stale. They and their services are left out of every
+  count here, the Network Health Online / Offline Devices cards and the Active Alerts
+  feed (§1.6). Missing and address-unknown devices are still in the Nagios config and
+  still count. The filter lives in `get_latest_hosts()` / `get_latest_services()`
+  (`statistics.py`).
 - "Active Alerts" is the most important card. It should be visually prominent
   when its count is non-zero, and clearly positive/green when the count is zero
   (i.e., "all clear" is a meaningful state, not just the absence of a problem).

@@ -78,7 +78,10 @@ Plugin lifecycle and active monitoring are separate:
   paused, address_unknown, missing, monitored (first match wins). Only
   `POST /hosts/<id>/pause` and `/resume` write the flag; scans and the lifecycle
   (`apply_match()`, `update_lifecycle()`) never change it. The config builder
-  leaves a paused device out of `hosts.cfg`.
+  leaves a paused device out of `hosts.cfg`. Its `history.db` rows stop at the
+  pause and are kept, but `unchecked_host_names()` (paused, retired, merged) lets
+  `get_latest_hosts()` / `get_latest_services()` leave them out of the dashboard and
+  Network Health counts and alerts.
 - **Plugin Manager gates monitoring.** `plan_host_services()` (the planner
   behind both `hosts.cfg` and the reconciler) skips a port whose plugin
   (`plugin_for_definition()`) is not `Enabled` or `Active`, recording the reason

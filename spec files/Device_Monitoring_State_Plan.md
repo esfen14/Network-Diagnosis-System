@@ -1,6 +1,14 @@
 # Plan: Device Monitoring State
 
 Status: **decisions Q1–Q3 made (2026-10-07); the requirement is `Device_Inventory_Requirements.md` §12; backend and frontend are built with tests. Not yet checked against a live Nagios or in a browser (step 5 of §10). The two open points were settled as: Retired/Merged rows stay visible with "last known status" under the chip; separate `POST /hosts/<id>/pause` and `/resume` routes.**
+
+**Lab check (2026-10-07) found a gap, now fixed:** pausing removed the host from Nagios as
+intended, but its last `history.db` snapshot was still read as live, so a paused device
+still counted as online, kept its services and could raise an active alert. Paused, retired
+and merged hosts are now left out of the dashboard and Network Health aggregates, paused
+rows show "last known status", and the Device Inventory opens on the Monitored filter with
+its cards counting Monitored hosts only (`Device_Inventory_Requirements.md` §12.2, criteria
+33–34).
 Follows the format of `Device_Ports_UI_Plan.md`; like it, this file is not indexed in
 `AGENTS.md`.
 
