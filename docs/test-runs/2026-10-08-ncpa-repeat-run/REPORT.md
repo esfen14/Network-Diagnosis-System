@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Date | 2026-10-08 |
-| Commit tested | Installer `e471a1b8` (`fix/check-ncpa-python3-shebang` in `lorraine-pangilinan/PinPoint-Installer`, not merged to the installer's `main`); the application commit was not verified |
+| Commit tested | Installer `e471a1b8` (`fix/check-ncpa-python3-shebang` in `lorraine-pangilinan/PinPoint-Installer`; merged to the installer's `main` afterwards as `2859361d`); the application commit was not verified |
 | Plan | Recheck the fix for issue [#45](https://github.com/esfen14/Network-Diagnosis-System/issues/45) after [`2026-10-08-ncpa-run`](../2026-10-08-ncpa-run/REPORT.md) |
 | Tester | Claude Code, supervised by the project owner |
 | Environment | VirtualBox VM lab, `scripts/vmlab provision --force` with a temporary configuration selecting installer `e471a1b8`. The base snapshot already contained an application installation, so this was **not** a clean appliance build |
@@ -45,7 +45,6 @@ Totals: Pass 4, Fail 0, Blocked 3, Skipped 1 (see the table).
   merged; deploy NCPA; enable the plugin; confirm all six services report OK or a threshold
   state; run the negative test (make `python3` unavailable to `nagios`, expect the verify step
   and the healthcheck to fail); then commit a complete report and tick the finish conditions.
-- The installer fix must be merged to the installer's `main` before a fresh build can include it.
 
 ## Sanitization checklist
 
