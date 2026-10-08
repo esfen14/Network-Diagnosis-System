@@ -304,6 +304,12 @@ device.
 
 ## NCPA deployment
 
+The SSH command helpers accept `expected_exit_codes` for probes: the account
+existence check (`id`, exit 1) and authorized-key check (`grep`, exits 1 and 2)
+log those results at INFO, without command output. Nonzero exits still return
+`success: False`, so missing accounts and keys are created as before. Other
+nonzero exits, including failing non-probe commands, continue to log at ERROR.
+
 `app/ncpa_deployment/ncpa_deployment.py` installs NCPA over SSH. The workflow
 requires explicit SSH host-key fingerprint retrieval/confirmation, uses the
 stored fingerprint for subsequent verification, records progress and per-device

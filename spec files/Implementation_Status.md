@@ -22,6 +22,8 @@ the normative behavior in the requirement specifications.
 - NCPA eligibility, SSH fingerprint trust (approved key only), login checks,
   deployment with per-device outcomes, cancellation, status, run history and
   review, and trusted-device routes.
+- NCPA bootstrap probes log expected missing-account/key exits at INFO while
+  preserving creation behavior; unexpected command failures remain ERROR (#47).
 - Activity, configuration, discovery, NCPA, and export logs.
 - Availability, OS, network-service, device-service, alert, and notification
   report APIs.
