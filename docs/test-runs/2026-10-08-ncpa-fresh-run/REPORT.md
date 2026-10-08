@@ -16,10 +16,11 @@ appliance built with the installer fix, the application installs fresh, NCPA dep
 targets, and all six NCPA services report OK with real values instead of return code 127.
 The installer's verify step and the healthcheck both fail when the `nagios` user cannot start
 the plugin (127, 126 and the original bug state). The fix has since been merged to the
-installer's `main` (PR #2, merge `2859361d`, which contains `e471a1b8`); this run tested the
-commit before the merge, not `main` itself.
+installer's `main` (PR #2, merge `2859361d`, which contains `e471a1b8`); the run tested the
+commit before the merge, and the key cases were then repeated on the installer's `main`
+(last row of the table).
 
-Totals: Pass 9, Fail 1, Blocked 0, Skipped 0 (see the table).
+Totals: Pass 10, Fail 1, Blocked 0, Skipped 0 (see the table).
 
 ## Cases
 
@@ -35,17 +36,17 @@ Totals: Pass 9, Fail 1, Blocked 0, Skipped 0 (see the table).
 | One device record per host | **Fail** | `10.77.0.6` (`legacy01`) appeared as two records: an `Address Unknown` one that NCPA was first deployed to (its services are generated with `active_checks_enabled 0` and were never checked) and a live one. Another discovery did not merge them. NCPA was deployed again to the live record; the dead record remains. Not isolated: it may need overlapping discoveries (the smoke script's second run started a new discovery while the first may still have been running) | [#59](https://github.com/esfen14/Pinpoint/issues/59) |
 | Negative test: healthcheck fails when `nagios` cannot start the plugin | Pass | With the shebang set back to `python`, the old `python3 plugin --help` check still exits 0 while a direct run as `nagios` exits 127, and the healthcheck reports `[FAIL] check_ncpa.py: interpreter missing (exit 127, line 1: #!/usr/bin/env python)` (59 passed, 1 failed). With `python3.10` not executable by others: `[FAIL] ... permission problem (exit 126)`. With `/usr/bin/python3` renamed: `[FAIL] ... exit 127, line 1: #!/usr/bin/env python3`. All restored afterwards (`negative45.log`) | #45 |
 | Negative test: the installer's verify step fails when `nagios` cannot start the plugin | Pass | With `/usr/bin/python3` renamed, `install-nagios-plugins.sh` exited 1 after `✗ check_ncpa.py failed to run as nagios (exit code 127)` and `Interpreter line: #!/usr/bin/env python3` (`installer-neg45.log`). `python3` restored afterwards | #45 |
+| Repeat on the installer's merged `main` (`2859361d`): provision, fresh install, discovery, NCPA deployment, plugin enable | Pass | The base steps printed `Interpreter line changed to python3`, `check_ncpa.py verified`, `Plugin interpreters verified`; `fresh main` healthcheck 60 passed, 0 failed including `check_ncpa.py runs as nagios`; the six NCPA services on two hosts were OK (CPU 0.00 % on both, disk 30.30 % and 28.10 %, memory 49.20 % and 48.80 %). This time discovery ran once, with no overlapping run, and produced one device record per host (five records, no duplicate), which fits the overlap theory for #59 but does not prove it. The base was re-provisioned on the same VM from its earlier clean snapshot, not on a newly created VM | #45 |
 
 ## Deviations from the plan
 
 - The base was not built from the installer ISO; `scripts/vmlab` runs the installer's own steps on a stock Ubuntu install, as in the earlier runs.
-- The fix was tested from a local checkout of commit `e471a1b8`, before it was merged. A build from the installer's `main` (`2859361d`) was not repeated.
+- The main run used a local checkout of commit `e471a1b8`, before it was merged; the repeat on the installer's `main` (`2859361d`) is the last table row.
 - The negative tests broke the interpreter on the live appliance rather than building a separate broken image.
 
 ## Follow-up
 
 - Defect: the duplicate `Address Unknown` device record, filed as [#59](https://github.com/esfen14/Pinpoint/issues/59).
-- Optional before closing #45: one more `scripts/vmlab provision --force` and `fresh main` using the installer's `main`, to confirm the merged result.
 - Shell tests for the installer's verify step and healthcheck (a shared `setup/plugin-interpreters.sh` and `tests/test-plugin-interpreters.sh`) were written but not pushed, because this account has read-only access to the installer repository.
 - Still skipped from the first NCPA run: the CPU load alert on an NCPA threshold (`demo_lab.py load`), the browser wizard, the failure paths (wrong password, no sudo, changed host key) and redeploy to an already-deployed device.
 
