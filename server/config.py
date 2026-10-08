@@ -91,9 +91,6 @@ class Config:
         "161": "snmp",
     }
 
-    # Default hostname suffix given to discovered hosts: <ip>.<DOMAIN>
-    # e.g. 192.168.130.10.test.local
-    DOMAIN = os.environ.get('PINPOINT_DOMAIN') or "test.local"
     # Standard SSH port. Used only when a device has no SSH port on record;
     # otherwise NCPA deployment connects to the port discovery found SSH on
     # (port_lifecycle.device_ssh_port).

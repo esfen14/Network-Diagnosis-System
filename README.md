@@ -131,7 +131,6 @@ Supported Python version: **3.14** (developed on 3.14.2).
 | `NAGIOS_USERNAME` | none | yes | HTTP Basic user for the Nagios JSON CGIs. |
 | `NAGIOS_PASSWORD` | none | yes | Password for `NAGIOS_USERNAME`. |
 | `PINPOINT_NETWORKS` | `192.168.130.0/24` | yes | Comma-separated subnets that network discovery scans, e.g. `192.168.50.0/24,10.0.0.0/24`. Never include localhost. |
-| `PINPOINT_DOMAIN` | `test.local` | no | Suffix for discovered host names (`<ip>.<domain>`). |
 | `PINPOINT_SCHEDULER` | `0` | yes (`1` for the Gunicorn service only) | `1` starts Nagios polling, data retention and automation jobs. Leave unset for `flask` commands and scripts. Run Gunicorn with one worker, since each process would start its own scheduler. |
 | `SNMP_COMMUNITY_STRING` | `public` | no | SNMP community used when polling discovered hosts. |
 | `FLASK_DEBUG` | `0` | yes (`0`) | Must be `0` in production. `server/.flaskenv` sets it to `1` for development. |

@@ -57,7 +57,7 @@ import socket
 import ipaddress
 import tempfile
 
-# Network discovery / host-config settings (DOMAIN, NCPA_PORT,
+# Network discovery / host-config settings (NCPA_PORT,
 # HOST_CONFIG_DIR, BACKUP_DIR) and the advanced Nagios settings
 # (NAGIOS_HOST_CFG, NAGIOS_BIN, NAGIOS_MAIN_CFG) live in server/config.py's
 # Config class. Each function below that needs one reads it from

@@ -14,7 +14,6 @@ Revises: 7d2e4b9a1c05
 Create Date: 2026-10-03 12:00:00.000000
 
 """
-import os
 import re
 from datetime import datetime, timezone
 
@@ -153,7 +152,6 @@ def migrate_existing_rows(connection):
     device, confidence, and NCPA-sourced ports.
     """
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    domain = os.environ.get('PINPOINT_DOMAIN') or "test.local"
 
     devices = connection.execute(sa.text(
         'SELECT "NetDiscoveryID", "Hostname", "IP_Address", "Network", "MAC_Address", "Scanned_At" '
@@ -173,7 +171,7 @@ def migrate_existing_rows(connection):
 
     for device_id, hostname, ip, network, mac, scanned_at in devices:
         # Keep the name Nagios already uses so history and acks stay attached.
-        base = hostname if hostname and hostname != "Unknown" else f"{ip}.{domain}"
+        base = hostname if hostname and hostname != "Unknown" else ip
         name = base
         counter = 2
         while name in used_names:

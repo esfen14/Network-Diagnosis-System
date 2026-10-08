@@ -51,12 +51,12 @@ class TestDeviceIdsByHostName:
         assert nagios_host_name(device) == "dns-name.lan"
         assert device_ids_by_host_name(["dns-name.lan"]) == {"dns-name.lan": device.NetDiscoveryID}
 
-    def test_an_ip_derived_name_is_found_too(self, app, db_session, admin_user):
+    def test_an_ip_derived_name_is_found_too(self, db_session, admin_user):
         status = make_status(db_session, admin_user)
         device = run_scan(db, status, scan("10.0.0.8", mac=MAC_2, hostname="Unknown"))[(NET, "10.0.0.8")]
         device.Nagios_Host_Name = None
         db.session.commit()
-        derived = f"10.0.0.8.{app.config['DOMAIN']}"
+        derived = "10.0.0.8"
 
         assert nagios_host_name(device) == derived
         assert device_ids_by_host_name([derived]) == {derived: device.NetDiscoveryID}
