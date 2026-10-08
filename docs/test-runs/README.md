@@ -42,6 +42,7 @@ table while you test, not afterward.
 
 | Run | Kind | Commit | Result | Report |
 |---|---|---|---|---|
+| [2026-10-08 vm-lab-remaining](2026-10-08-vm-lab-remaining/REPORT.md) | VM lab, fresh install of the #43 fix, alerts, sync, up/down/revert | app `d8dc63e0`, `main` `483c8bdc` | Pass | [REPORT.md](2026-10-08-vm-lab-remaining/REPORT.md) |
 | [2026-10-08 ncpa-run](2026-10-08-ncpa-run/REPORT.md) | VM lab, NCPA deployment and monitoring | app `1540545` | Partial: deployment passes, NCPA checks CRITICAL (#45) | [REPORT.md](2026-10-08-ncpa-run/REPORT.md) |
 | [2026-10-08 vm-lab-first-run](2026-10-08-vm-lab-first-run/REPORT.md) | VM lab, installer-built appliance | app `1540545` | Pass (tooling); defect #43 found | [REPORT.md](2026-10-08-vm-lab-first-run/REPORT.md) |
 

@@ -20,6 +20,7 @@
 #   scripts/vmlab smoke                log in, add the lab network, run discovery, wait for hosts up
 #   scripts/vmlab setup-admin          set a fresh administrator password (kept in the state folder, never printed)
 #   scripts/vmlab ncpa [ip,ip,...]     deploy NCPA to targets through Pinpoint's deployment API (default: web01 and legacy01)
+#   scripts/vmlab alerts [target]     take a target down, check the alert, acknowledge it, bring it back (default: web01)
 #   scripts/vmlab creds                print the installer's one-time credentials (shows the password; lab only)
 #   scripts/vmlab up | down | revert   start (headless), power off, restore the snapshot only
 #   scripts/vmlab targets <cmd...>     pass through to demo/demo_lab.py (up, down, wall, break, ...)
@@ -419,6 +420,15 @@ if status != 200 or not body.get("success"):
     [ -n "$VMLAB_ADMIN_EMAIL" ] && [ -n "$VMLAB_ADMIN_PASSWORD" ] || die "no administrator login: run scripts/vmlab setup-admin"
     SMOKE_PASSWORD="$VMLAB_ADMIN_PASSWORD" exec python3 -I "$root/lab/ncpa_run.py" --base-url "$(web_url)" \
       --email "$VMLAB_ADMIN_EMAIL" --ips "${1:-10.77.0.2,10.77.0.6}"
+    ;;
+
+  alerts)
+    need_config
+    [ -n "$VMLAB_ADMIN_EMAIL" ] || { [ -f "$state_dir/admin-email" ] && VMLAB_ADMIN_EMAIL="$(cat "$state_dir/admin-email")"; }
+    [ -n "$VMLAB_ADMIN_PASSWORD" ] || { [ -f "$state_dir/admin-password" ] && VMLAB_ADMIN_PASSWORD="$(cat "$state_dir/admin-password")"; }
+    [ -n "$VMLAB_ADMIN_EMAIL" ] && [ -n "$VMLAB_ADMIN_PASSWORD" ] || die "no administrator login: run scripts/vmlab setup-admin"
+    SMOKE_PASSWORD="$VMLAB_ADMIN_PASSWORD" exec python3 -I "$root/lab/alerts_run.py" --base-url "$(web_url)" \
+      --email "$VMLAB_ADMIN_EMAIL" --target "${1:-web01}"
     ;;
 
   smoke)
