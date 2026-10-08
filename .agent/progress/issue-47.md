@@ -1,7 +1,7 @@
 # Issue #47: Log expected NCPA probe exits at INFO
 
 Branch: `issue-47-ncpa-log-level`
-Status: in-progress
+Status: ready-for-review
 
 ## Finish condition
 
@@ -13,7 +13,7 @@ Status: in-progress
 ## Plan
 
 1. [x] Add failing regression tests in server/tests/unit/test_ncpa_command_logging.py; fix helpers and id/grep call sites in server/app/ncpa_deployment/ncpa_deployment.py; run focused and backend checks.
-2. [ ] Update spec files/Data_Model_and_Integrations.md, spec files/Implementation_Status.md and server/tests/README.md; verify docs and all; remove progress and open PR.
+2. [x] Update spec files/Data_Model_and_Integrations.md, spec files/Implementation_Status.md and server/tests/README.md; verify docs and all; remove progress and open PR.
 
 ## Round log
 
@@ -23,12 +23,14 @@ Status: in-progress
 
 | 1 | Added 15 mocked SSH regressions; expected exits log INFO and retain success False | Focused pytest; scripts/verify.sh backend | Red: 7 failed/8 passed; green: 15 passed; backend: 2185 passed, 14 skipped |
 
+| 2 | Updated NCPA specification, status and test inventory | scripts/verify.sh docs; scripts/verify.sh all | green; backend 2185 passed/14 skipped; frontend 463 passed; build green; lint 0 errors/24 warnings |
+
 ## State for the next session
 
-- Last check run (exact command): scripts/verify.sh backend > /tmp/opencode/issue-47-backend.log 2>&1
-- Result: green; 2185 passed, 14 skipped in 241.12s.
-- Hypothesis: Fixed return semantics preserve creation and idempotency; unexpected errors still log ERROR.
-- Next action: Update owning specification and test inventory, then run docs and all checks.
+- Last check run (exact command): scripts/verify.sh all > /tmp/opencode/issue-47-all.log 2>&1
+- Result: green; backend 2185 passed/14 skipped; frontend 463 passed; build green; lint 24 warnings, no errors.
+- Hypothesis: All issue finish conditions proven with isolated tests. No live tests run.
+- Next action: Remove progress file, commit/push and open PR, then check CI.
 
 ## Decisions and notes
 

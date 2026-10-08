@@ -116,6 +116,7 @@ Basenames below live under `unit/`, except `integration/test_live_nagios.py`.
 | `test_create_host_cfg.py` | SNMP/NCPA/TCP/UDP service planning, per-host isolation, service naming, config generation, and stored command names |
 | `test_plugin_registry.py` | Plugin resolution, variable validation, command rendering, SNMP checks, and NCPA checks |
 | `test_skipped_services.py` | Persistence and log presentation for discovered ports that cannot become monitored services |
+| `test_ncpa_command_logging.py` | Mocked SSH command logging: expected probe exits, ordinary and unexpected failures, stderr warnings, account/key creation and idempotency |
 | `test_ncpa.py` | Eligible/trusted devices, SSH fingerprint confirmation, deployment start/stop/status, and validation |
 | `test_automation.py` | Due-time helpers, automation-user selection, maintenance mode, backups, discovery/update scheduling, and security checks |
 | `test_scheduler.py` | Scheduler suppression in the test environment and initialization behavior |
