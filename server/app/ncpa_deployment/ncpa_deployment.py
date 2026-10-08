@@ -88,7 +88,8 @@ def update_ncpa_deployment_info(device_id, ncpa_deployment_status_id, deployment
 
     db.session.commit()
 
-def run_command(client, command, log_command=None, log_failure=True, expected_exit_codes=None):
+def run_command(client, command, log_command=None, expected_exit_codes=()):
+    """Run an SSH command; expected nonzero exits log at INFO but remain unsuccessful."""
     stdin, stdout, stderr = client.exec_command(command, get_pty=False)
 
     output = stdout.read().decode('utf-8')
@@ -96,11 +97,12 @@ def run_command(client, command, log_command=None, log_failure=True, expected_ex
     exit_status = stdout.channel.recv_exit_status()
 
     logged_command = log_command if log_command is not None else command
-    expected = expected_exit_codes or []
-    is_expected = exit_status in expected
-
-    if exit_status != 0 and not is_expected:
-        if log_failure:
+    if exit_status != 0:
+        if exit_status in expected_exit_codes:
+            current_app.logger.info(
+                "Expected probe exit %s: %s", exit_status, logged_command
+            )
+        else:
             current_app.logger.error(
                 f"Command failed (exit {exit_status}): "
                 f"{logged_command}\n"
@@ -110,20 +112,6 @@ def run_command(client, command, log_command=None, log_failure=True, expected_ex
         return {
             "success": False,
             "message": "Privileged command failed.",
-            "output": output,
-            "error": errors
-        }
-
-    if exit_status != 0 and is_expected:
-        if log_failure is False:
-            current_app.logger.info(
-                f"Expected non-zero exit ({exit_status}) for {logged_command}\n"
-                f"Output: {output}\n"
-                f"Errors: {errors}"
-            )
-        return {
-            "success": True,
-            "message": "",
             "output": output,
             "error": errors
         }
@@ -142,7 +130,8 @@ def run_command(client, command, log_command=None, log_failure=True, expected_ex
             "error": errors
             }
 
-def run_sudo_command(client, command, password, log_command=None, log_failure=True, expected_exit_codes=None):
+def run_sudo_command(client, command, password, log_command=None, expected_exit_codes=()):
+    """Run via sudo; expected nonzero exits log at INFO without changing the result."""
     stdin, stdout, stderr = client.exec_command( f"sudo -S -p '' {command}", get_pty=False)
     stdin.write(password + '\n')
     stdin.flush()
@@ -153,11 +142,12 @@ def run_sudo_command(client, command, password, log_command=None, log_failure=Tr
 
     logged_command = log_command if log_command is not None else command
 
-    expected = expected_exit_codes or []
-    is_expected = exit_status in expected
-
-    if exit_status != 0 and not is_expected:
-        if log_failure:
+    if exit_status != 0:
+        if exit_status in expected_exit_codes:
+            current_app.logger.info(
+                "Expected probe exit %s: %s", exit_status, logged_command
+            )
+        else:
             current_app.logger.error(
                 f"Command failed (exit {exit_status}): "
                 f"{logged_command}\n"
@@ -167,20 +157,6 @@ def run_sudo_command(client, command, password, log_command=None, log_failure=Tr
         return {
             "success": False,
             "message": "Privilidged command failed.",
-            "output": output,
-            "error": errors
-            }
-
-    if exit_status != 0 and is_expected:
-        if log_failure is False:
-            current_app.logger.info(
-                f"Expected non-zero exit ({exit_status}) for {logged_command}\n"
-                f"Output: {output}\n"
-                f"Errors: {errors}"
-            )
-        return {
-            "success": True,
-            "message": "",
             "output": output,
             "error": errors
             }
@@ -346,7 +322,7 @@ def check_debian_based(client):
 
 def ensure_deployment_user(client, password): 
     
-    result = run_command( client, f"id {DEPLOYMENT_USER}", log_failure=False, expected_exit_codes=[1] ) 
+    result = run_command( client, f"id {DEPLOYMENT_USER}", expected_exit_codes=(1,) ) 
 
     if result["success"]: 
         return True 
@@ -377,7 +353,7 @@ def install_deployment_key(client, password):
         return False 
 
     check_key_command = ( f"/usr/bin/grep -Fqx -- " f"'{public_key}' " f"{REMOTE_AUTHORIZED_KEYS}" ) 
-    result = run_sudo_command( client, check_key_command, password, log_failure=False, expected_exit_codes=[1,2] ) 
+    result = run_sudo_command( client, check_key_command, password, expected_exit_codes=(1, 2) ) 
     
     if not result["success"]:
 

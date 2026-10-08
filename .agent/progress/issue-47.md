@@ -5,14 +5,14 @@ Status: in-progress
 
 ## Finish condition
 
-- [ ] A probe that expects a non-zero exit does not log at ERROR.
-- [ ] A failing non-probe command still logs at ERROR and returns success: False.
-- [ ] Unit tests in server/tests/unit/ cover both cases.
-- [ ] scripts/verify.sh backend passes.
+- [x] A probe that expects a non-zero exit does not log at ERROR.
+- [x] A failing non-probe command still logs at ERROR and returns success: False.
+- [x] Unit tests in server/tests/unit/ cover both cases.
+- [x] scripts/verify.sh backend passes.
 
 ## Plan
 
-1. [ ] Add failing regression tests in server/tests/unit/test_ncpa_command_logging.py; fix helpers and id/grep call sites in server/app/ncpa_deployment/ncpa_deployment.py; run focused and backend checks.
+1. [x] Add failing regression tests in server/tests/unit/test_ncpa_command_logging.py; fix helpers and id/grep call sites in server/app/ncpa_deployment/ncpa_deployment.py; run focused and backend checks.
 2. [ ] Update spec files/Data_Model_and_Integrations.md, spec files/Implementation_Status.md and server/tests/README.md; verify docs and all; remove progress and open PR.
 
 ## Round log
@@ -21,12 +21,14 @@ Status: in-progress
 |---|---|---|---|
 | resumed | Preserved earlier unfinished patch in dedicated worktree; repaired plan | git log --oneline main..HEAD; git status | No prior commits; source modified and progress untracked. No upstream to pull. |
 
+| 1 | Added 15 mocked SSH regressions; expected exits log INFO and retain success False | Focused pytest; scripts/verify.sh backend | Red: 7 failed/8 passed; green: 15 passed; backend: 2185 passed, 14 skipped |
+
 ## State for the next session
 
-- Last check run (exact command): git status --short --branch
-- Result: Source modified and progress untracked; previous session backend command timed out without captured results.
-- Hypothesis: Earlier patch incorrectly treats expected probe exits as successful, skipping account/key creation. Logging must change without changing return semantics.
-- Next action: Add regression tests and confirm failure before correcting the patch.
+- Last check run (exact command): scripts/verify.sh backend > /tmp/opencode/issue-47-backend.log 2>&1
+- Result: green; 2185 passed, 14 skipped in 241.12s.
+- Hypothesis: Fixed return semantics preserve creation and idempotency; unexpected errors still log ERROR.
+- Next action: Update owning specification and test inventory, then run docs and all checks.
 
 ## Decisions and notes
 
