@@ -36,7 +36,13 @@ table while you test, not afterward.
 - Sanitize before committing: no passwords, tokens, keys, community strings,
   private addresses beyond the documented lab range, or full command output that
   contains them.
-- A report is never edited to change a result. Re-test in a new run and link it.
+- `Pass` means the behavior was observed running. Reading code or a diff is not a
+  test: record it as `Skipped` or `Blocked` with the reason, and say "inspected" in the
+  notes. A run with no observed behavior is not `Pass` overall, and does not change an
+  earlier run's index row.
+- A report is never edited to change a result. Re-test in a new run and link it. The one
+  exception is a result that overstated its evidence: correct it in place, say so in the
+  report, and fix the index row in the same change.
 
 ## Index
 
