@@ -154,6 +154,24 @@ class TestRunDueAutomation:
         start_discovery.assert_not_called()
         start_scan.assert_not_called()
 
+    def test_starts_discovery_after_initial_run(self, db_session, admin_user):
+        make_settings(db_session, Scan_Frequency=24)
+        log = create_user_log(admin_user.UserID, "Discovering Network Hosts")
+        db_session.session.add(NetworkDiscoveryStatus(
+            Status=DiscoveryStatus.SUCCESS,
+            Progress=100,
+            Message="done",
+            Start_At=NOW - timedelta(hours=25),
+            LogID=log.LogID,
+        ))
+        db_session.session.commit()
+
+        with patched_starters() as (start_discovery, _):
+            started = run_due_automation(NOW)
+
+        assert "network_scan" in started
+        start_discovery.assert_called_once_with(admin_user.UserID)
+
     def test_recent_scan_is_not_repeated(self, db_session, admin_user):
         make_settings(db_session, Scan_Frequency=1)
         log = create_user_log(admin_user.UserID, "Discovering Network Hosts")

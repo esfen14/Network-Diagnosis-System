@@ -210,7 +210,9 @@ different purpose.
 - Settings-driven automation checks every `AUTOMATION_CHECK_MINUTES`.
 
 `automation.py` can schedule database backups, network discovery, plugin update
-scans, and plugin security validation. Maintenance mode permits backups but
+scans, and plugin security validation. Scheduled network discovery runs only if
+at least one scan has already been recorded; a fresh installation waits for an
+administrator to trigger the first scan manually. Maintenance mode permits backups but
 stops the other automated operations. Jobs are attributed to an active user for
 audit purposes.
 
