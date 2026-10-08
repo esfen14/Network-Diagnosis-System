@@ -18,7 +18,6 @@ sysdb = os.path.join(tmp, "sys.db").replace("\\", "/")
 histdb = os.path.join(tmp, "hist.db").replace("\\", "/")
 os.environ["DATABASE_URL"] = "sqlite:///" + sysdb
 os.environ["SECRET_KEY"] = "x"
-os.environ["PINPOINT_DOMAIN"] = "test.local"
 
 import config  # noqa: E402
 

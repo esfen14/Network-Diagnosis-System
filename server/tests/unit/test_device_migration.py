@@ -81,8 +81,8 @@ def test_existing_host_names_are_kept_and_made_unique(report):
     assert names[2] == "web.test.local-2"
     # IP-derived names are kept as they are so history.db rows stay attached.
     assert names[3] == "10.0.0.3.test.local"
-    # A row without a usable name gets the name the old code would have given it.
-    assert names[4] == "10.0.0.4.test.local"
+    # A row without a usable name is named by its IP alone (no domain suffix).
+    assert names[4] == "10.0.0.4"
 
 
 def test_existing_devices_start_active_with_computed_confidence(report):

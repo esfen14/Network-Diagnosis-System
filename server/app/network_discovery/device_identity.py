@@ -272,7 +272,7 @@ def nagios_host_name(device):
         return device.Nagios_Host_Name
     if device.Hostname and device.Hostname != "Unknown":
         return device.Hostname
-    return f"{device.IP_Address}.{current_app.config['DOMAIN']}"
+    return device.IP_Address
 
 
 # ==========================================================
@@ -403,10 +403,8 @@ def create_stable_host_name(dns_name=None, ncpa_node_name=None):
     """
     Pick the Nagios host_name for a new device, once, never from its IP:
     the NCPA node name or reverse DNS name if usable and free, else
-    dev-<6 hex>.<DOMAIN>. A collision gets -2, -3, ... appended.
+    dev-<6 hex>. A collision gets -2, -3, ... appended.
     """
-    domain = current_app.config["DOMAIN"]
-
     for candidate in (ncpa_node_name, dns_name):
         label = sanitize_host_label(candidate)
         # A name that merely embeds an IP would change with the lease.
@@ -414,7 +412,7 @@ def create_stable_host_name(dns_name=None, ncpa_node_name=None):
             base = label
             break
     else:
-        base = f"dev-{uuid.uuid4().hex[:6]}.{domain}"
+        base = f"dev-{uuid.uuid4().hex[:6]}"
 
     name = base
     counter = 2

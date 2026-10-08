@@ -21,7 +21,6 @@ ENV_VARS = [
     "NAGIOS_USERNAME",
     "NAGIOS_PASSWORD",
     "PINPOINT_NETWORKS",
-    "PINPOINT_DOMAIN",
     "PINPOINT_PORT_ARCHIVE_AFTER_DAYS",
 ]
 
@@ -92,11 +91,6 @@ class TestNetworkSettings:
     def test_networks_from_comma_list(self, monkeypatch):
         cfg = load_config(monkeypatch, PINPOINT_NETWORKS=" 192.168.50.0/24, 10.0.0.0/24 ,")
         assert cfg.NETWORKS == ["192.168.50.0/24", "10.0.0.0/24"]
-
-    def test_domain(self, monkeypatch):
-        assert load_config(monkeypatch).DOMAIN == "test.local"
-        assert load_config(monkeypatch, PINPOINT_DOMAIN="pinpoint.lan").DOMAIN == "pinpoint.lan"
-
 
 class TestPortArchiveAfterDays:
 

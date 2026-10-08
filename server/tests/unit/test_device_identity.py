@@ -162,7 +162,7 @@ class TestStableHostNames:
         device = run_scan(db_session, status, scan("10.0.0.5", hostname="Unknown"))[(NET, "10.0.0.5")]
 
         assert device.Nagios_Host_Name.startswith("dev-")
-        assert device.Nagios_Host_Name.endswith("." + app.config["DOMAIN"])
+        assert "." not in device.Nagios_Host_Name
         assert "10.0.0.5" not in device.Nagios_Host_Name
 
     def test_dns_name_is_used_when_free(self, db_session, admin_user):
@@ -223,7 +223,7 @@ class TestStableHostNames:
         legacy, bare = all_devices()
 
         assert nagios_host_name(legacy) == "legacy"
-        assert nagios_host_name(bare) == "10.0.0.8." + app.config["DOMAIN"]
+        assert nagios_host_name(bare) == "10.0.0.8"
 
 
 # ==========================================================
