@@ -38,6 +38,8 @@ Totals: Pass 4, Fail 0, Blocked 3, Skipped 1 (see the table).
 
 ## Follow-up
 
+- The blocked and skipped cases above were run in [`2026-10-08-ncpa-fresh-run`](../2026-10-08-ncpa-fresh-run/REPORT.md).
+
 - Defects found: none new. Open work stays on [#45](https://github.com/esfen14/Network-Diagnosis-System/issues/45).
 - Cases to repeat in the next run: a clean `scripts/vmlab fresh main` with the installer fix
   merged; deploy NCPA; enable the plugin; confirm all six services report OK or a threshold
