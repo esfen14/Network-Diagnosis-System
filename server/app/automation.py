@@ -126,6 +126,20 @@ def last_discovery_start():
     return db.session.scalar(sa.select(sa.func.max(NetworkDiscoveryStatus.Start_At)))
 
 
+def discovery_has_run():
+    """
+    Whether the system has recorded at least one network discovery scan.
+
+    A freshly installed system has no rows in NetworkDiscoveryStatus. Until
+    one scan has completed (or been interrupted/failed), the first scan is
+    manual only — triggered via the scan button — so the scheduler does not
+    start scanning the moment the system is installed.
+    """
+    return db.session.scalar(
+        sa.select(sa.func.count()).select_from(NetworkDiscoveryStatus)
+    ) > 0
+
+
 def last_plugin_scan_start():
     """When the most recent plugin directory scan started, or None."""
     return db.session.scalar(sa.select(sa.func.max(PluginScanStatus.Start_At)))
@@ -275,7 +289,11 @@ def run_due_automation(now=None):
 
         try:
             scan_interval = timedelta(hours=settings.Scan_Frequency)
-            if is_due(last_discovery_start(), scan_interval, now) and start_discovery_thread(user_id):
+            if (
+                is_due(last_discovery_start(), scan_interval, now)
+                and discovery_has_run()
+                and start_discovery_thread(user_id)
+            ):
                 started.append("network_scan")
         except Exception:
             db.session.rollback()
