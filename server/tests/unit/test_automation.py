@@ -140,8 +140,8 @@ class TestRunDueAutomation:
         with patched_starters() as (start_discovery, start_scan):
             started = run_due_automation(NOW)
 
-        assert started == ["network_scan", "update_check", "security_check"]
-        start_discovery.assert_called_once_with(admin_user.UserID)
+        assert started == ["update_check", "security_check"]
+        start_discovery.assert_not_called()
         start_scan.assert_called_once_with(admin_user.UserID)
 
     def test_maintenance_mode_pauses_tasks(self, db_session, admin_user):
