@@ -96,7 +96,15 @@ login page, or `POST /api/user/login` with `{"email", "password"}`. Read the sto
 administrator email and password only from the vmlab state folder
 (`~/.local/share/pinpoint-vmlab/admin-email`, `admin-password`) without echoing them.
 **Smoke can finish with a host still `pending`**; if a target is missing, wait a minute
-and re-run `scripts/vmlab smoke` (`2026-10-08-vm-lab-remaining` report).
+and re-run `scripts/vmlab smoke` (`2026-10-08-vm-lab-remaining` report). The first scan also
+takes about 14 min (the default networks include the VirtualBox NAT range and TCP ports
+1-10000), so smoke reports "discovery finishes" as failed at 300 s: poll
+`GET /api/system/discover/status` instead of starting a second scan. Hosts reach the
+Network Health list a few minutes after the scan ends. Narrowing TCP ports to `1-1024`
+cuts a scan to about 6 min but drops legacy01's SSH port 2222 (add it back as a range such
+as `2200-2299` only after J2-09 is fixed). If the appliance VM was built by another state
+folder (for example `pinpoint-appliance-45`), export `VMLAB_STATE_DIR` in the environment;
+it is not read from the config file.
 
 Appliance shell (read-only evidence): `ssh -i ~/.local/share/pinpoint-vmlab/id_ed25519 -p 2250 lab@127.0.0.1`.
 App directory `/opt/pinpoint/Network-Diagnosis-System`; settings `/etc/pinpoint/pinpoint.env`;
@@ -182,7 +190,7 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 `[FS]` · VM · agent
 - **Pre:** `scripts/vmlab fresh`, `setup-admin`; no discovery run yet; targets up.
 - **Steps:** 1. `scripts/vmlab smoke` (it adds `10.77.0.0/28`, starts discovery and waits for hosts). 2. `GET /api/system/network-health/hosts`.
-- **Expect:** 1. Exit 0 (or a re-run passes; see §4.1). 2. Hosts with IPs 10.77.0.2 to .6 are listed with state UP. The list also holds the Nagios server's own `localhost`, so judge the targets by address, not by a total count. The appliance's lab address (10.77.0.1) is not one of the five.
+- **Expect:** 1. Exit 0 (or a re-run passes; see §4.1). 2. Hosts with IPs 10.77.0.2 to .6 are listed with state UP. The list also holds the Nagios server's own `localhost`, so judge the targets by address, not by a total count. Hosts are named `dev-xxxxxx`: web01 is .2, web02 .3, app01 .4, snmp01 .5, legacy01 .6. The appliance's lab address (10.77.0.1) is not one of the five.
 
 #### J2-02 Scan progress and terminal status
 `[RE]` · VM · agent (UI)
@@ -193,8 +201,8 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 #### J2-03 Each host records its attributes
 `[FS]` · VM · agent
 - **Pre:** J2-01.
-- **Steps:** Open the Device Inventory drawer for `web01` and `legacy01`; read `GET /api/system/hosts/<id>/ports` and the host detail.
-- **Expect:** Hostname, IP, MAC, OS and device type are present. `web01` lists ports 22/tcp and 80/tcp and 443/tcp; `legacy01` lists SSH on 2222/tcp. Each port shows a state and a reason (Device Inventory §2, §4).
+- **Steps:** Open the Device Inventory drawer for `web01` and `legacy01`; read `GET /api/system/hosts/<id>/ports`, `GET /api/system/hosts/<id>/identifiers` (IP, MAC) and `GET /api/system/report/hosts-by-os` (OS).
+- **Expect:** Hostname, IP, MAC and OS are present (no route read exposed a device type; record what the drawer shows). `web01` lists ports 22/tcp and 80/tcp and 443/tcp; `legacy01` lists SSH on 2222/tcp. Each port shows a state and a reason (Device Inventory §2, §4).
 
 #### J2-04 Services follow plugins, not just ports
 `[FS]` · VM · agent
@@ -229,8 +237,8 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 #### J2-09 Discovery settings apply to the next scan
 `[FS]` · VM · agent
 - **Pre:** B0, `settings.discovery`.
-- **Steps:** In Settings > Network Discovery add TCP port 8080 to the scan ports; save; rescan.
-- **Expect:** A Configuration Change entry records the edit; `app01` (HTTP on 8080) shows a 8080/tcp port after the rescan. Remove the port afterwards.
+- **Steps:** In Settings > Network Discovery narrow TCP ports to `1-1024`, rescan, then add `8080`; save; rescan. (8080 is already inside the default range 1-10000, so adding it alone proves nothing.)
+- **Expect:** A Configuration Change entry records the edit; `app01` (HTTP on 8080) shows a 8080/tcp port after the rescan. Restore the ports afterwards. **Dry run 2026-10-09 failed this** (the port was never recorded); see the run report.
 
 #### J2-10 Maintenance Mode suppresses scheduled scans
 `[RE]` · MOCK · agent
@@ -270,9 +278,9 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 
 #### J3-05 The NCPA services are OK
 `[RE]` · VM · agent
-- **Pre:** J3-02; `check_ncpa` enabled in Plugin Manager (J4); wait for one Nagios check cycle.
+- **Pre:** J3-02; `check_ncpa` (listed as `check_ncpa.py`) enabled in Plugin Manager (J4); wait for one Nagios check cycle.
 - **Steps:** Read the NCPA services from `GET /api/system/network-health/services` or Nagios `status.dat`.
-- **Expect:** Three NCPA services per deployed host (CPU, root disk, memory in the 2026-10-08 run; the paper also lists processes, which that run did not show), each OK with real output; none CRITICAL with exit code 127. If 127 appears, the installer fix for #45 is missing: reopen #45.
+- **Expect:** Three NCPA services per deployed host (CPU, root disk, memory in the 2026-10-08 run; the paper also lists processes, which that run did not show), each with real output, normally OK (a WARNING is a genuine threshold hit, for example memory near 50 %); none CRITICAL with exit code 127. If 127 appears, the installer fix for #45 is missing: reopen #45.
 
 #### J3-06 Deployment is logged
 `[SE]` · VM · agent

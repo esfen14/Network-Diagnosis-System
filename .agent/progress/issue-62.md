@@ -10,7 +10,7 @@ Status: in-progress
 - [x] Repo specs aligned: Device_Inventory_Requirements in router and index, System Status kept (only topology view excluded), Settings tabs, paper-vs-code claims re-checked
 - [x] `docs/qa/QA_Test_Plan.md`: J1-J9, X1-X6, PT-01..05, BB-01..07; stable IDs, ISO tag, coverage table, exclusions, fate of old plans, run outputs
 - [x] Every case runnable by an agent from written steps; lab commands named; human cases marked (not yet proven by a dry run)
-- [ ] Dry run of J2 and J3 from the plan alone recorded on the VM lab (`docs/test-runs/`)
+- [x] Dry run of J2 and J3 from the plan alone recorded on the VM lab (`docs/test-runs/2026-10-09-qa-dry-run-j2-j3/`): 13 pass, 1 fail, 6 not run; unrunnable steps fixed in the plan
 - [x] Team decisions recorded (PT-04 clock, PT-05 4 h, roles from seed, plugins 65); availability formula still open
 - [x] `scripts/verify.sh docs` passes (run with a python3 shim: only `python` exists on this Windows machine)
 
@@ -22,7 +22,8 @@ Status: in-progress
 4. [x] Router/index/spec edits: `AGENTS.md`, `spec files/README.md`, `docs/README.md`, `Agent_Workflow_and_CI.md`, `Frontend_Modules_and_Routes.md`, `Implementation_Status.md`
 5. [x] Map old plans in `server/tests/plans/README.md` and plan section 7
 6. [x] `scripts/verify.sh docs`
-7. [ ] Dry run J2/J3 on the VM lab (needs the lab owner's machine: no vmlab state on this one)
+7. [x] Dry run J2/J3 on the VM lab (done 2026-10-09 on the owner's machine)
+8. [ ] Owner decisions: file the two defects found by the dry run (J2-09 and the gateway/web01 duplicate); run the cases left over; delete this file before the PR leaves draft
 
 ## Round log
 
@@ -30,14 +31,15 @@ Status: in-progress
 |---|---|---|---|
 | 1 | Research only | | |
 | 2 | Wrote journeys doc, test plan, router/spec edits | `scripts/verify.sh docs` | green |
+| 4 | Dry run of J1-01, J2, J3 on the VM lab; wrote the run report and index row; corrected J2-01, J2-03, J2-09, J3-05 and the lab notes in the plan | lab run (see report) | Partial: 13 pass, 1 fail, 6 not run |
 | 3 | Opened PR as ready; CI `docs` failed only on the progress-file gate. Converted to draft; pushed this update to trigger a fresh run (a re-run reuses the old event data) | CI `docs` | pending |
 
 ## State for the next session
 
 - Last check run (exact command): `PATH="$TEMP/shim:$PATH" bash scripts/verify.sh docs`
-- Result (first failing lines, or "green"): green
+- Result (first failing lines, or "green"): green (docs check to be re-run after the round 4 edits)
 - Hypothesis: n/a
-- Next action: run J2-01..J2-09 and J3-01..J3-09 from `docs/qa/QA_Test_Plan.md` on the VM lab (`scripts/new_test_run.sh qa-dry-run-j2-j3 docs/qa/QA_Test_Plan.md`), fix any step that is not runnable as written, and record the report
+- Next action: run `scripts/verify.sh docs`, push, confirm CI `docs` is green, then ask the owner whether to file the two defects and whether to run J2-05, J2-09, J2-10, J3-01, J3-04, J3-07, J3-08 in a second run; mark the PR ready only after the owner deletes this file
 
 ## Decisions and notes
 
@@ -48,8 +50,14 @@ count is 65 (observed in `docs/test-runs/2026-10-08-ncpa-run/`).
 Open: BB-01..BB-07 wording is not in the repository (paper pp.67-68); the mapping in the
 plan is inferred and BB-03 is a guess. One availability formula/window for Network Health
 and Reports (D-9). PT-01 "initialisation" is defined by inference in the plan.
-`gh` is not installed on this machine, so no PR can be opened from here; nothing has been
-committed or pushed. Delete this file before the PR leaves draft.
+Delete this file before the PR leaves draft.
+
+Dry run (2026-10-09): the checkout was switched to `main` by someone else mid-run (stashes
+exist in `git stash list`, made at 22:53 and 22:55 +0800, holding deletions of tracked files);
+I did not touch them. The lab VM `pinpoint-appliance-45` needs `VMLAB_STATE_DIR` in the
+environment. Two defects found, not filed: J2-09 (ports added to the scan settings after a
+device is known are never recorded) and a duplicate/identity corruption after removing a
+network from discovery settings.
 
 Facts found while checking the code that differ from the source document: the Dashboard
 host total includes the Nagios `localhost` (6, not 5); Manager and Staff are seeded with
