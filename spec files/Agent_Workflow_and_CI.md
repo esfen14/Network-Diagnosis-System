@@ -14,6 +14,7 @@ agents; loop engineering; last-mile checks in CI; reproducible environments).
 | Plans, proposals, acceptance and remediation reports | `docs/plans/` |
 | Operator and user manuals | `docs/manuals/` |
 | Test plans and live-lab plans | `server/tests/plans/` |
+| QA journeys, QA scope and the master QA test plan | `docs/qa/` |
 | Tasks and open defects | GitHub issues |
 
 See `docs/README.md` for the rules and lifecycle.

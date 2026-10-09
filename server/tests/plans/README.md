@@ -1,5 +1,11 @@
 # Test plans and approach
 
+**The master QA plan is [`docs/qa/QA_Test_Plan.md`](../../../docs/qa/QA_Test_Plan.md).**
+It holds the cases the QA agent loop runs (journeys J1-J9, invariants, performance and
+black-box cases), each tagged with an ISO/IEC 25010:2023 characteristic. The plans below
+are lab procedures for one subsystem. They stay here as **appendices** that the master plan
+links by case ID (its section 7 records the decision for each); none is retired.
+
 - [Test Approach Adjustment Plan](TEST_APPROACH_ADJUSTMENT_PLAN.md): proposed
   deterministic browser-to-Nagios core acceptance; implementation is deferred
   pending product fixes. This is an approach proposal, not an implemented runner.
