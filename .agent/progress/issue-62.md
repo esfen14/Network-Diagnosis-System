@@ -30,6 +30,7 @@ Status: in-progress
 |---|---|---|---|
 | 1 | Research only | | |
 | 2 | Wrote journeys doc, test plan, router/spec edits | `scripts/verify.sh docs` | green |
+| 3 | Opened PR as ready; CI `docs` failed only on the progress-file gate. Converted to draft; pushed this update to trigger a fresh run (a re-run reuses the old event data) | CI `docs` | pending |
 
 ## State for the next session
 
