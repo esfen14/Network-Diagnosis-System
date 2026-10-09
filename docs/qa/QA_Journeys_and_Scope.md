@@ -443,6 +443,7 @@ Not out of scope. The specs decide; the paper cannot be used to reject them.
 
 | Issue | What | Effect on journeys |
 |-------|------|--------------------|
+| #66, #67 (open) | Found by the 2026-10-09 dry run: ports added to the scan settings are not recorded on known devices (J2-09); removing a network reassigns its device and duplicates web01 | J2-09: Fail, comment on #66 |
 | #59 (open) | Discovery can leave a duplicate "Address Unknown" device record for one host; NCPA deployed to the dead record is never checked | J2 step 8, J3 step 7: comment on the issue |
 | #60 (open) | The Nagios check interval is hard-coded to 5 minutes and the poller stores repeated rows | J5 detection delay, PT-04 reporting, availability figures (D-9) |
 | #61 (open) | First-login setup is not built | J1 and J9 steps marked "not asserted" |

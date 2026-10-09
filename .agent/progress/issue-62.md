@@ -23,7 +23,7 @@ Status: in-progress
 5. [x] Map old plans in `server/tests/plans/README.md` and plan section 7
 6. [x] `scripts/verify.sh docs`
 7. [x] Dry run J2/J3 on the VM lab (done 2026-10-09 on the owner's machine)
-8. [ ] Owner decisions: file the two defects found by the dry run (J2-09 and the gateway/web01 duplicate); run the cases left over; delete this file before the PR leaves draft
+8. [ ] Owner decisions: run the cases left over (defects filed as #66 and #67); delete this file before the PR leaves draft
 
 ## Round log
 
@@ -39,7 +39,7 @@ Status: in-progress
 - Last check run (exact command): `PATH="$TEMP/shim:$PATH" bash scripts/verify.sh docs`
 - Result (first failing lines, or "green"): green (docs check to be re-run after the round 4 edits)
 - Hypothesis: n/a
-- Next action: run `scripts/verify.sh docs`, push, confirm CI `docs` is green, then ask the owner whether to file the two defects and whether to run J2-05, J2-09, J2-10, J3-01, J3-04, J3-07, J3-08 in a second run; mark the PR ready only after the owner deletes this file
+- Next action: run `scripts/verify.sh docs`, push, confirm CI `docs` is green, then ask the owner whether to run J2-05, J2-09, J2-10, J3-01, J3-04, J3-07, J3-08 in a second run; mark the PR ready only after the owner deletes this file
 
 ## Decisions and notes
 
@@ -55,9 +55,9 @@ Delete this file before the PR leaves draft.
 Dry run (2026-10-09): the checkout was switched to `main` by someone else mid-run (stashes
 exist in `git stash list`, made at 22:53 and 22:55 +0800, holding deletions of tracked files);
 I did not touch them. The lab VM `pinpoint-appliance-45` needs `VMLAB_STATE_DIR` in the
-environment. Two defects found, not filed: J2-09 (ports added to the scan settings after a
-device is known are never recorded) and a duplicate/identity corruption after removing a
-network from discovery settings.
+environment. Two defects found and filed: #66 (J2-09: ports added to the scan settings after a
+device is known are never recorded) and #67 (duplicate/identity corruption after removing a
+network from discovery settings).
 
 Facts found while checking the code that differ from the source document: the Dashboard
 host total includes the Nagios `localhost` (6, not 5); Manager and Staff are seeded with

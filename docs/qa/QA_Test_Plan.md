@@ -238,7 +238,7 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 `[FS]` · VM · agent
 - **Pre:** B0, `settings.discovery`.
 - **Steps:** In Settings > Network Discovery narrow TCP ports to `1-1024`, rescan, then add `8080`; save; rescan. (8080 is already inside the default range 1-10000, so adding it alone proves nothing.)
-- **Expect:** A Configuration Change entry records the edit; `app01` (HTTP on 8080) shows a 8080/tcp port after the rescan. Restore the ports afterwards. **Dry run 2026-10-09 failed this** (the port was never recorded); see the run report.
+- **Expect:** A Configuration Change entry records the edit; `app01` (HTTP on 8080) shows a 8080/tcp port after the rescan. Restore the ports afterwards. **Dry run 2026-10-09 failed this** (the port was never recorded): known defect #66.
 
 #### J2-10 Maintenance Mode suppresses scheduled scans
 `[RE]` · MOCK · agent

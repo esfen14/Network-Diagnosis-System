@@ -35,7 +35,7 @@ web01 .2, web02 .3, app01 .4, snmp01 .5, legacy01 .6.
 | J2-06 | Pass | Start, stop 5 s later: ended Interrupted, log "Network discovery was cancelled."; no 403 for the administrator. The cancel took about 7 min to take effect (an nmap run was in flight) | |
 | J2-07 | Pass | Pause removed snmp01 from the generated `hosts.cfg` and the Dashboard host total went 8 to 7; resume restored both. The user-log entries were not read (route not found) | |
 | J2-08 | Pass | On a clean baseline, four rescans left exactly one ACTIVE record per address. #59 did not reproduce. A different duplicate appeared on the reverted first run, see Follow-up | |
-| J2-09 | **Fail** | Setting saved (`1-1024` plus 8080, then 2222, then ranges `2200-2299` and `8000-8099`) and rescanned three times, each Success. nmap from the appliance shows 2222 on legacy01 and 8080 on app01 open, but neither port was ever recorded. Possible cause: ports that appear on an already-known device after a settings change are not recorded. The Configuration Change entry was not read | to be filed |
+| J2-09 | **Fail** | Setting saved (`1-1024` plus 8080, then 2222, then ranges `2200-2299` and `8000-8099`) and rescanned three times, each Success. nmap from the appliance shows 2222 on legacy01 and 8080 on app01 open, but neither port was ever recorded. Possible cause: ports that appear on an already-known device after a settings change are not recorded. The Configuration Change entry was not read [#66](https://github.com/esfen14/Pinpoint/issues/66) |
 | J2-10 | Skipped | Unit test and Maintenance Mode banner not run | |
 | J3-01 | Skipped | `GET /deployment/ncpa/devices` read: the four reachable Ubuntu targets were eligible. legacy01 was missing because of the J2-09 finding. The Incompatible/Excluded path (MOCK) was not run | |
 | J3-02 | Pass | web01 and web02 (not web01 and legacy01 as written): host keys read and trusted, login and sudo ok, run Success in 60 s, both Deployed NCPA (`vmlab ncpa`, 16 of 16 checks). legacy01 could not be tried (J2-09) | |
@@ -67,8 +67,8 @@ web01 .2, web02 .3, app01 .4, snmp01 .5, legacy01 .6.
 
 ## Follow-up
 
-- Defects found (not yet filed; the owner decides): (1) J2-09, single ports or ranges
-  added to the scan ports after a device is known are never recorded; (2) removing a
+- Defects found: [#66](https://github.com/esfen14/Pinpoint/issues/66) (1) J2-09, single ports or ranges
+  added to the scan ports after a device is known are never recorded; [#67](https://github.com/esfen14/Pinpoint/issues/67) (2) removing a
   network from discovery settings reassigned the old NAT-gateway device to four lab
   hosts within one second and left web01 with an `Address Unknown` record and the
   gateway record carrying web01's address and identifiers (a #59-like duplicate with a
