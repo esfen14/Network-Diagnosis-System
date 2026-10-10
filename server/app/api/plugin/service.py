@@ -1322,10 +1322,15 @@ def rollback_plugin_update(plugin_id, user_id):
 # that, listing what a plugin monitors with live status, and stopping or
 # resuming one port on one device.
 
-# Nagios checks each service every 5 minutes by default; a service with no
-# result for this many intervals is reported as having no recent data.
-DEFAULT_CHECK_INTERVAL_SECONDS = 300
+# A service with no result for this many check intervals has no recent data.
 STALE_AFTER_INTERVALS = 3
+
+
+def configured_check_interval_minutes():
+    from app.system_models import SystemSettings
+
+    row = db.session.get(SystemSettings, 1)
+    return row.Check_Interval if row else 5
 
 
 class MonitoredServiceNotFoundError(Exception):
@@ -1503,11 +1508,11 @@ def describe_service_status(result, applied_at, now):
         since = f" Applied {applied_at.isoformat()}." if applied_at else ""
         return {
             "kind": "waiting", "state": None, "last_check": None,
-            "output": f"Waiting for first check.{since} Checks run every 5 minutes.",
+            "output": f"Waiting for first check.{since} Checks run every {configured_check_interval_minutes()} minutes.",
         }
 
     last_check = as_utc(result.Last_Check)
-    interval = DEFAULT_CHECK_INTERVAL_SECONDS
+    interval = configured_check_interval_minutes() * 60
     if result.Next_Check and result.Last_Check:
         scheduled = (as_utc(result.Next_Check) - last_check).total_seconds()
         if scheduled > 0:

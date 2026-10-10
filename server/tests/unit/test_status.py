@@ -133,6 +133,16 @@ class TestServiceStatusParsing:
         )
         assert count == 0
 
+    def test_same_check_is_not_inserted_twice(self, db_session):
+        insert_service_status_data(HOSTNAME, "PING", service_payload())
+        insert_service_status_data(HOSTNAME, "PING", service_payload(last_update=1_790_418_841_000))
+        assert db_session.session.scalar(sa.select(sa.func.count()).select_from(ServiceStatus)) == 1
+        assert db_session.session.scalar(sa.select(sa.func.count()).select_from(ServicePerfData)) == 2
+
+        insert_service_status_data(HOSTNAME, "PING", service_payload(last_check=1_790_419_081_000))
+        assert db_session.session.scalar(sa.select(sa.func.count()).select_from(ServiceStatus)) == 2
+        assert db_session.session.scalar(sa.select(sa.func.count()).select_from(ServicePerfData)) == 4
+
 
 # ==========================================================
 # HOST STATUS
@@ -185,6 +195,16 @@ class TestHostStatusParsing:
             sa.select(HostPerfData.Metric).where(HostPerfData.HostStatusID == row.HostStatusID)
         ))
         assert metrics == {"rta", "pl"}
+
+    def test_same_check_is_not_inserted_twice(self, db_session):
+        insert_host_status_data(host_payload())
+        insert_host_status_data(host_payload(last_update=1_790_418_841_000))
+        assert db_session.session.scalar(sa.select(sa.func.count()).select_from(HostStatus)) == 1
+        assert db_session.session.scalar(sa.select(sa.func.count()).select_from(HostPerfData)) == 2
+
+        insert_host_status_data(host_payload(last_check=1_790_419_081_000))
+        assert db_session.session.scalar(sa.select(sa.func.count()).select_from(HostStatus)) == 2
+        assert db_session.session.scalar(sa.select(sa.func.count()).select_from(HostPerfData)) == 4
 
 
 # ==========================================================

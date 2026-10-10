@@ -302,6 +302,7 @@ export function GeneralSettings() {
 
         <SettingsSelect
           label="Dashboard Refresh Rate"
+          description={`How often this browser refreshes Pinpoint data. Nagios checks every ${settings.checkInterval} minutes; Pinpoint polls Nagios every minute. This does not change either schedule.`}
           value={String(
             settings.dashboardRefreshRate
           )}

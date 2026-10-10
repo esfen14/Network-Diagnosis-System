@@ -1,6 +1,6 @@
 # Implementation Status and Scope
 
-**Snapshot date:** 2026-10-08
+**Snapshot date:** 2026-10-10
 
 This file reports what is present in the repository. It is not a substitute for
 the normative behavior in the requirement specifications.
@@ -11,7 +11,14 @@ the normative behavior in the requirement specifications.
 - Account, role, permission-option, and per-user preference APIs, including the
   bootstrap administrator's first-run setup (`POST /api/user/complete-setup`).
 - Singleton system settings with personal/system separation and optimistic
-  version conflict handling.
+  version conflict handling. The system Check interval (1/2/5/10/15 minutes)
+  generates host and service check intervals through the shared Nagios writer;
+  unchanged Nagios `Last_Check` results are not stored again. Plugin status text,
+  stale fallback and the per-user browser-refresh hint use the setting. Fresh
+  appliance cadence, backup and validation/reload rollback were verified in
+  `docs/test-runs/2026-10-10-issue-60/REPORT.md`; controlled full-hour
+  before/after rows-per-host measurement is deferred to #82 under the #62 QA
+  plan. The short VM comparison is not that measurement.
 - Dashboard status, summary, active alerts, acknowledgement, and latest
   notifications.
 - Network Health summary, metric trends, plugin grouping, host table/details,

@@ -28,6 +28,7 @@ from app.system_models import (
     NCPADevicePartition,
     NetworkDiscovery,
     NetworkDiscoveryStatus,
+    SystemSettings,
     Open_UDP_Services,
 )
 from app.nagios.status import insert_service_status_data
@@ -454,6 +455,17 @@ class TestLoadHostPluginFacts:
 
 @pytest.mark.usefixtures("all_monitoring_plugins")
 class TestCreateHostCfgFile:
+
+    def test_check_interval_is_rendered_on_hosts_and_services(self, app, db_session, plugin_config, tmp_path):
+        db_session.session.add(SystemSettings(Id=1, Check_Interval=2))
+        db_session.session.commit()
+        discovered = {"10.0.0.0/24": {"10.0.0.11": make_host("host-a", tcp={"22": "ssh"})}}
+        with patched_config(app, HOST_CONFIG_DIR=tmp_path):
+            text = _create_host_cfg_file(discovered).read_text()
+        host_block = re.search(r"define host \{.*?\}", text, re.S).group()
+        service_block = re.search(r"define service \{.*?\}", text, re.S).group()
+        assert re.search(r"check_interval\s+2\b", host_block)
+        assert re.search(r"check_interval\s+2\b", service_block)
 
     def test_each_host_gets_only_its_own_services(self, app, db_session, admin_user, plugin_config, tmp_path):
         ncpa_device = make_device(db_session, admin_user, "host-b", "10.0.0.12")
