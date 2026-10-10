@@ -19,6 +19,7 @@ the normative behavior in the requirement specifications.
 - Alerts and Notifications History list/detail routes backed by Nagios archive
   events and Pinpoint acknowledgement history.
 - Header notification feed with per-user unread cursor.
+- Per-user email alert setting (`User.Receive_Email_Alerts`, permission `account.alerts`): only Active opted-in users become Nagios contacts, and account changes that affect a contact rebuild the Nagios config (#80). Not yet run on the VM lab.
 - Network discovery start/stop/status and Nagios host/service config generation. Repeat scans keep newly configured TCP ports on existing devices even when lab targets share a cloned SSH key: a matching hardware MAC at the device's current address prevents secondary-address suppression (#66; VM retest in `docs/test-runs/2026-10-10-issue-66/`).
 - NCPA eligibility, SSH fingerprint trust (approved key only), login checks,
   deployment with per-device outcomes, cancellation, status, run history and
@@ -60,6 +61,7 @@ the normative behavior in the requirement specifications.
 |---|---|---|
 | History frontend | `/history` is routed to `HistoryPage` with a sidebar entry and the `system.history` client permission, and calls the list and detail routes. It has not been audited against `Alerts_Notifications_History_Requirements.md` | Audit the page against the requirements and fix gaps |
 | Auto-resolved acknowledgements | `AckAction.AUTO_RESOLVED` and model contract exist; status polling does not clean resolved active acknowledgements | On UP/OK transition, delete the active acknowledgement and append an AUTO_RESOLVED history record |
+| Per-host alert recipients | Every contact is in one `system_users` group used by all hosts and services | Choose recipients per host (#79), after #80 is verified on the VM lab |
 | Discovery stop permission | Stop route checks `network.discovery`; seed data defines `system.discover` | Standardize the route on the seeded permission or deliberately introduce/seed the alternate permission |
 | Topology exclusion | `TopologyPage`, `/topology`, and a sidebar entry labeled “System Status” are still active | Remove the route and navigation entry while keeping source code for possible future use |
 | Reports frontend breadth | Backend has six report endpoints; UI currently exposes availability and network-services views | Add other views only when product requirements call for them |

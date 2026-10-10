@@ -27,7 +27,7 @@ requests use `src/lib/api.ts`; Plugin Manager wrappers live in
 | `/ncpa-deployment` | `NcpaDeploymentPage` | `system.deploy.ncpa` | Warns, through `useNcpaPluginState`, when `check_ncpa` is not enabled in Plugin Manager (the agent's checks are monitored only while it is). Connected to the NCPA deployment routes: device list, deploy wizard (host-key trust, login checks, start), live run banner, Deployment History tab and run review drawer (`?tab=history&run=<id>`) |
 | `/reports` | `ReportsPage` | `system.report` | Connected for host availability and network-services views; backend exposes additional report routes |
 | `/system-logs` | `SystemLogsPage` | `system.logs` | Connected to five log categories |
-| `/accounts` | `ManageAccountsPage` | `account.view` | Connected to account/role APIs |
+| `/accounts` | `ManageAccountsPage` | `account.view` | Connected to account/role APIs. The table shows each user's Email Alerts (On/Off); the add and edit forms show a "Send this user email alerts" checkbox only with `account.alerts`, and a failed Nagios apply is shown as a notice |
 | `/manage-roles` | `ManageRolesPage` | `role.view` | Connected to role and permission APIs |
 | `/settings` | `SettingsPage` | Any logged-in user; tabs are separately gated | Connected to system settings and user preferences |
 | `/` | Redirect | — | Redirects to `/login` |

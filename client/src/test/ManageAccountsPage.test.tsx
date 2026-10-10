@@ -10,11 +10,13 @@ vi.mock('../contexts/SystemSettingsContext', () => ({
 }))
 
 let canEditAccounts = false
+let canEditAlerts = false
 vi.mock('../contexts/CurrentUserContext', () => ({
   useCurrentUser: () => ({
     user: null,
     isLoading: false,
-    hasPermission: (name: string) => canEditAccounts && name === 'account.edit',
+    hasPermission: (name: string) =>
+      (canEditAccounts && name === 'account.edit') || (canEditAlerts && name === 'account.alerts'),
   }),
 }))
 
@@ -43,6 +45,7 @@ function account(id: number, first: string, last: string, status: string, role =
     email: `${first.toLowerCase()}@example.com`,
     role,
     status,
+    receive_email_alerts: true,
     created_at: '2026-09-01T08:00:00+00:00',
     updated_at: '2026-09-01T08:00:00+00:00',
   }
@@ -95,6 +98,7 @@ describe('ManageAccountsPage', () => {
   beforeEach(() => {
     strongPasswordPolicy = true
     canEditAccounts = false
+    canEditAlerts = false
     passwordRequests = []
     accountsResponse = { items: ACCOUNTS }
     apiGet.mockReset()
@@ -287,6 +291,90 @@ describe('ManageAccountsPage', () => {
       await openAndFill('StrongPass123!', 'StrongPass123?')
       expect(screen.getByText('Passwords do not match.')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'SAVE CHANGES' })).toBeDisabled()
+    })
+  })
+  describe('Email alerts', () => {
+    it('shows each account\'s setting in the table', async () => {
+      accountsResponse = {
+        items: [account(1, 'Marie', 'Santos', 'Active'), { ...account(2, 'Chloe', 'Baltazar', 'Active'), receive_email_alerts: false }],
+      }
+      await renderLoaded()
+      const rows = screen.getAllByRole('row').slice(1)
+      expect(within(rows[0]).getByText('On')).toBeInTheDocument()
+      expect(within(rows[1]).getByText('Off')).toBeInTheDocument()
+    })
+
+    it('hides the toggle without the account.alerts permission', async () => {
+      const user = userEvent.setup()
+      await renderLoaded()
+      await user.click(screen.getByRole('button', { name: '+ Add User' }))
+      expect(screen.queryByLabelText('Send this user email alerts')).not.toBeInTheDocument()
+    })
+
+    it('does not send the field when the user cannot change it', async () => {
+      const user = userEvent.setup()
+      await renderLoaded()
+      await user.click(screen.getAllByTitle('Edit')[0])
+      await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+      await waitFor(() => expect(apiPut).toHaveBeenCalled())
+      expect(apiPut.mock.calls[0][1]).not.toHaveProperty('receive_email_alerts')
+    })
+
+    it('sends the setting when creating an account', async () => {
+      canEditAlerts = true
+      const user = userEvent.setup()
+      await renderLoaded()
+      await user.click(screen.getByRole('button', { name: '+ Add User' }))
+      await user.type(screen.getByPlaceholderText('e.g. JUAN'), 'Ana')
+      await user.type(screen.getByPlaceholderText('e.g. CRUZ'), 'Reyes')
+      await user.type(screen.getByPlaceholderText('e.g. juan.cruz@email.com'), 'ana@example.com')
+      const [passwordInput, confirmInput] = document.querySelectorAll<HTMLInputElement>('input[type="password"]')
+      await user.type(passwordInput, 'StrongPass123!')
+      await user.type(confirmInput, 'StrongPass123!')
+
+      const box = screen.getByLabelText('Send this user email alerts')
+      expect(box).toBeChecked()
+      await user.click(box)
+      await user.click(screen.getByRole('button', { name: 'SAVE CHANGES' }))
+
+      await waitFor(() =>
+        expect(apiPost).toHaveBeenCalledWith(
+          '/api/user/accounts',
+          expect.objectContaining({ receive_email_alerts: false }),
+        ),
+      )
+    })
+
+    it('sends the setting when editing an account', async () => {
+      canEditAlerts = true
+      apiPut.mockResolvedValue({})
+      const user = userEvent.setup()
+      await renderLoaded()
+      await user.click(screen.getAllByTitle('Edit')[0])
+      await user.click(screen.getByLabelText('Send this user email alerts'))
+      await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+      await waitFor(() =>
+        expect(apiPut).toHaveBeenCalledWith(
+          '/api/user/accounts/1',
+          expect.objectContaining({ receive_email_alerts: false }),
+        ),
+      )
+    })
+
+    it('tells the user when Nagios was not updated', async () => {
+      canEditAlerts = true
+      apiPut.mockResolvedValue({ config_ok: false, config_message: 'nagios -v failed' })
+      const user = userEvent.setup()
+      await renderLoaded()
+      await user.click(screen.getAllByTitle('Edit')[0])
+      await user.click(screen.getByLabelText('Send this user email alerts'))
+      await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+      expect(
+        await screen.findByText('The account was saved but Nagios was not updated: nagios -v failed'),
+      ).toBeInTheDocument()
     })
   })
 })

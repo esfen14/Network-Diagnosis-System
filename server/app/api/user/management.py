@@ -1,6 +1,6 @@
 from flask import request
 from flask_login import login_required, current_user
-from app.api.helper.database_access.permissions import require_permission
+from app.api.helper.database_access.permissions import require_permission, user_has_permission
 from app.system_models import Permission, User, Role, RolePermission, UserStatus
 from app.api.helper import *
 from app.api.helper.database_access.user_access import get_super_admin, is_super_admin
@@ -439,6 +439,12 @@ def create_account():
         require_password_change = data.get('require_password_change', True)
         if not isinstance(require_password_change, bool):
             return error("require_password_change must be true or false.", 400)
+
+        receive_email_alerts = data.get('receive_email_alerts', True)
+        if not isinstance(receive_email_alerts, bool):
+            return error("receive_email_alerts must be true or false.", 400)
+        if receive_email_alerts is not True and not user_has_permission("account.alerts"):
+            return error("You do not have permission to change email alerts.", 403)
         
         err = validate_role_exists(role_id)
         if err is not None:
@@ -477,6 +483,7 @@ def create_account():
                 Status=normalized_status,
                 RoleID=applied_role.RoleID,
                 Must_Change_Password=require_password_change,
+                Receive_Email_Alerts=receive_email_alerts,
             )
             user.set_password(password)
 
@@ -490,7 +497,10 @@ def create_account():
             db.session.rollback()
             return error("An error occurred.", 500)
 
-        return success(message="Account successfully created.", status=201)
+        config = {}
+        if _is_alert_contact(user):
+            config = _apply_contact_change("Account")
+        return success(config, message="Account successfully created.", status=201)
     except Exception:
         current_app.logger.exception("An unexpected error occured.")
         return error("An unexpected error occured.", 500)
@@ -568,6 +578,7 @@ def available_accounts():
                     "email": user.Email,
                     "role": user.Role.Name,
                     "status": user.Status.value,
+                    "receive_email_alerts": user.Receive_Email_Alerts,
                     "created_at": user.Created_At.isoformat(),
                     "updated_at": user.Updated_At.isoformat()
                 }
@@ -605,6 +616,7 @@ def account_info(id):
             "email": user.Email,
             "role": user.Role.Name,
             "status": user.Status.value,
+            "receive_email_alerts": user.Receive_Email_Alerts,
             "created_at": user.Created_At.isoformat(),
             "updated_at": user.Updated_At.isoformat()
         })
@@ -645,6 +657,10 @@ def edit_account(id):
         confirm_password = data.get('confirm_password') or ""
         role = data.get('role_id')
         status = data.get('status')
+        receive_email_alerts = data.get('receive_email_alerts')
+
+        if receive_email_alerts is not None and not isinstance(receive_email_alerts, bool):
+            return error("receive_email_alerts must be true or false.", 400)
 
         if not isinstance(password, str) or not isinstance(confirm_password, str):
             return error("Password must be text.", 400)
@@ -691,12 +707,23 @@ def edit_account(id):
         old_status = user_info.Status.value
         is_self = user_info.UserID == current_user.UserID
 
+        alerts_changed = (
+            receive_email_alerts is not None
+            and receive_email_alerts != user_info.Receive_Email_Alerts
+        )
+        if alerts_changed and not user_has_permission("account.alerts"):
+            return error("You do not have permission to change email alerts.", 403)
+
+        contact_before = _contact_snapshot(user_info)
+
         try:
             user_info.First_Name = first_name
             user_info.Last_Name = last_name
             user_info.Email = normalized_email
             user_info.RoleID = role_info.RoleID
             user_info.Status = normalized_status
+            if alerts_changed:
+                user_info.Receive_Email_Alerts = receive_email_alerts
 
             if changing_password:
                 user_info.set_password(password)
@@ -711,14 +738,19 @@ def edit_account(id):
                     details.append(f"status {old_status} -> {normalized_status.value}")
                 if changing_password:
                     details.append("password reset by admin")
+                if alerts_changed:
+                    details.append(f"email alerts {'on' if receive_email_alerts else 'off'}")
                 create_user_log(current_user.UserID, "; ".join(details))
             db.session.commit()
         except Exception:
             db.session.rollback()
             current_app.logger.exception(f"Failed to update account '{email}'")
             return error("An error occurred.", 400)
-        
-        return success(message="Successfully updated user.")
+
+        config = {}
+        if _contact_snapshot(user_info) != contact_before:
+            config = _apply_contact_change("Account")
+        return success(config, message="Successfully updated user.")
     except Exception:
         current_app.logger.exception("An unexpected error occured.")
         return error("An unexpected error occured.", 500)
@@ -842,14 +874,26 @@ def complete_setup():
         return error("An unexpected error occured.", 500)
 
 
-def _apply_contact_change():
+def _is_alert_contact(user):
+    """Whether the user is written into the Nagios config as an alert contact."""
+    return user.Status == UserStatus.ACTIVE and bool(user.Receive_Email_Alerts)
+
+
+def _contact_snapshot(user):
+    """What the generated config shows for this user; a change means a rebuild."""
+    if not _is_alert_contact(user):
+        return None
+    return (user.Email, user.First_Name, user.Last_Name)
+
+
+def _apply_contact_change(saved="Setup"):
     try:
         status, message = regenerate_and_apply_config_status()
     except Exception:
         current_app.logger.exception("Could not regenerate the Nagios config.")
         return {
             "config_applied": False, "config_ok": False,
-            "config_message": "Setup was saved but the Nagios contact could not be updated.",
+            "config_message": f"{saved} was saved but the Nagios contacts could not be updated.",
         }
     return {
         "config_applied": status == "applied",
