@@ -32,14 +32,15 @@ Status: in-progress
 | 1 | Research only | | |
 | 2 | Wrote journeys doc, test plan, router/spec edits | `scripts/verify.sh docs` | green |
 | 4 | Dry run of J1-01, J2, J3 on the VM lab; wrote the run report and index row; corrected J2-01, J2-03, J2-09, J3-05 and the lab notes in the plan | lab run (see report) | Partial: 13 pass, 1 fail, 6 not run |
+| 5 | Resumed; pulled the dry-run commits; re-ran docs check | `scripts/verify.sh docs` | green |
 | 3 | Opened PR as ready; CI `docs` failed only on the progress-file gate. Converted to draft; pushed this update to trigger a fresh run (a re-run reuses the old event data) | CI `docs` | pending |
 
 ## State for the next session
 
 - Last check run (exact command): `PATH="$TEMP/shim:$PATH" bash scripts/verify.sh docs`
-- Result (first failing lines, or "green"): green (docs check to be re-run after the round 4 edits)
+- Result (first failing lines, or "green"): green (re-run in round 5)
 - Hypothesis: n/a
-- Next action: run `scripts/verify.sh docs`, push, confirm CI `docs` is green, then ask the owner whether to run J2-05, J2-09, J2-10, J3-01, J3-04, J3-07, J3-08 in a second run; mark the PR ready only after the owner deletes this file
+- Next action: confirm CI `docs` is green on the pushed branch, then ask the owner whether to run J2-05, J2-09, J2-10, J3-01, J3-04, J3-07, J3-08 in a second run; mark the PR ready only after the owner deletes this file
 
 ## Decisions and notes
 
