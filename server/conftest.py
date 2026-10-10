@@ -155,6 +155,7 @@ PERMISSION_NAMES = [
     "settings.system",
     "settings.discovery",
     "settings.plugins",
+    "settings.email",
 ]
 
 

@@ -40,8 +40,8 @@ pages the user cannot access, and `PageAccessGuard` prevents direct URL access.
 This is usability protection only; backend permission checks remain mandatory.
 
 The Settings page is generally available to logged-in users. Its Security,
-System, Network Discovery and Plugins tabs require `settings.security`,
-`settings.system`, `settings.discovery` and `settings.plugins`, respectively.
+System, Network Discovery, Plugins and Email tabs require `settings.security`,
+`settings.system`, `settings.discovery`, `settings.plugins` and `settings.email`, respectively.
 
 `AdminLayout` replaces the whole shell with a blocking window while the account
 is flagged: `FirstRunSetup` when `needsSetup` (bootstrap administrator: current
@@ -72,7 +72,7 @@ When adding a page:
 | `components/plugins/` | Older installed/available plugin table components; do not assume these drive the current page |
 | `components/reports/` | Host availability and network-services report tables |
 | `components/manage-accounts/` | Account management table/UI |
-| `components/settings/` | General, security, and system settings controls; the Network Discovery tab edits networks, scan ports and one Port → Service table per protocol (NCPA's port fixed, each entry showing the check it leads to); the Plugins tab (`PluginSettings`) shows one editable table per installed plugin: SNMP OIDs (description, OID) once `check_snmp` is installed and NCPA metrics (description, metric path, optional warning, critical, units, query args) once `check_ncpa` is installed. Cells edit in place, Add appends an empty row, rows can be removed, Reset restores the `config.py` defaults; each table warns when its plugin is not Enabled/Active and that a new or renamed description starts a new Nagios service |
+| `components/settings/` | General, security, and system settings controls; the Network Discovery tab edits networks, scan ports and one Port → Service table per protocol (NCPA's port fixed, each entry showing the check it leads to); the Plugins tab (`PluginSettings`) shows one editable table per installed plugin: SNMP OIDs (description, OID) once `check_snmp` is installed and NCPA metrics (description, metric path, optional warning, critical, units, query args) once `check_ncpa` is installed. Cells edit in place, Add appends an empty row, rows can be removed, Reset restores the `config.py` defaults; each table warns when its plugin is not Enabled/Active and that a new or renamed description starts a new Nagios service; the Email tab (`EmailSettings`) edits the Gmail account notification mail uses: a locked Gmail preset (`smtp.gmail.com`, 587, STARTTLS), the Gmail address, a sender that follows it (warning when changed, because Gmail rewrites From), an "App password" field (`xxxx xxxx xxxx xxxx`, sent exactly as typed, write-only, blank keeps the saved one) with help text and a new-tab link to `https://myaccount.google.com/apppasswords`, and a "Send test email" card that shows a plain-language message for each failure (rejected login, blocked port, unknown host) with a technical explanation and the server's own response under "Details" |
 | `components/layout/` | Authenticated application shell and global session/access behavior |
 | `components/shared/` | Reusable headers, summary cards, export menu, alerts sidebar, and rescan modal |
 

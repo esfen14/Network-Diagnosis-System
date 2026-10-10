@@ -1,4 +1,4 @@
-import { Cog, Lock, Puzzle, Radar, ServerCog } from 'lucide-react'
+import { Cog, Lock, Mail, Puzzle, Radar, ServerCog } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { GeneralSettings } from '../components/settings/GeneralSettings'
@@ -6,11 +6,12 @@ import { SecuritySettings } from '../components/settings/SecuritySettings'
 import { SystemSettings } from '../components/settings/SystemSettings'
 import { DiscoverySettings } from '../components/settings/DiscoverySettings'
 import { PluginSettings } from '../components/settings/PluginSettings'
+import { EmailSettings } from '../components/settings/EmailSettings'
 import { useSystemSettings } from '../contexts/SystemSettingsContext'
 import { useCurrentUser } from '../contexts/CurrentUserContext'
 import { SETTINGS_TAB_PERMISSIONS } from '../lib/pageAccess'
 
-type SettingsTab = 'general' | 'security' | 'system' | 'discovery' | 'plugins'
+type SettingsTab = 'general' | 'security' | 'system' | 'discovery' | 'plugins' | 'email'
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
@@ -31,6 +32,7 @@ export function SettingsPage() {
     { id: 'system' as const, label: 'System', icon: ServerCog },
     { id: 'discovery' as const, label: 'Network Discovery', icon: Radar },
     { id: 'plugins' as const, label: 'Plugins', icon: Puzzle },
+    { id: 'email' as const, label: 'Email', icon: Mail },
   ].filter((tab) => tab.id === 'general' || hasPermission(SETTINGS_TAB_PERMISSIONS[tab.id]))
 
   // Fall back to General if the open tab's permission was removed.
@@ -70,6 +72,7 @@ export function SettingsPage() {
           {shownTab === 'system' && <SystemSettings />}
           {shownTab === 'discovery' && <DiscoverySettings />}
           {shownTab === 'plugins' && <PluginSettings />}
+          {shownTab === 'email' && <EmailSettings />}
         </div>
 
       </div>
