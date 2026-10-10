@@ -3,6 +3,7 @@ from flask_login import login_required, current_user
 from app.api.helper.database_access.permissions import require_permission
 from app.system_models import Permission, User, Role, RolePermission, UserStatus
 from app.api.helper import *
+from app.api.helper.database_access.user_access import get_super_admin, is_super_admin
 from app.api.helper.responses import success, error
 from flask import current_app
 
@@ -302,6 +303,10 @@ def edit_role(id):
         if is_active is not None and not isinstance(is_active, bool):
             return error("is_active must be true or false.", 400)
 
+        super_admin = get_super_admin()
+        if is_active is False and super_admin is not None and super_admin.RoleID == id:
+            return error("The super admin's role cannot be deactivated.", 400)
+
         if not has_name(role_name, id):
             err = validate_role_name_available(role_name)
             if err is not None:
@@ -361,6 +366,9 @@ def roles_status(id):
         
         role = get_role_by_id(id)
         old_status = role.Is_Active
+        super_admin = get_super_admin()
+        if old_status and super_admin is not None and super_admin.RoleID == id:
+            return error("The super admin's role cannot be deactivated.", 400)
         try:
             role.Is_Active = not role.Is_Active
             create_audit_log(
@@ -666,6 +674,11 @@ def edit_account(id):
         role_info = get_role_by_id(role)
 
         normalized_status = convert_user_status(status)
+        if is_super_admin(id):
+            if normalized_status != UserStatus.ACTIVE:
+                return error("The super admin account cannot be suspended or made inactive.", 400)
+            if not role_info.Is_Active:
+                return error("The super admin cannot be moved to an inactive role.", 400)
         was_active = user_info.Status == UserStatus.ACTIVE
         old_status = user_info.Status.value
         is_self = user_info.UserID == current_user.UserID
