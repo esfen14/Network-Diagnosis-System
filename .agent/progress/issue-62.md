@@ -25,10 +25,20 @@ Status: in-progress
 7. [x] Dry run J2/J3 on the VM lab (done 2026-10-09 on the owner's machine)
 8. [ ] Owner decisions: run the cases left over (defects filed as #66 and #67); delete this file before the PR leaves draft
 
+### Phase 0: approved execution plan (2026-10-11)
+
+- [x] Restore in-flight TCP settings and verify web02 SSH listener before new tests.
+- [ ] Finish J2-09 with a guarded lab-only scan; restore original settings.
+- [ ] Re-observe duplicate records, check fix ancestry and search issues before linking findings.
+- [ ] Correct J2-05/J3-02 wording only where supported by spec and source.
+- [ ] Record the handoff and new observations in an indexed second-run report.
+- [ ] Verify docs, checkpoint, clean up the throwaway checkout after pushing, and stop for owner review.
+
 ## Round log
 
 | Round | Change made | Check run | Result |
 |---|---|---|---|
+| Phase 0 / 1 | Resumed; restored TCP ports, confirmed web02 listener, moved issue branch to released lab checkout; returned PR #65 to draft | discovery status/settings API; appliance TCP probes; `scripts/verify.sh docs` | green; run 5 terminal; ports restored at version 3; no new scan |
 | 1 | Research only | | |
 | 2 | Wrote journeys doc, test plan, router/spec edits | `scripts/verify.sh docs` | green |
 | 4 | Dry run of J1-01, J2, J3 on the VM lab; wrote the run report and index row; corrected J2-01, J2-03, J2-09, J3-05 and the lab notes in the plan | lab run (see report) | Partial: 13 pass, 1 fail, 6 not run |
@@ -37,12 +47,30 @@ Status: in-progress
 
 ## State for the next session
 
-- Last check run (exact command): `PATH="$TEMP/shim:$PATH" bash scripts/verify.sh docs`
-- Result (first failing lines, or "green"): green (re-run in round 5)
-- Hypothesis: n/a
-- Next action: confirm CI `docs` is green on the pushed branch, then ask the owner whether to run J2-05, J2-09, J2-10, J3-01, J3-04, J3-07, J3-08 in a second run; mark the PR ready only after the owner deletes this file
+- Last check run (exact command): `scripts/verify.sh docs`
+- Result (first failing lines, or "green"): green (Phase 0 resume, Linux).
+- Hypothesis: in-flight scan completed; duplicate identities need comparison with deployed fix ancestry, not assumptions from the handoff.
+- Next action: checkpoint restoration, then run J2-09 restricted to the approved lab range and restore settings afterwards.
 
 ## Decisions and notes
+
+Phase 0 owner approval (2026-10-11): proceed under existing default tool permissions,
+including unattended existing-lab use and issue comments/filing; never change permission
+settings. Owner approved temporarily narrowing discovery to the documented lab range,
+restoring the original networks without scanning them, and recording this as a confounder.
+Owner released the clean main checkout: detached at `ebb5aea3`; the existing lab worktree
+now holds `issue-62-qa-journeys-test-plan`. No new appliance or fresh install authorized.
+
+Restoration observed before any new test: discovery run 5 was Success, completed
+2026-10-10 16:33:04 UTC, progress 100, new host.cfg applied. TCP settings were version 2,
+`1-1024`; restored to `1-10000`, version 3. The saved network list also includes the
+VirtualBox NAT network (outside allowed scan scope), so no scan was started. Read-only
+TCP probes from the appliance to web02 confirmed 22 open and 2222 refused. Device 9's
+API state is now ADDRESS_UNKNOWN (not the handoff's monitored state); its SSH port rows
+are Suggested with the plugin off. Do not describe those rows as actively monitored.
+VM remains running. Handoff helper scripts were not at the named scratchpad paths;
+used an in-memory cookie session and state-folder credentials without printing them.
+
 
 Owner decisions 2026-10-09 (relayed in the session): PT-04 clock starts at the Nagios
 state change; PT-05 is a 4 h agent-run soak; role matrix comes from `seed.py`; plugin
