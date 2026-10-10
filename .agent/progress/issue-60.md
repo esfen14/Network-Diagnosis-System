@@ -12,8 +12,8 @@ Status: in-progress
 - [x] Status text and stale fallback follow the setting
 - [ ] Rows per host per hour measured on the VM lab before and after
 - [x] Default Dashboard Refresh Rate hint follows Check interval; per-user rate unchanged (test)
-- [ ] `Data_Model_and_Integrations.md` documents the three rates and their relationship
-- [ ] `Display_Requirements.md` documents the hint and relationship
+- [x] `Data_Model_and_Integrations.md` documents the three rates and their relationship
+- [x] `Display_Requirements.md` documents the hint and relationship
 
 Requirement coverage (every requirement the issue states, and the check that proves it):
 
@@ -33,7 +33,7 @@ Requirement coverage (every requirement the issue states, and the check that pro
 2. [x] Test the fixed-list, authorized setting and rollback, then implement model, migration, API and shared writer/template generation in `server/tests/unit/test_settings_permissions.py`, `server/tests/unit/test_create_host_cfg.py`, `server/app/system_models.py`, `server/migrations/versions/`, `server/app/api/system/settings.py`, `server/app/network_discovery/host_config_templates.py`, `server/app/network_discovery/templates/{host,service}.cfg.tpl`, `server/app/network_discovery/create_host_cfg.py`.
 3. [x] Test plugin status text and stale fallback, then implement in `server/tests/unit/test_plugin_services_api.py`, `server/app/api/plugin/service.py`.
 4. [x] Test frontend setting, error display and refresh hint, then implement in `client/src/test/`, `client/src/types/settings.tsx`, `client/src/contexts/SystemSettingsContext.tsx`, `client/src/components/settings/{SystemSettings,GeneralSettings}.tsx`.
-5. [ ] Test documentation checks and update `spec files/{Data_Model_and_Integrations,Display_Requirements,Backend_Modules_and_Routes,Frontend_Modules_and_Routes,Implementation_Status}.md`; run `scripts/verify.sh docs`.
+5. [x] Test documentation checks and update `spec files/{Data_Model_and_Integrations,Display_Requirements,Backend_Modules_and_Routes,Frontend_Modules_and_Routes,Implementation_Status}.md`; run `scripts/verify.sh docs`.
 6. [ ] Run approved VM lab verification and rows/hour measurement; record sanitized `docs/test-runs/<date>-issue-60/REPORT.md` and index `docs/test-runs/README.md`.
 
 ## Round log
@@ -45,13 +45,14 @@ Requirement coverage (every requirement the issue states, and the check that pro
 | 2 | Added fixed-list system setting, migration, host/service template values and shared-writer save path | `python -m pytest server/tests/unit/test_create_host_cfg.py server/tests/unit/test_settings_permissions.py -q`; `scripts/verify.sh backend` | 72 passed; 2245 passed, 14 skipped |
 | 3 | Made plugin waiting text and stale fallback read the Check interval | `python -m pytest server/tests/unit/test_plugin_services_api.py -q`; `scripts/verify.sh backend` | 69 passed; 2247 passed, 14 skipped |
 | 4 | Wired settings UI and dynamic browser-refresh hint; displayed apply failures rather than conflict retry | `npm test -- --run src/test/SystemSettingsConflict.test.tsx`; `scripts/verify.sh frontend` | 7 passed; frontend verify initially 472 passed and build/lint green; targeted rerun after error handling green |
+| 5 | Documented discovery vs Nagios checks vs polling vs browser refresh; corrected freshness contract | `scripts/verify.sh docs` | green (55 documents, routes and progress valid) |
 
 ## State for the next session
 
-- Last check run (exact command): `npm test -- --run src/test/SystemSettingsConflict.test.tsx` (from `client/`)
-- Result (first failing lines, or "green"): green (7 passed); full frontend verify ran before the final apply-error handling change (472 passed, build/lint green)
-- Hypothesis: UI and error handling now work, but specifications and migration/live checks remain.
-- Next action (one specific step, not "continue"): Update the owning rate/freshness specifications and run docs verification.
+- Last check run (exact command): `scripts/verify.sh docs`
+- Result (first failing lines, or "green"): green (55 documents, routes and progress valid)
+- Hypothesis: Code and specs align for four schedules; migration upgrade and live Nagios behavior remain unverified.
+- Next action (one specific step, not "continue"): Check VM-lab prerequisites and run the approved #60 cadence, backup, rollback and rows/hour measurement.
 
 ## Decisions and notes
 

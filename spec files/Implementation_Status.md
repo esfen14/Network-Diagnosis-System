@@ -11,7 +11,11 @@ the normative behavior in the requirement specifications.
 - Account, role, permission-option, and per-user preference APIs, including the
   bootstrap administrator's first-run setup (`POST /api/user/complete-setup`).
 - Singleton system settings with personal/system separation and optimistic
-  version conflict handling.
+  version conflict handling. The system Check interval (1/2/5/10/15 minutes)
+  generates host and service check intervals through the shared Nagios writer;
+  unchanged Nagios `Last_Check` results are not stored again. Plugin status text,
+  stale fallback and the per-user browser-refresh hint use the setting. VM
+  cadence, backup, failure recovery and rows/hour remain to be verified.
 - Dashboard status, summary, active alerts, acknowledgement, and latest
   notifications.
 - Network Health summary, metric trends, plugin grouping, host table/details,
