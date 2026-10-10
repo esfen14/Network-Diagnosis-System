@@ -9,7 +9,7 @@ the permission with its grants.
 history.db is not touched.
 
 Revision ID: b6e1d4a8c2f9
-Revises: d3a9e6b2f741
+Revises: a6f4d2c8e190
 Create Date: 2026-10-10 14:00:00.000000
 
 """
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'b6e1d4a8c2f9'
-down_revision = 'd3a9e6b2f741'
+down_revision = 'a6f4d2c8e190'
 branch_labels = None
 depends_on = None
 
