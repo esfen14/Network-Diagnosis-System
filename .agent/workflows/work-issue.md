@@ -29,6 +29,12 @@ gh issue view <n>
 
 If it has no finish condition, stop and ask for one. Do not invent it.
 
+Check that the finish condition covers the issue: list every requirement the issue
+states (problem, proposed change, decisions, "not in this issue") and confirm each one
+is either an item of the finish condition or deliberately out of scope. A requirement
+that is in neither place is a gap. Stop and ask a person to add it to the finish
+condition; do not decide silently that it does not count.
+
 ## 2. Start or resume
 
 State lives in `.agent/progress/issue-<n>.md` on the issue branch, committed and
@@ -60,7 +66,8 @@ git branch -a --list "*issue-<n>-*"
    it marks **Required**, then the source files those documents name. Note the
    specification section the change touches. Read nothing else until you need it.
 3. Copy `.agent/progress/TEMPLATE.md` to `.agent/progress/issue-<n>.md` and fill it in:
-   - **Finish condition:** the issue's items as checkboxes.
+   - **Finish condition:** the issue's items as checkboxes, plus the
+     requirement-coverage table from the template.
    - **Plan:** every step you expect, in order, as checkboxes, each naming the files it
      touches. Write the whole plan before changing any code.
    - `Status: in-progress` and a specific **Next action**.
@@ -102,6 +109,11 @@ action" in the progress file, then checkpoint.
 
 ## 5. Finish
 
+0. **Verify the finish condition meets the issue.** Re-read the issue (`gh issue view
+   <n>`, including new comments), not your notes. For each requirement it states, name
+   the test, command or file that proves it, and run it. Tick an item only on a result
+   you saw this session. If a requirement has no proof, or the issue changed since
+   section 1, go back to the loop (or stop and ask); do not open the pull request.
 1. Update the owning specification in `spec files/`, and `spec files/Implementation_Status.md`
    if a gap opened or closed. Run `scripts/verify.sh docs`.
 2. Run `scripts/verify.sh all` once. CI runs everything, so it must pass here too.
@@ -113,6 +125,7 @@ action" in the progress file, then checkpoint.
    (`gh pr create --draft`) and keep the progress file.
 5. Report in this shape, and nothing longer:
    - PR link
-   - Finish-condition checklist (ticked or not, each with the check that proves it)
+   - Finish-condition checklist (ticked or not, each with the check that proves it),
+     and the issue requirements it covers, including any left out and why
    - What you did not verify
    - Anything a person must decide
