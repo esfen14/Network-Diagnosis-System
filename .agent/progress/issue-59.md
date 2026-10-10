@@ -13,7 +13,7 @@ Status: in-progress
 
 1. [x] Reproduce the fresh-install observation in an isolated regression test and distinguish sequential identity mismatch from overlapping scans (`server/tests/unit/test_device_identity.py`, `server/tests/unit/test_network_discovery.py`, `server/tests/support/identity_helpers.py` if needed).
 2. [x] Make the smallest safe discovery/identity correction and verify the focused test and backend stage (`server/app/network_discovery/device_identity.py`, `server/app/network_discovery/identity_probes.py` or `server/app/api/system/network_discovery.py` as evidence dictates; corresponding unit test).
-3. [ ] Repeat the stated sequence in an authorized lab and confirm one record at 10.77.0.6 (`docs/test-runs/<date>-issue-59/REPORT.md`); verify any supporting isolated tests.
+3. [x] Repeat the stated sequence in an authorized lab and confirm one record at 10.77.0.6 (`docs/test-runs/2026-10-10-issue-59/REPORT.md`, `docs/test-runs/README.md`); verify any supporting isolated tests.
 4. [ ] Document the corrected discovery behavior and gap status (`spec files/Data_Model_and_Integrations.md`, `spec files/Implementation_Status.md`); run docs verification and all-stage verification.
 
 ## Round log
@@ -22,13 +22,14 @@ Status: in-progress
 |---|---|---|---|
 | resumed | User approved sensitive discovery code and disposable VM lab; resumed branch | `gh issue view 59 --json number,title,body,comments,labels,url >/tmp/opencode/issue-59-check.json && test -s /tmp/opencode/issue-59-check.json` | green |
 | 1 | Isolated tests for concurrent scan start and ADDRESS_UNKNOWN reactivation; locked discovery start and included ADDRESS_UNKNOWN in IP_MATCHABLE_STATES | `scripts/verify.sh backend` | green (2,187 passed, 14 skipped) |
+| 2 | Fresh VM install, two slow scans, rejected extra start, NCPA deploy; recorded report | `scripts/vmlab ncpa` and SQLite query of `NETWORK_DISCOVERY` | 16/16 deploy checks passed; one ACTIVE row at 10.77.0.6 |
 
 ## State for the next session
 
-- Last check run (exact command): `scripts/verify.sh backend`
-- Result (first failing lines, or "green"): green (2,187 passed, 14 skipped)
-- Hypothesis: Dual root cause verified: (1) `start_discovery_thread` lacked a lock to prevent concurrent start requests from both launching scans, and (2) `IP_MATCHABLE_STATES` excluded `ADDRESS_UNKNOWN`, preventing rescans from matching and reactivating an `ADDRESS_UNKNOWN` device by IP.
-- Next action (one specific step, not "continue"): Push checkpoint, run the VM-lab sequence (`scripts/vmlab fresh`, `smoke`, `ncpa`), and record test-run evidence.
+- Last check run (exact command): `ssh -i "$HOME/.local/share/pinpoint-vmlab-45/id_ed25519" -p 2250 -o StrictHostKeyChecking=no lab@127.0.0.1 "python3 -c 'import sqlite3; c=sqlite3.connect(\"/opt/pinpoint/Network-Diagnosis-System/server/system.db\"); print(c.execute(\"SELECT NetDiscoveryID,IP_Address,Device_State FROM NETWORK_DISCOVERY WHERE IP_Address=?\",(\"10.77.0.6\",)).fetchall())'"`
+- Result (first failing lines, or "green"): green: `[(7, '10.77.0.6', 'ACTIVE')]` after NCPA deploy.
+- Hypothesis: Start race and ADDRESS_UNKNOWN exclusion are two independent duplicate paths; lab reproduced slow scan timeout but not the old ghost with this patch.
+- Next action (one specific step, not "continue"): Document discovery invariants in Data_Model_and_Integrations.md and update Implementation_Status.md, then run docs and all verification.
 
 ## Decisions and notes
 
