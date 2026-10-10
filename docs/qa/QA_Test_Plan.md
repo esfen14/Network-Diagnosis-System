@@ -212,9 +212,9 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 
 #### J2-05 Changed network is applied and reloaded; unchanged is not
 `[RE]` · VM · agent
-- **Pre:** J2-01 passed.
-- **Steps:** 1. Run a rescan with no change to the lab. 2. Run `scripts/vmlab targets ssh-port web02 2222`, wait one minute, rescan. 3. Restore with `scripts/vmlab targets ssh-port web02 22`. Read System Logs > Network Discovery after each.
-- **Expect:** 1. "Host configuration unchanged; Nagios was not reloaded." 2. A changed configuration is written ("New host.cfg successfully applied") and Nagios reloads; the web02 port record updates. 3. Restored. Mark `destructive`: restore step 3 even on failure.
+- **Pre:** J2-01 passed; identities have settled with one active device per target; TCP scan settings include 22 and 2222. Record the plugin state and existing port states first.
+- **Steps:** 1. Run a rescan with no change to the lab. 2. Run `scripts/vmlab targets ssh-port web02 2222`, wait one minute, rescan once. Inspect the port rows and System Logs > Network Discovery. 3. Restore with `scripts/vmlab targets ssh-port web02 22` even on failure; rescan only after the preceding scan is terminal and confirm the live listener and port observations are restored.
+- **Expect:** 1. "Host configuration unchanged; Nagios was not reloaded." 2. The newly found SSH port is recorded, but one missed scan does not remove the old port or force an SSH-port switch. An unchanged config is valid when no enabled plugin changes the generated services. The old port is preferred until its lifecycle excludes it: after 5 missed scans a Suggested port archives, while a Monitored port becomes Missing and retains its Nagios service. Judge reload versus no reload against an actual generated-config change, not the physical move alone (`Data_Model_and_Integrations.md`, port lifecycle; `port_lifecycle.py`, `age_unseen_port` and `device_ssh_port`). 3. The live SSH listener is back on 22. A separate five-scan lifecycle run is not implied by this one-rescan case. Mark `destructive`: always restore step 3.
 
 #### J2-06 Cancel a scan
 `[IC]` · VM · agent

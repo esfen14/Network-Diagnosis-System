@@ -48,6 +48,7 @@ table while you test, not afterward.
 
 | Run | Kind | Commit | Result | Report |
 |---|---|---|---|---|
+| [2026-10-11 qa-dry-run-j2-j3-second](2026-10-11-qa-dry-run-j2-j3-second/REPORT.md) | VM lab continuation and attributed handoff (#62) | `ebb5aea3` | Partial: 5 handoff passes, 1 fail (#86), 3 partial, 2 skipped; settings restored | [REPORT.md](2026-10-11-qa-dry-run-j2-j3-second/REPORT.md) |
 | [2026-10-09 qa-dry-run-j2-j3](2026-10-09-qa-dry-run-j2-j3/REPORT.md) | VM lab, dry run of QA plan cases J1-01, J2 and J3 (issue #62) | `65b63e5b` (app code same as `main` `13076192`) | Partial: 13 pass, 1 fail (J2-09), 6 not run; plan steps corrected | [REPORT.md](2026-10-09-qa-dry-run-j2-j3/REPORT.md) |
 | [2026-10-10 issue-59](2026-10-10-issue-59/REPORT.md) | VM lab, fresh install, repeated discovery and NCPA deployment to alternate-port SSH target | app `431f50ae` | Pass for one active record at `10.77.0.6`; scan waits timed out | [REPORT.md](2026-10-10-issue-59/REPORT.md) |
 | [2026-10-08 issue-47-ncpa-live](2026-10-08-issue-47-ncpa-live/REPORT.md) | VM lab, live SSH/NCPA deployment for issue #47 | `7735fc1e` | Pass for #47 deployment/log behavior | [REPORT.md](2026-10-08-issue-47-ncpa-live/REPORT.md) |

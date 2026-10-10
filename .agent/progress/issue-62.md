@@ -28,16 +28,17 @@ Status: in-progress
 ### Phase 0: approved execution plan (2026-10-11)
 
 - [x] Restore in-flight TCP settings and verify web02 SSH listener before new tests.
-- [ ] Finish J2-09 with a guarded lab-only scan; restore original settings.
-- [ ] Re-observe duplicate records, check fix ancestry and search issues before linking findings.
-- [ ] Correct J2-05/J3-02 wording only where supported by spec and source.
-- [ ] Record the handoff and new observations in an indexed second-run report.
+- [x] Finish J2-09 with a guarded lab-only scan; restore original settings (Partial: port refresh observed, first insertion not proven).
+- [x] Re-observe duplicate records, check fix ancestry and search issues before linking findings (#86).
+- [x] Correct J2-05/J3-02 wording only where supported by spec and source (J3-02 already correct).
+- [x] Record the handoff and new observations in an indexed second-run report.
 - [ ] Verify docs, checkpoint, clean up the throwaway checkout after pushing, and stop for owner review.
 
 ## Round log
 
 | Round | Change made | Check run | Result |
 |---|---|---|---|
+| Phase 0 / 2 | Guarded scan 6; restored settings; indexed second report; corrected J2-05; filed #86 | API ports/status/settings; merge-base ancestry; `scripts/verify.sh docs` | Partial lab evidence; docs verification recorded below |
 | Phase 0 / 1 | Resumed; restored TCP ports, confirmed web02 listener, moved issue branch to released lab checkout; returned PR #65 to draft | discovery status/settings API; appliance TCP probes; `scripts/verify.sh docs` | green; run 5 terminal; ports restored at version 3; no new scan |
 | 1 | Research only | | |
 | 2 | Wrote journeys doc, test plan, router/spec edits | `scripts/verify.sh docs` | green |
@@ -49,10 +50,25 @@ Status: in-progress
 
 - Last check run (exact command): `scripts/verify.sh docs`
 - Result (first failing lines, or "green"): green (Phase 0 resume, Linux).
-- Hypothesis: in-flight scan completed; duplicate identities need comparison with deployed fix ancestry, not assumptions from the handoff.
-- Next action: checkpoint restoration, then run J2-09 restricted to the approved lab range and restore settings afterwards.
+- Hypothesis: duplicate persistence on the fixed build needs fresh creation isolation (#86); this report cannot prove that trigger.
+- Next action: finish Phase 0 cleanup after checkpoint, then resume Phase 1 inventory/merge from the owner's execution plan; leave product decisions in draft.
 
 ## Decisions and notes
+
+Latest owner instruction clears the Phase 0 review stop: save results for later draft
+review, continue unblocked work, leave product decisions in draft. Playwright approval
+is planning/documentation only; do not install dependencies/browser yet. Human tests and
+fresh-reset approval remain pending. No PR merges authorized.
+
+Phase 0 report: `docs/test-runs/2026-10-11-qa-dry-run-j2-j3-second/REPORT.md`.
+Overall Partial. Run 6 terminal Success; original networks/TCP restored at version 5.
+Active IDs 5/7 refresh app01 8080 and legacy01 2222; handoff IDs 10/12 now stale
+Address Unknown. Repeated duplicate observations filed as #86 after searching closed
+#59/#67; deployed SHA verified and all #59/#66/#67 merge commits are ancestors.
+First duplicate-creation scan remains unisolated; fresh reset deferred, not silently
+approved. Optional browser/five-scan checks skipped. Step 8 remains unticked because
+Phase 1 and owner decisions are unfinished. VM left up by default.
+
 
 Phase 0 owner approval (2026-10-11): proceed under existing default tool permissions,
 including unattended existing-lab use and issue comments/filing; never change permission
