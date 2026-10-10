@@ -18,7 +18,7 @@
 #                                      Gunicorn (--client also builds and copies client/dist)
 #   scripts/vmlab health               installer healthcheck on the running appliance
 #   scripts/vmlab smoke                log in, add the lab network, run discovery, wait for hosts up
-#   scripts/vmlab setup-admin          set a fresh administrator password (kept in the state folder, never printed)
+#   scripts/vmlab setup-admin          complete first-run setup (real email, new password); kept in the state folder, never printed
 #   scripts/vmlab ncpa [ip,ip,...]     deploy NCPA to targets through Pinpoint's deployment API (default: web01 and legacy01)
 #   scripts/vmlab alerts [target]     take a target down, check the alert, acknowledge it, bring it back (default: web01)
 #   scripts/vmlab creds                print the installer's one-time credentials (shows the password; lab only)
@@ -395,7 +395,8 @@ case "$cmd" in
       die "no installer credentials on the appliance and none stored; set VMLAB_ADMIN_EMAIL and VMLAB_ADMIN_PASSWORD yourself"
     fi
     new="Lab-$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 18)9!"
-    SETUP_URL="$(web_url)" SETUP_EMAIL="$email" SETUP_OLD="$first" SETUP_NEW="$new" python3 -I -c '
+    new_email="${VMLAB_ADMIN_NEW_EMAIL:-lab-admin@vmlab.example.com}"
+    SETUP_URL="$(web_url)" SETUP_EMAIL="$email" SETUP_OLD="$first" SETUP_NEW="$new" SETUP_NEW_EMAIL="$new_email" python3 -I -c '
 import os, sys
 sys.path.insert(0, sys.argv[1])
 import smoke
@@ -403,11 +404,21 @@ api = smoke.Client(os.environ["SETUP_URL"])
 status, body = api.call("POST", "/api/user/login", {"email": os.environ["SETUP_EMAIL"], "password": os.environ["SETUP_OLD"]})
 if status != 200:
     sys.exit("login with the installer credentials failed (HTTP %s)" % status)
-status, body = api.call("POST", "/api/user/change-password", {"current_password": os.environ["SETUP_OLD"],
-    "new_password": os.environ["SETUP_NEW"], "confirm_password": os.environ["SETUP_NEW"]})
+needs_setup = bool((body.get("data") or {}).get("needs_setup"))
+passwords = {"current_password": os.environ["SETUP_OLD"],
+    "new_password": os.environ["SETUP_NEW"], "confirm_password": os.environ["SETUP_NEW"]}
+if needs_setup:
+    status, body = api.call("POST", "/api/user/complete-setup", dict(passwords, new_email=os.environ["SETUP_NEW_EMAIL"]))
+    what = "first-run setup"
+else:
+    status, body = api.call("POST", "/api/user/change-password", passwords)
+    what = "password change"
 if status != 200 or not body.get("success"):
-    sys.exit("password change failed (HTTP %s): %s" % (status, body.get("message")))
-' "$root/lab" || die "could not set up the administrator login"
+    sys.exit("%s failed (HTTP %s): %s" % (what, status, body.get("message")))
+print("setup-email=" + (os.environ["SETUP_NEW_EMAIL"] if needs_setup else os.environ["SETUP_EMAIL"]))
+' "$root/lab" > "$state_dir/.setup-out" || die "could not set up the administrator login"
+    email="$(sed -n 's/^setup-email=//p' "$state_dir/.setup-out")"; rm -f "$state_dir/.setup-out"
+    [ -n "$email" ] || die "setup did not report the administrator email"
     printf '%s' "$email" > "$state_dir/admin-email"; printf '%s' "$new" > "$state_dir/admin-password"; chmod 600 "$state_dir/admin-email" "$state_dir/admin-password"
     vm_ssh 'sudo rm -f /root/pinpoint-install-credentials.txt /var/lib/pinpoint/web-credentials-pending' 2>/dev/null || true
     echo "administrator $email: new password stored in $state_dir/admin-password"

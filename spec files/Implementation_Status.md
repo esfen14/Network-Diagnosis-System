@@ -8,7 +8,8 @@ the normative behavior in the requirement specifications.
 ## Implemented backend areas
 
 - Session login/logout and current-user identity.
-- Account, role, permission-option, and per-user preference APIs.
+- Account, role, permission-option, and per-user preference APIs, including the
+  bootstrap administrator's first-run setup (`POST /api/user/complete-setup`).
 - Singleton system settings with personal/system separation and optimistic
   version conflict handling.
 - Dashboard status, summary, active alerts, acknowledgement, and latest

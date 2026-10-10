@@ -7,9 +7,19 @@ import { PageAccessGuard } from './PageAccessGuard'
 import { SystemSettingsProvider } from '../../contexts/SystemSettingsContext'
 import { CurrentUserProvider, useCurrentUser } from '../../contexts/CurrentUserContext'
 import { ForcePasswordChange } from './ForcePasswordChange'
+import { FirstRunSetup } from './FirstRunSetup'
 
 function LayoutBody() {
   const { user } = useCurrentUser()
+
+  if (user?.needsSetup) {
+    return (
+      <>
+        <SessionTimeoutWatcher />
+        <FirstRunSetup />
+      </>
+    )
+  }
 
   if (user?.mustChangePassword) {
     return (

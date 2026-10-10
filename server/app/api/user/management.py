@@ -8,6 +8,7 @@ from flask import current_app
 
 import sqlalchemy as sa
 from app import db
+from app.network_discovery.create_host_cfg import regenerate_and_apply_config_status
 
 from app.api.user import user_bp
 from app.logging.user_activity import create_user_log, create_audit_log
@@ -425,6 +426,9 @@ def create_account():
         confirm_password = data.get('confirm_password')
         status = data.get('status')
         role_id = data.get('role_id')
+        require_password_change = data.get('require_password_change', True)
+        if not isinstance(require_password_change, bool):
+            return error("require_password_change must be true or false.", 400)
         
         err = validate_role_exists(role_id)
         if err is not None:
@@ -462,8 +466,7 @@ def create_account():
                 Email=normalized_email,
                 Status=normalized_status,
                 RoleID=applied_role.RoleID,
-                # The admin chose this password, so the person must replace it at first sign-in.
-                Must_Change_Password=True,
+                Must_Change_Password=require_password_change,
             )
             user.set_password(password)
 
@@ -749,6 +752,94 @@ def change_password():
         current_app.logger.exception("An unexpected error occured.")
         return error("An unexpected error occured.", 500)
 
+@user_bp.post('/complete-setup')
+@login_required
+def complete_setup():
+    try:
+        if not current_user.Needs_Setup:
+            return error("First-run setup is not required for this account.", 400)
+
+        data = request.get_json(silent=True)
+        err = validate_json_data(data)
+        if err is not None:
+            return err
+
+        err = validate_json_fields(data, {
+            "current_password": str,
+            "new_email": str,
+            "new_password": str,
+            "confirm_password": str,
+        })
+        if err is not None:
+            return err
+
+        if not current_user.check_password(data["current_password"]):
+            return error("Current password is incorrect.", 400)
+
+        err = validate_user_email(data["new_email"])
+        if err is not None:
+            return err
+        normalized_email = normalize_email(data["new_email"])
+
+        err = validate_deliverable_email_domain(normalized_email)
+        if err is not None:
+            return err
+
+        if normalized_email != current_user.Email:
+            err = validate_email_available(normalized_email)
+            if err is not None:
+                return err
+
+        err = validate_password_is_same(data["new_password"], data["confirm_password"])
+        if err is not None:
+            return err
+
+        err = validate_password(data["new_password"])
+        if err is not None:
+            return err
+
+        if current_user.check_password(data["new_password"]):
+            return error("Choose a password different from your current one.", 400)
+
+        old_email = current_user.Email
+        try:
+            current_user.Email = normalized_email
+            current_user.set_password(data["new_password"])
+            current_user.Needs_Setup = False
+            current_user.Must_Change_Password = False
+            create_audit_log(
+                current_user.UserID,
+                f"Completed first-run setup (email {old_email} -> {normalized_email}, password changed)",
+            )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Failed to complete first-run setup.")
+            return error("An error occurred.", 400)
+
+        config = _apply_contact_change()
+        return success(config, message="Setup complete.")
+    except Exception:
+        current_app.logger.exception("An unexpected error occured.")
+        return error("An unexpected error occured.", 500)
+
+
+def _apply_contact_change():
+    try:
+        status, message = regenerate_and_apply_config_status()
+    except Exception:
+        current_app.logger.exception("Could not regenerate the Nagios config.")
+        return {
+            "config_applied": False, "config_ok": False,
+            "config_message": "Setup was saved but the Nagios contact could not be updated.",
+        }
+    return {
+        "config_applied": status == "applied",
+        "config_ok": status != "failed",
+        "config_message": message,
+    }
+
+
 @user_bp.get('/me')
 @login_required
 def user_permission():
@@ -787,6 +878,7 @@ def user_permission():
             "role": role_name,
             "permissions": permission_array,
             "must_change_password": bool(current_user.Must_Change_Password),
+            "needs_setup": bool(current_user.Needs_Setup),
         })
     except Exception:
         current_app.logger.exception("An unexpected error occured.")

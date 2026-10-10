@@ -205,7 +205,10 @@ This repository's side of the contract, all implemented as of 2026-10-08:
   setting added to `server/config.py` is added to that table in the same change.
 - `server/migrations/` is committed; every model change ships with a migration.
   The installer runs `flask db upgrade` (multi-database).
-- `flask init-production` creates reference data and one administrator.
+- `flask init-production` creates reference data and one administrator, flagged
+  `Needs_Setup`: the installer's email (`admin-xxxxx@pinpoint.lan`) and password are
+  placeholders, and the first sign-in must replace both through the setup window
+  (`POST /api/user/complete-setup`). The VM lab's `setup-admin` completes it.
 - `PINPOINT_SCHEDULER=1` only for the Gunicorn service.
 - The `pinpoint` account may write `hosts.cfg` and `plugin-services.cfg`, runs
   `nagios -v`, and may `sudo systemctl reload nagios`; nothing else. Writing to

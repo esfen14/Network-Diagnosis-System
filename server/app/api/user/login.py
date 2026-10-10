@@ -81,14 +81,28 @@ _PASSWORD_CHANGE_ALLOWED_ENDPOINTS = {
 }
 
 
+_SETUP_ALLOWED_ENDPOINTS = {
+    "api.user.login",
+    "api.user.logout",
+    "api.user.user_permission",
+    "api.user.complete_setup",
+}
+
+
 @user_bp.before_app_request
 def enforce_password_change():
-    if not current_user.is_authenticated or not current_user.Must_Change_Password:
+    if not current_user.is_authenticated:
         return None
-    if request.endpoint in _PASSWORD_CHANGE_ALLOWED_ENDPOINTS:
+    needs_setup = bool(current_user.Needs_Setup)
+    if not needs_setup and not current_user.Must_Change_Password:
+        return None
+    allowed = _SETUP_ALLOWED_ENDPOINTS if needs_setup else _PASSWORD_CHANGE_ALLOWED_ENDPOINTS
+    if request.endpoint in allowed:
         return None
     if not (request.blueprint or "").startswith("api"):
         return None
+    if needs_setup:
+        return error("You must complete first-run setup before continuing.", 403)
     return error("You must change your password before continuing.", 403)
 
 
@@ -162,7 +176,10 @@ def login():
         current_app.logger.exception(f"Unable to record login for user {user.UserID}")
 
     return success(
-        {"must_change_password": bool(user.Must_Change_Password)},
+        {
+            "must_change_password": bool(user.Must_Change_Password),
+            "needs_setup": bool(user.Needs_Setup),
+        },
         message="User logged in.",
     )
 
