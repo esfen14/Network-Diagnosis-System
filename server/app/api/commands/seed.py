@@ -56,6 +56,7 @@ PERMISSIONS = [
     "settings.system",
     "settings.discovery",
     "settings.plugins",
+    "settings.email",
 ]
 
 ROLES = [

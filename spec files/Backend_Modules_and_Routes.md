@@ -27,7 +27,7 @@ system.acknowledge_alerts, system.dashboard, system.history
 plugin.scan, plugin.view, plugin.enable, plugin.disable
 plugin.command_override, plugin.command_restore, plugin.validate
 plugin.custom_add, plugin.custom_check, plugin.update, plugin.update_rollback
-settings.security, settings.system, settings.discovery, settings.plugins
+settings.security, settings.system, settings.discovery, settings.plugins, settings.email
 ```
 
 Some seeded permissions are not attached to a current route. That is tracked as
@@ -193,6 +193,17 @@ this is a documented implementation mismatch, not a recommended convention.
 |---|---|---|
 | `GET /api/system/discovery-settings` | `settings.discovery` | Effective discovery settings, their `config.py` defaults, and whether a scan is running |
 | `PUT /api/system/discovery-settings` | `settings.discovery` | Save networks, TCP/UDP ports and the Port -> Service tables (`tcpPortServices`, `udpPortServices`: the service expected on each port); every field is required, the version must match. GET also returns `ncpaPort`, the derived NCPA entry in the TCP table (accepted back but never stored; mapping that port to anything but `ncpa` is a 400) and `resolution` (which check each entry leads to) |
+
+### `app/api/system/smtp_settings.py`
+
+Settings -> Email: the Gmail account notification mail is sent through (Gmail
+only, STARTTLS on port 587). Logic is in `app/smtp_settings.py`.
+
+| Method and path | Permission | Purpose |
+|---|---|---|
+| `GET /api/system/smtp-settings` | `settings.email` | `settings` (`provider`, `host`, `port`, `tls`, `username`, `sender`, `passwordSet`, `configured`, `version`, `updatedAt`) and `presets.gmail`. The password is never returned, only whether one is saved |
+| `PUT /api/system/smtp-settings` | `settings.email` | Save `{version, provider, host, port, tls, username, sender?, password?}`. Only `gmail`, `smtp.gmail.com`, 587 and `starttls` are accepted (`none`/`ssl` are 400); `username` and `sender` are email addresses (sender defaults to the username); `password` is printable ASCII, at most 200 characters, used exactly as sent (never trimmed or stripped of spaces) and may be left out or empty once one is saved. The settings go to the root helper (`sudo -n /usr/local/sbin/pinpoint-apply-smtp`, one JSON object on stdin) and are saved only if it exits 0; its stderr is returned as the message (400 when it rejected the input, 500 when it is missing or timed out). 409 on a stale version. Writes Configuration Change entries (`smtp_settings`, the password logged only as `changed`) when audit logging is on |
+| `POST /api/system/smtp-settings/test` | `settings.email` | Send a test message to the signed-in user's address over STARTTLS with the saved settings (400 when none are saved). Always 200 with `{ok, recipient}` or `{ok: false, code, message, details}`; `code` is `auth_failed` (535, `BadCredentials`, "Username and Password not accepted": friendly Gmail app-password message), `connect_failed` (blocked port 587), `host_not_found`, `tls_failed`, `rejected` or `send_failed`; `details` is the mail server's own text |
 
 ### `app/api/system/plugin_settings.py`
 
