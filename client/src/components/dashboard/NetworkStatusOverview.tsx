@@ -31,7 +31,7 @@ export function NetworkStatusOverview({ up, down, isLoading }: NetworkStatusOver
           <div className="h-48 w-48 shrink-0">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={data} cx="50%" cy="50%" innerRadius={62} outerRadius={98} paddingAngle={2} dataKey="value" stroke="none">
+                <Pie data={data} cx="50%" cy="50%" innerRadius={58} outerRadius={84} paddingAngle={2} dataKey="value" stroke="none">
                   {data.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
                 </Pie>
               </PieChart>
