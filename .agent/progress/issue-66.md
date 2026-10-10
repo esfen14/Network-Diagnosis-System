@@ -6,7 +6,7 @@ Status: in-progress
 ## Finish condition
 
 - [x] A regression test fails before the fix and passes after: a known device, rescanned with a new single port (and a new range) in the TCP ports, gets that port recorded (`server/tests/unit/test_device_ports_route.py` or a new network-discovery test).
-- [ ] Lab: QA_Test_Plan J2-09 passes on the VM lab (8080 on app01 and 2222 on legacy01 appear after the settings change and a rescan), and legacy01 becomes NCPA-eligible (J3-02, J3-09 with legacy01).
+- [x] Lab: QA_Test_Plan J2-09 passes on the VM lab (8080 on app01 and 2222 on legacy01 appear after the settings change and a rescan), and legacy01 becomes NCPA-eligible (J3-02, J3-09 with legacy01).
 - [ ] The cause is stated in the issue (scan arguments, result handling for known devices, or the port lifecycle), and any spec sentence that was wrong is corrected (`Device_Inventory_Requirements.md` §7, §10; `Data_Model_and_Integrations.md`).
 - [ ] `scripts/verify.sh backend` passes; `Implementation_Status.md` updated if a gap closes.
 - [ ] The "known defect #66" note is removed from J2-09 in `docs/qa/QA_Test_Plan.md` and `docs/qa/QA_Journeys_and_Scope.md`, and a re-test is recorded under `docs/test-runs/`.
@@ -15,7 +15,7 @@ Status: in-progress
 
 1. [x] Add isolated regression for repeat discovery with new single/ranged TCP ports on distinct devices that share a cloned SSH host key, in `server/tests/unit/test_network_discovery.py` or `server/tests/unit/test_device_identity.py`; run red.
 2. [x] Fix the demonstrated identity reconciliation cause in `server/app/network_discovery/device_identity.py` (not nmap arguments or port lifecycle); run focused test and `scripts/verify.sh backend`.
-3. [ ] Run approved VM-lab J2-09, J3-02 and J3-09 with legacy01; record new `docs/test-runs/<date>-issue-66/REPORT.md` and index in `docs/test-runs/README.md`.
+3. [x] Run approved VM-lab J2-09, J3-02 and J3-09 with legacy01; record new `docs/test-runs/<date>-issue-66/REPORT.md` and index in `docs/test-runs/README.md`.
 4. [ ] State cause on issue; correct `spec files/Device_Inventory_Requirements.md` and `spec files/Data_Model_and_Integrations.md` if wrong; update `spec files/Implementation_Status.md`; remove defect note from `docs/qa/QA_Test_Plan.md` and `docs/qa/QA_Journeys_and_Scope.md` once present and proven; run docs and all verification.
 
 ## Round log
@@ -27,13 +27,14 @@ Status: in-progress
 | 2 | Fresh VM appliance and targets: direct nmap and nmap3 find 8080; baseline default scan found both ports, narrow scan ran, then single-port rescan ran | `ssh ... lab@127.0.0.1 'sudo -u pinpoint /opt/pinpoint/venv/bin/python -c "... select NetDiscoveryID,Port_Number,Service_Name from OPEN_TCP_Services where Port_Number in (8080,2222) ..."'` | Scan #4 SUCCESS, config unchanged; existing app01 row 8080 and legacy01 row 2222 remain, so this cannot prove a *new* port is added. Scan #2 was cancelled, scan #3 SUCCESS; no implementation change justified |
 | 3 | Reinstalled appliance, saved narrow range before first scan; added 8080/2222 then rescanned | `ssh ... lab@127.0.0.1 'sudo journalctl -u pinpoint-gunicorn --since "2026-10-10 03:25:00" --no-pager | tail -65'` | Red on lab: scan #2 SUCCESS but new ports absent; first device falsely treated four other MACs as secondary due to shared SSH key |
 | 4 | Added red shared-key repeat-scan test; match existing same-address MAC owner and raise duplicate review without moving ports to key owner | `cd server && .venv/bin/python -m pytest tests/unit/test_device_identity.py -k known_clone_key_hosts -q`; `scripts/verify.sh backend` | Before: 2 failed KeyError on legacy address; after: 2 passed; full backend 2191 passed, 14 skipped |
+| 5 | Synced fix to clean VM state; rescanned single then ranged ports, NCPA deployment to legacy01; recorded sanitized report/index | `scripts/vmlab ncpa 10.77.0.2,10.77.0.6`; `scripts/verify.sh docs` | VM scans #3/#4 SUCCESS, ports on original IDs and legacy01 eligible; 16/0 NCPA checks; docs green |
 
 ## State for the next session
 
-- Last check run (exact command): `scripts/verify.sh backend`
-- Result (first failing lines, or "green"): green, 2191 passed / 14 skipped; targeted regression red before fix (2 KeyError), green after (2 passed).
-- Hypothesis: clone SSH key was the J2-09 cause; fix keeps an existing same-address hardware MAC owner, but new clone-key devices without an existing row still need separate issue review.
-- Next action (one specific step, not "continue"): Push fix then `scripts/vmlab sync` and retest narrow-to-single-and-range port rescans, followed by NCPA legacy01.
+- Last check run (exact command): `scripts/verify.sh docs`
+- Result (first failing lines, or "green"): green; VM scans #3/#4 record 8080 and 2222 on original device IDs; NCPA deployment including legacy01 16 passed/0 failed.
+- Hypothesis: confirmed cloned SSH key made known devices secondary; same-address MAC tie-break corrects this case.
+- Next action (one specific step, not "continue"): Update owning specs and issue cause; obtain PR #65 QA documents to remove only #66 defect notes while preserving #67; run docs/all verification.
 
 ## Decisions and notes
 
