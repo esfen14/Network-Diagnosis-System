@@ -54,7 +54,8 @@ so they cannot drift.
 
 For every task, an agent repeats until the finish condition holds:
 
-1. **Read** the issue, then the **Required** documents for the area (`AGENTS.md`)
+1. **Read** the issue and check that its finish condition covers every requirement
+   it states (a gap is raised with a person, not skipped), then the **Required** documents for the area (`AGENTS.md`)
    and the source files they name.
 2. **Write or update the test first** when behavior changes (TDD); the test
    encodes the finish condition.
@@ -63,7 +64,9 @@ For every task, an agent repeats until the finish condition holds:
    Fix and repeat; do not widen scope to make a check pass.
 5. **Update docs** in the same change: the owning spec, and
    `Implementation_Status.md` if a gap opened or closed.
-6. **Open a PR** from the template. CI is the last-mile check; a PR is done when
+6. **Verify the finish condition meets the issue**: re-read the issue and name,
+   then run, the check that proves each requirement.
+7. **Open a PR** from the template. CI is the last-mile check; a PR is done when
    CI is green, not when it works locally.
 
 Stop and ask a person instead of looping when: a spec and the code disagree and
