@@ -34,7 +34,7 @@ Totals: Pass 4, Fail 0, Blocked 0, Skipped 1.
 ## Follow-up
 
 - Defects found: none attributed to issue #60 in this run. Installer prerequisite: https://github.com/lorraine-pangilinan/PinPoint-Installer/issues/4.
-- Cases to repeat: controlled full-hour row measurement, ideally on the same appliance at matching check cadence.
+- Controlled full-hour row measurement is deferred to [#82](https://github.com/esfen14/Pinpoint/issues/82), which is to be added to the master QA plan in [#62](https://github.com/esfen14/Pinpoint/issues/62). The ten-minute observations above are not a substitute for that case.
 
 ## Sanitization checklist
 
