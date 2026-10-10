@@ -1,7 +1,7 @@
 # Issue #66: Discovery does not record ports added to scan settings on known devices
 
 Branch: `issue-66-discovery-new-ports`
-Status: in-progress
+Status: blocked
 
 ## Finish condition
 
