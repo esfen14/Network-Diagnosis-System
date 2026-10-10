@@ -7,8 +7,8 @@ Status: in-progress
 
 - [x] Repeated polls of an unchanged check add no rows (test)
 - [x] Saving a new Check interval changes `check_interval` in generated `hosts.cfg` for hosts and services, through the shared writer (faked Nagios test)
-- [ ] On the VM lab checks run at the new interval after save, and the config backup exists
-- [ ] Failed validation or reload leaves the old interval running, restores the setting and shows the error (API rollback tested; live running-config proof pending)
+- [x] On the VM lab checks run at the new interval after save, and the config backup exists
+- [x] Failed validation or reload leaves the old interval running, restores the setting and shows the error (live injected validation/reload failures, 422, config digest and 120-second subsequent checks)
 - [x] Status text and stale fallback follow the setting
 - [ ] Rows per host per hour measured on the VM lab before and after
 - [x] Default Dashboard Refresh Rate hint follows Check interval; per-user rate unchanged (test)
@@ -46,13 +46,15 @@ Requirement coverage (every requirement the issue states, and the check that pro
 | 3 | Made plugin waiting text and stale fallback read the Check interval | `python -m pytest server/tests/unit/test_plugin_services_api.py -q`; `scripts/verify.sh backend` | 69 passed; 2247 passed, 14 skipped |
 | 4 | Wired settings UI and dynamic browser-refresh hint; displayed apply failures rather than conflict retry | `npm test -- --run src/test/SystemSettingsConflict.test.tsx`; `scripts/verify.sh frontend` | 7 passed; frontend verify initially 472 passed and build/lint green; targeted rerun after error handling green |
 | 5 | Documented discovery vs Nagios checks vs polling vs browser refresh; corrected freshness contract | `scripts/verify.sh docs` | green (55 documents, routes and progress valid) |
+| resumed | Re-read issue and progress; preparing approved VM checks | `scripts/verify.sh docs` | green |
+| 1 | Isolated VM clone/fresh install; observed 2-minute host/service checks and backup, injected validation and reload failures, measured indicative ten-minute rows, recorded sanitized partial report | `VMLAB_CONFIG=/tmp/opencode/vmlab-60.env scripts/vmlab health`; `scripts/verify.sh docs` | health 60 passed; docs green; discovery smoke timed out at 300 s but later succeeded; full-hour paired row measurement outstanding |
 
 ## State for the next session
 
 - Last check run (exact command): `scripts/verify.sh docs`
-- Result (first failing lines, or "green"): green (55 documents, routes and progress valid)
-- Hypothesis: Code and specs align for four schedules; migration upgrade and live Nagios behavior remain unverified. Five loop rounds were completed in this session, so stop per workflow §4.
-- Next action (one specific step, not "continue"): Inspect `scripts/vmlab` prerequisites and perform the issue-approved VM cadence, backup, rollback and rows/hour measurements; record sanitized results.
+- Result (first failing lines, or "green"): green (56 documents, routes and progress valid)
+- Hypothesis: Fresh install, cadence, backup and failure rollback work live; the ten-minute comparison between separate appliances cannot prove a measured full-hour before/after on one appliance.
+- Next action (one specific step, not "continue"): Establish a controlled paired full-hour rows-per-host baseline and after measurement at the same check cadence; update the issue-60 report with the observed result.
 
 ## Decisions and notes
 
@@ -61,3 +63,4 @@ Requirement coverage (every requirement the issue states, and the check that pro
 - The owner requests explicit documentation of discovery scan frequency versus data polling frequency. For freshness use the Nagios check interval plus the 60 s polling delay, not the discovery schedule; update Display Requirements §3.1 accordingly.
 - Installer prerequisites were planned from its `setup/deploy-pinpoint-web.sh`, `setup/configure-pinpoint-privileges.sh`, and `setup/configure-nagios.sh`; filed https://github.com/lorraine-pangilinan/PinPoint-Installer/issues/4. The installer already migrates DBs and grants validate/reload, but its Nagios `interval_length=60` assumption needs live confirmation and upgrade acceptance. Do not add restart or a second writer.
 - Injection/secret review to perform after approval: fixed integer whitelist before template formatting, no shell interpolation, no secret-bearing config or subprocess output in logs/progress, preserve shared writer's candidate validation and rollback.
+- VM round used a dedicated snapshot clone, not the occupied appliance. Fresh deploy initially collided with `unattended-upgrade`; re-ran deploy when dpkg lock cleared. `scripts/vmlab smoke` timed out at 300 s during nmap; discovery later finished successfully. No raw config or credentials committed. See `docs/test-runs/2026-10-10-issue-60/REPORT.md` for measured partial result.
