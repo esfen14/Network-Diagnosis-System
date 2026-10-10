@@ -3,9 +3,12 @@ import { AlertTriangle, ExternalLink, Loader2, Send } from 'lucide-react'
 
 import { SettingsCard } from './SettingsCard'
 import { SettingsActions } from './SettingsActions'
+import { SettingsSelect } from './SettingsSelect'
 import { errorMessage } from '../../lib/api'
 import { getSmtpSettings, saveSmtpSettings, sendTestEmail } from '../../lib/smtpSettingsApi'
 import type { SmtpPreset, SmtpSettings, SmtpTestResult } from '../../types/smtpSettings'
+
+const PROVIDER_OPTIONS = [{ value: 'gmail', label: 'Gmail' }]
 
 const APP_PASSWORDS_URL = 'https://myaccount.google.com/apppasswords'
 
@@ -125,12 +128,13 @@ export function EmailSettings() {
       >
         <div className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-3">
-            <label className="block text-sm text-[var(--text)]">
-              Provider
-              <select aria-label="Provider" value={preset.provider} disabled className={`${inputClass} mt-1`}>
-                <option value="gmail">Gmail</option>
-              </select>
-            </label>
+            {/* Gmail is the only provider, so there is nothing to change yet. */}
+            <SettingsSelect
+              label="Provider"
+              value={preset.provider}
+              options={PROVIDER_OPTIONS}
+              onChange={() => {}}
+            />
             <label className="block text-sm text-[var(--text)]">
               Host
               <input aria-label="Host" value={preset.host} readOnly disabled className={`${inputClass} mt-1`} />
