@@ -151,8 +151,9 @@ def test_smtp_settings_route():
     """
     Send a test email with the saved settings to the signed-in user's email
     address. A failed send is still a 200: the body is {"ok": false, "code",
-    "message", "details"} where "message" is plain language and "details" is the
-    mail server's own text. A rejected Gmail login has code "auth_failed";
+    "message", "explanation", "details"} where "message" is plain language,
+    "explanation" says technically what happened and what to check, and
+    "details" is the mail server's own text. A rejected Gmail login has code "auth_failed";
     "connect_failed" and "host_not_found" cover a blocked port and a wrong host.
     """
     try:

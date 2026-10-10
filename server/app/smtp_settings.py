@@ -178,7 +178,11 @@ def run_apply_helper(values, password):
 # ==========================================================
 
 def classify_smtp_error(exc, host, port):
-    """Turn an smtplib/socket error into {code, message, details}. details is the server's own text."""
+    """
+    Turn an smtplib/socket error into {code, message, explanation, details}: message is plain
+    language, explanation says technically what happened and what to check, and details is the
+    server's own text.
+    """
     details = str(exc)
     if isinstance(exc, smtplib.SMTPResponseException):
         error_text = exc.smtp_error.decode("utf-8", "replace") if isinstance(exc.smtp_error, bytes) else str(exc.smtp_error)
@@ -187,22 +191,41 @@ def classify_smtp_error(exc, host, port):
     if isinstance(exc, smtplib.SMTPAuthenticationError) or AUTH_FAILURE_PATTERN.search(details):
         return {"code": "auth_failed", "details": details,
                 "message": "Gmail rejected the login. Make sure you entered an app password, "
-                           "not your normal password, and that 2-Step Verification is on."}
+                           "not your normal password, and that 2-Step Verification is on.",
+                "explanation": "The connection to Gmail worked, but Gmail answered the login with a 535 "
+                               "authentication error (BadCredentials). Gmail does not accept an account's normal "
+                               "password over SMTP. It needs a 16-character app password, which can only be created "
+                               "once 2-Step Verification is on for the Google account. Also check that the username "
+                               "is the full Gmail address and that the app password was copied completely."}
     if isinstance(exc, socket.gaierror):
         return {"code": "host_not_found", "details": details,
-                "message": f"Could not find {host}. Check the server's DNS and internet access."}
+                "message": f"Could not find {host}. Check the server's DNS and internet access.",
+                "explanation": f"The name {host} could not be resolved to an IP address (a DNS lookup failure). "
+                               "The server may have no DNS server configured, no route to the internet, or a "
+                               "firewall blocking DNS."}
     if isinstance(exc, (ConnectionRefusedError, TimeoutError, socket.timeout, smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError)) \
             or (isinstance(exc, OSError) and not isinstance(exc, (ssl.SSLError, smtplib.SMTPException))):
         return {"code": "connect_failed", "details": details,
                 "message": f"Could not connect to {host} on port {port}. "
-                           f"The appliance needs outbound access to {host} on port {port}; a firewall may be blocking it."}
+                           f"The appliance needs outbound access to {host} on port {port}; a firewall may be blocking it.",
+                "explanation": f"The TCP connection to {host}:{port} was refused, timed out or was dropped before "
+                               "Gmail answered, so no login was attempted. This usually means a firewall or network "
+                               f"policy blocks outbound port {port}, or the server has no internet route."}
     if isinstance(exc, (ssl.SSLError, smtplib.SMTPNotSupportedError)):
         return {"code": "tls_failed", "details": details,
-                "message": "The secure (STARTTLS) connection to the mail server could not be set up."}
+                "message": "The secure (STARTTLS) connection to the mail server could not be set up.",
+                "explanation": "The server connected, but the upgrade to an encrypted STARTTLS session failed. "
+                               "Common causes are a wrong system clock, missing CA certificates, or a proxy or "
+                               "firewall that intercepts the connection."}
     if isinstance(exc, (smtplib.SMTPSenderRefused, smtplib.SMTPRecipientsRefused)):
         return {"code": "rejected", "details": details,
-                "message": "The mail server refused the sender or recipient address."}
-    return {"code": "send_failed", "details": details, "message": "The test email could not be sent."}
+                "message": "The mail server refused the sender or recipient address.",
+                "explanation": "The login worked, but the server refused the message itself. Check that the "
+                               "sender is the Gmail account (Gmail rewrites other From addresses) and that the "
+                               "recipient address is valid."}
+    return {"code": "send_failed", "details": details, "message": "The test email could not be sent.",
+            "explanation": "The send failed in a way PinPoint does not recognise. The mail server's own reply "
+                           "is shown below."}
 
 
 def send_test_email(settings, password, recipient):

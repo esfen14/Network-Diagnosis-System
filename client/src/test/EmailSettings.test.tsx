@@ -125,6 +125,7 @@ describe('EmailSettings', () => {
         ok: false,
         code: 'auth_failed',
         message: 'Gmail rejected the login. Make sure you entered an app password, not your normal password, and that 2-Step Verification is on.',
+        explanation: 'The connection to Gmail worked, but Gmail answered the login with a 535 authentication error.',
         details: RAW_535,
       })
       render(<EmailSettings />)
@@ -133,6 +134,8 @@ describe('EmailSettings', () => {
 
       expect(await screen.findByText(/Gmail rejected the login/)).toBeInTheDocument()
       expect(screen.getByText('Details')).toBeInTheDocument()
+      expect(screen.getByText(/Gmail answered the login with a 535 authentication error/)).toBeInTheDocument()
+      expect(screen.getByText('Server response')).toBeInTheDocument()
       expect(screen.getByText(RAW_535)).toBeInTheDocument()
     })
 
@@ -141,6 +144,7 @@ describe('EmailSettings', () => {
         ok: false,
         code: 'connect_failed',
         message: 'Could not connect to smtp.gmail.com on port 587. The appliance needs outbound access to smtp.gmail.com on port 587; a firewall may be blocking it.',
+        explanation: 'The TCP connection was refused, so no login was attempted.',
         details: '[Errno 111] Connection refused',
       })
       render(<EmailSettings />)

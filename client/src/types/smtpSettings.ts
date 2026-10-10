@@ -35,6 +35,8 @@ export type SmtpTestResult =
       // auth_failed (rejected login), connect_failed (blocked port), host_not_found, tls_failed, rejected, send_failed.
       code: string
       message: string
+      // Technically what happened and what to check, in plain English.
+      explanation: string
       // The mail server's own text.
       details: string
     }

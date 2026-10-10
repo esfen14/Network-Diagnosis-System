@@ -89,12 +89,14 @@ class TestClassify:
         assert result["code"] == "auth_failed"
         assert result["message"].startswith("Gmail rejected the login.")
         assert "535" in result["details"] and "BadCredentials" in result["details"]
+        assert "app password" in result["explanation"] and "2-Step Verification" in result["explanation"]
 
     def test_a_refused_connection_is_a_blocked_port(self):
         result = classify_smtp_error(ConnectionRefusedError("refused"), "smtp.gmail.com", 587)
 
         assert result["code"] == "connect_failed"
         assert "port 587" in result["message"]
+        assert "firewall" in result["explanation"]
 
     def test_a_timeout_is_a_blocked_port(self):
         assert classify_smtp_error(socket.timeout("timed out"), "smtp.gmail.com", 587)["code"] == "connect_failed"
@@ -236,6 +238,7 @@ class TestSendTest:
         assert data["message"] == ("Gmail rejected the login. Make sure you entered an app password, "
                                    "not your normal password, and that 2-Step Verification is on.")
         assert "BadCredentials" in data["details"]
+        assert "535" in data["explanation"]
         assert APP_PASSWORD not in json.dumps(data)
 
     def test_a_blocked_port_has_its_own_message(self, logged_in_client, db_session, helper):

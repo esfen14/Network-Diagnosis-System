@@ -257,10 +257,16 @@ export function EmailSettings() {
         {testResult && !testResult.ok && (
           <div role="alert" className="mt-3 text-sm text-red-500">
             <p>{testResult.message}</p>
-            {testResult.details && (
+            {(testResult.explanation || testResult.details) && (
               <details className="mt-1.5 text-xs text-[var(--text-muted)]">
                 <summary className="cursor-pointer">Details</summary>
-                <pre className="mt-1 whitespace-pre-wrap break-words">{testResult.details}</pre>
+                {testResult.explanation && <p className="mt-1">{testResult.explanation}</p>}
+                {testResult.details && (
+                  <>
+                    <p className="mt-2 font-medium">Server response</p>
+                    <pre className="mt-0.5 whitespace-pre-wrap break-words">{testResult.details}</pre>
+                  </>
+                )}
               </details>
             )}
           </div>
