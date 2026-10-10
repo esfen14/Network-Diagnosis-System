@@ -14,7 +14,7 @@ Status: in-progress
 ## Plan
 
 1. [x] Add a regression case for removed network A and already-recorded hosts in B in `server/tests/unit/test_device_identity.py`; run that case red.
-1a. [ ] Strengthen that regression with gateway port ownership and per-IP address-state assertions in `server/tests/unit/test_device_identity.py`; run red against the pre-fix revision, then green on this branch.
+1a. [x] Strengthen that regression with gateway port ownership and per-IP address-state assertions in `server/tests/unit/test_device_identity.py`; run red against the pre-fix revision, then green on this branch.
 2. [x] Make the smallest identity-resolution correction in `server/app/network_discovery/device_identity.py` (and only necessary discovery caller code); review injection and secret exposure, run focused tests and `scripts/verify.sh backend`.
 3. [ ] Repeat the exact fresh-install gateway reproduction and two-rescan J2-08 on the VM lab, recording a new sanitized report and index row in `docs/test-runs/<date>-issue-67-retest/REPORT.md` and `docs/test-runs/README.md` against the exact tested commit.
 4. [x] State the established cause in GitHub issue #67; update `spec files/Device_Inventory_Requirements.md` §12 and `spec files/Data_Model_and_Integrations.md` with the verified identity rule; update `spec files/Implementation_Status.md` if a gap closes.
@@ -25,14 +25,15 @@ Status: in-progress
 | Round | Change made | Check run | Result |
 |---|---|---|---|
 | 1 | Add regression test `test_removed_network_device_not_reassigned_to_hosts_in_scanned_network` in `test_device_identity.py` and fix in `device_identity.py` | `pytest server/tests/unit/test_device_identity.py` and `./scripts/verify.sh backend` | 57 passed in unit test; 2192 passed in full backend suite (OK) |
-| resumed | Prior progress file was prematurely deleted; restored it and corrected overclaimed VM/J2-08 evidence | `git status`; `gh issue view 67 --json title,body,comments,state,url` | Draft PR #70, clean checkout before restoration; isolated red/green established, live finish conditions outstanding |
+| resumed | Prior progress file was prematurely deleted; restored it and corrected overclaimed VM/J2-08 evidence | `scripts/verify.sh backend > /tmp/opencode/issue67-resume-backend.log 2>&1` | 2192 passed, 14 skipped; live finish conditions outstanding |
+| 2 | Strengthened #67 regression with gateway-port ownership and per-IP state counts | Pre-fix selected pytest in detached worktree; `server/.venv/bin/python -m pytest server/tests/unit/test_device_identity.py -q`; `scripts/verify.sh backend > /tmp/opencode/issue67-strong-backend.log 2>&1` | Red KeyError for missing B host before fix; green 57 tests and 2192 backend tests after |
 
 ## State for the next session
 
-- Last check run (exact command): `scripts/verify.sh backend > /tmp/opencode/issue67-resume-backend.log 2>&1`
-- Result (first failing lines, or "green"): green; 2192 passed, 14 skipped in 257.45s
+- Last check run (exact command): `scripts/verify.sh backend > /tmp/opencode/issue67-strong-backend.log 2>&1`
+- Result (first failing lines, or "green"): green; 2192 passed, 14 skipped in 264.70s
 - Hypothesis: Keeping known devices in scanned network when cross-network strong identifier matches prevents stealing addresses of existing devices when a network is removed; the earlier VM run did not establish the fresh-gateway behavior.
-- Next action (one specific step, not "continue"): Strengthen `server/tests/unit/test_device_identity.py` with gateway-port and per-IP state assertions before the fresh lab retest.
+- Next action (one specific step, not "continue"): Fresh-install the issue branch on the VM lab and establish a persisted standalone `10.0.2.2` gateway before removing its network.
 
 ## Decisions and notes
 

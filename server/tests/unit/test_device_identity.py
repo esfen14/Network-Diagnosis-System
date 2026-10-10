@@ -761,6 +761,12 @@ class TestDeviceLifecycle:
         assert gateway.IP_Address == "10.0.2.2"
         assert web01.IP_Address == "10.77.0.2"
         assert db01.IP_Address == "10.77.0.3"
+        gateway_id = gateway.NetDiscoveryID
+        web01_id = web01.NetDiscoveryID
+        db01_id = db01.NetDiscoveryID
+        gateway_port = db_session.session.scalar(sa.select(Open_TCP_Services).where(
+            Open_TCP_Services.NetDiscoveryID == gateway_id, Open_TCP_Services.Port_Number == 2201))
+        assert gateway_port is not None
 
         # Rescan with Network A removed: only Network B is scanned
         rescan_b = {
@@ -793,4 +799,18 @@ class TestDeviceLifecycle:
         assert gateway.IP_Address == "10.0.2.2"
         assert gateway.Network == net_a
         assert gateway.Device_State is DeviceState.ACTIVE  # left alone since its network was not scanned
+        assert gateway.NetDiscoveryID == gateway_id
+        assert gateway.Missed_Scans == 0
+        assert db_session.session.scalar(sa.select(Open_TCP_Services).where(
+            Open_TCP_Services.NetDiscoveryID == gateway_id, Open_TCP_Services.Port_Number == 2201
+        )).NetDiscoveryID == gateway_id
+        assert db_session.session.scalar(sa.select(Open_TCP_Services).where(
+            Open_TCP_Services.NetDiscoveryID.in_([web01_id, db01_id]),
+            Open_TCP_Services.Port_Number == 2201,
+        )) is None
+        for ip, expected_id in (("10.77.0.2", web01_id), ("10.77.0.3", db01_id)):
+            matches = [device for device in all_devices() if device.IP_Address == ip
+                       and device.Device_State in (DeviceState.ACTIVE, DeviceState.ADDRESS_UNKNOWN)]
+            assert [device.NetDiscoveryID for device in matches] == [expected_id]
+        assert [row.IP_Address for row in open_addresses(gateway)] == ["10.0.2.2"]
 
