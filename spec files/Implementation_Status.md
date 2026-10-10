@@ -1,6 +1,6 @@
 # Implementation Status and Scope
 
-**Snapshot date:** 2026-10-08
+**Snapshot date:** 2026-10-10
 
 This file reports what is present in the repository. It is not a substitute for
 the normative behavior in the requirement specifications.
@@ -11,7 +11,14 @@ the normative behavior in the requirement specifications.
 - Account, role, permission-option, and per-user preference APIs, including the
   bootstrap administrator's first-run setup (`POST /api/user/complete-setup`).
 - Singleton system settings with personal/system separation and optimistic
-  version conflict handling.
+  version conflict handling. The system Check interval (1/2/5/10/15 minutes)
+  generates host and service check intervals through the shared Nagios writer;
+  unchanged Nagios `Last_Check` results are not stored again. Plugin status text,
+  stale fallback and the per-user browser-refresh hint use the setting. Fresh
+  appliance cadence, backup and validation/reload rollback were verified in
+  `docs/test-runs/2026-10-10-issue-60/REPORT.md`; controlled full-hour
+  before/after rows-per-host measurement is deferred to #82 under the #62 QA
+  plan. The short VM comparison is not that measurement.
 - Dashboard status, summary, active alerts, acknowledgement, and latest
   notifications.
 - Network Health summary, metric trends, plugin grouping, host table/details,
@@ -19,7 +26,7 @@ the normative behavior in the requirement specifications.
 - Alerts and Notifications History list/detail routes backed by Nagios archive
   events and Pinpoint acknowledgement history.
 - Header notification feed with per-user unread cursor.
-- Network discovery start/stop/status and Nagios host/service config generation. Repeat scans keep newly configured TCP ports on existing devices even when lab targets share a cloned SSH key: a matching hardware MAC at the device's current address prevents secondary-address suppression (#66; VM retest in `docs/test-runs/2026-10-10-issue-66/`).
+- Network discovery start/stop/status and Nagios host/service config generation. Repeat scans keep newly configured TCP ports on existing devices even when lab targets share a cloned SSH key: a matching hardware MAC at the device's current address prevents secondary-address suppression (#66; VM retest in `docs/test-runs/2026-10-10-issue-66/`). The #67 cross-network known-address matching fix passes isolated backend tests; an initial existing-appliance VM run was only partial evidence (`docs/test-runs/2026-10-10-issue-67/`). A fresh VM reproduction retained the NAT gateway and its ports on its own record after removing that network, and two J2-08 rescans left unique ACTIVE lab records (`docs/test-runs/2026-10-10-issue-67-retest/`).
 - NCPA eligibility, SSH fingerprint trust (approved key only), login checks,
   deployment with per-device outcomes, cancellation, status, run history and
   review, and trusted-device routes.

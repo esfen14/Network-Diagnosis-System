@@ -31,7 +31,7 @@ from app.plugin_models import (
     PluginStatus,
     PluginType,
 )
-from app.system_models import Open_TCP_Services, PortState
+from app.system_models import Open_TCP_Services, PortState, SystemSettings
 from tests.support.identity_helpers import MAC_1, MAC_2, NET, make_status, run_scan, scan
 
 APPLIED = ("applied", "New host.cfg applied.")
@@ -292,6 +292,22 @@ class TestPluginServices:
         status = self.listing(logged_in_client, ssh)["items"][0]["status"]
         assert status["kind"] == "waiting" and status["state"] is None
         assert "Waiting for first check" in status["output"] and "every 5 minutes" in status["output"]
+
+    def test_waiting_text_uses_configured_interval(self, logged_in_client, attached):
+        _, ssh = attached
+        db.session.add(SystemSettings(Id=1, Check_Interval=2))
+        db.session.commit()
+        assert "every 2 minutes" in self.listing(logged_in_client, ssh)["items"][0]["status"]["output"]
+
+    def test_stale_fallback_uses_configured_interval(self, logged_in_client, attached):
+        _, ssh = attached
+        db.session.add(SystemSettings(Id=1, Check_Interval=2))
+        db.session.commit()
+        record_result("web-01", "ssh-22-tcp", checked_ago=timedelta(minutes=7))
+        row = db.session.scalar(sa.select(service.ServiceStatus).where(service.ServiceStatus.Hostname == "web-01"))
+        row.Next_Check = row.Last_Check
+        db.session.commit()
+        assert self.listing(logged_in_client, ssh)["items"][0]["status"]["kind"] == "stale"
 
     def test_a_fresh_result_shows_its_state_and_output(self, logged_in_client, attached):
         _, ssh = attached

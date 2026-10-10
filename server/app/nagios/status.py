@@ -62,6 +62,18 @@ def insert_host_status_data(data):
         if current_state is None:
             return
 
+        last_check = convert_to_UTC(data.get('last_check'))
+        if last_check is not None:
+            previous_check = db.session.scalar(
+                sa.select(HostStatus.Last_Check)
+                .where(HostStatus.Hostname == data.get('name'))
+                .order_by(HostStatus.HostStatusID.desc())
+                .limit(1)
+            )
+            # SQLite returns naive datetimes even for UTC-aware mapped values.
+            if previous_check is not None and previous_check.replace(tzinfo=timezone.utc) == last_check:
+                return
+
         host_status = HostStatus(
             Timestamp=convert_to_UTC(data.get('last_update')),
             Hostname=data.get('name'),
@@ -71,7 +83,7 @@ def insert_host_status_data(data):
             State_Type=convert_connection_state_type_enum(data.get('state_type')),
             Current_Attempt=int(data.get('current_attempt', 1)),
             Max_Attempts=int(data.get('max_attempts', 3)),
-            Last_Check=convert_to_UTC(data.get('last_check')),
+            Last_Check=last_check,
             Next_Check=convert_to_UTC(data.get('next_check')),
             Last_State_Change=convert_to_UTC(data.get('last_state_change')),
             Last_Hard_State_Change=convert_to_UTC(data.get('last_hard_state_change')),
@@ -119,6 +131,18 @@ def insert_host_status_data(data):
         
 def insert_service_status_data(hostname, service, data):
     try:
+        last_check = convert_to_UTC(data.get('last_check'))
+        if last_check is not None:
+            previous_check = db.session.scalar(
+                sa.select(ServiceStatus.Last_Check)
+                .where(ServiceStatus.Hostname == hostname, ServiceStatus.Service == service)
+                .order_by(ServiceStatus.ServiceStatusID.desc())
+                .limit(1)
+            )
+            # SQLite returns naive datetimes even for UTC-aware mapped values.
+            if previous_check is not None and previous_check.replace(tzinfo=timezone.utc) == last_check:
+                return
+
         service_status = ServiceStatus(
             Timestamp=convert_to_UTC(data.get('last_update')),
             Hostname=hostname,
@@ -135,7 +159,7 @@ def insert_service_status_data(hostname, service, data):
             Last_Time_Unknown=convert_to_UTC(data.get('last_time_unknown')),
             Current_Attempt=int(data.get('current_attempt', 1)),
             Max_Attempts=int(data.get('max_attempts', 3)),
-            Last_Check=convert_to_UTC(data.get('last_check')),
+            Last_Check=last_check,
             Next_Check=convert_to_UTC(data.get('next_check')),
             Last_State_Change=convert_to_UTC(data.get('last_state_change')),
             Last_Hard_State_Change=convert_to_UTC(data.get('last_hard_state_change')),

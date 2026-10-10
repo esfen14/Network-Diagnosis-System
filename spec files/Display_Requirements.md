@@ -1067,10 +1067,20 @@ still see the data.
 
 ### 3.1 Data Freshness Indicator
 
-Both pages must show when data was last updated. If the last check timestamp
-is older than the configured scan frequency (`scanFrequency` from System
-Settings), display a visible staleness warning. The user must always know
-whether they are looking at live or stale data.
+Both pages must show when data was last updated. Compare the last Nagios check
+timestamp to the system-wide Check interval plus up to 60 seconds for Pinpoint's
+fixed Nagios status poll, allowing reasonable scheduling jitter. If it is older,
+display a visible staleness warning. The user must always know whether they
+are looking at live or stale data. Discovery Scan Frequency (`scanFrequency`)
+only controls searches for devices and ports; it is not a check freshness limit.
+
+Settings → General shows the per-user Dashboard Refresh Rate (Manual/1/5/15
+minutes) with a dynamic hint showing the current Check interval and fixed
+60-second data poll. Changing browser refresh does not change Nagios checks,
+polling, or network discovery. Settings → System offers administrators the
+system-wide Check interval (1/2/5/10/15 minutes, default 5) for generated
+Nagios hosts and services; saving it validates and reloads Nagios or shows an
+error and restores the old value.
 
 ### 3.2 Empty States and "Plugin Not Configured" States
 

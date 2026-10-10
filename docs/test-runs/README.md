@@ -48,6 +48,9 @@ table while you test, not afterward.
 
 | Run | Kind | Commit | Result | Report |
 |---|---|---|---|---|
+| [2026-10-10 issue-60](2026-10-10-issue-60/REPORT.md) | VM lab, isolated fresh install, check cadence and rollback | app `bcf5f614`, installer `2859361` | Partial: live cadence and rollback pass; paired full-hour row measurement pending | [REPORT.md](2026-10-10-issue-60/REPORT.md) |
+| [2026-10-10 issue-67-retest](2026-10-10-issue-67-retest/REPORT.md) | Fresh VM gateway removal and two-rescan J2-08 | app `72b51602` | Pass for address and port ownership; browser UI not driven | [REPORT.md](2026-10-10-issue-67-retest/REPORT.md) |
+| [2026-10-10 issue-67](2026-10-10-issue-67/REPORT.md) | VM lab, removed-network rescan on existing appliance | app `f9f03bcf` | Partial: existing rows stable; fresh gateway reproduction and J2-08 not verified | [REPORT.md](2026-10-10-issue-67/REPORT.md) |
 | [2026-10-10 issue-66](2026-10-10-issue-66/REPORT.md) | VM lab, narrow-to-single/ranged TCP rescans and legacy01 NCPA | app `c1f8fa74` | Pass for #66 port and NCPA checks | [REPORT.md](2026-10-10-issue-66/REPORT.md) |
 | [2026-10-10 issue-59](2026-10-10-issue-59/REPORT.md) | VM lab, fresh install, repeated discovery and NCPA deployment to alternate-port SSH target | app `431f50ae` | Pass for one active record at `10.77.0.6`; scan waits timed out | [REPORT.md](2026-10-10-issue-59/REPORT.md) |
 | [2026-10-08 issue-47-ncpa-live](2026-10-08-issue-47-ncpa-live/REPORT.md) | VM lab, live SSH/NCPA deployment for issue #47 | `7735fc1e` | Pass for #47 deployment/log behavior | [REPORT.md](2026-10-08-issue-47-ncpa-live/REPORT.md) |
