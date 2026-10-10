@@ -30,6 +30,8 @@ from app.system_models import (
     NetworkDiscoveryStatus,
     SystemSettings,
     Open_UDP_Services,
+    User,
+    UserStatus,
 )
 from app.nagios.status import insert_service_status_data
 from app.history_models import ServiceStatus
@@ -768,3 +770,52 @@ class TestGeneratedFileFollowsPluginState:
         ssh.Status = PluginStatus.ACTIVE
         db_session.session.commit()
         assert set(generated()) == {"ssh-22-tcp", "http-80-tcp"}
+
+
+# ==========================================================
+# Alert contacts
+# ==========================================================
+
+@pytest.mark.usefixtures("all_monitoring_plugins")
+class TestAlertContacts:
+    """Only Active users with email alerts on become Nagios contacts."""
+
+    def _generate(self, app, plugin_config, tmp_path):
+        discovered = {"10.0.0.0/24": {"10.0.0.11": make_host("host-a", tcp={"22": "ssh"})}}
+        with patched_config(app, HOST_CONFIG_DIR=tmp_path):
+            return _create_host_cfg_file(discovered).read_text()
+
+    def _add_user(self, db_session, admin_role, email, status=UserStatus.ACTIVE, alerts=True):
+        user = User(
+            First_Name="T", Last_Name="U", Email=email, Status=status,
+            RoleID=admin_role.RoleID, Receive_Email_Alerts=alerts,
+        )
+        user.set_password("TestPass1!abc")
+        db_session.session.add(user)
+        db_session.session.commit()
+        return user
+
+    def test_group_lists_only_eligible_users(self, app, db_session, admin_role, plugin_config, tmp_path):
+        self._add_user(db_session, admin_role, "on@example.com")
+        self._add_user(db_session, admin_role, "off@example.com", alerts=False)
+        self._add_user(db_session, admin_role, "inactive@example.com", status=UserStatus.INACTIVE)
+        self._add_user(db_session, admin_role, "suspended@example.com", status=UserStatus.SUSPENDED)
+
+        text = self._generate(app, plugin_config, tmp_path)
+
+        assert re.search(r"contact_name\s+on@example\.com", text)
+        for email in ("off@example.com", "inactive@example.com", "suspended@example.com"):
+            assert email not in text
+        assert re.search(r"members\s+on@example\.com\n", text)
+        assert re.search(r"contact_groups\s+system_users", text)
+
+    def test_no_eligible_user_writes_no_group_and_no_contact_groups_line(
+        self, app, db_session, admin_role, plugin_config, tmp_path
+    ):
+        self._add_user(db_session, admin_role, "off@example.com", alerts=False)
+
+        text = self._generate(app, plugin_config, tmp_path)
+
+        assert "define contactgroup" not in text
+        assert "contact_groups" not in text
+        assert "define host" in text and "define service" in text

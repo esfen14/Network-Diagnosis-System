@@ -33,6 +33,16 @@ def add_inactive_lines(rendered, note):
     ]
     return "\n".join(lines)
 
+def _drop_empty_contact_groups(rendered):
+    """Remove a blank contact_groups line (no eligible alert contact exists)."""
+    kept = []
+    for line in rendered.split("\n"):
+        if line.strip() == "contact_groups":
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def create_host(host):
     rendered = _load_template("host.cfg.tpl").format(
         host_name=host["host_name"],
@@ -41,6 +51,7 @@ def create_host(host):
         contact_groups=host["contact_groups"],
         check_interval=check_interval(),
     )
+    rendered = _drop_empty_contact_groups(rendered)
     if host.get("active_checks_enabled") is False:
         rendered = add_inactive_lines(rendered, host.get("notes") or "Address unknown")
     return rendered
@@ -52,7 +63,8 @@ def create_service(service, service_command):
         command=service_command,
         contact_groups=service["contact_groups"],
         check_interval=check_interval(),
-    ) 
+    )
+    rendered = _drop_empty_contact_groups(rendered)
     if service.get("active_checks_enabled") is False:
         rendered = add_inactive_lines(rendered, service.get("notes") or "Address unknown")
     return rendered

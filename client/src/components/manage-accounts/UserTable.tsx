@@ -131,13 +131,14 @@ export function UserTable({ users, title, onEdit }: UserTableProps) {
               <th className="px-4 py-3 font-normal">Email</th>
               <th className="px-4 py-3 font-normal">Role</th>
               <th className="px-4 py-3 font-normal">Status</th>
+              <th className="px-4 py-3 font-normal">Email Alerts</th>
               <th className="px-4 py-3 font-normal">Joined Date</th>
               <th className="px-4 py-3 font-normal">Actions</th>
             </tr>
           </thead>
           <tbody>
             {paginated.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-[var(--text-muted)]">No users match your search or filter</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-[var(--text-muted)]">No users match your search or filter</td></tr>
             ) : (
               paginated.map((user) => (
                 <tr key={user.id} className="border-b border-[var(--border)] transition hover:bg-[var(--hover)]">
@@ -145,6 +146,7 @@ export function UserTable({ users, title, onEdit }: UserTableProps) {
                   <td className="px-4 py-3 text-[var(--text-muted)]">{user.email}</td>
                   <td className="px-4 py-3 text-[var(--text-muted)]">{user.role}</td>
                   <td className="px-4 py-3"><StatusBadge status={user.status} /></td>
+                  <td className="px-4 py-3 text-[var(--text-muted)]">{user.receiveEmailAlerts ? 'On' : 'Off'}</td>
                   <td className="px-4 py-3 text-[var(--text-muted)]">{formatDate(user.createdAt)}</td>
                   <td className="px-4 py-3">
                     <button type="button" onClick={() => onEdit(user)} className="text-[var(--text-muted)] hover:text-[var(--text)]" title="Edit">

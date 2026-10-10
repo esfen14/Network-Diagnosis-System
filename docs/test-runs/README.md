@@ -48,6 +48,7 @@ table while you test, not afterward.
 
 | Run | Kind | Commit | Result | Report |
 |---|---|---|---|---|
+| [2026-10-10 issue-80](2026-10-10-issue-80/REPORT.md) | VM lab, fresh install, per-user email alert setting, account.alerts, host and service alert email through Gmail | app `f0f934db`, re-checked on merged `6c6d0102`, installer `c5cd3de` | Pass; mail not re-sent on the merged commit; opted-out inbox check tester-reported | [REPORT.md](2026-10-10-issue-80/REPORT.md) |
 | [2026-10-10 issue-60](2026-10-10-issue-60/REPORT.md) | VM lab, isolated fresh install, check cadence and rollback | app `bcf5f614`, installer `2859361` | Partial: live cadence and rollback pass; paired full-hour row measurement pending | [REPORT.md](2026-10-10-issue-60/REPORT.md) |
 | [2026-10-10 issue-67-retest](2026-10-10-issue-67-retest/REPORT.md) | Fresh VM gateway removal and two-rescan J2-08 | app `72b51602` | Pass for address and port ownership; browser UI not driven | [REPORT.md](2026-10-10-issue-67-retest/REPORT.md) |
 | [2026-10-10 issue-67](2026-10-10-issue-67/REPORT.md) | VM lab, removed-network rescan on existing appliance | app `f9f03bcf` | Partial: existing rows stable; fresh gateway reproduction and J2-08 not verified | [REPORT.md](2026-10-10-issue-67/REPORT.md) |

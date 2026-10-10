@@ -123,6 +123,7 @@ PERMISSION_NAMES = [
     "account.edit",
     "account.view",
     "account.info",
+    "account.alerts",
     "system.deploy.ncpa",
     "system.hosts",
     "system.hosts.edit",
@@ -156,6 +157,19 @@ PERMISSION_NAMES = [
     "settings.plugins",
     "settings.email",
 ]
+
+
+@pytest.fixture(autouse=True)
+def fake_contact_writer(monkeypatch):
+    """Account saves rebuild the Nagios config; no test may reach the real writer."""
+    calls = []
+
+    def fake():
+        calls.append(1)
+        return "applied", "Applied."
+
+    monkeypatch.setattr("app.api.user.management.regenerate_and_apply_config_status", fake)
+    return calls
 
 
 @pytest.fixture()

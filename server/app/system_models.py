@@ -80,6 +80,11 @@ class User(UserMixin, db.Model):
     Needs_Setup: so.Mapped[bool] = so.mapped_column(
         sa.Boolean(), default=False, server_default=sa.false()
     )
+    # Whether this user becomes a Nagios contact (and so gets alert email).
+    # Only Active users are ever contacts, whatever this says.
+    Receive_Email_Alerts: so.Mapped[bool] = so.mapped_column(
+        sa.Boolean(), default=True, server_default=sa.true()
+    )
     Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Updated_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc),onupdate= lambda: datetime.now(timezone.utc))
 
