@@ -3,6 +3,7 @@ import { KeyRound } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useCurrentUser } from '../../contexts/CurrentUserContext'
 import { apiPost, errorMessage } from '../../lib/api'
+import { LoginBackdrop } from './LoginBackdrop'
 
 const INPUT_CLASS =
   'w-full rounded-full border border-[var(--border)] bg-[var(--input-bg)] px-4 py-2.5 text-sm text-[var(--text)] outline-none focus:border-[#ffb100]'
@@ -50,7 +51,7 @@ export function ForcePasswordChange() {
   }
 
   return (
-    <div className="admin-bg flex min-h-screen items-center justify-center p-4">
+    <LoginBackdrop>
       <form
         onSubmit={handleSubmit}
         className="w-full max-w-md rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-xl"
@@ -128,6 +129,6 @@ export function ForcePasswordChange() {
           </button>
         </div>
       </form>
-    </div>
+    </LoginBackdrop>
   )
 }

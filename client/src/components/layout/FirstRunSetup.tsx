@@ -3,6 +3,7 @@ import { ShieldCheck } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useCurrentUser } from '../../contexts/CurrentUserContext'
 import { apiPost, errorMessage } from '../../lib/api'
+import { LoginBackdrop } from './LoginBackdrop'
 
 const INPUT_CLASS =
   'w-full rounded-full border border-[var(--border)] bg-[var(--input-bg)] px-4 py-2.5 text-sm text-[var(--text)] outline-none focus:border-[#ffb100]'
@@ -65,7 +66,7 @@ export function FirstRunSetup() {
 
   if (warning) {
     return (
-      <div className="admin-bg flex min-h-screen items-center justify-center p-4">
+      <LoginBackdrop>
         <div className="w-full max-w-md rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-xl">
           <h1 className="text-center text-xl font-semibold text-[var(--text)]">Setup saved</h1>
           <p role="alert" className="mt-3 text-center text-sm text-amber-600 dark:text-amber-400">
@@ -82,12 +83,12 @@ export function FirstRunSetup() {
             </button>
           </div>
         </div>
-      </div>
+      </LoginBackdrop>
     )
   }
 
   return (
-    <div className="admin-bg flex min-h-screen items-center justify-center p-4">
+    <LoginBackdrop>
       <form
         onSubmit={handleSubmit}
         className="w-full max-w-md rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-xl"
@@ -179,6 +180,6 @@ export function FirstRunSetup() {
           </button>
         </div>
       </form>
-    </div>
+    </LoginBackdrop>
   )
 }
