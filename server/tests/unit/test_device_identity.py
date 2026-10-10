@@ -74,6 +74,25 @@ class TestEvidence:
 
 class TestPhaseZeroBugs:
 
+    def test_address_unknown_host_reactivates_when_seen_again_at_same_ip(self, db_session, admin_user):
+        """
+        A device whose address was temporarily marked unknown must match
+        and reactivate when a scan observes that same IP again without
+        contradicting identifiers.
+        """
+        status = make_status(db_session, admin_user)
+        discovered = scan("10.77.0.6", hostname="legacy01", tcp={2222: "ssh"})
+
+        first = run_scan(db_session, status, discovered)[(NET, "10.77.0.6")]
+        first.Device_State = DeviceState.ADDRESS_UNKNOWN
+        db_session.session.commit()
+
+        again = run_scan(db_session, status, discovered)[(NET, "10.77.0.6")]
+
+        assert again.NetDiscoveryID == first.NetDiscoveryID
+        assert again.Device_State is DeviceState.ACTIVE
+        assert len(all_devices()) == 1
+
     def test_first_new_linux_host_saves_with_standard_ssh_port(self, db_session, admin_user):
         """Used to raise UnboundLocalError (SSH_Port used before assignment)."""
         status = make_status(db_session, admin_user)
