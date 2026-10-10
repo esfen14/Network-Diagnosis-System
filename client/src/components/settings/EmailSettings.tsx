@@ -162,6 +162,9 @@ export function EmailSettings() {
               onChange={(e) => setUsername(e.target.value)}
               className={`${inputClass} mt-1`}
             />
+            <span className="mt-1.5 block text-xs text-[var(--text-muted)]">
+              The Gmail account PinPoint signs in to, together with the app password.
+            </span>
           </label>
 
           <div>
@@ -175,6 +178,9 @@ export function EmailSettings() {
                 onChange={(e) => { setSenderEdited(true); setForm({ ...form, sender: e.target.value }) }}
                 className={`${inputClass} mt-1`}
               />
+              <span className="mt-1.5 block text-xs text-[var(--text-muted)]">
+                The &quot;From&quot; address shown on alert emails. Gmail always uses the account above, so leave it as is.
+              </span>
             </label>
             {senderDiffers && (
               <p role="alert" className="mt-1.5 flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-300">
