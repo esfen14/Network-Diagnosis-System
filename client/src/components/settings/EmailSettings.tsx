@@ -124,7 +124,7 @@ export function EmailSettings() {
     <div className="space-y-6">
       <SettingsCard
         title="Email (SMTP)"
-        description="The Gmail account PinPoint sends notification email through."
+        description="The Gmail account PinPoint sends notification email through. These settings are shared by the whole system: every alert email is sent from this one account, whoever is signed in."
       >
         <div className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-3">
