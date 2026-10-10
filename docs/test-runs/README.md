@@ -48,6 +48,7 @@ table while you test, not afterward.
 
 | Run | Kind | Commit | Result | Report |
 |---|---|---|---|---|
+| [2026-10-10 issue-66](2026-10-10-issue-66/REPORT.md) | VM lab, narrow-to-single/ranged TCP rescans and legacy01 NCPA | app `c1f8fa74` | Pass for #66 port and NCPA checks | [REPORT.md](2026-10-10-issue-66/REPORT.md) |
 | [2026-10-10 issue-59](2026-10-10-issue-59/REPORT.md) | VM lab, fresh install, repeated discovery and NCPA deployment to alternate-port SSH target | app `431f50ae` | Pass for one active record at `10.77.0.6`; scan waits timed out | [REPORT.md](2026-10-10-issue-59/REPORT.md) |
 | [2026-10-08 issue-47-ncpa-live](2026-10-08-issue-47-ncpa-live/REPORT.md) | VM lab, live SSH/NCPA deployment for issue #47 | `7735fc1e` | Pass for #47 deployment/log behavior | [REPORT.md](2026-10-08-issue-47-ncpa-live/REPORT.md) |
 | [2026-10-08 vm-lab-remaining](2026-10-08-vm-lab-remaining/REPORT.md) | VM lab, fresh install of the #43 fix, alerts, sync, up/down/revert | app `d8dc63e0`, `main` `483c8bdc` | Pass | [REPORT.md](2026-10-08-vm-lab-remaining/REPORT.md) |
