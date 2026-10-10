@@ -57,6 +57,7 @@ The two test addresses are called "opted-in" and "opted-out" here. The synthetic
 - No plan existed; the cases follow the finish condition of #80.
 - Alerts were driven by passive check results on a synthetic host, not by a real outage or a discovered host. Discovery was not run, to avoid scanning the host LAN.
 - `scripts/vmlab setup-admin` could not be used: it looks for the credentials label "Username (email):" but the installer now writes "Username (temporary placeholder email):", and a vmlab config file cannot set `VMLAB_STATE_DIR`. The same steps were done by hand with credentials kept out of the output. In Run A the installer's one-time credentials file was deleted before setup had succeeded, and the one-time placeholder password appeared once in the session output of a diagnostic command. The VM is disposable and the password stopped working when setup completed.
+- After both runs, PR #81 (Settings → Email) added migration `b6e1d4a8c2f9` to `main`, so the email alert migration was moved once more to follow it (`a4c8e1f6d392` now revises `b6e1d4a8c2f9`). That chain was checked by the migration unit tests and CI, not on the VM; the VM runs above used the earlier chain.
 - Run A used the pre-merge commit. The merge with `main` happened afterwards and Run B re-checked what the merge could affect.
 
 ## Follow-up
