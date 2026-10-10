@@ -1,7 +1,7 @@
 # Issue #60: Make the Nagios check interval one system setting, and stop storing repeated status rows
 
 Branch: `issue-60-check-interval`
-Status: in-progress
+Status: blocked
 
 ## Finish condition
 
@@ -46,7 +46,7 @@ Requirement coverage (every requirement the issue states, and the check that pro
 - Last check run (exact command): `git status --short`
 - Result (first failing lines, or "green"): green (clean branch before progress file)
 - Hypothesis: The settings/UI/config writer and migration need an explicit sensitive-module and existing-data approval before code changes. The display spec currently calls scanFrequency a freshness threshold, whereas this issue would use Check interval.
-- Next action (one specific step, not "continue"): Obtain approval and a decision about the freshness rule before writing the first regression test.
+- Next action (one specific step, not "continue"): Ask the owner to approve the sensitive Nagios configuration change and existing-database migration, and resolve the §3.1 freshness rule; then start plan step 1.
 
 ## Decisions and notes
 
