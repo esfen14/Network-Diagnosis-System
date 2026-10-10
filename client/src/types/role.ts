@@ -10,6 +10,8 @@ export type Role = {
   name: string
   description: string
   isActive: boolean
+  // Role of the super admin: it cannot be deactivated.
+  isLocked: boolean
   createdAt: string
 }
 
@@ -22,6 +24,7 @@ type RoleApiRecord = {
   name: string
   description: string
   is_active: boolean
+  is_locked?: boolean
   created_at: string
 }
 
@@ -39,6 +42,7 @@ export function fromRoleRecord(record: RoleApiRecord): Role {
     name: record.name,
     description: record.description,
     isActive: record.is_active,
+    isLocked: record.is_locked ?? false,
     createdAt: record.created_at,
   }
 }
@@ -49,6 +53,7 @@ export function fromRoleDetailRecord(record: RoleDetailApiRecord): RoleDetail {
     name: record.name,
     description: record.description,
     isActive: record.is_active,
+    isLocked: false,
     createdAt: '',
     permissions: record.permissions,
   }

@@ -164,11 +164,13 @@ def roles():
         )
         
         items = []
+        super_admin = get_super_admin()
         
         for role in roles.items:
             items.append(
                 {
                     "id": role.RoleID,
+                    "is_locked": super_admin is not None and super_admin.RoleID == role.RoleID,
                     "name": role.Name,
                     "description": role.Description,
                     "is_active": role.Is_Active,
@@ -551,11 +553,13 @@ def available_accounts():
         )
 
         items = []
+        super_admin = get_super_admin()
         
         for user in users.items:
             items.append(
                 {
                     "id": user.UserID,
+                    "is_super_admin": super_admin is not None and super_admin.UserID == user.UserID,
                     "first_name": user.First_Name,
                     "last_name": user.Last_Name,
                     "email": user.Email,
@@ -592,6 +596,7 @@ def account_info(id):
         
         return success({
             "id": user.UserID,
+            "is_super_admin": is_super_admin(user.UserID),
             "first_name": user.First_Name,
             "last_name": user.Last_Name,
             "email": user.Email,
