@@ -51,8 +51,8 @@ Requirement coverage (every requirement the issue states, and the check that pro
 
 - Last check run (exact command): `scripts/verify.sh docs`
 - Result (first failing lines, or "green"): green (55 documents, routes and progress valid)
-- Hypothesis: Code and specs align for four schedules; migration upgrade and live Nagios behavior remain unverified.
-- Next action (one specific step, not "continue"): Check VM-lab prerequisites and run the approved #60 cadence, backup, rollback and rows/hour measurement.
+- Hypothesis: Code and specs align for four schedules; migration upgrade and live Nagios behavior remain unverified. Five loop rounds were completed in this session, so stop per workflow §4.
+- Next action (one specific step, not "continue"): Inspect `scripts/vmlab` prerequisites and perform the issue-approved VM cadence, backup, rollback and rows/hour measurements; record sanitized results.
 
 ## Decisions and notes
 
