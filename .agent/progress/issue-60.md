@@ -1,11 +1,11 @@
 # Issue #60: Make the Nagios check interval one system setting, and stop storing repeated status rows
 
 Branch: `issue-60-check-interval`
-Status: blocked
+Status: in-progress
 
 ## Finish condition
 
-- [ ] Repeated polls of an unchanged check add no rows (test)
+- [x] Repeated polls of an unchanged check add no rows (test)
 - [ ] Saving a new Check interval changes `check_interval` in generated `hosts.cfg` for hosts and services, through the shared writer (faked Nagios test)
 - [ ] On the VM lab checks run at the new interval after save, and the config backup exists
 - [ ] Failed validation or reload leaves the old interval running, restores the setting and shows the error
@@ -29,7 +29,7 @@ Requirement coverage (every requirement the issue states, and the check that pro
 
 ## Plan
 
-1. [ ] Test repeated host/service polls then deduplicate by Last_Check in `server/tests/unit/test_status.py`, `server/app/nagios/status.py`.
+1. [x] Test repeated host/service polls then deduplicate by Last_Check in `server/tests/unit/test_status.py`, `server/app/nagios/status.py`.
 2. [ ] Test the fixed-list, authorized setting and rollback, then implement model, migration, API and shared writer/template generation in `server/tests/unit/test_settings_permissions.py`, `server/tests/unit/test_create_host_cfg.py`, `server/app/system_models.py`, `server/migrations/versions/`, `server/app/api/system/settings.py`, `server/app/network_discovery/host_config_templates.py`, `server/app/network_discovery/templates/{host,service}.cfg.tpl`, `server/app/network_discovery/create_host_cfg.py`.
 3. [ ] Test plugin status text and stale fallback, then implement in `server/tests/unit/test_plugin_services_api.py`, `server/app/api/plugin/service.py`.
 4. [ ] Test frontend setting, error display and refresh hint, then implement in `client/src/test/`, `client/src/types/settings.tsx`, `client/src/contexts/SystemSettingsContext.tsx`, `client/src/components/settings/{SystemSettings,GeneralSettings}.tsx` (actual matching test files to identify before editing).
@@ -40,17 +40,20 @@ Requirement coverage (every requirement the issue states, and the check that pro
 
 | Round | Change made | Check run | Result |
 |---|---|---|---|
+| resumed | Owner approved sensitive changes; installer issue requested before implementation | `git status --short` | clean |
+| 1 | Filed installer prerequisite issue #4; added repeated-check host/service regression and deduplication | `python -m pytest server/tests/unit/test_status.py -q`; `scripts/verify.sh backend` | 17 passed; 2234 passed, 14 skipped |
 
 ## State for the next session
 
-- Last check run (exact command): `git status --short`
-- Result (first failing lines, or "green"): green (clean branch before progress file)
-- Hypothesis: The settings/UI/config writer and migration need an explicit sensitive-module and existing-data approval before code changes. The display spec currently calls scanFrequency a freshness threshold, whereas this issue would use Check interval.
-- Next action (one specific step, not "continue"): Ask the owner to approve the sensitive Nagios configuration change and existing-database migration, and resolve the §3.1 freshness rule; then start plan step 1.
+- Last check run (exact command): `scripts/verify.sh backend`
+- Result (first failing lines, or "green"): green (2234 passed, 14 skipped)
+- Hypothesis: SQLite returns naive datetimes from history even when incoming Nagios checks are UTC-aware; normalized comparison now passes.
+- Next action (one specific step, not "continue"): Add settings/config writer/migration regression tests for the fixed-list Check interval.
 
 ## Decisions and notes
 
 - Issue finish condition now covers the previously missing hint and two specification updates. Owner comment asks whether deduplication already exists; inspected `server/app/nagios/status.py`: both insertion paths add rows unconditionally.
-- `app/network_discovery/` is sensitive under Engineering Standards §Sensitive modules, and a new `SystemSettings` column requires migrating existing databases. Workflow §4 requires a person before this change. No implementation attempted.
-- `Display_Requirements.md` §3.1 currently treats `scanFrequency` (discovery schedule) as a freshness threshold; the issue calls for check interval to govern checks. Need explicit decision whether §3.1 should use check interval (possibly accounting for the 60 s poll delay).
+- The owner approved the sensitive Nagios configuration change and settings-column migration. No implementation attempted yet.
+- The owner requests explicit documentation of discovery scan frequency versus data polling frequency. For freshness use the Nagios check interval plus the 60 s polling delay, not the discovery schedule; update Display Requirements §3.1 accordingly.
+- Installer prerequisites were planned from its `setup/deploy-pinpoint-web.sh`, `setup/configure-pinpoint-privileges.sh`, and `setup/configure-nagios.sh`; filed https://github.com/lorraine-pangilinan/PinPoint-Installer/issues/4. The installer already migrates DBs and grants validate/reload, but its Nagios `interval_length=60` assumption needs live confirmation and upgrade acceptance. Do not add restart or a second writer.
 - Injection/secret review to perform after approval: fixed integer whitelist before template formatting, no shell interpolation, no secret-bearing config or subprocess output in logs/progress, preserve shared writer's candidate validation and rollback.
