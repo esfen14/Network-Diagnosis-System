@@ -103,6 +103,9 @@ def main():
     if not check("log in as the administrator", status == 200 and body.get("success"), f"HTTP {status}"):
         print("Is the appliance running and are the credentials right?")
         return 1
+    if body.get("data", {}).get("needs_setup"):
+        check("administrator has completed first-run setup", False, "run: scripts/vmlab setup-admin")
+        return 1
     if body.get("data", {}).get("must_change_password"):
         check("administrator has no pending password change", False, "sign in once in the browser and set a new password")
         return 1

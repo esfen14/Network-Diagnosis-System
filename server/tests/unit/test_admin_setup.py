@@ -205,3 +205,18 @@ class TestRequirePasswordChange:
         assert resp.status_code == 200
         db_session.session.refresh(target)
         assert target.Must_Change_Password is True
+
+
+class TestNagiosContact:
+    def test_generated_config_uses_the_new_address(self, app, client, db_session, admin_role, tmp_path):
+        from app.network_discovery.create_host_cfg import _create_host_cfg_file
+
+        user = _bootstrap_admin(db_session, admin_role)
+        old_email = user.Email
+        _login(client, user)
+        assert _setup(client).status_code == 200
+
+        app.config["HOST_CONFIG_DIR"] = tmp_path
+        cfg = _create_host_cfg_file({}).read_text()
+        assert "ops@company.com" in cfg
+        assert old_email not in cfg
