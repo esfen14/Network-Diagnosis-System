@@ -32,7 +32,19 @@ Status: in-progress
 - [x] Re-observe duplicate records, check fix ancestry and search issues before linking findings (#86).
 - [x] Correct J2-05/J3-02 wording only where supported by spec and source (J3-02 already correct).
 - [x] Record the handoff and new observations in an indexed second-run report.
-- [ ] Verify docs, checkpoint, clean up the throwaway checkout after pushing, and stop for owner review.
+- [x] Verify docs, checkpoint, clean up the throwaway checkout after pushing (owner waived review stop).
+
+### Phase 1: #62 and #82 (PR #65)
+
+- [ ] 1.1 Merge origin/main, preserve both sides' docs, verify docs, update snapshot SHA.
+- [ ] 1.2 Inspect merged specs/tests and record new-feature coverage inventory here.
+- [ ] 1.3 Update journey cases and ISO coverage in both QA documents.
+- [ ] 1.4 Correct installer/app SMTP ownership and add in-repo email cases.
+- [ ] 1.5 Add runnable controlled full-hour #82 case; leave measurement pending.
+- [ ] 1.6 Link QA docs from spec index; file rename follow-up; ensure needs-decision label.
+- [ ] 1.7 Record unresolved owner decisions in draft; retain draft status.
+- [ ] 1.8 Record/defer additional lab coverage honestly; no fresh reset without approval.
+- [ ] 1.9 Re-read issues, prove requirements, run docs/all verification; keep PR draft and progress while blocked.
 
 ## Round log
 
