@@ -77,6 +77,9 @@ class User(UserMixin, db.Model):
     Must_Change_Password: so.Mapped[bool] = so.mapped_column(
         sa.Boolean(), default=False, server_default=sa.false()
     )
+    Needs_Setup: so.Mapped[bool] = so.mapped_column(
+        sa.Boolean(), default=False, server_default=sa.false()
+    )
     Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Updated_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc),onupdate= lambda: datetime.now(timezone.utc))
 
@@ -1024,3 +1027,30 @@ class AckHistory(db.Model):
 
     # Relationship to the acting user.
     Actor: so.Mapped[Optional['User']] = so.relationship()
+
+
+class PasswordResetRequest(db.Model):
+    """
+    A "forgot password" request made from the login page. Nobody is emailed a
+    link: admins (anyone holding account.edit) are notified in the app and are
+    the only ones who can set the new password. See user/password_requests.py.
+    """
+    __tablename__ = "PASSWORD_RESET_REQUEST"
+
+    RequestID: so.Mapped[int] = so.mapped_column(primary_key=True)
+    UserID: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey(User.UserID, ondelete="CASCADE"), index=True
+    )
+    # Pending -> Completed (admin set a password) or Dismissed (admin declined)
+    Status: so.Mapped[str] = so.mapped_column(
+        sa.String(10), default="Pending", server_default="Pending", index=True
+    )
+    Requested_At: so.Mapped[datetime] = so.mapped_column(
+        default=lambda: datetime.now(timezone.utc)
+    )
+    Resolved_At: so.Mapped[Optional[datetime]] = so.mapped_column(nullable=True)
+    Resolved_By: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey(User.UserID, ondelete="SET NULL"), nullable=True
+    )
+
+    User: so.Mapped["User"] = so.relationship(foreign_keys=[UserID])

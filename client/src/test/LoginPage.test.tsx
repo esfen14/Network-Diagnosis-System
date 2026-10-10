@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -183,5 +183,31 @@ describe('LoginPage', () => {
         }),
       )
     })
+  })
+
+  it('sends a forgot-password request for the typed email', async () => {
+    const user = userEvent.setup()
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ message: 'An administrator has been notified.' }),
+    } as Response)
+
+    renderLoginPage()
+
+    await user.click(screen.getByRole('button', { name: /forgot password/i }))
+    const dialog = screen.getByRole('dialog', { name: /forgot password/i })
+    await user.type(within(dialog).getByLabelText('Email'), 'user@example.com')
+    await user.click(within(dialog).getByRole('button', { name: /request password reset/i }))
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith(
+        '/api/user/forgot-password',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ email: 'user@example.com' }),
+        }),
+      )
+    })
+    expect(await screen.findByRole('status')).toHaveTextContent('administrator has been notified')
   })
 })

@@ -18,6 +18,7 @@ export type CurrentUser = {
   role: string
   permissions: string[]
   mustChangePassword: boolean
+  needsSetup: boolean
 }
 
 type CurrentUserContextValue = {
@@ -45,6 +46,7 @@ async function fetchCurrentUser(): Promise<CurrentUser> {
     role: data.role,
     permissions: Array.isArray(data.permissions) ? data.permissions : [],
     mustChangePassword: data.must_change_password === true,
+    needsSetup: data.needs_setup === true,
   }
 }
 

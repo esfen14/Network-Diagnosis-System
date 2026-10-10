@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { X } from 'lucide-react'
 import { UserTable } from '../components/manage-accounts/UserTable'
 import { PageHeader } from '../components/shared/PageHeader'
+import { PasswordRequestsPanel } from '../components/manage-accounts/PasswordRequestsPanel'
+import { useCurrentUser } from '../contexts/CurrentUserContext'
+import { usePasswordRequests } from '../hooks/usePasswordRequests'
 import { useSystemSettings } from '../contexts/SystemSettingsContext'
 import { apiGet, apiPost, apiPut, errorMessage } from '../lib/api'
 import { fromAccountRecord, type RoleOption, type User, type UserStatus } from '../types/user'
@@ -46,6 +49,8 @@ async function fetchRoleOptions(): Promise<RoleOption[]> {
 
 export function ManageAccountsPage() {
   const { settings } = useSystemSettings()
+  const { hasPermission } = useCurrentUser()
+  const passwordRequests = usePasswordRequests(hasPermission('account.edit'))
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [allUsers, setAllUsers] = useState<User[]>([])
   const [roleOptions, setRoleOptions] = useState<RoleOption[]>([])
@@ -131,6 +136,17 @@ export function ManageAccountsPage() {
             {loadError}
           </div>
         )}
+
+        <PasswordRequestsPanel
+          requests={passwordRequests.requests}
+          isPasswordValid={(pw) => isPasswordValid(pw, settings.strongPasswordPolicy)}
+          passwordHint={
+            settings.strongPasswordPolicy
+              ? 'Requires 12+ characters, upper, lower, number, symbol.'
+              : 'Requires at least 8 characters.'
+          }
+          onChanged={passwordRequests.reload}
+        />
 
         {/* TABS + ACTIONS */}
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -238,6 +254,7 @@ function AddAccountModal({
     status: 'active' as UserStatus,
     password: '',
     confirmPassword: '',
+    requirePasswordChange: true,
   })
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -263,6 +280,7 @@ function AddAccountModal({
         confirm_password: form.confirmPassword,
         status: form.status,
         role_id: form.roleId,
+        require_password_change: form.requirePasswordChange,
       })
       onCreated()
     } catch (err) {
@@ -404,6 +422,15 @@ function AddAccountModal({
               Passwords do not match.
             </p>
           )}
+
+        <label className="mt-4 flex items-center justify-center gap-2 text-sm text-[var(--text)]">
+          <input
+            type="checkbox"
+            checked={form.requirePasswordChange}
+            onChange={(e) => setForm({ ...form, requirePasswordChange: e.target.checked })}
+          />
+          Require password change at first sign-in
+        </label>
 
         {error && (
           <p className="mt-3 text-center text-sm text-red-500 dark:text-red-400">{error}</p>
