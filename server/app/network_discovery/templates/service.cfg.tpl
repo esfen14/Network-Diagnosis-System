@@ -3,7 +3,7 @@ define service {{
     service_description         {service_name}
     check_command               {command} 
     max_check_attempts          3
-    check_interval              5
+    check_interval              {check_interval}
     retry_interval              1
     check_period                24x7
     contact_groups               {contact_groups}

@@ -6,9 +6,9 @@ Status: in-progress
 ## Finish condition
 
 - [x] Repeated polls of an unchanged check add no rows (test)
-- [ ] Saving a new Check interval changes `check_interval` in generated `hosts.cfg` for hosts and services, through the shared writer (faked Nagios test)
+- [x] Saving a new Check interval changes `check_interval` in generated `hosts.cfg` for hosts and services, through the shared writer (faked Nagios test)
 - [ ] On the VM lab checks run at the new interval after save, and the config backup exists
-- [ ] Failed validation or reload leaves the old interval running, restores the setting and shows the error
+- [ ] Failed validation or reload leaves the old interval running, restores the setting and shows the error (API rollback tested; live running-config proof pending)
 - [ ] Status text and stale fallback follow the setting
 - [ ] Rows per host per hour measured on the VM lab before and after
 - [ ] Default Dashboard Refresh Rate hint follows Check interval; per-user rate unchanged (test)
@@ -30,7 +30,7 @@ Requirement coverage (every requirement the issue states, and the check that pro
 ## Plan
 
 1. [x] Test repeated host/service polls then deduplicate by Last_Check in `server/tests/unit/test_status.py`, `server/app/nagios/status.py`.
-2. [ ] Test the fixed-list, authorized setting and rollback, then implement model, migration, API and shared writer/template generation in `server/tests/unit/test_settings_permissions.py`, `server/tests/unit/test_create_host_cfg.py`, `server/app/system_models.py`, `server/migrations/versions/`, `server/app/api/system/settings.py`, `server/app/network_discovery/host_config_templates.py`, `server/app/network_discovery/templates/{host,service}.cfg.tpl`, `server/app/network_discovery/create_host_cfg.py`.
+2. [x] Test the fixed-list, authorized setting and rollback, then implement model, migration, API and shared writer/template generation in `server/tests/unit/test_settings_permissions.py`, `server/tests/unit/test_create_host_cfg.py`, `server/app/system_models.py`, `server/migrations/versions/`, `server/app/api/system/settings.py`, `server/app/network_discovery/host_config_templates.py`, `server/app/network_discovery/templates/{host,service}.cfg.tpl`, `server/app/network_discovery/create_host_cfg.py`.
 3. [ ] Test plugin status text and stale fallback, then implement in `server/tests/unit/test_plugin_services_api.py`, `server/app/api/plugin/service.py`.
 4. [ ] Test frontend setting, error display and refresh hint, then implement in `client/src/test/`, `client/src/types/settings.tsx`, `client/src/contexts/SystemSettingsContext.tsx`, `client/src/components/settings/{SystemSettings,GeneralSettings}.tsx` (actual matching test files to identify before editing).
 5. [ ] Test documentation checks and update `spec files/{Data_Model_and_Integrations,Display_Requirements,Backend_Modules_and_Routes,Frontend_Modules_and_Routes,Implementation_Status}.md`; run `scripts/verify.sh docs`.
@@ -42,13 +42,14 @@ Requirement coverage (every requirement the issue states, and the check that pro
 |---|---|---|---|
 | resumed | Owner approved sensitive changes; installer issue requested before implementation | `git status --short` | clean |
 | 1 | Filed installer prerequisite issue #4; added repeated-check host/service regression and deduplication | `python -m pytest server/tests/unit/test_status.py -q`; `scripts/verify.sh backend` | 17 passed; 2234 passed, 14 skipped |
+| 2 | Added fixed-list system setting, migration, host/service template values and shared-writer save path | `python -m pytest server/tests/unit/test_create_host_cfg.py server/tests/unit/test_settings_permissions.py -q`; `scripts/verify.sh backend` | 72 passed; 2245 passed, 14 skipped |
 
 ## State for the next session
 
 - Last check run (exact command): `scripts/verify.sh backend`
-- Result (first failing lines, or "green"): green (2234 passed, 14 skipped)
-- Hypothesis: SQLite returns naive datetimes from history even when incoming Nagios checks are UTC-aware; normalized comparison now passes.
-- Next action (one specific step, not "continue"): Add settings/config writer/migration regression tests for the fixed-list Check interval.
+- Result (first failing lines, or "green"): green (2245 passed, 14 skipped)
+- Hypothesis: The setting's template generation and API rollback work with mocked writer; migration and actual Nagios cadence still need independent verification.
+- Next action (one specific step, not "continue"): Add plugin service text/stale-fallback regressions and replace hard-coded 5-minute values.
 
 ## Decisions and notes
 
