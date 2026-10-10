@@ -419,6 +419,7 @@ def init_production_command(admin_email, first_name, last_name, password_stdin):
             Email=admin_email,
             RoleID=role.RoleID,
             Status=UserStatus.ACTIVE,
+            Needs_Setup=True,
         )
         admin.set_password(password)
         db.session.add(admin)

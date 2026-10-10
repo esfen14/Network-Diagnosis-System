@@ -101,6 +101,14 @@ export function SystemSettings() {
             }
           />
 
+          <SettingsSelect
+            label="Check interval"
+            description="How often Nagios checks generated hosts and services; separate from network discovery and browser refresh."
+            value={String(settings.checkInterval)}
+            options={[1, 2, 5, 10, 15].map((minutes) => ({ value: String(minutes), label: `${minutes} minutes` }))}
+            onChange={(value) => updateSettings({ checkInterval: Number(value) })}
+          />
+
           <SettingsToggle
             label="Maintenance Mode"
             description="Pause scheduled scans and checks, and show a notice to all users"

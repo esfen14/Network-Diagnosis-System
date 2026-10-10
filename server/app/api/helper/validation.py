@@ -176,6 +176,22 @@ def validate_user_email(email):
     except EmailNotValidError:
         return error("Not a valid email.", 400)
 
+PLACEHOLDER_EMAIL_DOMAIN = "pinpoint.lan"
+RESERVED_EMAIL_DOMAINS = (
+    "local", "lan", "test", "example", "invalid", "localhost", "internal", "home.arpa",
+)
+
+
+def validate_deliverable_email_domain(email):
+    domain = str(email).rsplit("@", 1)[-1].strip().lower().rstrip(".")
+    if domain == PLACEHOLDER_EMAIL_DOMAIN or domain.endswith("." + PLACEHOLDER_EMAIL_DOMAIN):
+        return error("Enter a real email address, not the installer placeholder.", 400)
+    for reserved in RESERVED_EMAIL_DOMAINS:
+        if domain == reserved or domain.endswith("." + reserved):
+            return error(f"The domain '{domain}' is reserved and cannot receive email.", 400)
+    return None
+
+
 def validate_email_available(email):
     if exists_user_by_email(email):
         return error("Email already exists.", 409)

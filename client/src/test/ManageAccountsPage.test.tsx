@@ -9,6 +9,15 @@ vi.mock('../contexts/SystemSettingsContext', () => ({
   useSystemSettings: () => ({ settings: { strongPasswordPolicy } }),
 }))
 
+let canEditAccounts = false
+vi.mock('../contexts/CurrentUserContext', () => ({
+  useCurrentUser: () => ({
+    user: null,
+    isLoading: false,
+    hasPermission: (name: string) => canEditAccounts && name === 'account.edit',
+  }),
+}))
+
 const apiGet = vi.fn()
 const apiPost = vi.fn()
 const apiPut = vi.fn()
@@ -50,11 +59,13 @@ const ACCOUNTS = [
 const ROLES = [{ id: 1, name: 'Admin' }, { id: 2, name: 'Viewer' }]
 
 let accountsResponse: unknown
+let passwordRequests: unknown[] = []
 
 function routeApi(path: string) {
   if (path.startsWith('/api/user/accounts')) {
     return accountsResponse instanceof Error ? Promise.reject(accountsResponse) : Promise.resolve(accountsResponse)
   }
+  if (path === '/api/user/password-requests') return Promise.resolve({ items: passwordRequests })
   if (path.startsWith('/api/user/roles/options')) return Promise.resolve({ items: ROLES })
   return Promise.resolve(null)
 }
@@ -83,6 +94,8 @@ function tableNames() {
 describe('ManageAccountsPage', () => {
   beforeEach(() => {
     strongPasswordPolicy = true
+    canEditAccounts = false
+    passwordRequests = []
     accountsResponse = { items: ACCOUNTS }
     apiGet.mockReset()
     apiPost.mockReset()
@@ -170,6 +183,44 @@ describe('ManageAccountsPage', () => {
     expect(await screen.findByText('Unable to reach server')).toBeInTheDocument()
   })
 
+  describe('Password reset requests', () => {
+    const REQUEST = {
+      id: 7,
+      user_id: 3,
+      name: 'Marie Santos',
+      email: 'marie@example.com',
+      requested_at: '2026-10-08T08:00:00+00:00',
+    }
+
+    it('is hidden from users who cannot edit accounts', async () => {
+      passwordRequests = [REQUEST]
+      await renderLoaded()
+      expect(screen.queryByText(/Password reset requests/)).not.toBeInTheDocument()
+    })
+
+    it('lets an admin set a temporary password for a pending request', async () => {
+      canEditAccounts = true
+      passwordRequests = [REQUEST]
+      const user = userEvent.setup()
+      await renderLoaded()
+
+      expect(await screen.findByText('Password reset requests (1)')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Reset password' }))
+
+      const dialog = screen.getByRole('dialog', { name: 'Reset password' })
+      await user.type(within(dialog).getByLabelText('TEMPORARY PASSWORD'), 'StrongPass123!')
+      await user.type(within(dialog).getByLabelText('CONFIRM PASSWORD'), 'StrongPass123!')
+      await user.click(within(dialog).getByRole('button', { name: 'Reset password' }))
+
+      await waitFor(() =>
+        expect(apiPost).toHaveBeenCalledWith('/api/user/password-requests/7/resolve', {
+          password: 'StrongPass123!',
+          confirm_password: 'StrongPass123!',
+        }),
+      )
+    })
+  })
+
   describe('Add User', () => {
     async function openAndFill(password: string, confirm = password) {
       const user = userEvent.setup()
@@ -198,8 +249,25 @@ describe('ManageAccountsPage', () => {
           confirm_password: 'StrongPass123!',
           status: 'active',
           role_id: 1,
+          require_password_change: true,
         })
       })
+    })
+
+    it('sends require_password_change false when the checkbox is unticked', async () => {
+      const user = await openAndFill('StrongPass123!')
+      const box = screen.getByLabelText('Require password change at first sign-in')
+      expect(box).toBeChecked()
+      await user.click(box)
+
+      await user.click(screen.getByRole('button', { name: 'SAVE CHANGES' }))
+
+      await waitFor(() =>
+        expect(apiPost).toHaveBeenCalledWith(
+          '/api/user/accounts',
+          expect.objectContaining({ require_password_change: false }),
+        ),
+      )
     })
 
     it('blocks a weak password under the strong policy', async () => {

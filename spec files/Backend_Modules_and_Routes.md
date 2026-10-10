@@ -67,12 +67,17 @@ current-state inventory rather than treated as intended permission design.
 | `GET /api/user/roles/<id>` | `role.info` | Role detail and permission set |
 | `PUT /api/user/roles/<id>` | `role.edit` | Replace role metadata and permissions |
 | `PUT /api/user/roles/<id>/status` | `role.edit` | Change role active status |
-| `POST /api/user/accounts` | `account.edit` | Create a user account |
+| `POST /api/user/accounts` | `account.edit` | Create a user account. Optional `require_password_change` (boolean, default true) sets `Must_Change_Password`; unticked, the user is not forced to change the admin-chosen password at first sign-in |
 | `GET /api/user/accounts` | `account.view` | Paginated account list |
 | `GET /api/user/accounts/<id>` | `account.info` | Account detail |
-| `PUT /api/user/accounts/<id>` | `account.edit` | Edit account details/status; users are not deleted. `password`/`confirm_password` are optional (omit to keep the password, so suspend/deactivate needs none). Setting a password on another account, or returning an account to Active from Suspended/Inactive, sets `Must_Change_Password` |
-| `GET /api/user/me` | Login | Return the current user, permissions and `must_change_password` |
+| `PUT /api/user/accounts/<id>` | `account.edit` | Edit account details/status; users are not deleted. `password`/`confirm_password` are optional (omit to keep the password, so suspend/deactivate needs none). Setting a password on another account (always, regardless of the create-form option), or returning an account to Active from Suspended/Inactive, sets `Must_Change_Password` |
+| `GET /api/user/me` | Login | Return the current user, permissions, `must_change_password` and `needs_setup` |
+| `POST /api/user/complete-setup` | Login (`Needs_Setup` only) | First-run setup for the bootstrap administrator: `current_password`, `new_email`, `new_password`, `confirm_password`. Checks the current password and the password policy; rejects an invalid or already-used email, the installer's `pinpoint.lan` placeholder domain, and reserved/non-routable domains (`.local`, `.lan`, `.test`, `.example`, `.invalid`, `.localhost`, `.internal`, `home.arpa`). No deliverability check. Saves both, clears `Needs_Setup` and `Must_Change_Password`, writes an audit-log entry, then regenerates the Nagios config through `regenerate_and_apply_config_status()` (Nagios contacts are named and addressed by `User.Email`). Returns `config_applied`, `config_ok`, `config_message`; a failed apply does not undo the account change. 400 for any other account. While `Needs_Setup` is set, every `/api` route except login, logout, `/me` and this one returns 403 (`enforce_password_change`), including `change-password` |
 | `POST /api/user/change-password` | Login | Change the caller's own password (`current_password`, `new_password`, `confirm_password`); clears `Must_Change_Password`. While that flag is set every other `/api` route except login, logout and `/me` returns 403 (`enforce_password_change`). A user whose status is no longer Active is signed out on their next request |
+| `POST /api/user/forgot-password` | Public | Login-page "Forgot Password?". Body `{email}`. Creates a Pending `PasswordResetRequest` for an Active account (at most one pending per user) and always returns the same generic success, so it cannot reveal which emails exist. No email is sent |
+| `GET /api/user/password-requests` | `account.edit` | Pending forgot-password requests, oldest first (`items`, `count`); drives the admin bell alert and the Manage Accounts panel |
+| `POST /api/user/password-requests/<id>/resolve` | `account.edit` | Admin sets the new password (`password`, `confirm_password`, same policy as other password routes). Marks the request Completed and sets `Must_Change_Password`; 409 if already handled |
+| `POST /api/user/password-requests/<id>/dismiss` | `account.edit` | Admin declines a pending request; 409 if already handled |
 
 ### `app/api/user/preferences.py`
 
@@ -90,7 +95,7 @@ The `system_bp` root makes these paths `/api/system`.
 | Method and path | Permission | Purpose |
 |---|---|---|
 | `GET /api/system` | Login | Return singleton system settings |
-| `PUT /api/system` | Login, field-level settings permissions | Save the full settings object with optimistic version handling |
+| `PUT /api/system` | Login, field-level settings permissions | Save the full settings object with optimistic version handling; `checkInterval` accepts 1/2/5/10/15 minutes with `settings.system`, regenerates the Nagios config through the shared writer and rolls back on apply failure (422 with message) |
 
 Security and system setting fields are restricted with `settings.security` and
 `settings.system`; personal fields are handled by `/api/user/preferences`.

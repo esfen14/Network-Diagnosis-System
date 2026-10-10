@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, CheckCircle2, Clock, HelpCircle, LogOut, PanelLeft, Radar, Settings, Star, Trash2, UserCog, XCircle } from 'lucide-react'
+import { Bell, CheckCircle2, Clock, HelpCircle, KeyRound, LogOut, PanelLeft, Radar, Settings, Star, Trash2, UserCog, XCircle } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../../lib/api'
 import { useSystemSettings } from '../../contexts/SystemSettingsContext'
@@ -9,6 +9,7 @@ import { useDiscoveryStatus, type DiscoveryStatus } from '../../hooks/useDiscove
 import { useNcpaDeploymentStatus } from '../../hooks/useNcpaDeploymentStatus'
 import { DeploymentStatusItem } from '../ncpa-deployment/DeploymentStatusItem'
 import { useDisplayTime } from '../../hooks/useDisplayTime'
+import { usePasswordRequests } from '../../hooks/usePasswordRequests'
 
 const pageTitles: Record<string, { section: string; page: string }> = {
   '/dashboard': { section: 'Dashboards', page: 'Overview' },
@@ -274,8 +275,10 @@ export function Header() {
   const canDeployNcpa = hasPermission('system.deploy.ncpa')
   const deployment = useNcpaDeploymentStatus(canDeployNcpa)
   const isDeploying = deployment.run?.status === 'Running'
-  const showBell = notificationsEnabled || canDiscover || canDeployNcpa
-  const showActivityDot = isScanning || discovery.hasUnseenResult || isDeploying || deployment.hasUnseenResult
+  const canHandleResets = hasPermission('account.edit')
+  const passwordRequests = usePasswordRequests(canHandleResets).requests
+  const showBell = notificationsEnabled || canDiscover || canDeployNcpa || canHandleResets
+  const showActivityDot = passwordRequests.length > 0 || isScanning || discovery.hasUnseenResult || isDeploying || deployment.hasUnseenResult
 
   const { section, page } = pageTitles[pathname] ?? {
     section: 'Dashboards',
@@ -470,9 +473,9 @@ export function Header() {
               aria-label="Notifications"
             >
               <Bell className="h-5 w-5" />
-              {notificationsEnabled && unreadCount > 0 ? (
-                <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-medium text-white">
-                  {unreadCount}
+              {(notificationsEnabled ? unreadCount : 0) + passwordRequests.length > 0 ? (
+                <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium text-white">
+                  {(notificationsEnabled ? unreadCount : 0) + passwordRequests.length}
                 </span>
               ) : showActivityDot && (
                 <span
@@ -503,6 +506,27 @@ export function Header() {
                     </button>
                   )}
                 </div>
+
+                {canHandleResets && passwordRequests.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenMenu(null)
+                      navigate('/accounts')
+                    }}
+                    className="block w-full border-b border-gray-100 bg-[#ffb100]/5 px-4 py-3 text-left hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
+                  >
+                    <span className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
+                      <KeyRound className="h-4 w-4 text-[#ffb100]" />
+                      {passwordRequests.length === 1
+                        ? '1 password reset request'
+                        : `${passwordRequests.length} password reset requests`}
+                    </span>
+                    <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {passwordRequests.map((r) => r.name).join(', ')} — open Manage Accounts to reset.
+                    </p>
+                  </button>
+                )}
 
                 {canDiscover && discovery.scan && (discovery.scan.status === 'Running' || !notificationsEnabled) && (
                   <ScanStatusItem

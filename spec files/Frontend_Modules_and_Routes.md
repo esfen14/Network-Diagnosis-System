@@ -17,7 +17,7 @@ requests use `src/lib/api.ts`; Plugin Manager wrappers live in
 
 | Browser path | Page | Required client permission | Current data source/status |
 |---|---|---|---|
-| `/login` | `LoginPage` | Public | Connected to `/api/user/login` |
+| `/login` | `LoginPage` | Public | Connected to `/api/user/login`. "Forgot Password?" opens a dialog that posts the email to `/api/user/forgot-password`; an administrator is notified and sets the password |
 | `/dashboard` | `DashboardPage` | `system.dashboard` | Connected to dashboard, trends, service, and acknowledgement APIs |
 | `/network-health` | `NetworkHealthPage` | `system.network_health` | Connected to summary and trends APIs; detailed host/service UI is supplied elsewhere |
 | `/device-inventory` | `DeviceInventoryPage` | `system.network_health` | Connected to the latest-host endpoints and acknowledgement API. The host table has an IP Address column (`—` for a host with no discovered device). The host drawer also shows a Ports section (see `Device_Inventory_Requirements.md`) for users with `system.hosts` when the host has a `device_id`; actions need `system.hosts.edit`. The host table has a Monitoring column and filter, and the drawer a Monitoring section with Pause / Resume (`Device_Inventory_Requirements.md` §12) |
@@ -42,6 +42,14 @@ This is usability protection only; backend permission checks remain mandatory.
 The Settings page is generally available to logged-in users. Its Security,
 System, Network Discovery and Plugins tabs require `settings.security`,
 `settings.system`, `settings.discovery` and `settings.plugins`, respectively.
+
+`AdminLayout` replaces the whole shell with a blocking window while the account
+is flagged: `FirstRunSetup` when `needsSetup` (bootstrap administrator: current
+password, new email, new password with confirmation; cannot be skipped, only
+signed out of; a failed Nagios apply is shown as a warning after the account is
+saved) and otherwise `ForcePasswordChange` when `mustChangePassword`. The Add
+User form has a "Require password change at first sign-in" checkbox, ticked by
+default, sent as `require_password_change`.
 
 When adding a page:
 

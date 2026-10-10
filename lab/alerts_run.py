@@ -77,6 +77,9 @@ def main():
     status, body = api.call("POST", "/api/user/login", {"email": args.email, "password": password})
     if not check("log in as the administrator", status == 200 and body.get("success"), f"HTTP {status}"):
         return 1
+    if (body.get("data") or {}).get("needs_setup"):
+        check("administrator has completed first-run setup", False, "run: scripts/vmlab setup-admin")
+        return 1
 
     before = alert_keys(api)
     print(f"alerts before: {len(before)}")

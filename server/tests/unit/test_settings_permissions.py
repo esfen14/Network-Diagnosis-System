@@ -6,6 +6,8 @@ General settings are open to every logged-in user. Security fields need
 "settings.security" and System fields need "settings.system".
 limited_client's role has neither; logged_in_client's role has all.
 """
+from unittest.mock import patch
+
 import pytest
 
 from app.system_models import Permission, RolePermission, SystemSettings
@@ -96,6 +98,38 @@ class TestSettingsPermissions:
         assert resp.status_code == 200
         settings = stored(db_session)
         assert (settings.Scan_Frequency, settings.Session_Timeout, settings.Maintenance_Mode) == (3, 60, True)
+
+    def test_check_interval_requires_system_permission(self, limited_client, db_session):
+        resp = save(limited_client, checkInterval=2)
+        assert resp.status_code == 403
+        assert stored(db_session).Check_Interval == 5
+
+    @pytest.mark.parametrize("value", [0, 3, 16, "2", True])
+    def test_invalid_check_interval_is_rejected(self, logged_in_client, db_session, value):
+        with patch("app.network_discovery.create_host_cfg.regenerate_and_apply_config_status") as apply:
+            resp = save(logged_in_client, checkInterval=value)
+        assert resp.status_code == 400
+        assert stored(db_session).Check_Interval == 5
+        apply.assert_not_called()
+
+    @pytest.mark.parametrize("status", ["applied", "unchanged"])
+    def test_check_interval_applies_through_shared_writer(self, logged_in_client, db_session, status):
+        with patch("app.network_discovery.create_host_cfg.regenerate_and_apply_config_status", return_value=(status, "ok")) as apply:
+            resp = save(logged_in_client, checkInterval=2)
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["checkInterval"] == 2
+        assert stored(db_session).Check_Interval == 2
+        apply.assert_called_once_with()
+
+    @pytest.mark.parametrize("reason", ["Config failed to validate", "Nagios reload failed"])
+    def test_failed_apply_restores_setting(self, logged_in_client, db_session, reason):
+        before = current_settings(logged_in_client)
+        with patch("app.network_discovery.create_host_cfg.regenerate_and_apply_config_status", return_value=("failed", reason)):
+            resp = save(logged_in_client, checkInterval=2)
+        assert resp.status_code != 200
+        assert reason in resp.get_json()["message"]
+        assert stored(db_session).Check_Interval == 5
+        assert current_settings(logged_in_client)["version"] == before["version"]
 
     def test_inactive_role_loses_restricted_tabs(self, logged_in_client, db_session, admin_role):
         admin_role.Is_Active = False

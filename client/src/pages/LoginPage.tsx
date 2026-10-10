@@ -1,4 +1,4 @@
-import { Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { PinPointLogo } from '../components/login/PinPointLogo'
@@ -40,6 +40,7 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false)
 
   const [activeSlide, setActiveSlide] = useState(0)
+  const [showForgot, setShowForgot] = useState(false)
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -217,6 +218,7 @@ export function LoginPage() {
 
             <button
               type="button"
+              onClick={() => setShowForgot(true)}
               className="text-sm text-gray-600 hover:underline"
             >
               Forgot Password?
@@ -231,6 +233,107 @@ export function LoginPage() {
             {loading ? 'LOGGING IN...' : 'LOG IN'}
           </button>
         </form>
+      </div>
+      {showForgot && (
+        <ForgotPasswordModal initialEmail={email} onClose={() => setShowForgot(false)} />
+      )}
+    </div>
+  )
+}
+
+function ForgotPasswordModal({
+  initialEmail,
+  onClose,
+}: {
+  initialEmail: string
+  onClose: () => void
+}) {
+  const [email, setEmail] = useState(initialEmail)
+  const [submitting, setSubmitting] = useState(false)
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setSubmitting(true)
+    try {
+      const response = await fetch('/api/user/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const data = await response.json().catch(() => ({}))
+      setResult({
+        ok: response.ok,
+        message:
+          data.message ||
+          (response.ok ? 'An administrator has been notified.' : 'Unable to send the request.'),
+      })
+    } catch {
+      setResult({ ok: false, message: 'Unable to connect to server' })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Forgot password"
+    >
+      <div className="relative w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute right-5 top-5 text-gray-500 hover:text-black"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        <h2 className="text-xl font-medium text-black">Forgot your password?</h2>
+        <p className="mt-2 text-sm text-gray-600">
+          Enter your account email. An administrator will be notified and will set a new password
+          for you.
+        </p>
+
+        {result?.ok ? (
+          <>
+            <p role="status" className="mt-5 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              {result.message}
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-5 w-full rounded-[30px] bg-pinpoint-btn py-3 text-xs font-bold tracking-wide text-white hover:bg-black"
+            >
+              BACK TO LOG IN
+            </button>
+          </>
+        ) : (
+          <form onSubmit={handleSubmit} className="mt-5 flex flex-col gap-4">
+            <input
+              type="email"
+              aria-label="Email"
+              placeholder="Enter your email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full rounded-[30px] border border-[#100F0F] px-4 py-3 text-base text-black outline-none focus:border-black"
+              required
+            />
+            {result && !result.ok && (
+              <p role="alert" className="text-sm text-red-600">{result.message}</p>
+            )}
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full rounded-[30px] bg-pinpoint-btn py-3 text-xs font-bold tracking-wide text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {submitting ? 'SENDING...' : 'REQUEST PASSWORD RESET'}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   )

@@ -40,6 +40,7 @@ export interface SystemSettings {
   // Dashboard / diagnostics
   dashboardRefreshRate: number
   scanFrequency: number
+  checkInterval: number
   dashboardLayout: DashboardLayout
 
   // Notifications

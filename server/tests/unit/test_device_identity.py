@@ -10,6 +10,7 @@ section 13. Nmap, SSH and Nagios are never touched: scans are plain dicts.
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+import pytest
 import sqlalchemy as sa
 
 from app import db
@@ -34,6 +35,7 @@ from app.system_models import (
     IdentityConfidence,
     NCPADeployment,
     NetworkDiscovery,
+    Open_TCP_Services,
     ReviewKind,
     SSHCredentials,
 )
@@ -543,6 +545,30 @@ class TestSeveralObservationsOfOneDevice:
         assert "10.0.0.2" in [r.IP_Address for r in address_rows(device)]
         assert review_items(ReviewKind.DUPLICATE_IDENTITY)  # new MAC with a shared key: second NIC or clone
 
+    @pytest.mark.parametrize("added_ports", ((8080, 2222), (8001, 2201)))
+    def test_known_clone_key_hosts_keep_new_tcp_ports(self, db_session, admin_user, added_ports):
+        """Shared SSH host keys must not make known distinct-MAC devices lose rescan ports."""
+        status = make_status(db_session, admin_user)
+        app_port, legacy_port = added_ports
+        first = run_scan(db_session, status, combine(
+            scan("10.0.0.1", mac=MAC_1, identifiers=[ssh(SSH_1)], tcp={22: "ssh"}),
+            scan("10.0.0.2", mac=MAC_2, identifiers=[ssh(SSH_1)]),
+        ))
+        app_id = first[(NET, "10.0.0.1")].NetDiscoveryID
+        legacy_id = first[(NET, "10.0.0.2")].NetDiscoveryID
+        assert app_id != legacy_id
+
+        second = run_scan(db_session, status, combine(
+            scan("10.0.0.1", mac=MAC_1, identifiers=[ssh(SSH_1)], tcp={22: "ssh", app_port: "http"}),
+            scan("10.0.0.2", mac=MAC_2, identifiers=[ssh(SSH_1)], tcp={legacy_port: "ssh"}),
+        ))
+        assert second[(NET, "10.0.0.1")].NetDiscoveryID == app_id
+        assert second[(NET, "10.0.0.2")].NetDiscoveryID == legacy_id
+        assert db_session.session.scalar(sa.select(Open_TCP_Services).where(
+            Open_TCP_Services.NetDiscoveryID == app_id, Open_TCP_Services.Port_Number == app_port)) is not None
+        assert db_session.session.scalar(sa.select(Open_TCP_Services).where(
+            Open_TCP_Services.NetDiscoveryID == legacy_id, Open_TCP_Services.Port_Number == legacy_port)) is not None
+
     def test_swapped_addresses_resolve_by_strong_identifier(self, db_session, admin_user):
         status = make_status(db_session, admin_user)
         devices = run_scan(db_session, status, combine(
@@ -694,3 +720,97 @@ class TestDeviceLifecycle:
 
         assert seen.NetDiscoveryID == target.NetDiscoveryID
         assert source.Device_State is DeviceState.MERGED
+
+    def test_removed_network_device_not_reassigned_to_hosts_in_scanned_network(self, db_session, admin_user):
+        """
+        Issue #67: When a network is removed from discovery and a subsequent scan runs on the
+        remaining network, a device whose only address belongs to the removed network must not be
+        moved onto hosts in the remaining network even if they share a strong SSH identifier.
+        """
+        net_a = "10.0.2.0/24"
+        net_b = "10.77.0.0/28"
+        status = make_status(db_session, admin_user)
+
+        # Initial scan: Network A has gateway (10.0.2.2) with SSH_1.
+        # Network B has hosts without MAC (routed subnet) or with shared SSH_1.
+        initial_scan = {
+            net_a: {
+                "10.0.2.2": {
+                    "data": {"hostname": "gateway", "mac_address": MAC_1, "os": "Linux", "identifiers": [ssh(SSH_1)]},
+                    "services": {"tcp": {"2201": {"service_name": "ssh", "identified_by": "FINGERPRINT"}}, "udp": {}},
+                }
+            },
+            net_b: {
+                "10.77.0.2": {
+                    "data": {"hostname": "web01", "mac_address": None, "os": "Linux", "identifiers": [ssh(SSH_1)]},
+                    "services": {"tcp": {"22": {"service_name": "ssh", "identified_by": "FINGERPRINT"}}, "udp": {}},
+                },
+                "10.77.0.3": {
+                    "data": {"hostname": "db01", "mac_address": None, "os": "Linux", "identifiers": [ssh(SSH_1)]},
+                    "services": {"tcp": {"22": {"service_name": "ssh", "identified_by": "FINGERPRINT"}}, "udp": {}},
+                },
+            }
+        }
+        devices = run_scan(db_session, status, initial_scan)
+        gateway = devices[(net_a, "10.0.2.2")]
+        web01 = devices[(net_b, "10.77.0.2")]
+        db01 = devices[(net_b, "10.77.0.3")]
+
+        assert gateway.NetDiscoveryID != web01.NetDiscoveryID
+        assert gateway.NetDiscoveryID != db01.NetDiscoveryID
+        assert gateway.IP_Address == "10.0.2.2"
+        assert web01.IP_Address == "10.77.0.2"
+        assert db01.IP_Address == "10.77.0.3"
+        gateway_id = gateway.NetDiscoveryID
+        web01_id = web01.NetDiscoveryID
+        db01_id = db01.NetDiscoveryID
+        gateway_port = db_session.session.scalar(sa.select(Open_TCP_Services).where(
+            Open_TCP_Services.NetDiscoveryID == gateway_id, Open_TCP_Services.Port_Number == 2201))
+        assert gateway_port is not None
+
+        # Rescan with Network A removed: only Network B is scanned
+        rescan_b = {
+            net_b: {
+                "10.77.0.2": {
+                    "data": {"hostname": "web01", "mac_address": None, "os": "Linux", "identifiers": [ssh(SSH_1)]},
+                    "services": {"tcp": {"22": {"service_name": "ssh", "identified_by": "FINGERPRINT"}}, "udp": {}},
+                },
+                "10.77.0.3": {
+                    "data": {"hostname": "db01", "mac_address": None, "os": "Linux", "identifiers": [ssh(SSH_1)]},
+                    "services": {"tcp": {"22": {"service_name": "ssh", "identified_by": "FINGERPRINT"}}, "udp": {}},
+                },
+            }
+        }
+        rescanned_devices = run_scan(db_session, status, rescan_b)
+
+        # web01 and db01 must keep their own records and remain ACTIVE at their IPs
+        rescan_web01 = rescanned_devices[(net_b, "10.77.0.2")]
+        rescan_db01 = rescanned_devices[(net_b, "10.77.0.3")]
+        assert rescan_web01.NetDiscoveryID == web01.NetDiscoveryID
+        assert rescan_web01.Device_State is DeviceState.ACTIVE
+        assert rescan_web01.IP_Address == "10.77.0.2"
+
+        assert rescan_db01.NetDiscoveryID == db01.NetDiscoveryID
+        assert rescan_db01.Device_State is DeviceState.ACTIVE
+        assert rescan_db01.IP_Address == "10.77.0.3"
+
+        # The gateway from the unscanned network A must NOT be moved to network B
+        db_session.session.refresh(gateway)
+        assert gateway.IP_Address == "10.0.2.2"
+        assert gateway.Network == net_a
+        assert gateway.Device_State is DeviceState.ACTIVE  # left alone since its network was not scanned
+        assert gateway.NetDiscoveryID == gateway_id
+        assert gateway.Missed_Scans == 0
+        assert db_session.session.scalar(sa.select(Open_TCP_Services).where(
+            Open_TCP_Services.NetDiscoveryID == gateway_id, Open_TCP_Services.Port_Number == 2201
+        )).NetDiscoveryID == gateway_id
+        assert db_session.session.scalar(sa.select(Open_TCP_Services).where(
+            Open_TCP_Services.NetDiscoveryID.in_([web01_id, db01_id]),
+            Open_TCP_Services.Port_Number == 2201,
+        )) is None
+        for ip, expected_id in (("10.77.0.2", web01_id), ("10.77.0.3", db01_id)):
+            matches = [device for device in all_devices() if device.IP_Address == ip
+                       and device.Device_State in (DeviceState.ACTIVE, DeviceState.ADDRESS_UNKNOWN)]
+            assert [device.NetDiscoveryID for device in matches] == [expected_id]
+        assert [row.IP_Address for row in open_addresses(gateway)] == ["10.0.2.2"]
+

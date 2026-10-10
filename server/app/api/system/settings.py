@@ -34,6 +34,7 @@ FIELD_PERMISSIONS = {
     "Audit_Logging": "settings.security",
     "Security_Check_Frequency": "settings.security",
     "System_Update_Frequency": "settings.system",
+    "Check_Interval": "settings.system",
     "Maintenance_Mode": "settings.system",
     "Automatic_Backups": "settings.system",
     "Log_Retention_Days": "settings.system",
@@ -115,6 +116,7 @@ def update_settings():
 
         field_map = [
             ("Scan_Frequency", "scanFrequency"),
+            ("Check_Interval", "checkInterval"),
             ("Notifications", "notifications"),
             ("Session_Timeout", "sessionTimeout"),
             ("Strong_Password_Policy", "strongPasswordPolicy"),
@@ -127,6 +129,10 @@ def update_settings():
             ("Log_Retention_Days", "logRetentionDays"),
             ("Diagnostic_History_Retention_Days", "diagnosticHistoryRetentionDays"),
         ]
+
+        interval = payload.get("checkInterval", row.Check_Interval)
+        if type(interval) is not int or interval not in (1, 2, 5, 10, 15):
+            return error("Check interval must be 1, 2, 5, 10 or 15 minutes.", 400)
 
         changes = []
         for attr, key in field_map:
@@ -153,6 +159,15 @@ def update_settings():
             db.session.rollback()
             tabs = " and ".join(PERMISSION_LABELS[p] for p in denied)
             return error(f"You don't have permission to change {tabs} settings.", 403)
+
+        if any(attr == "Check_Interval" for attr, _, _ in changes):
+            from app.network_discovery.create_host_cfg import regenerate_and_apply_config_status
+
+            db.session.flush()
+            status, message = regenerate_and_apply_config_status()
+            if status == "failed":
+                db.session.rollback()
+                return error(f"Check interval could not be applied: {message}", 422)
 
         row.Version += 1
         row.Updated_By = current_user.UserID

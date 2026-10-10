@@ -10,6 +10,12 @@ Copied from the issue. Tick an item only when a check proves it.
 
 - [ ] (item from the issue)
 
+Requirement coverage (every requirement the issue states, and the check that proves it):
+
+| Issue requirement | Finish-condition item | Proof (test or command) |
+|---|---|---|
+| | | |
+
 ## Plan
 
 Ordered steps the agent will take. Write the whole plan before changing code;
