@@ -269,3 +269,76 @@ class TestPermissionAndColumn:
         db_session.session.add(user)
         db_session.session.commit()
         assert user.Receive_Email_Alerts is True
+
+
+class TestAuditEntry:
+    """Changing the setting is written to the activity log (when audit logging is on)."""
+
+    def _actions(self, db_session):
+        from app.system_models import ActivityLog
+
+        return [row.Action_Type for row in db_session.session.scalars(sa.select(ActivityLog))]
+
+    def test_edit_logs_the_new_setting(self, logged_in_client, db_session, admin_role, writer):
+        user = _make_user(db_session, admin_role, "member@example.com")
+        logged_in_client.put(
+            f"/api/user/accounts/{user.UserID}",
+            json=_edit_body(user, admin_role, receive_email_alerts=False),
+        )
+        assert any("email alerts off" in action for action in self._actions(db_session))
+
+        logged_in_client.put(
+            f"/api/user/accounts/{user.UserID}",
+            json=_edit_body(user, admin_role, receive_email_alerts=True),
+        )
+        assert any("email alerts on" in action for action in self._actions(db_session))
+
+    def test_edit_that_leaves_it_alone_logs_no_alert_text(self, logged_in_client, db_session, admin_role, writer):
+        user = _make_user(db_session, admin_role, "member@example.com")
+        logged_in_client.put(
+            f"/api/user/accounts/{user.UserID}",
+            json=_edit_body(user, admin_role, receive_email_alerts=True),
+        )
+        assert not any("email alerts" in action for action in self._actions(db_session))
+
+
+@pytest.fixture(scope="module")
+def migration_report():
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    server_dir = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [sys.executable, "tests/support/email_alert_migration_runner.py"],
+        cwd=server_dir, capture_output=True, text=True, timeout=180,
+    )
+    assert result.returncode == 0, (result.stdout + result.stderr)[-3000:]
+    body = result.stdout.split("REPORT_BEGIN")[1].split("REPORT_END")[0]
+    return json.loads(body)
+
+
+class TestMigration:
+    def test_existing_users_stay_on(self, migration_report):
+        assert migration_report["column_before"] is False
+        assert migration_report["version"] == [["a4c8e1f6d392"]]
+        assert migration_report["alerts_after_upgrade"] == [
+            ["active@example.com", 1],
+            ["inactive@example.com", 1],
+        ]
+
+    def test_a_row_inserted_without_the_column_defaults_to_on(self, migration_report):
+        assert migration_report["alerts_with_new_user"][-1] == ["later@example.com", 1]
+
+    def test_downgrade_drops_only_the_column(self, migration_report):
+        assert migration_report["column_after_downgrade"] is False
+        assert migration_report["users_after_downgrade"] == [
+            ["active@example.com"],
+            ["inactive@example.com"],
+            ["later@example.com"],
+        ]
+        assert migration_report["version_after_downgrade"] == [["d3a9e6b2f741"]]
+
+    def test_reupgrade_keeps_everyone_on(self, migration_report):
+        assert [row[1] for row in migration_report["alerts_after_reupgrade"]] == [1, 1, 1]

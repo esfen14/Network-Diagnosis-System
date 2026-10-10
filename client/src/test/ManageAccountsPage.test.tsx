@@ -294,14 +294,18 @@ describe('ManageAccountsPage', () => {
     })
   })
   describe('Email alerts', () => {
+    // The table is sorted, so find a user's row by name rather than by position.
+    function rowFor(fullName: string) {
+      return screen.getByText(fullName).closest('tr') as HTMLElement
+    }
+
     it('shows each account\'s setting in the table', async () => {
       accountsResponse = {
         items: [account(1, 'Marie', 'Santos', 'Active'), { ...account(2, 'Chloe', 'Baltazar', 'Active'), receive_email_alerts: false }],
       }
       await renderLoaded()
-      const rows = screen.getAllByRole('row').slice(1)
-      expect(within(rows[0]).getByText('On')).toBeInTheDocument()
-      expect(within(rows[1]).getByText('Off')).toBeInTheDocument()
+      expect(within(rowFor('Marie Santos')).getByText('On')).toBeInTheDocument()
+      expect(within(rowFor('Chloe Baltazar')).getByText('Off')).toBeInTheDocument()
     })
 
     it('hides the toggle without the account.alerts permission', async () => {
@@ -314,7 +318,7 @@ describe('ManageAccountsPage', () => {
     it('does not send the field when the user cannot change it', async () => {
       const user = userEvent.setup()
       await renderLoaded()
-      await user.click(screen.getAllByTitle('Edit')[0])
+      await user.click(within(rowFor('Marie Santos')).getByTitle('Edit'))
       await user.click(screen.getByRole('button', { name: 'Save Changes' }))
 
       await waitFor(() => expect(apiPut).toHaveBeenCalled())
@@ -351,7 +355,7 @@ describe('ManageAccountsPage', () => {
       apiPut.mockResolvedValue({})
       const user = userEvent.setup()
       await renderLoaded()
-      await user.click(screen.getAllByTitle('Edit')[0])
+      await user.click(within(rowFor('Marie Santos')).getByTitle('Edit'))
       await user.click(screen.getByLabelText('Send this user email alerts'))
       await user.click(screen.getByRole('button', { name: 'Save Changes' }))
 
@@ -368,7 +372,7 @@ describe('ManageAccountsPage', () => {
       apiPut.mockResolvedValue({ config_ok: false, config_message: 'nagios -v failed' })
       const user = userEvent.setup()
       await renderLoaded()
-      await user.click(screen.getAllByTitle('Edit')[0])
+      await user.click(within(rowFor('Marie Santos')).getByTitle('Edit'))
       await user.click(screen.getByLabelText('Send this user email alerts'))
       await user.click(screen.getByRole('button', { name: 'Save Changes' }))
 
