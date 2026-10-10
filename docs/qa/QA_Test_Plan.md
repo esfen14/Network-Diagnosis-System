@@ -7,7 +7,7 @@ What the cases are *for* (journeys, invariants, scope, decisions) is in
 (out of scope) and §7 (known defects). Results go in
 [`docs/test-runs/`](../test-runs/README.md), never in this file.
 
-**Status:** current as of 2026-10-10 against `main` at `13076192`, aligned with the October 2026 paper draft (162 pages). Sources are named
+**Status:** current as of 2026-10-10 against `main` at `a55ae595`, aligned with the October 2026 paper draft (162 pages). Sources are named
 per case; where the journeys file and a spec disagree, the journeys file §0 order applies.
 
 ---
