@@ -374,6 +374,9 @@ Reasons (shown in the drawer, and as the chip tooltip in the table):
 34. A paused (or retired or merged) device and its services are not counted as hosts,
     services, online devices or active alerts on the Dashboard and Network Health pages;
     resuming it counts it again.
+35. Removing a network from discovery settings and scanning remaining networks leaves
+    devices in the unscanned network untouched (or missing) and does not mark existing
+    devices in the scanned network as Address Unknown (#67).
 
 ---
 

@@ -19,7 +19,7 @@ the normative behavior in the requirement specifications.
 - Alerts and Notifications History list/detail routes backed by Nagios archive
   events and Pinpoint acknowledgement history.
 - Header notification feed with per-user unread cursor.
-- Network discovery start/stop/status and Nagios host/service config generation. Repeat scans keep newly configured TCP ports on existing devices even when lab targets share a cloned SSH key: a matching hardware MAC at the device's current address prevents secondary-address suppression (#66; VM retest in `docs/test-runs/2026-10-10-issue-66/`).
+- Network discovery start/stop/status and Nagios host/service config generation. Repeat scans keep newly configured TCP ports on existing devices even when lab targets share a cloned SSH key: a matching hardware MAC at the device's current address prevents secondary-address suppression (#66; VM retest in `docs/test-runs/2026-10-10-issue-66/`). The #67 cross-network known-address matching fix passes isolated backend tests; an initial existing-appliance VM run was only partial evidence (`docs/test-runs/2026-10-10-issue-67/`). A fresh VM reproduction retained the NAT gateway and its ports on its own record after removing that network, and two J2-08 rescans left unique ACTIVE lab records (`docs/test-runs/2026-10-10-issue-67-retest/`).
 - NCPA eligibility, SSH fingerprint trust (approved key only), login checks,
   deployment with per-device outcomes, cancellation, status, run history and
   review, and trusted-device routes.
