@@ -167,7 +167,7 @@ def update_settings():
             status, message = regenerate_and_apply_config_status()
             if status == "failed":
                 db.session.rollback()
-                return error(f"Check interval could not be applied: {message}", 409)
+                return error(f"Check interval could not be applied: {message}", 422)
 
         row.Version += 1
         row.Updated_By = current_user.UserID

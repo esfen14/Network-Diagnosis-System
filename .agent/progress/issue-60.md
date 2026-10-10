@@ -11,7 +11,7 @@ Status: in-progress
 - [ ] Failed validation or reload leaves the old interval running, restores the setting and shows the error (API rollback tested; live running-config proof pending)
 - [x] Status text and stale fallback follow the setting
 - [ ] Rows per host per hour measured on the VM lab before and after
-- [ ] Default Dashboard Refresh Rate hint follows Check interval; per-user rate unchanged (test)
+- [x] Default Dashboard Refresh Rate hint follows Check interval; per-user rate unchanged (test)
 - [ ] `Data_Model_and_Integrations.md` documents the three rates and their relationship
 - [ ] `Display_Requirements.md` documents the hint and relationship
 
@@ -32,7 +32,7 @@ Requirement coverage (every requirement the issue states, and the check that pro
 1. [x] Test repeated host/service polls then deduplicate by Last_Check in `server/tests/unit/test_status.py`, `server/app/nagios/status.py`.
 2. [x] Test the fixed-list, authorized setting and rollback, then implement model, migration, API and shared writer/template generation in `server/tests/unit/test_settings_permissions.py`, `server/tests/unit/test_create_host_cfg.py`, `server/app/system_models.py`, `server/migrations/versions/`, `server/app/api/system/settings.py`, `server/app/network_discovery/host_config_templates.py`, `server/app/network_discovery/templates/{host,service}.cfg.tpl`, `server/app/network_discovery/create_host_cfg.py`.
 3. [x] Test plugin status text and stale fallback, then implement in `server/tests/unit/test_plugin_services_api.py`, `server/app/api/plugin/service.py`.
-4. [ ] Test frontend setting, error display and refresh hint, then implement in `client/src/test/`, `client/src/types/settings.tsx`, `client/src/contexts/SystemSettingsContext.tsx`, `client/src/components/settings/{SystemSettings,GeneralSettings}.tsx` (actual matching test files to identify before editing).
+4. [x] Test frontend setting, error display and refresh hint, then implement in `client/src/test/`, `client/src/types/settings.tsx`, `client/src/contexts/SystemSettingsContext.tsx`, `client/src/components/settings/{SystemSettings,GeneralSettings}.tsx`.
 5. [ ] Test documentation checks and update `spec files/{Data_Model_and_Integrations,Display_Requirements,Backend_Modules_and_Routes,Frontend_Modules_and_Routes,Implementation_Status}.md`; run `scripts/verify.sh docs`.
 6. [ ] Run approved VM lab verification and rows/hour measurement; record sanitized `docs/test-runs/<date>-issue-60/REPORT.md` and index `docs/test-runs/README.md`.
 
@@ -44,13 +44,14 @@ Requirement coverage (every requirement the issue states, and the check that pro
 | 1 | Filed installer prerequisite issue #4; added repeated-check host/service regression and deduplication | `python -m pytest server/tests/unit/test_status.py -q`; `scripts/verify.sh backend` | 17 passed; 2234 passed, 14 skipped |
 | 2 | Added fixed-list system setting, migration, host/service template values and shared-writer save path | `python -m pytest server/tests/unit/test_create_host_cfg.py server/tests/unit/test_settings_permissions.py -q`; `scripts/verify.sh backend` | 72 passed; 2245 passed, 14 skipped |
 | 3 | Made plugin waiting text and stale fallback read the Check interval | `python -m pytest server/tests/unit/test_plugin_services_api.py -q`; `scripts/verify.sh backend` | 69 passed; 2247 passed, 14 skipped |
+| 4 | Wired settings UI and dynamic browser-refresh hint; displayed apply failures rather than conflict retry | `npm test -- --run src/test/SystemSettingsConflict.test.tsx`; `scripts/verify.sh frontend` | 7 passed; frontend verify initially 472 passed and build/lint green; targeted rerun after error handling green |
 
 ## State for the next session
 
-- Last check run (exact command): `scripts/verify.sh backend`
-- Result (first failing lines, or "green"): green (2247 passed, 14 skipped)
-- Hypothesis: Plugin text and fallback use the setting; frontend still needs UI and default hint while preserving user preference.
-- Next action (one specific step, not "continue"): Add frontend tests for system setting and refresh hint, then implement the UI and context wiring.
+- Last check run (exact command): `npm test -- --run src/test/SystemSettingsConflict.test.tsx` (from `client/`)
+- Result (first failing lines, or "green"): green (7 passed); full frontend verify ran before the final apply-error handling change (472 passed, build/lint green)
+- Hypothesis: UI and error handling now work, but specifications and migration/live checks remain.
+- Next action (one specific step, not "continue"): Update the owning rate/freshness specifications and run docs verification.
 
 ## Decisions and notes
 

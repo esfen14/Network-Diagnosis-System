@@ -61,6 +61,7 @@ export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   systemFontSize: 'medium',
   dashboardRefreshRate: 5,
   scanFrequency: 6,
+  checkInterval: 5,
   dashboardLayout: 'default',
   notifications: true,
   exportFormats: ['CSV', 'PDF', 'XLS'],
@@ -253,7 +254,8 @@ async function persistSystemSettings(
         'Settings were changed by someone else. Reload and try again.'
       )
     }
-    throw new Error(`Failed to save settings (${res.status})`)
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.message ?? `Failed to save settings (${res.status})`)
   }
 
   const body = await res.json()
