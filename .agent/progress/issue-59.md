@@ -1,7 +1,7 @@
 # Issue #59: Discovery leaves a duplicate device record for the same IP
 
 Branch: `issue-59-discovery-duplicate-device`
-Status: in-progress
+Status: blocked
 
 ## Finish condition
 
@@ -31,5 +31,5 @@ Status: in-progress
 ## Decisions and notes
 
 - `spec files/Data_Model_and_Integrations.md` §Network discovery and Nagios configuration and §NCPA deployment own this behavior.
-- The workflow's needs-a-person condition applies: `app/network_discovery/` is sensitive under `Engineering_Standards.md`, and the stated repeat requires a live VM/network device. Do not change this module or run that lab until a person authorizes it.
+- The workflow's needs-a-person condition applies: `app/network_discovery/` is sensitive under `Engineering_Standards.md`, and the stated repeat requires a live VM/network device. Do not change this module or run that lab until a person authorizes it. Question: May I change the sensitive discovery/identity code after an explicit injection/secret-exposure review, and may I run `scripts/vmlab fresh/smoke/ncpa` against the disposable VM lab for the required repeat?
 - Source inspection: discovery scans nmap-named SSH ports; the in-process start guard checks a thread, while `find_ip_holder` only matches Active/Missing. The root cause has not been reproduced or established.
