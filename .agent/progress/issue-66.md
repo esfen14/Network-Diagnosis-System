@@ -23,13 +23,14 @@ Status: in-progress
 | Round | Change made | Check run | Result |
 |---|---|---|---|
 | resumed | Re-read issue and updated plan for explicit finish condition; owner approved sensitive code | `gh issue view 66 --json number,title,body,comments,labels,state,url` | Issue current; QA documents absent from checkout |
+| 1 | Added mocked saved-settings repeat-scan diagnostic for single and ranged ports on existing devices | `cd server && .venv/bin/python -m pytest tests/unit/test_network_discovery.py -k known_devices -q` | Green (2 passed): does not reproduce the live failure; no implementation justified yet |
 
 ## State for the next session
 
-- Last check run (exact command): `gh issue view 66 --json number,title,body,comments,labels,state,url`
-- Result (first failing lines, or "green"): green; explicit finish condition now present and approval supplied in chat.
-- Hypothesis: nmap invocation or port lifecycle handling of known devices drops newly configured ports; not yet determined.
-- Next action (one specific step, not "continue"): Add and run a failing isolated regression for repeat scans with single and ranged TCP ports.
+- Last check run (exact command): `cd server && .venv/bin/python -m pytest tests/unit/test_network_discovery.py -k known_devices -q`
+- Result (first failing lines, or "green"): green, 2 passed; mocked nmap receives saved single and range arguments and persistence/listing work.
+- Hypothesis: real nmap returns no port under combined settings (not reproduced by mocked XML); scan parser and DB path work when XML contains the port.
+- Next action (one specific step, not "continue"): Inspect real nmap command semantics for combined range/port arguments and construct a test that fails on the actual cause.
 
 ## Decisions and notes
 

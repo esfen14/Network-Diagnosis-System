@@ -7,8 +7,15 @@ Endpoints tested:
   GET  /api/system/discover/status
 """
 import pytest
+import xml.etree.ElementTree as ET
 from threading import Event, Thread
 from unittest.mock import patch, MagicMock
+
+from app import db
+from app.network_discovery import network_discovery
+from app.network_discovery.create_host_cfg import _save_discovered_hosts
+from app.system_models import DiscoverySettings, NetworkDiscovery, Open_TCP_Services
+from tests.support.identity_helpers import NET, MAC_1
 
 from app.system_models import (
     NetworkDiscoveryStatus,
@@ -192,6 +199,63 @@ class TestDiscoveryCancelled:
             .order_by(NetworkDiscoveryStatus.DiscoveryStatusID.desc())
         ).first()
         assert latest.Status == DiscoveryStatus.INTERRUPTED
+
+
+# ─── repeat scans with changed port settings ─────────────────────────────────
+
+@pytest.mark.parametrize("extra_ports", ([8080, 2222], ["8000-8099", "2200-2299"]))
+def test_known_devices_record_newly_scanned_tcp_ports(app, db_session, admin_user, logged_in_client, extra_ports):
+    """A rescan must persist newly requested ports on the original device rows."""
+    status = _seed_discovery_status(db_session, admin_user)
+    db_session.session.add(DiscoverySettings(Id=1, TCP_Ports=["1-1024"]))
+    db_session.session.commit()
+
+    hosts = {
+        "10.0.0.4": ("app01", "00:11:22:33:44:04", 8080, "http"),
+        "10.0.0.6": ("legacy01", MAC_1, 2222, "ssh"),
+    }
+    # Simulate nmap's XML, but only return a port when the command requests it.
+    # This makes argument construction part of the regression, not just the DB upsert.
+    def scan_command(ip, flags, args=None):
+        if "-sn" in flags:
+            return ET.fromstring("<nmaprun><host><status state='up'/><address addrtype='ipv4' addr='" + ip + "'/></host></nmaprun>")
+        if "-sU" in flags:
+            return ET.fromstring("<nmaprun/>")
+        name, mac, port, service = hosts[ip]
+        requested = args.split("-p ", 1)[1].split()
+        requested = requested[0].split(",")
+        if not any(str(port) == entry or ("-" in entry and int(entry.split("-")[0]) <= port <= int(entry.split("-")[1])) for entry in requested):
+            return ET.fromstring("<nmaprun><host><ports/></host></nmaprun>")
+        return ET.fromstring(f"<nmaprun><host><ports><port protocol='tcp' portid='{port}'><state state='open'/><service name='{service}' method='probed'/></port></ports></host></nmaprun>")
+
+    def discover_host(network):
+        return {ip: {"data": {"hostname": name, "mac_address": mac, "os": "Linux"}, "services": {}}
+                for ip, (name, mac, _, _) in hosts.items()}
+
+    with patch.object(network_discovery, "_discover_host", side_effect=discover_host), \
+         patch.object(network_discovery.nmap3, "Nmap") as nmap_cls, \
+         patch("app.network_discovery.create_host_cfg.get_monitoring_server_ips", return_value=set()), \
+         patch("app.network_discovery.create_host_cfg.update_network_discovery_status"):
+        nmap_cls.return_value.scan_command.side_effect = scan_command
+        first = network_discovery.discover_network(status.DiscoveryStatusID, 40, Event())
+        _save_discovered_hosts(first, status.DiscoveryStatusID, 70)
+        original = {device.Hostname: device.NetDiscoveryID for device in db.session.query(NetworkDiscovery).all()}
+        assert len(original) == 2
+        assert db.session.query(Open_TCP_Services).count() == 0
+
+        settings = db.session.get(DiscoverySettings, 1)
+        settings.TCP_Ports = ["1-1024", *extra_ports]
+        db.session.commit()
+        second = network_discovery.discover_network(status.DiscoveryStatusID, 40, Event())
+        _save_discovered_hosts(second, status.DiscoveryStatusID, 70)
+
+    assert {device.Hostname: device.NetDiscoveryID for device in db.session.query(NetworkDiscovery).all()} == original
+    for name, _, port, service in hosts.values():
+        device_id = original[name]
+        response = logged_in_client.get(f"/api/system/hosts/{device_id}/ports")
+        assert response.status_code == 200
+        assert any(item["protocol"] == "tcp" and item["number"] == port
+                   and item["service_name"] == service for item in response.get_json()["data"]["ports"])
 
 
 # ─── /discover/status ────────────────────────────────────────────────────────
