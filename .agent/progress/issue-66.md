@@ -1,32 +1,36 @@
 # Issue #66: Discovery does not record ports added to scan settings on known devices
 
 Branch: `issue-66-discovery-new-ports`
-Status: blocked
+Status: in-progress
 
 ## Finish condition
 
-- [ ] After adding TCP 8080 to the saved scan settings and rescanning an already-known app01, `GET /api/system/hosts/<id>/ports` lists 8080/tcp.
-- [ ] After adding TCP 2222 to the saved scan settings and rescanning an already-known legacy01, `GET /api/system/hosts/<id>/ports` lists 2222/tcp.
-- [ ] The same holds when the added ports are included through ranges 8000-8099 and 2200-2299.
+- [ ] A regression test fails before the fix and passes after: a known device, rescanned with a new single port (and a new range) in the TCP ports, gets that port recorded (`server/tests/unit/test_device_ports_route.py` or a new network-discovery test).
+- [ ] Lab: QA_Test_Plan J2-09 passes on the VM lab (8080 on app01 and 2222 on legacy01 appear after the settings change and a rescan), and legacy01 becomes NCPA-eligible (J3-02, J3-09 with legacy01).
+- [ ] The cause is stated in the issue (scan arguments, result handling for known devices, or the port lifecycle), and any spec sentence that was wrong is corrected (`Device_Inventory_Requirements.md` §7, §10; `Data_Model_and_Integrations.md`).
+- [ ] `scripts/verify.sh backend` passes; `Implementation_Status.md` updated if a gap closes.
+- [ ] The "known defect #66" note is removed from J2-09 in `docs/qa/QA_Test_Plan.md` and `docs/qa/QA_Journeys_and_Scope.md`, and a re-test is recorded under `docs/test-runs/`.
 
 ## Plan
 
-1. [ ] Add an isolated regression exercising saved discovery settings, mocked nmap XML, repeat scans, persistence and port inventory in `server/tests/unit/test_network_discovery.py`; run it red.
-2. [ ] Correct the narrow cause in `server/app/network_discovery/network_discovery.py` or `server/app/network_discovery/port_lifecycle.py` (and only directly necessary discovery code); run the focused file and `scripts/verify.sh backend`.
-3. [ ] Update `spec files/Data_Model_and_Integrations.md` and `spec files/Implementation_Status.md` if the investigation establishes a documented gap; run `scripts/verify.sh docs` and `scripts/verify.sh all`.
+1. [ ] Add isolated regression for repeat discovery with new single/ranged TCP ports, mocked nmap and inventory in `server/tests/unit/test_network_discovery.py`; run red.
+2. [ ] Fix the demonstrated cause in `server/app/network_discovery/network_discovery.py` or `server/app/network_discovery/port_lifecycle.py`; run focused test and `scripts/verify.sh backend`.
+3. [ ] Run approved VM-lab J2-09, J3-02 and J3-09 with legacy01; record new `docs/test-runs/<date>-issue-66/REPORT.md` and index in `docs/test-runs/README.md`.
+4. [ ] State cause on issue; correct `spec files/Device_Inventory_Requirements.md` and `spec files/Data_Model_and_Integrations.md` if wrong; update `spec files/Implementation_Status.md`; remove defect note from `docs/qa/QA_Test_Plan.md` and `docs/qa/QA_Journeys_and_Scope.md` once present and proven; run docs and all verification.
 
 ## Round log
 
 | Round | Change made | Check run | Result |
 |---|---|---|---|
+| resumed | Re-read issue and updated plan for explicit finish condition; owner approved sensitive code | `gh issue view 66 --json number,title,body,comments,labels,state,url` | Issue current; QA documents absent from checkout |
 
 ## State for the next session
 
 - Last check run (exact command): `gh issue view 66 --json number,title,body,comments,labels,state,url`
-- Result (first failing lines, or "green"): green; issue text obtained after plain `gh issue view 66` failed on deprecated classic project cards.
+- Result (first failing lines, or "green"): green; explicit finish condition now present and approval supplied in chat.
 - Hypothesis: nmap invocation or port lifecycle handling of known devices drops newly configured ports; not yet determined.
-- Next action (one specific step, not "continue"): Ask a person to authorize work in the sensitive `app/network_discovery/` module and clarify whether the issue's Expected section is the intended finish condition.
+- Next action (one specific step, not "continue"): Add and run a failing isolated regression for repeat scans with single and ranged TCP ports.
 
 ## Decisions and notes
 
-The issue's Expected section supplies the three observable acceptance outcomes above, but there is no separately named finish-condition section. The workflow requires stopping if a finish condition is absent. `spec files/Engineering_Standards.md` labels `app/network_discovery/` sensitive, requiring a person before implementation. No code has been changed and no live scan or lab run is planned. Injection/secret-exposure review will be required if authorized.
+The issue gained an explicit five-item finish condition after the initial stop; the user approved changes to sensitive network-discovery code. Plan revised to match the new issue text. The issue expressly calls for VM-lab J2/J3 checks, allowing those under the workflow's live-test exception. Injection/secret-exposure review remains required. The cited `docs/qa/` files and original dry-run report are absent from origin/main at 647247b1; do not fabricate or remove untracked work. Raised this discrepancy in the issue comment.
