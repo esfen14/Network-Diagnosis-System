@@ -1,7 +1,7 @@
 """add user receive email alerts
 
 Revision ID: a4c8e1f6d392
-Revises: d3a9e6b2f741
+Revises: a6f4d2c8e190
 Create Date: 2026-10-10 12:00:00.000000
 
 """
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 revision = 'a4c8e1f6d392'
-down_revision = 'd3a9e6b2f741'
+down_revision = 'a6f4d2c8e190'
 branch_labels = None
 depends_on = None
 

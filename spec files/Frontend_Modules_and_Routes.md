@@ -29,7 +29,7 @@ requests use `src/lib/api.ts`; Plugin Manager wrappers live in
 | `/system-logs` | `SystemLogsPage` | `system.logs` | Connected to five log categories |
 | `/accounts` | `ManageAccountsPage` | `account.view` | Connected to account/role APIs. The table shows each user's Email Alerts (On/Off); the add and edit forms show a "Send this user email alerts" checkbox only with `account.alerts`, and a failed Nagios apply is shown as a notice |
 | `/manage-roles` | `ManageRolesPage` | `role.view` | Connected to role and permission APIs |
-| `/settings` | `SettingsPage` | Any logged-in user; tabs are separately gated | Connected to system settings and user preferences |
+| `/settings` | `SettingsPage` | Any logged-in user; tabs are separately gated | Connected to system settings and user preferences; System tab controls Nagios Check interval, General shows per-user refresh and a dynamic check/poll hint |
 | `/` | Redirect | — | Redirects to `/login` |
 | unmatched path | Redirect | — | Redirects to `/login` |
 

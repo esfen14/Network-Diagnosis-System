@@ -1,4 +1,6 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
+import { GeneralSettings } from '../components/settings/GeneralSettings'
+import { SystemSettings } from '../components/settings/SystemSettings'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   DEFAULT_SYSTEM_SETTINGS,
@@ -14,6 +16,7 @@ const PREFERENCE_KEYS = [
 
 let server: Record<string, unknown>
 let systemPuts: Record<string, unknown>[]
+let applyError: string | null
 
 function splitSystem(all: Record<string, unknown>) {
   const system: Record<string, unknown> = {}
@@ -40,6 +43,7 @@ const fetchMock = vi.fn((url: string, init?: RequestInit) => {
   }
   if (url === '/api/system' && method === 'PUT') {
     systemPuts.push(body)
+    if (applyError) return respond(422, { success: false, message: applyError })
     if (body.version !== server.version) {
       return respond(409, { success: false, message: 'conflict' })
     }
@@ -92,12 +96,39 @@ describe('SystemSettingsProvider conflict handling', () => {
     localStorage.clear()
     server = { ...DEFAULT_SYSTEM_SETTINGS, version: 1 }
     systemPuts = []
+    applyError = null
     fetchMock.mockClear()
     vi.stubGlobal('fetch', fetchMock)
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('saves check interval as a system setting without changing per-user refresh', async () => {
+    await renderLoaded()
+    act(() => api.updateSettings({ checkInterval: 2 }))
+    await save()
+    expect(systemPuts[0].checkInterval).toBe(2)
+    expect(systemPuts[0].dashboardRefreshRate).toBe(5)
+    expect(api.settings.dashboardRefreshRate).toBe(5)
+  })
+
+  it('shows the dynamic refresh hint and system check interval without changing personal rate', async () => {
+    server.checkInterval = 2
+    render(<SystemSettingsProvider><GeneralSettings /><SystemSettings /></SystemSettingsProvider>)
+    await waitFor(() => expect(screen.getByText(/Nagios checks every 2 minutes/)).toBeInTheDocument())
+    expect(screen.getByText('Check interval')).toBeInTheDocument()
+    expect(server.dashboardRefreshRate).toBe(5)
+  })
+
+  it('shows a Nagios apply failure instead of treating it as a version conflict', async () => {
+    await renderLoaded()
+    applyError = 'Check interval could not be applied: Nagios reload failed'
+    act(() => api.updateSettings({ checkInterval: 2 }))
+    await save()
+    expect(screen.getByTestId('error')).toHaveTextContent('Nagios reload failed')
+    expect(systemPuts).toHaveLength(1)
   })
 
   it('saves normally when nothing changed elsewhere', async () => {

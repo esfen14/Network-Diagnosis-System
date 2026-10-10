@@ -44,7 +44,7 @@ a legacy inconsistency and must not be copied as a pattern.
 |---|---|
 | System general | `scanFrequency`, notification enablement, allowed export formats |
 | System security | session timeout, strong-password policy, failed-login monitoring, audit logging, security-check frequency |
-| System operations | update frequency, maintenance mode, automatic backups, log retention, diagnostic-history retention |
+| System operations | `checkInterval` (Nagios-generated host and service checks, minutes), update frequency, maintenance mode, automatic backups, log retention, diagnostic-history retention |
 | Per-user display | theme, time zone, date/time format, font, font size, dashboard layout, dashboard refresh rate |
 
 `SystemSettings` is row `Id=1` and carries a version/update audit stamp.
@@ -177,7 +177,9 @@ to avoid persisting secrets, and writes snapshots to `history.db`.
 
 A host Nagios lists as pending (no check has run yet) has no state to record, so the
 poller skips it without an error and records it once its first check completes; a
-pending service is stored as Unknown. A host status that is not up, down, unreachable
+pending service is stored as Unknown. A host or service result is recorded only
+when its `Last_Check` differs from the latest stored check for that object; the
+corresponding performance rows are also skipped on repeated polls. A host status that is not up, down, unreachable
 or pending is logged as an error and that host is skipped for that poll; the rest of
 the poll continues.
 
@@ -199,6 +201,19 @@ different purpose.
 - Plugin grouping first uses stored check-command mapping, with service-name
   derivation as documented in `Display_Requirements.md`.
 - Service descriptions may contain slashes.
+
+## Monitoring and display schedules
+
+| Setting | Owner and purpose |
+|---|---|
+| Discovery Scan Frequency (`scanFrequency`) | Pinpoint automation scans for devices and ports; it does not execute Nagios checks or determine result freshness. |
+| Check interval (`checkInterval`) | System-wide 1, 2, 5 (default), 10 or 15 minutes. Nagios checks generated hosts and services at this cadence (`interval_length=60` seconds must hold on the appliance). The system administrator changes it on Settings → System; the shared config writer validates, backs up and reloads `hosts.cfg`, and a failed apply rolls the settings change back. Stock `localhost.cfg` objects are not rewritten. |
+| Data polling frequency | Pinpoint reads Nagios CGI status every 60 seconds, fixed and independent of discovery and checks. Unchanged `Last_Check` does not add another host/service or performance row. |
+| Dashboard Refresh Rate | Per-user browser fetch, Manual/1/5/15 minutes, independent of the other schedules; its hint shows the Check interval and 60-second poll. |
+
+A new Nagios result can take up to one poll cycle to appear in Pinpoint, then
+up to one browser refresh cycle to appear in the dashboard. Discovery scans
+are not part of that latency or the check freshness threshold.
 
 ## Scheduler and retention
 
@@ -316,8 +331,12 @@ including alternate ports such as 2222. A cloned SSH key can be shared by
 multiple targets: if a scan observes that key on a known, different device at
 its recorded address with its own matching hardware MAC, reconciliation keeps
 that device and its newly scanned ports rather than dropping the observation
-as a secondary address of the key owner. It records a duplicate-identity
-review item. A true second NIC of one device still belongs to its key owner.
+as a secondary address of the key owner. Similarly, when a network is removed
+from discovery settings and a subsequent scan runs on the remaining networks,
+a known device in the scanned network is kept by its address rather than being
+reassigned to a device from the unscanned network that shares the SSH key. It
+records a duplicate-identity review item. A true second NIC of one device still
+belongs to its key owner.
 
 ## NCPA deployment
 

@@ -338,7 +338,7 @@ class TestMigration:
             ["inactive@example.com"],
             ["later@example.com"],
         ]
-        assert migration_report["version_after_downgrade"] == [["d3a9e6b2f741"]]
+        assert migration_report["version_after_downgrade"] == [["a6f4d2c8e190"]]
 
     def test_reupgrade_keeps_everyone_on(self, migration_report):
         assert [row[1] for row in migration_report["alerts_after_reupgrade"]] == [1, 1, 1]

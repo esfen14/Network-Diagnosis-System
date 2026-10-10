@@ -1,5 +1,13 @@
 from pathlib import Path
 
+from app import db
+from app.system_models import SystemSettings
+
+
+def check_interval():
+    row = db.session.get(SystemSettings, 1)
+    return row.Check_Interval if row else 5
+
 _template_cache = {}
 
 def _load_template(name):
@@ -40,7 +48,8 @@ def create_host(host):
         host_name=host["host_name"],
         alias=host["alias"],
         address=host["address"],
-        contact_groups=host["contact_groups"]
+        contact_groups=host["contact_groups"],
+        check_interval=check_interval(),
     )
     rendered = _drop_empty_contact_groups(rendered)
     if host.get("active_checks_enabled") is False:
@@ -52,7 +61,8 @@ def create_service(service, service_command):
         host_name=service["host_name"],
         service_name=service["service_name"],
         command=service_command,
-        contact_groups=service["contact_groups"]
+        contact_groups=service["contact_groups"],
+        check_interval=check_interval(),
     )
     rendered = _drop_empty_contact_groups(rendered)
     if service.get("active_checks_enabled") is False:
