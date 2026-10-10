@@ -345,6 +345,20 @@ def resolve_observation(ip, network, evidence):
 
     if len(owners) == 1:
         device = next(iter(owners.values()))
+        # Cloned hosts can share an SSH key across different networks. When a
+        # different known device already holds this IP in this network and does
+        # not contradict the observation, keep its ports and history on that
+        # device instead of moving the key owner from another network.
+        if device.Network != network:
+            holder = find_ip_holder(ip, network, exclude_ids=[device.NetDiscoveryID])
+            if holder is not None and not contradicts(holder, evidence, check_mac=True):
+                return Decision(
+                    "match", ip, network, evidence, device=holder,
+                    review_kind=ReviewKind.DUPLICATE_IDENTITY,
+                    review_message=f"{ip}: SSH identity is shared with {device.Nagios_Host_Name}; "
+                                   f"kept the known device {holder.Nagios_Host_Name} by address.",
+                    candidates=sorted((device.NetDiscoveryID, holder.NetDiscoveryID)),
+                )
         # Cloned hosts can share an SSH key. When a different known device at
         # this very address owns the observed hardware MAC, keep its ports and
         # history on that device instead of treating it as a second NIC of the

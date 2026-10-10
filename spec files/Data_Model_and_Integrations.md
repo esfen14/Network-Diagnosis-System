@@ -331,8 +331,12 @@ including alternate ports such as 2222. A cloned SSH key can be shared by
 multiple targets: if a scan observes that key on a known, different device at
 its recorded address with its own matching hardware MAC, reconciliation keeps
 that device and its newly scanned ports rather than dropping the observation
-as a secondary address of the key owner. It records a duplicate-identity
-review item. A true second NIC of one device still belongs to its key owner.
+as a secondary address of the key owner. Similarly, when a network is removed
+from discovery settings and a subsequent scan runs on the remaining networks,
+a known device in the scanned network is kept by its address rather than being
+reassigned to a device from the unscanned network that shares the SSH key. It
+records a duplicate-identity review item. A true second NIC of one device still
+belongs to its key owner.
 
 ## NCPA deployment
 
