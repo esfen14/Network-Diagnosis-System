@@ -48,8 +48,8 @@ Owner decisions 2026-10-09 (relayed in the session): PT-04 clock starts at the N
 state change; PT-05 is a 4 h agent-run soak; role matrix comes from `seed.py`; plugin
 count is 65 (observed in `docs/test-runs/2026-10-08-ncpa-run/`).
 
-Open: BB-01..BB-07 wording is not in the repository (paper pp.67-68); the mapping in the
-plan is inferred and BB-03 is a guess. One availability formula/window for Network Health
+Closed 2026-10-10: the paper's BB-01..BB-07 wording (pp.126-127) is now in the plan, BB-03 corrected; the mapping in the
+plan is still the author's reading. Open: one availability formula/window for Network Health
 and Reports (D-9). PT-01 "initialisation" is defined by inference in the plan.
 Delete this file before the PR leaves draft.
 

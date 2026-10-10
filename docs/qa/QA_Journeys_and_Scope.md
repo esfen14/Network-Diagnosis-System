@@ -7,16 +7,18 @@ six invariants, and the out-of-scope list. The cases that exercise them are in
 
 | | |
 |---|---|
-| **Status** | Current as of 2026-10-09 against `main` at `13076192`. Team decisions are final where marked **DECIDED**; everything else is a recommendation the QA agent follows until the team changes it |
-| **Sources** | The capstone paper (90 pages; "p." is the printed page number), the repository specs in `spec files/`, the application code, the installer repository (`lorraine-pangilinan/PinPoint-Installer`) and the lab run reports in `docs/test-runs/` |
+| **Status** | Current as of 2026-10-10 against `main` at `13076192`, aligned with the October 2026 paper draft. Team decisions are final where marked **DECIDED**; everything else is a recommendation the QA agent follows until the team changes it |
+| **Sources** | The capstone paper, Chapters I-III, October 2026 draft (163 pages; "p." is the printed page number, which equals the PDF page; tables and figures are cited by page because several numbers repeat), the repository specs in `spec files/`, the application code, the installer repository (`lorraine-pangilinan/PinPoint-Installer`) and the lab run reports in `docs/test-runs/` |
 | **Quality model** | ISO/IEC 25010:2023, five characteristics in scope (**DECIDED**, §5 D-2) |
-| **Paper status** | The paper is not fully revised. A fact that comes only from the paper may be outdated; the repository and team decisions win |
+| **Paper status** | The October 2026 draft was realigned with the repository (§5 lists which conflicts that closed), but it is still a draft and calls the prototype "not totally functional" (p.132). A fact that comes only from the paper may be outdated; the repository and team decisions win |
 
 **Tags**
 
 - **[PAPER]** stated in the paper's text or tables.
-- **[SHOT]** visible only in a prototype screenshot (pp.71-86). The team says these
-  images are out of date, so confirm against the running application.
+- **[SHOT]** visible only in a prototype screenshot (installer pp.132-135; application
+  pp.136-155). The October 2026 screenshots were taken on the VM lab (hosts on
+  `10.77.0.x`), so they are close to the current UI, but confirm against the running
+  application.
 - **[REPO]** found in the specs or the code (file named).
 - **[INFER]** an inference. The agent does not assert it as a requirement.
 
@@ -28,7 +30,7 @@ When sources disagree the QA agent logs an issue (label `needs-decision` for a
 source conflict) and continues. It does not stop.
 
 1. **§5 of this file** settles every conflict listed there.
-2. **Paper Scope and Limitations (pp.5-6)** decides *whether* something is in scope.
+2. **Paper Scope and Limitations (pp.9-10)** decides *whether* something is in scope.
 3. **The repository specs** decide *how* an in-scope feature behaves
    (`AGENTS.md` routes to them; `Implementation_Status.md` lists known gaps).
 4. **The running application and screenshots** are evidence of behavior, not authority.
@@ -40,7 +42,9 @@ decide (§4D).
 
 ## 1. Objectives the journeys serve
 
-Four product goals, from the four research questions [PAPER p.4]:
+Four product goals, from research questions 1-4 [PAPER pp.5-6]. Questions 5 and 6
+(automated versus manual deployment; respondent variables) are statistical tests on the
+survey [PAPER pp.6-7] and are not QA targets:
 
 | ID | Goal | Journeys |
 |----|------|----------|
@@ -50,9 +54,9 @@ Four product goals, from the four research questions [PAPER p.4]:
 | G4 | Detect service and network faults in real time and notify administrators | J5, J6, J7, J8 |
 
 Project objectives 2, 3 and 4 (deployment module, discovery module, dashboard)
-[PAPER p.5] are QA targets. Objective 1 (architecture and database) is a design
-output. Objective 5 (ISO/IEC 25010 evaluation) is covered by user acceptance
-testing; the QA loop reports its results by ISO characteristic (see
+[PAPER p.8] are QA targets. Objective 1 (architecture and database) is a design
+output. Objective 5 (ISO/IEC 25010:2023 evaluation, pp.8-9) is covered by user
+acceptance testing (pp.129-131); the QA loop reports its results by ISO characteristic (see
 `QA_Test_Plan.md` §3) but does not replace the user survey.
 
 **"QA done" / release-ready.** All of the following hold:
@@ -60,8 +64,8 @@ testing; the QA loop reports its results by ISO characteristic (see
 - Every case in `QA_Test_Plan.md` that is not marked human has a recorded result
   in `docs/test-runs/`, and every `Fail` or `Blocked` links an issue.
 - J1-J9 pass on the lab, or each failure is filed. J1's installer-ISO path is manual.
-- BB-01 to BB-07 pass [PAPER pp.67-68].
-- PT-01 to PT-05 meet the thresholds in §2 X6 [PAPER p.68] and the decisions in §5 D-9.
+- BB-01 to BB-07 pass [PAPER pp.126-127, Table "Core Functionality Test Cases"].
+- PT-01 to PT-05 meet the thresholds in §2 X6 [PAPER p.128] and the decisions in §5 D-9.
 - Invariants X1-X6 hold.
 - Every item in §4B has a team decision recorded.
 
@@ -71,12 +75,12 @@ testing; the QA loop reports its results by ISO characteristic (see
 
 | ID | Invariant | Source |
 |----|-----------|--------|
-| X1 | No step requires editing a `.cfg` file or using a shell. Everything is done through the web UI. (The QA agent itself uses the shell and the API to inject faults and read evidence; that does not violate X1.) | PAPER p.6 |
-| X2 | Every state-changing user action leaves a log entry (who, what, when) in the right System Logs category. Tag prefixes seen: AL- (activity), CC- (config change), ND- (discovery), NP- (NCPA deploy) | PAPER p.41; SHOT pp.79-81 |
+| X1 | No step requires editing a `.cfg` file or using a shell. Everything is done through the web UI. (The QA agent itself uses the shell and the API to inject faults and read evidence; that does not violate X1.) | PAPER pp.34, 38 |
+| X2 | Every state-changing user action leaves a log entry (who, what, when) in the right System Logs category. Tag prefixes seen: AL- (activity), CC- (config change), ND- (discovery), NP- (NCPA deploy) | PAPER pp.73, 75 (`ACTIVITY_LOG`, `CONFIGURATION_CHANGES`, `EXPORT_LOG`); SHOT pp.146-148 |
 | X3 | Counts reconcile across pages: hosts up/down agree on Dashboard, Device Inventory, Network Health and Reports. The Dashboard "Active Alerts" figure is hosts plus services not in OK/UP | REPO `Display_Requirements.md` §1; Device_Inventory §12.2 |
-| X4 | Every page and API route refuses unauthenticated access. Passwords are stored hashed | PAPER pp.26, 50 |
-| X5 | Every long operation (scan, deploy, report) shows progress and ends in a terminal status: Success, Failed, Partial Failure or Interrupted | PAPER pp.43, 45 |
-| X6 | Performance targets: PT-01 initialisation ≤10 s; PT-02 availability check of 10 hosts ≤5 s; PT-03 dashboard refresh of 15 updates ≤3 s; PT-04 alert generation ≤3 s (clock defined in §5 D-9); PT-05 stability over a 4 h soak (§5 D-9) | PAPER p.68; §5 D-9 |
+| X4 | Every page and API route refuses unauthenticated access. Passwords are stored hashed | PAPER pp.65-66 (`Hashed_Password`), p.99 |
+| X5 | Every long operation (scan, deploy, report) shows progress and ends in a terminal status: Success, Failed, Partial Failure or Interrupted | PAPER pp.77-78 (`Status`, `Progress`), p.85 |
+| X6 | Performance targets: PT-01 initialisation ≤10 s; PT-02 availability check of 10 hosts ≤5 s; PT-03 dashboard refresh of 15 updates ≤3 s; PT-04 alert generation ≤3 s (clock defined in §5 D-9); PT-05 stability over a 4 h soak (§5 D-9). The paper gives PT-05 no threshold ("Continuous", "-") | PAPER p.128; §5 D-9 |
 
 ---
 
@@ -97,8 +101,9 @@ has the roles Administrator, Manager and Staff (§4A A16); where a journey says
 ### J1. Install and first login
 - **Actor:** Network Administrator. **Verify in:** manual for the installer ISO path;
   vm lab for the installer's own steps (`scripts/vmlab fresh`) and the healthcheck.
-- **Source:** flowchart pp.48-49; BB-01 p.67; installer repo (autoinstall, first boot,
-  `setup/`). The paper's wizard screens (pp.71-74) are not the real installer UI (§5 D-5).
+- **Source:** flowchart pp.96-98; BB-01 p.126; installer repo (autoinstall, first boot,
+  `setup/`). The installer screens (pp.132-135: language, keyboard, network, storage,
+  profile) are the Ubuntu autoinstall prompts, not the Pinpoint web UI (§5 D-5).
 - **Steps:** boot the ISO, answer the interactive Ubuntu prompts (identity, storage and
   the others the autoinstall leaves interactive), let first boot finish, read the
   generated web credentials, open the web UI, sign in.
@@ -112,36 +117,36 @@ has the roles Administrator, Manager and Staff (§4A A16); where a journey says
      shown once, and removed after the administrator confirms they were recorded.
   4. The login page loads. Valid credentials lead to the Dashboard; invalid credentials
      are refused and create no session.
-  5. The stored password is a hash, never plaintext [PAPER p.41].
-  6. Sign out asks for confirmation, then requires a new login [SHOT p.86].
+  5. The stored password is a hash, never plaintext [PAPER pp.65-66].
+  6. Sign out asks for confirmation, then requires a new login [SHOT p.155].
 - **First-login setup (#61, open, not built).** The target behavior is that the
   installer's administrator is blocked until it sets a real email and a new password;
   later-created administrators are not blocked. Until #61 lands the agent asserts
   none of this. When it lands, add the gate to J1 (and to the VM lab scripts, which
   must complete the window).
-- **Variants:** a failed install is rerun [PAPER p.49]. Credentials already removed:
+- **Variants:** a failed install is rerun [PAPER p.97]. Credentials already removed:
   the credentials script says so and does nothing.
 
 ### J2. Discover the network
 - **Actor:** Network Administrator. **Verify in:** vm lab (docker lab for the UI flow).
-- **Source:** flowchart p.48; objective 3; BB-06; rescan modals p.85; discovery logs
-  p.80; `Device_Inventory_Requirements.md`; `Data_Model_and_Integrations.md`.
+- **Source:** flowchart p.97; objective 3 (p.8); BB-06 (p.127); discovery logs p.147
+  (the paper no longer shows the rescan modals); `Device_Inventory_Requirements.md`; `Data_Model_and_Integrations.md`.
 - **Steps:** Scan Network (first run) or Rescan Network (Dashboard or Network Health),
   confirm the modal, wait through "Scanning in progress" to "Rescan successful".
 - **Expect:**
   1. The run shows Running, then Success, Failed or Interrupted, with progress
-     [PAPER p.43].
+     [PAPER pp.77-78].
   2. Each host records hostname, IP, MAC, OS, device type and open TCP/UDP ports
-     [PAPER pp.43-44].
-  3. Ubuntu/Linux hosts are marked NCPA-eligible. Windows, routers and unmanaged
-     switches are ping-only [PAPER pp.36, 44, 52].
+     [PAPER pp.80-81, 84].
+  3. Ubuntu/Linux hosts are marked NCPA-eligible (`NCPA_Eligible`, p.81). Windows,
+     routers and unmanaged switches are ping-only [PAPER pp.10, 62, 103].
   4. Hosts are written to Nagios. Services follow **plugins**, not just open ports: a
      discovered port is monitored only once the plugin that checks it is enabled in
      Plugin Manager (J4). Service names follow the port, for example `http-80`
-     [SHOT p.77; REPO `Implementation_Status.md` "Plugin lifecycle"].
+     [SHOT pp.138-139, 143; REPO `Implementation_Status.md` "Plugin lifecycle"].
   5. Changed network: "New host.cfg successfully applied" and Nagios reloads.
      Unchanged: "Host configuration unchanged; Nagios was not reloaded" and no reload.
-     Cancelled: "Network discovery was cancelled" [SHOT p.80].
+     Cancelled: "Network discovery was cancelled" [SHOT p.147].
   6. New hosts appear in Device Inventory and the Dashboard totals update.
   7. A paused device (`Include_Device_In_Scanning` false) is kept in the device list but
      left out of Nagios and out of Dashboard/Network Health counts
@@ -151,33 +156,33 @@ has the roles Administrator, Manager and Staff (§4A A16); where a journey says
      The agent checks for duplicates, and if it finds one it comments on #59 instead of
      filing a new issue.
 - **Variants:**
-  - A failed scan can be rerun [PAPER p.49].
+  - A failed scan can be rerun [PAPER p.97].
   - Changes in Settings > Network Discovery (networks, TCP/UDP ports, service
     overrides) apply to the next scan and appear as Configuration Change entries
-    [SHOT p.80].
+    [SHOT p.146].
   - A scheduled scan runs every 6 hours by default (`Scan_Frequency`, `system_models.py`)
-    [SHOT p.83]. It is skipped while **Maintenance Mode** is on. Maintenance Mode is a
+    [SHOT p.151]. It is skipped while **Maintenance Mode** is on. Maintenance Mode is a
     system setting that stops scheduled scans, plugin update scans and security
     validation but permits backups; the UI shows a banner
-    (`Data_Model_and_Integrations.md`).
+    (`Data_Model_and_Integrations.md`; the switch is on the System tab, SHOT p.152).
 
 ### J3. Deploy NCPA agents
 - **Actor:** Network Administrator. **Verify in:** vm lab (needs Ubuntu targets with SSH;
   the docker lab has no init system and cannot install NCPA).
-- **Source:** flowchart pp.48-49; BB-02 p.67; ERD pp.44-46;
+- **Source:** flowchart pp.97-98; BB-02 p.127; ERD pp.78, 83-86;
   `docs/test-runs/2026-10-08-ncpa-fresh-run/`.
 - **Steps:** NCPA Deployment, select devices, verify host keys, enter device
   credentials, confirm. In the lab: `scripts/vmlab ncpa [ip,ip,...]` drives the same
   deployment API; the browser wizard is the thing to check.
 - **Expect:**
   1. Only NCPA-eligible devices can be selected. Others show Incompatible or Excluded
-     [PAPER p.46].
+     [REPO; the paper only records `NCPA_Eligible`, p.81].
   2. The run goes Running, then Success, Partial Failure, Failed or Interrupted. Each
-     device goes Pending NCPA, then Deployed NCPA or Deployment Failed [PAPER pp.45-46].
+     device goes Pending NCPA, then Deployed NCPA or Deployment Failed [REPO; the paper records `Agent_Status` and `Outcome`, pp.78, 85].
   3. The SSH password is not persisted. Only the port, key-installed flag and key
-     fingerprint are stored [PAPER p.45].
+     fingerprint are stored [PAPER p.84, `SSH_CREDENTIALS`].
   4. After success, NCPA checks appear for that host: CPU, memory, disk
-     [PAPER pp.6, 38]. The lab shows three services per host (CPU, root disk,
+     [PAPER pp.10, 59, 62]. The lab shows three services per host (CPU, root disk,
      memory); the paper also lists processes, which no run has shown, so do not
      assert it. **Fixed (#45, closed 2026-10-08):** the installer now ships a
      `python3` shebang and its healthcheck runs the plugin as `nagios`; a fresh
@@ -188,42 +193,43 @@ has the roles Administrator, Manager and Staff (§4A A16); where a journey says
      with exit code 127 the installer fix is missing; reopen #45 rather than file a
      new issue.
   5. The run is logged under System Logs > NCPA Deployment, for example "Deployment
-     completed with 1 failure(s)" [SHOT p.81].
+     completed with 1 failure(s)" [earlier prototype screenshot; the log in the current SHOT p.147 is empty].
   6. One unreachable host or bad credential fails only that device.
   7. After deployment there is still one device record per host (#59).
 
 ### J4. Enable a plugin and put it to work
 - **Actor:** Network Administrator. **Verify in:** mock or vm lab.
-- **Source:** flowchart p.48 ("Add Plugin"); Plugin Manager pp.78, 50, 52;
+- **Source:** flowchart p.98 ("Plugin Setup"); Plugin Manager p.140 and Table 2 p.100;
   `Plugins_List.md`; `docs/plans/Plugin_Driven_Monitoring_Plan.md`.
 - **Steps:** Plugins, All Plugins, select, verify, enable (the dialog previews what will
   be monitored), save. Monitoring attaches by itself to every device with a matching
-  port; there is no device picking.
+  port; there is no device picking. (The paper's flowchart, p.98, still says the administrator "adds the devices
+  to monitor with it"; follow the repository and see §6.)
 - **Use a port-driven plugin** such as `check_ssh` or `check_http`. Plugins that check no
   port (`check_ping`, `check_load`, ...) attach to nothing and cannot be enabled, and
   custom plugin upload is disabled. Both are accepted in `Implementation_Status.md`, so
   they are not defects (§8 R-5).
 - **Expect:**
   1. An invalid plugin fails verification. The "Validation Issues" tile counts these
-     [INFER from SHOT p.78].
+     [INFER from SHOT p.140].
   2. An enabled plugin appears in Currently Running with device, IP, service and
-     running-since [SHOT p.78].
+     running-since [SHOT p.140].
   3. Its services appear in System Status and Nagios executes them.
-  4. Activity Log shows `plugin.validate` and `plugin.enable` [SHOT p.79]. (The
+  4. Activity Log shows `plugin.validate` and `plugin.enable` [SHOT p.146]. (The
      `plugin.configure` permission was removed; do not expect it.)
   5. **Plugin count (DECIDED, §5 D-4):** the Installed tile reads **65** on an
      installer-built appliance, and the tile, the All Plugins table and the backend
      inventory agree.
   6. "Scan for Plugins" (All Plugins tab) refreshes the inventory. The summary tiles
      (Installed, Active Capabilities, Custom, Updates Available, Validation Issues) agree
-     with the tables [SHOT p.78].
+     with the tables [SHOT p.140].
   7. Disabling the plugin removes its services; enabling it again restores them.
 - **Lab evidence:** plugin enablement has not been run on a real lab beyond the plugin
   scan (65 plugins, `check_ncpa.py` found; `docs/test-runs/2026-10-08-ncpa-run/`).
 
 ### J5. Break a service, see the alert
 - **Actor:** Network Administrator. **Verify in:** vm lab.
-- **Source:** BB-05 p.68; PT-04; Table 2 p.50; DFD p.63;
+- **Source:** BB-05 p.127; PT-04 p.128; Table 2 p.100; DFD p.121;
   `docs/test-runs/2026-10-08-vm-lab-remaining/`.
 - **Steps:** power a target off (`scripts/vmlab targets break <target> host`; or
   `scripts/vmlab alerts [target]`, which also acknowledges and restores), or, with the
@@ -235,12 +241,14 @@ has the roles Administrator, Manager and Staff (§4A A16); where a journey says
      Device Inventory and System Status. Detection delay is the check interval times
      the retries (§5 D-9; #60 makes the interval a setting).
   2. Dashboard Active Alerts rises by the same amount (X3).
-  3. An in-app notification appears (bell icon) [PAPER p.63; SHOT p.77].
+  3. An in-app notification appears (bell icon) [PAPER p.121; SHOT p.136].
   4. The alert appears in History > Alerts, and the notification in History >
      Notifications (`Alerts_Notifications_History_Requirements.md`).
-  5. **Email (B8): not built.** The paper says an email goes out within 3 s of detection
-     [PAPER p.68]. Do not assert it (§4B B8).
-  6. Alert types promised: server down, service failure, high CPU [PAPER p.50]. High CPU
+  5. **Email (B8): not built.** The paper promises email alerts through a Gmail SMTP relay
+     [PAPER pp.46-47, 61, 98, 100, 112, 120] and sets alert generation at 3 s or less
+     [PAPER p.128, PT-04]; it does not say that the 3 s covers email delivery. Do not
+     assert email (§4B B8).
+  6. Alert types promised: server down, service failure, high CPU [PAPER p.100]. High CPU
      needs NCPA thresholds (J3).
   7. Restoring the service returns it to UP/OK on every page, and the History shows a
      recovery event (`Alerts_Notifications_History_Requirements.md` §3.2).
@@ -251,14 +259,15 @@ has the roles Administrator, Manager and Staff (§4A A16); where a journey says
 
 ### J6. Acknowledge a problem and trace it
 - **Actor:** Network Administrator. **Verify in:** vm lab (API passed; browser not run).
-- **Source:** SHOT pp.77, 78; `Display_Requirements.md` §4;
-  `Alerts_Notifications_History_Requirements.md`. Covered by the clause "all native
-  monitoring capabilities of Nagios Core through the web-interface" [PAPER p.6].
+- **Source:** SHOT pp.138-139; `Display_Requirements.md` §4;
+  `Alerts_Notifications_History_Requirements.md`; ERD `ALERT_ACKNOWLEDGEMENT` and
+  `ACK_HISTORY` (pp.71-72). The paper names acknowledgements as part of what the web
+  interface presents [PAPER pp.5, 9].
 - **Steps:** Device Inventory or System Status, press Acknowledge on a DOWN or CRITICAL
   row; then open History.
 - **Expect:**
   1. The Acknowledgement column shows "By <user>" and the action becomes Unacknowledge
-     [SHOT p.77].
+     [SHOT p.138].
   2. Unacknowledge clears it.
   3. The acknowledgement appears in History (`/history`). `Implementation_Status.md` says
      the page has not been audited against its spec, so failures here are real findings.
@@ -270,66 +279,66 @@ has the roles Administrator, Manager and Staff (§4A A16); where a journey says
 
 ### J7. Monitor and diagnose
 - **Actor:** Network Administrator. **Verify in:** vm lab.
-- **Source:** objective 4; BB-04, BB-07; PT-03; use case p.64; pp.75-77;
-  `Display_Requirements.md`.
+- **Source:** objective 4 (p.8); BB-03, BB-04, BB-07 (pp.126-127); PT-03 (p.128); use case
+  p.122; SHOT pp.136-139; `Display_Requirements.md`.
 - **Steps:** Dashboard, Network Health, open the ping, packet-loss and bandwidth views,
   then Device Inventory and System Status.
 - **Expect:**
   1. The Dashboard shows total hosts, latency, warnings, critical issues, an up/down
-     chart, a performance chart and the Nagios status panel [SHOT p.75].
+     chart, a performance chart and the Nagios status panel [SHOT p.136].
   2. Network Health shows online/offline devices, host availability, resource averages,
      and latency, packet-loss and bandwidth views with a time-range selector
-     [SHOT pp.76-77]. Graphs come from PNP4Nagios [PAPER p.29].
+     [SHOT p.137]. Graphs come from PNP4Nagios [PAPER pp.47, 112].
   3. NCPA hosts show CPU, memory, disk and processes. Ping-only hosts show availability
-     and latency only [PAPER pp.6, 55].
+     and latency only [PAPER pp.10, 109].
   4. Auto-refresh defaults to 5 minutes (`Dashboard_Refresh_Rate`) with a manual
      refresh. A refresh completes in ≤3 s (PT-03).
   5. Counts reconcile across pages (X3).
   6. The Network Health network card shows IP range, gateway, subnet mask, DNS server,
-     ISP and location, plus a "Last Scan" time [SHOT p.76]. The paper does not say
+     ISP and location, plus a "Last Scan" time [SHOT p.137]. The paper does not say
      where these come from; assert only that the card renders without error.
   7. Bandwidth and Avg Response Time tiles show "Not configured" until set up
-     [SHOT p.76]. That is expected. An admin adds bandwidth rows in Settings > Plugins >
+     [SHOT p.137]. That is expected. An admin adds bandwidth rows in Settings > Plugins >
      NCPA Metrics (`Display_Requirements.md`).
   8. System Status lists services with OK / Warning / Unknown / Critical counts, search,
-     state filter, sort and acknowledgement (`TopologyPage.tsx`, route `/topology`; see
-     §4B B9). It polls about every 90 s.
+     state filter, sort and acknowledgement (`TopologyPage.tsx`, route `/topology`; paper
+     Table 1 p.54 and SHOT p.138; see §4B B9). It polls about every 90 s.
   9. Paused, retired and merged devices are excluded from counts (J2 step 7).
 
 ### J8. Report and export
 - **Actor:** Network Administrator. **Verify in:** mock or vm lab.
-- **Source:** Table 2 p.50; EXPORT_LOG p.42; Reports p.79.
+- **Source:** Table 2 p.101; EXPORT_LOG p.75; Reports pp.143-145.
 - **Steps:** Report, Host Availability or Network Services, choose a period, Run Report,
   export.
 - **Expect:**
   1. The table shows hostname, state, uptime %, snapshots, last check and last state
-     change [SHOT p.79].
+     change [SHOT p.143].
   2. Host totals match Device Inventory (X3).
   3. Export gives a readable CSV; an `.xls` that Excel opens (an HTML table saved with an
      `.xls` extension); and a print view for the browser's "Save as PDF"
      (`client/src/utils/exportData.ts`). Do not require three generated files (§8 R-6).
   4. The export is recorded in Export Log: who, report type, format, start, end, time
-     [PAPER p.42].
+     [PAPER p.75].
   5. An empty period shows an empty state, not an error.
 - **Note:** the Reports page also lists Hosts by OS, Device Services, Alerts and
-  Notifications views in the code (`ReportsPage.tsx`), beyond the two the team decided to
-  ship (B4). The agent tests Host Availability and Network Services as required and
+  Notifications views in the code (`ReportsPage.tsx`) and in the paper's screenshots
+  (SHOT pp.144-145), beyond the two the team decided to ship (B4) and that Table 2 lists. The agent tests Host Availability and Network Services as required and
   records the others as observed.
-- **Note:** Export Log is empty in the paper's evidence [SHOT p.81], so export has never
+- **Note:** Export Log is empty in the paper's evidence [SHOT p.148], so export has never
   been shown working.
 
 ### J9. Manage accounts and roles
 - **Actor:** Network Administrator. **Verify in:** mock or vm lab.
-- **Source:** use case p.64; User Management p.50; SHOT pp.82-83, 86.
+- **Source:** use case p.122; User Management (Table 2 p.99); SHOT pp.148-151, 155.
 - **Steps:** Manage Roles (add role), Manage Accounts (add user with role), sign in as
   that user, edit, deactivate.
 - **Expect:**
   1. The user appears Active with the chosen role. The Activity Log records "Created
-     account for <email>" [SHOT p.79].
-  2. Status is Active, Inactive or Suspended [PAPER p.41]. A non-active user cannot sign
+     account for <email>" [SHOT p.146].
+  2. Status is Active, Inactive or Suspended [PAPER p.66]. A non-active user cannot sign
      in.
   3. Saving an edit signs that user out ("The user will be signed out after changes are
-     applied") [SHOT p.83, older screenshot; confirm the current UI].
+     applied") [SHOT p.149; confirm the behavior].
   4. A password reset stores a new hash.
   5. **Role matrix (DECIDED, §5 D-8):** derived from `server/app/api/commands/seed.py`.
      Administrator holds all 34 seeded permissions; **Manager and Staff are seeded with
@@ -337,15 +346,16 @@ has the roles Administrator, Manager and Staff (§4A A16); where a journey says
      until an administrator grants permissions in Manage Roles. A role lacking a
      permission cannot open or act on the related page, in the UI and in the API.
   6. Manage Accounts has an Export button and Active/Inactive/Suspended filters
-     [SHOT p.82]. The paper does not say what the export contains or whether it is
+     [SHOT p.148]. The paper does not say what the export contains or whether it is
      logged in Export Log; record what happens.
   7. Settings > General mixes scopes. Theme, font, layout and refresh rate apply per
      account. Scan frequency, notifications and export formats are system-wide
-     [SHOT p.83]. Verify a change by one user does or does not reach another, as
-     labelled.
+     [SHOT p.151]. Verify a change by one user does or does not reach another, as
+     labelled; the "Mixed" scope note is on SHOT p.151.
   8. For accounts created while #61 is open: a password reset forces a change at next
      sign-in (`Must_Change_Password`). The "Require password change at first sign-in"
-     checkbox on account creation is part of #61 and is not asserted until it lands.
+     checkbox on account creation is part of #61 and is not asserted until it lands (SHOT p.149 already shows the checkbox,
+     but the checked-out client has none).
 
 ---
 
@@ -358,54 +368,54 @@ The agent must not file defects against groups A, C and D. Group B gets at most 
 
 | ID | Excluded | Source |
 |----|----------|--------|
-| A1 | Agent-based monitoring of Windows or macOS. They are ping-only | PAPER p.6 |
-| A2 | CPU, memory, disk and process metrics on non-Linux hosts | PAPER p.6 |
-| A3 | Cloud infrastructure monitoring | PAPER p.6 |
-| A4 | Automated remediation of detected issues | PAPER p.6 |
-| A5 | SNMP-based *discovery*. It was tried and dropped. SNMP *checks* are in the product (the installer configures SNMP; Settings > Plugins has an SNMP OID table; services like `snmp-uptime-161-udp` exist) | PAPER pp.17, 24, 6; REPO `Display_Requirements.md` |
-| A6 | Passive discovery. Only active Nmap scanning is used | PAPER pp.13, 24 |
-| A7 | Other discovery add-ons (NAR, blësk NDD, nmap2nagios-ng) | PAPER pp.14-18 |
-| A8 | Alert channels other than the in-app feed and Nagios contact notifications (email, SMS "if available"). Telegram appears only in the literature review | PAPER pp.11, 20, 22, 28 |
-| A9 | Network setups beyond Table 5: one LAN, TP-Link home routers, unmanaged switches, ICMP and SSH only | PAPER p.56 |
-| A10 | Scale beyond the test tables (10 hosts, 15 data updates). The 387 devices, 3 floors and 24 rooms are context, not a test target | PAPER pp.68, 70 |
-| A11 | High availability or failover. The server must stay up, and "some data may be lost temporarily" on failure | PAPER p.62 |
-| A12 | The network **topology view** and topology creation. The paper promises it (pp.3, 28, 34, 64); the repository excludes it. The **System Status** page is *not* excluded (B9) | REPO `Implementation_Status.md` "Explicit exclusions" |
-| A13 | "Possible root causes" and failure explanations. Not in any repository spec | PAPER pp.3, 64; REPO none |
-| A14 | Device-link and interface health pages. Not in any repository spec. `client/src/pages/wagpakielaman.tsx` has an "Interface Health" heading but nothing imports it (checked 2026-10-09), so it is dead code, not a page | PAPER p.28, 64; REPO none |
-| A15 | Settings > Security controls for two-factor authentication, encryption, firewall and backups. The live Security tab has session timeout, security check frequency, strong password policy, failed login monitoring and audit logging only | PAPER p.84; REPO `SecuritySettings.tsx` |
-| A16 | A Network Technician role. Seeded roles are Administrator, Manager, Staff | PAPER p.64; REPO `seed.py` |
+| A1 | Agent-based monitoring of Windows or macOS. They are ping-only | PAPER pp.10, 109 |
+| A2 | CPU, memory, disk and process metrics on non-Linux hosts | PAPER p.10 |
+| A3 | Cloud infrastructure monitoring | PAPER p.10 |
+| A4 | Automated remediation of detected issues | PAPER p.10 |
+| A5 | SNMP-based *discovery*. It was tried and dropped. SNMP *checks* are in the product (the installer configures SNMP; Settings > Plugins has an SNMP OID table; services like `snmp-uptime-161-udp` exist). The paper says monitoring includes SNMP and SSH services | PAPER pp.10, 27-28; REPO `Display_Requirements.md` |
+| A6 | Passive discovery. Only active Nmap scanning is used | PAPER pp.21, 39-40 |
+| A7 | Other discovery add-ons (NAR, blësk NDD, nmap2nagios-ng) | PAPER pp.23, 27-30 |
+| A8 | Alert channels other than the in-app feed and Nagios contact notifications (email is B8). Telegram appears only in the literature review | PAPER pp.19, 33, 37 |
+| A9 | Network setups beyond Table 5: one LAN, TP-Link home routers, unmanaged switches, ICMP and SSH only | PAPER pp.109-110 (Tables 4 and 5) |
+| A10 | Scale beyond the test tables (10 hosts, 15 data updates). The 387 devices, 3 floors and 24 rooms are context, not a test target | PAPER pp.16, 20, 110, 128 |
+| A11 | High availability or failover. The server must stay up, and "some data may be lost temporarily" on failure | PAPER p.120 |
+| A12 | The network **topology view** and topology creation. The October 2026 paper no longer promises it (no mention in Chapters I-III); the repository excludes it. The **System Status** page is *not* excluded (B9) | REPO `Implementation_Status.md` "Explicit exclusions" |
+| A13 | "Possible root causes" and failure explanations. The paper still says the metrics help administrators "identify the possible causes of network problems" and mentions diagnostics. Not in any repository spec | PAPER pp.4, 7, 122; REPO none |
+| A14 | Device-link and interface health pages (no longer in the paper). Not in any repository spec. `client/src/pages/wagpakielaman.tsx` has an "Interface Health" heading but nothing imports it (checked 2026-10-09), so it is dead code, not a page | REPO none |
+| A15 | Settings > Security controls for two-factor authentication, encryption and firewall. The live Security tab has session timeout, security check frequency, strong password policy, failed login monitoring and audit logging only. The October 2026 screenshot now matches it (SHOT p.152); Automatic Backups sits on the System tab | PAPER p.152; REPO `SecuritySettings.tsx` |
+| A16 | A Network Technician *role*. Seeded roles are Administrator, Manager, Staff, and the paper's use case now says the same. Technicians appear only as interviewees and survey respondents | PAPER pp.49, 122, 129, SHOT p.150; REPO `seed.py` |
 
 ### 4B. Promised or present, needing a team decision
 
 File one `needs-decision` issue per open item, not defects. The paper admits the
-prototype is "not totally functional" [PAPER p.71].
+prototype is "not totally functional" [PAPER p.132].
 
 | ID | Item | Status | What the agent does |
 |----|------|--------|---------------------|
-| B4 | Reports. The paper promises "downtime summary" and "alert history" reports | **DECIDED (team, 2026-10-08): ship the two current views** (Host Availability, Network Services). The backend has six report endpoints; the other four have no required screen | Tests the two views. The paper's Reports module (Table 2, p.50) must be edited to match |
-| B5 | Monitoring Logs: service-check results, host status changes, alert history, downtime records [PAPER p.51] | **DECIDED (team, 2026-10-08): History is enough.** It covers alert and notification history. Service-check results and downtime records get no page | Tests History only. The paper (Table 2, p.51) must be edited to match |
-| B8 | **Gmail SMTP email alerts** [PAPER pp.28, 38, 58, 62; Table 2] | **Not built.** SMTP configuration moves to the installer repository (mail transport on the appliance); the application side is the real-email requirement in #61 and `SMTP_Admin_Email_Plan.md` on branch `docs/smtp-admin-email-plan` (draft, not merged). Until both land the paper's email claims are unmet | Asserts only that a notification event appears in History > Notifications. Once built: mock SMTP server first, then real Gmail by hand (human case) |
-| B9 | **"System Status" page** | **DECIDED (team, 2026-10-08): keep.** The repository implements it in `TopologyPage.tsx` at `/topology`, labelled "System Status" in the sidebar, and `Implementation_Status.md` still says to remove the route and entry | Treats the page as a core page (J5-J7). Does not remove it and does not file the `/topology` URL as a defect. Follow-up (filed separately): rename the route and file so they no longer say "topology" |
+| B4 | Reports. The paper once promised "downtime summary" and "alert history" reports | **DECIDED (team, 2026-10-08): ship the two current views** (Host Availability, Network Services). The backend has six report endpoints; the other four have no required screen | Tests the two views. Table 2 (p.101) now lists exactly these two, so the paper matches; its screenshots (pp.144-145) still show the other four views |
+| B5 | Monitoring Logs: the paper once promised service-check results, host status changes, alert history and downtime records | **DECIDED (team, 2026-10-08): History is enough.** It covers alert and notification history. Service-check results and downtime records get no page | Tests History only. Table 2 (p.101) now lists the History page and the log tabs, so the paper matches |
+| B8 | **Gmail SMTP email alerts** [PAPER pp.46-47, 55, 61, 98, 100, 112, 119-121] | **Not built.** SMTP configuration moves to the installer repository (mail transport on the appliance); the application side is the real-email requirement in #61 and `SMTP_Admin_Email_Plan.md` on branch `docs/smtp-admin-email-plan` (draft, not merged). Until both land the paper's email claims are unmet | Asserts only that a notification event appears in History > Notifications. Once built: mock SMTP server first, then real Gmail by hand (human case) |
+| B9 | **"System Status" page** | **DECIDED (team, 2026-10-08): keep.** The paper now includes it (Table 1 Sprint 6, p.54; SHOT p.138). The repository implements it in `TopologyPage.tsx` at `/topology`, labelled "System Status" in the sidebar, and `Implementation_Status.md` still says to remove the route and entry | Treats the page as a core page (J5-J7). Does not remove it and does not file the `/topology` URL as a defect. Follow-up (filed separately): rename the route and file so they no longer say "topology" |
 | B10 | "Forgot Password?" on the login page | **Unhandled in code (checked 2026-10-09):** `LoginPage.tsx` renders a button with no click handler, and the server has no recovery route. The only reset is an administrator resetting a password in Manage Accounts. The recovery flow belongs to the SMTP work (it needs working email) | Asserts the button is present and does nothing harmful. Files at most one `needs-decision` issue. Does not assert recovery works |
 
 ### 4C. Lab artifacts, not requirements (ignore)
 
 | ID | Artifact | Source |
 |----|----------|--------|
-| C1 | VirtualBox lab: 10.0.2.x addressing, "VBOX HARDDISK" in the installer, hosts such as `10.0.2.3.test.local`, `nagios-test`, `dev-de26af.test.local` | SHOT pp.73-74, 77 |
-| C2 | The `Live Test` user and the inactive `Live test no permissions` role are test leftovers, not seed data | SHOT p.82 |
-| C3 | Hosts shown Down, and the 26 critical issues, are lab state, not a baseline | SHOT pp.75-77 |
+| C1 | VirtualBox lab: 10.0.2.x addressing, "VBOX HARDDISK" in the installer, hosts such as `10.0.2.3.test.local`, `nagios-test`. The October 2026 screenshots show the VM lab instead (`dev-xxxxxx` hosts on `10.77.0.x`, `localhost`); the installer screens (pp.133-135) may still show virtual disks | SHOT pp.133-135, 138 |
+| C2 | Test leftovers such as a `Live Test` user or a `Live test no permissions` role are not seed data. The October 2026 screenshots show only the seeded roles and one administrator | SHOT pp.148, 150 |
+| C3 | Hosts shown Down and critical-issue counts are lab state, not a baseline | SHOT pp.136-138 |
 
 ### 4D. UI elements the paper never describes
 
 Not out of scope. The specs decide; the paper cannot be used to reject them.
 
-- "Remember me" on the login page [SHOT p.75]
-- Acknowledge / Unacknowledge [SHOT p.77]
+- "Remember me" and "Forgot Password?" on the login page [SHOT p.136]
+- Acknowledge / Unacknowledge [SHOT p.138]
 - The Nagios status panel: flap detection, hosts and services in downtime, unknown
-  services [SHOT p.75]
-- The notification bell with a badge [SHOT p.77]
-- The Manager and Staff roles [SHOT p.82] and the History page (`/history`)
+  services [SHOT p.136]
+- The notification bell with a badge [SHOT p.136]
+- The Manager and Staff roles (now also in the paper's use case, p.122; SHOT p.150) and the History page (`/history`)
 - Device Inventory's Ports section and Monitoring state
   (`Device_Inventory_Requirements.md`), and the Settings > Plugins tab
 
@@ -415,17 +425,17 @@ Not out of scope. The specs decide; the paper cannot be used to reject them.
 
 | ID | Conflict | Resolution |
 |----|----------|------------|
-| D-1 | The paper's prose says **NRPE** (pp.10, 12, 25, 28, 38, 52, 55, 56, 62-64; Table 7; installer "NRPE Agents" p.74). The schema, plugin list (`check_ncpa`), UI, flowchart and logs say **NCPA** | **NCPA wins** (repository confirmed: NRPE survives only as the legacy model name `NRPEDeployment` and a test fixture). The paper's prose must be corrected before defense |
-| D-2 | Quality model: ISO/IEC 25010:**2011** with 7 characteristics (p.5) vs **2023** with 5 criteria (pp.65-70). The 2023 edition has nine characteristics | **DECIDED: ISO/IEC 25010:2023, five characteristics in scope**: Functional Suitability, Performance Efficiency, Interaction Capability, Reliability, Security. The other four (Compatibility, Maintainability, Flexibility, Safety) are excluded with reasons in `QA_Test_Plan.md` §3 |
-| D-3 | "Seven modules" (pp.33, 49) vs eight rows in Table 2 (pp.49-51) | Use the eight rows; fix the paper's text |
-| D-4 | Plugin counts: **66** bundle (pp.36, 50, 52) vs **58** rows in Table 10 vs **65** installed (p.78) vs **15** default at install (p.74) | **DECIDED (owner, 2026-10-09): 65.** The VM lab scan read 65 plugins with `check_ncpa.py` found (`docs/test-runs/2026-10-08-ncpa-run/`). The agent checks the Installed tile reads 65 on an installer-built appliance and that the pages agree (J4 step 5). A different number is filed once as `needs-decision`. The 66/58/15 figures are paper errors. (`Plugins_List.md` documents 58 plugins, and the description catalog has 60 entries; neither is the installed count) |
-| D-5 | Installer: Subiquity unattended autoinstall (pp.35, 51) vs prototype screens that look like a Calamares wizard (pp.71-74); generated credentials (p.49) vs a password chosen in the wizard (p.73); plugin picker inside the installer (p.74) vs Plugin Manager "independent of the initial installation process" (p.36) | **Resolved by the installer repository:** an Ubuntu 22.04.5 autoinstall with interactive sections, a first-boot stage, generated credentials (J1). The Calamares-style screens are outdated |
-| D-6 | Server spec: minimum 256 GB SSD, 8 GB RAM (Table 3, p.55) vs deployed VM with 60 GB (p.54) | The lab VM spec wins for QA (appliance: 4 GB RAM, 4 CPUs, 40 GB disk). Fix the paper |
-| D-7 | "Results stored in SQLite" (p.28); database holds "alert records, plugin allocations" (pp.62-63) vs a 14-table ERD with none (pp.39-46) | Nagios is the source of truth for monitoring state. The repository has `system.db` (application state) and `history.db` (polled Nagios snapshots). The ERD is not an exhaustive schema |
-| D-8 | Roles: Administrator and Network Technician (p.64) vs Administrator, Manager, Staff (p.82). No permission matrix anywhere | **DECIDED (owner, 2026-10-09): derive the matrix from `seed.py`.** Administrator holds every seeded permission (34); Manager and Staff are seeded with none. QA verifies this seeded state and that permissions set in Manage Roles are enforced in the UI and the API. If the team later grants Manager/Staff permissions in the seed, update J9 step 5 and `QA_Test_Plan.md` J9 cases |
-| D-9 | "Real time" is undefined. Dashboard refresh ≤3 s (PT-03) vs auto-refresh every 5 minutes (p.83). Host availability reads 16.9% on Network Health (7-day window) and 51.54% on Reports (24 h) for the same hosts, with no formula given | **DECIDED (owner, 2026-10-09): PT-04 clock starts at the Nagios state change** (`last_state_change` of the host/service). Pass = the alert is visible in the app (active-alerts feed, bell) within 3 s of that timestamp. Detection delay (the check interval times the retries; 5 minutes by default today, a setting once #60 lands) is measured and reported separately, not judged against 3 s. **DECIDED: PT-05 is a 4 h agent-run soak** (`QA_Test_Plan.md` PT-05). **Still open:** one availability formula and window for Network Health and Reports. Until decided, QA checks availability sanity only (100% with no outage, lower after one), not equality between the two pages, and files one `needs-decision` |
-| D-10 | Resource metrics promised for "Linux-based hosts" (p.6) vs deployment to "Ubuntu" devices only (pp.10, 56) | Ubuntu is the promised target. Other distributions are best effort; no defects filed |
-| D-11 | "The system included all native monitoring capabilities of Nagios Core" (p.6) | The boundary is the specs: Nagios' own UI is not a Pinpoint operator surface (`System_Overview_and_Architecture.md`). Test features with a page in the navigation plus §4D. Do not test every Nagios feature |
+| D-1 | *Closed in the October 2026 draft.* The earlier paper said **NRPE** in its prose; the draft now says **NCPA** throughout (a search of Chapters I-III finds no NRPE) | **NCPA.** The repository agrees (NRPE survives only as the legacy model name `NRPEDeployment` and a test fixture) |
+| D-2 | The earlier paper mixed ISO/IEC 25010:**2011** (7 characteristics) with **2023** (5 criteria). The October 2026 draft uses **2023** with five criteria everywhere (pp.8-9, Table 9 p.124, p.129) but names one of them **Usability**; the 2023 edition calls it **Interaction Capability**, and has nine characteristics. The draft also names ISO/IEC 20000 as an evaluation standard (pp.123-124) | **DECIDED: ISO/IEC 25010:2023, five characteristics in scope**: Functional Suitability, Performance Efficiency, Interaction Capability (the paper's "Usability"), Reliability, Security. The other four (Compatibility, Maintainability, Flexibility, Safety) are excluded with reasons in `QA_Test_Plan.md` §3. ISO/IEC 20000 is not a QA target. The paper owner should rename "Usability" or footnote it (§6) |
+| D-3 | *Closed in the October 2026 draft.* The text and Table 2 (pp.99-101) now both say eight modules | Use the eight rows |
+| D-4 | Plugin counts: the earlier paper gave **66** (bundle) and **15** (default at install); the draft no longer does. It now has **58** rows in its plugin table (pp.114-119) and **65** installed in the Plugin Manager screenshot (p.140) | **DECIDED (owner, 2026-10-09): 65.** The VM lab scan read 65 plugins with `check_ncpa.py` found (`docs/test-runs/2026-10-08-ncpa-run/`). The agent checks the Installed tile reads 65 on an installer-built appliance and that the pages agree (J4 step 5). A different number is filed once as `needs-decision`. The 58-row table lists the plugins the paper documents, not the installed count. (`Plugins_List.md` documents 58 plugins, and the description catalog has 60 entries; neither is the installed count) |
+| D-5 | *Mostly closed in the October 2026 draft.* The paper now describes a Subiquity autoinstall with a few interactive prompts, keeps Calamares only as a backup reference (p.102), shows Subiquity-style installer screens (pp.132-135), has generated web credentials in the flowchart (p.97) and a Plugin Manager "independent of the initial installation process" (p.57). Remaining wrinkle: the installer's "Profile Setup" screen (p.135) is the Ubuntu identity prompt, not the web administrator | **The installer repository decides:** an Ubuntu 22.04.5 autoinstall with interactive sections, a first-boot stage, generated web credentials (J1) |
+| D-6 | The paper is now consistent with itself: minimum 4 cores, 8 GB RAM, 60 GB SSD (Table 3, pp.108-109) and a deployed VM with 4 cores, 8 GB and 60 GB (p.107). The lab appliance is smaller (4 GB RAM, 4 CPUs, 40 GB disk) | The lab spec is used for QA, so timings and the 4 h soak are measured below the paper's minimum. Record it in each report; do not file it. The team may raise the lab to the paper's 8 GB / 60 GB |
+| D-7 | *Closed in the October 2026 draft.* The paper now documents a 36-table System-Plugin database (p.64) and a five-table History database of polled snapshots (p.88), and says alert and notification events "are generated by Nagios" (p.120) | Nagios is the source of truth for monitoring state. The repository has `system.db` (application state) and `history.db` (polled Nagios snapshots). The paper says its data types "should be verified against the implemented SQLAlchemy models" (pp.64, 88) |
+| D-8 | *Role names closed in the October 2026 draft:* the use case (p.122) and screenshot (p.150) both say Administrator, Manager, Staff. Still open: no permission matrix anywhere in the paper | **DECIDED (owner, 2026-10-09): derive the matrix from `seed.py`.** Administrator holds every seeded permission (34); Manager and Staff are seeded with none. QA verifies this seeded state and that permissions set in Manage Roles are enforced in the UI and the API. If the team later grants Manager/Staff permissions in the seed, update J9 step 5 and `QA_Test_Plan.md` J9 cases |
+| D-9 | "Real time" is undefined. Dashboard refresh ≤3 s (PT-03, p.128) vs auto-refresh every 5 minutes (SHOT p.151). Host availability reads 16.9% on Network Health (7-day window) and 51.54% on Reports (24 h) for the same hosts, with no formula given | **DECIDED (owner, 2026-10-09): PT-04 clock starts at the Nagios state change** (`last_state_change` of the host/service). Pass = the alert is visible in the app (active-alerts feed, bell) within 3 s of that timestamp. Detection delay (the check interval times the retries; 5 minutes by default today, a setting once #60 lands) is measured and reported separately, not judged against 3 s. **DECIDED: PT-05 is a 4 h agent-run soak** (`QA_Test_Plan.md` PT-05). **Still open:** one availability formula and window for Network Health and Reports. Until decided, QA checks availability sanity only (100% with no outage, lower after one), not equality between the two pages, and files one `needs-decision` |
+| D-10 | Resource metrics promised for "Linux-based hosts" (p.6) vs deployment to "Ubuntu" devices only (pp.10, 62, 109) | Ubuntu is the promised target. Other distributions are best effort; no defects filed |
+| D-11 | *Narrowed in the October 2026 draft.* The earlier claim of "all native monitoring capabilities of Nagios Core" is gone; the paper now says the web interface presents Nagios Core data "such as host and service status, acknowledgements and notification history" (p.9) | The boundary is the specs: Nagios' own UI is not a Pinpoint operator surface (`System_Overview_and_Architecture.md`). Test features with a page in the navigation plus §4D. Do not test every Nagios feature |
 
 ---
 
@@ -434,10 +444,10 @@ Not out of scope. The specs decide; the paper cannot be used to reject them.
 | Item | Needed from | Blocks |
 |------|-------------|--------|
 | One availability formula and window for Network Health and Reports (D-9) | Team | Equality check between the two pages |
-| Paper text of BB-01 to BB-07 (pp.67-68). Only the mapping used in `QA_Test_Plan.md` §5 ("Black-box acceptance") is in the repository | Paper owner | Exact BB wording; the BB-03 mapping is an inference |
+| *Closed:* the paper's BB-01 to BB-07 (pp.126-127) are now mapped in `QA_Test_Plan.md` §5 ("Black-box acceptance"). The earlier BB-03 guess (plugin enablement) was wrong: the paper's BB-03 is Device Monitoring | Paper owner | Nothing |
 | Email alerts (B8) and password recovery (B10) | Installer and application owners | J5 step 5, J1/J9 recovery |
 | First-login setup (#61) | Issue owner | J1 and J9 steps marked "not asserted" |
-| Paper edits: Reports module (p.50), Monitoring Logs (p.51), NRPE to NCPA, email promises (pp.28, 38, 58, 62), plugin counts, outdated screenshots | Paper owner | Nothing in QA; avoids defense questions |
+| Paper edits still open: email promises (pp.46-47, 55, 61, 98, 100, 112, 119-121) until B8 lands; flowchart "adds the devices to monitor with it" (p.98) against automatic attachment; "auto-recommendation of a recommended plugin bundle" (pp.58, 100, 103), which the client has no code for; "Usability" against ISO 25010:2023 "Interaction Capability" (D-2); lab spec below the paper's minimum (D-6); "possible causes" wording (pp.4, 7); Reports screenshots with four views Table 2 omits; the Add User screenshot (p.149) shows a first-sign-in checkbox that is part of #61; PT-05 has no threshold (p.128); duplicate table and figure numbers (Table 9, 10 and 12 each appear twice; Figures 5, 6, 25, 31, 32 and 43 repeat); the 5-point Likert scale (pp.130-131) has 1 as "Strongly agree" | Paper owner | Nothing in QA; avoids defense questions |
 
 ## 7. Known defects the agent must not duplicate
 
@@ -452,6 +462,7 @@ Not out of scope. The specs decide; the paper cannot be used to reject them.
 ## 8. Repository facts checked on 2026-10-09
 
 The paper-versus-repository statements were re-checked against the code on this date.
+The 2026-10-10 realignment re-read the paper (not the code); see §5 for which conflicts closed.
 
 | ID | Statement | Result |
 |----|-----------|--------|

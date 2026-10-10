@@ -7,7 +7,7 @@ What the cases are *for* (journeys, invariants, scope, decisions) is in
 (out of scope) and §7 (known defects). Results go in
 [`docs/test-runs/`](../test-runs/README.md), never in this file.
 
-**Status:** current as of 2026-10-09 against `main` at `13076192`. Sources are named
+**Status:** current as of 2026-10-10 against `main` at `13076192`, aligned with the October 2026 paper draft (163 pages). Sources are named
 per case; where the journeys file and a spec disagree, the journeys file §0 order applies.
 
 ---
@@ -61,8 +61,8 @@ ISO/IEC 25010:2023 defines nine characteristics. The team decided to evaluate fi
 | Tag | Characteristic | What the loop checks | Cases |
 |---|---|---|---|
 | FS | Functional Suitability | The feature does what the spec says, completely and correctly | 45: J1-02, J1-06, J2-01, J2-03, J2-04, J2-07, J2-09, J3-01, J3-02, J4-01, J4-02, J4-03, J4-06, J4-07, J4-08, J5-02, J5-03, J5-04, J5-08, J6-01, J6-02, J6-03, J6-04, J7-01, J7-02, J7-03, J7-06, J7-07, J7-08, J8-01, J8-02, J8-03, J8-04, J9-01, J9-02, J9-09, X3-01, X3-02, X3-03, BB-01, BB-02, BB-03, BB-04, BB-06, BB-07 |
-| PE | Performance Efficiency | Time behavior and stability under the paper's targets | 4: PT-01, PT-02, PT-03, PT-04 |
-| IC | Interaction Capability | A user can complete the task through the UI; messages, states, navigation | 9: J1-05, J2-06, J7-04, J7-05, J8-05, J8-07, J9-06, J9-08, X1-01 |
+| PE | Performance Efficiency | Time behavior and stability under the paper's targets (Table 11, p.128) | 4: PT-01, PT-02, PT-03, PT-04 |
+| IC | Interaction Capability (the paper's "Usability") | A user can complete the task through the UI; messages, states, navigation | 9: J1-05, J2-06, J7-04, J7-05, J8-05, J8-07, J9-06, J9-08, X1-01 |
 | RE | Reliability | Faults are detected, failures stay contained, recovery works, the system stays up | 17: J1-01, J2-02, J2-05, J2-08, J2-10, J3-05, J3-07, J3-08, J3-09, J4-04, J5-01, J5-05, J5-06, J5-07, X5-01, PT-05, BB-05 |
 | SE | Security | Authentication, authorization, secret handling, audit trail | 16: J1-03, J1-04, J1-07, J3-03, J3-04, J3-06, J4-05, J5-09, J6-05, J8-06, J9-03, J9-04, J9-05, J9-07, X2-01, X4-01 |
 
@@ -70,7 +70,7 @@ ISO/IEC 25010:2023 defines nine characteristics. The team decided to evaluate fi
 
 | Characteristic | Why it is excluded from the QA loop |
 |---|---|
-| Compatibility | One supported stack: the Ubuntu 22.04.5 appliance with Nagios Core 4.5.11 and Ubuntu targets (paper Table 5, journeys A9). Interoperability with other systems is not a stated requirement |
+| Compatibility | One supported stack: the Ubuntu 22.04.5 appliance with Nagios Core 4.5.11 and Ubuntu targets (paper Tables 4 and 5, pp.109-110; journeys A9). Interoperability with other systems is not a stated requirement |
 | Maintainability | Code quality is enforced by CI (`scripts/verify.sh`: tests, lint, drift checks), not by exercising the running system |
 | Flexibility | Scalability and adaptability beyond the test tables are out of scope (journeys A10, A11); installability is covered functionally by J1 |
 | Safety | A monitoring dashboard has no physical-harm or hazard scenario; remediation is excluded (A4) |
@@ -148,7 +148,7 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 - **Steps:** 1. `scripts/vmlab fresh`. 2. Read the final healthcheck summary.
 - **Expect:** 1. The command exits 0. 2. The healthcheck reports **0 failed** (60 passed on `main` after #45; a different pass count is recorded but is not a failure if failed is 0).
 
-#### J1-02 Services are wired as the paper and installer say
+#### J1-02 Services are wired as the installer says
 `[FS]` · VM · agent
 - **Pre:** J1-01 passed.
 - **Steps:** 1. On the appliance, list listeners (`ss -ltnp`) and unit states (`systemctl is-active nagios nginx apache2 pinpoint*`; use the unit names the healthcheck prints). 2. `curl -sI http://127.0.0.1:18080/` from the host.
@@ -280,7 +280,7 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 `[RE]` · VM · agent
 - **Pre:** J3-02; `check_ncpa` (listed as `check_ncpa.py`) enabled in Plugin Manager (J4); wait for one Nagios check cycle.
 - **Steps:** Read the NCPA services from `GET /api/system/network-health/services` or Nagios `status.dat`.
-- **Expect:** Three NCPA services per deployed host (CPU, root disk, memory in the 2026-10-08 run; the paper also lists processes, which that run did not show), each with real output, normally OK (a WARNING is a genuine threshold hit, for example memory near 50 %); none CRITICAL with exit code 127. If 127 appears, the installer fix for #45 is missing: reopen #45.
+- **Expect:** Three NCPA services per deployed host (CPU, root disk, memory in the 2026-10-08 run; the paper also lists running processes, p.10, which that run did not show), each with real output, normally OK (a WARNING is a genuine threshold hit, for example memory near 50 %); none CRITICAL with exit code 127. If 127 appears, the installer fix for #45 is missing: reopen #45.
 
 #### J3-06 Deployment is logged
 `[SE]` · VM · agent
@@ -592,7 +592,7 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 `[IC]` · VM · agent
 - **Pre:** J9-02.
 - **Steps:** Use the Active, Inactive and Suspended filters; press Export.
-- **Expect:** Each filter shows only that status; Export downloads a file. Record the format and whether an Export Log entry appears (the paper does not say).
+- **Expect:** Each filter shows only that status; Export downloads a file. Record the format and whether an Export Log entry appears (the paper does not say; SHOT p.148 only shows the button).
 
 #### J9-09 Settings scope
 `[FS]` · VM · agent
@@ -648,7 +648,7 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 
 #### PT-01 Initialisation ≤ 10 s
 `[PE]` · VM · agent
-- **Definition [INFER, confirm with paper p.68]:** from starting the web service to the first successful authenticated response of `GET /api/system/dashboard/summary`.
+- **Definition [INFER; the paper says only "System initialization ≤ 10 seconds", p.128]:** from starting the web service to the first successful authenticated response of `GET /api/system/dashboard/summary`.
 - **Pre:** B0.
 - **Steps:** On the appliance, restart the Pinpoint service (unit name from the healthcheck output); time until `GET /api/user/me` with a fresh session returns 200 and the dashboard summary returns data; repeat three times.
 - **Expect:** The median of three runs is ≤ 10 s.
@@ -675,23 +675,24 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 
 #### PT-05 Stability over a 4-hour soak
 `[RE]` · VM · agent
-- **Pre:** B0 with F-ENABLE and F-NCPA; no other VMs competing for RAM (the appliance has 4 GB).
+- **Definition:** the paper lists PT-05 as "Continuous" "System stability" with no threshold (p.128); the criteria below are the team's.
+- **Pre:** B0 with F-ENABLE and F-NCPA; no other VMs competing for RAM (the appliance has 4 GB, below the paper's 8 GB minimum; journeys D-6).
 - **Steps:** 1. Record the start time, appliance `uptime`, the Gunicorn and Nagios PIDs and free memory. 2. Every 5 minutes for 4 hours: `GET /api/user/me` (after login), `GET /api/system/dashboard/summary`, free memory, and the count of new log lines containing a traceback or HTTP 500 in the Gunicorn journal. 3. At the end repeat step 1.
 - **Expect:** No Gunicorn or Nagios restart (same PIDs, uptime unbroken); no traceback or unhandled HTTP 500 in the journal; the API answered 200 at every sample; fresh status rows were added in each hour (scheduler alive); free memory did not fall by more than 30% from start to end without recovering. Any miss is a `Fail` with the sample time.
 
-### Black-box acceptance (paper pp.67–68)
+### Black-box acceptance (paper pp.126-127)
 
-The black-box cases restate the paper's acceptance tests as aggregates of the cases above, so there is one definition of each behavior. **The mapping is the author's reading of the paper through the journeys file; the paper's own wording of BB-01 to BB-07 is not in the repository. The paper owner must confirm it, and BB-03 in particular is an inference (journeys §6).**
+The black-box cases restate the paper's acceptance tests (Core Functionality Test Cases, pp.126-127) as aggregates of the cases above, so there is one definition of each behavior. The module, input and expected output columns are the paper's words; the *Passes when* column is the mapping to cases. The paper owner should confirm the mapping.
 
-| ID | Passes when | ISO | Env |
-|---|---|---|---|
-| BB-01 Install and first login | J1-01, J1-02, J1-03 pass (J1-06 by a human before release) | FS | VM |
-| BB-02 NCPA deployment | J3-02 and J3-05 pass | FS | VM |
-| BB-03 Plugin enablement (inferred) | J4-03 and J4-04 pass | FS | VM |
-| BB-04 Dashboard display | J7-01 and J7-02 pass | FS | VM |
-| BB-05 Fault alert | J5-01 and J5-03 pass (J5-08 stays `Blocked` until B8) | RE | VM |
-| BB-06 Network discovery | J2-01 and J2-03 pass | FS | VM |
-| BB-07 Monitoring detail | J7-03 and J7-06 pass | FS | VM |
+| ID | Paper module / input → expected output | Passes when | ISO | Env |
+|---|---|---|---|---|
+| BB-01 | Automated Nagios Deployment: administrator initiates deployment → Nagios Core installed and configured | J1-01, J1-02, J1-03 pass (J1-06 by a human before release) | FS | VM |
+| BB-02 | Agent Installation: deployment commands sent to hosts → monitoring agent installed and configured automatically | J3-02 and J3-05 pass | FS | VM |
+| BB-03 | Device Monitoring: client device connected to the monitoring server → system detects host availability and status | J2-03 and J7-07 pass | FS | VM |
+| BB-04 | Service Monitoring: monitoring service enabled → system displays service health and status | J4-03 and J4-04 pass | FS | VM |
+| BB-05 | Alert Notification System: service failure detected → system generates alert notification | J5-05 and J5-03 pass (J5-01 covers a host; J5-08 stays `Blocked` until B8) | RE | VM |
+| BB-06 | Network Discovery: discovered devices → structured view of the network | J2-01 and J2-03 pass | FS | VM |
+| BB-07 | Dashboard Visualization: data collected from devices → summarized network health information | J7-01 and J7-02 pass (J7-03 and J7-06 add detail) | FS | VM |
 
 ---
 
