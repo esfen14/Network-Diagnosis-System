@@ -37,11 +37,13 @@ function RoleStatusField({
   isActive,
   onChange,
   labelClassName,
+  disabled = false,
 }: {
   label: string
   isActive: boolean
   onChange: (isActive: boolean) => void
   labelClassName: string
+  disabled?: boolean
 }) {
   return (
     <div>
@@ -53,7 +55,9 @@ function RoleStatusField({
           aria-checked={isActive}
           aria-label="Role status"
           onClick={() => onChange(!isActive)}
-          className={`relative h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#ffb100]/40 ${
+          disabled={disabled}
+          title={disabled ? 'This role belongs to the super admin and cannot be deactivated.' : undefined}
+          className={`relative h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#ffb100]/40 disabled:cursor-not-allowed disabled:opacity-50 ${
             isActive ? 'bg-[#ffb100]' : 'bg-gray-300'
           }`}
         >
@@ -243,8 +247,9 @@ export function ManageRolesPage() {
                           <button
                             type="button"
                             onClick={() => toggleStatus(role)}
-                            disabled={togglingId === role.id}
-                            className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize disabled:opacity-50 ${
+                            disabled={togglingId === role.id || role.isLocked}
+                            title={role.isLocked ? 'This role belongs to the super admin and cannot be deactivated.' : undefined}
+                            className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize disabled:cursor-not-allowed disabled:opacity-50 ${
                               role.isActive
                                 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
                                 : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
@@ -549,6 +554,7 @@ function EditRoleModal({
                 isActive={form.isActive}
                 onChange={(isActive) => setForm({ ...form, isActive })}
                 labelClassName="mb-1.5 block text-sm text-[var(--text-muted)]"
+                disabled={role.isLocked}
               />
             </div>
 

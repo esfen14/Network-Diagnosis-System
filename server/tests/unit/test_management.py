@@ -16,6 +16,8 @@ Endpoints tested:
   GET  /api/user/me
 """
 import pytest
+import sqlalchemy as sa
+from app import db
 from app.system_models import Role, RolePermission, User, UserStatus, Permission
 
 
@@ -567,6 +569,31 @@ class TestEditAccount:
         resp = logged_in_client.put(
             f"/api/user/accounts/{admin_user.UserID}",
             json=self._payload(admin_role, email=admin_user.Email),
+        )
+        assert resp.status_code == 200
+
+    def test_super_admin_cannot_be_suspended_or_inactivated(
+        self, logged_in_client, db_session, admin_user, admin_role
+    ):
+        first = db.session.execute(
+            sa.select(User).order_by(User.UserID).limit(1)
+        ).scalar_one()
+        for status in ("Suspended", "Inactive"):
+            resp = logged_in_client.put(
+                f"/api/user/accounts/{first.UserID}",
+                json=self._payload(admin_role, email=first.Email, status=status),
+            )
+            assert resp.status_code == 400
+        db.session.refresh(first)
+        assert first.Status == UserStatus.ACTIVE
+
+    def test_other_accounts_can_still_be_suspended(
+        self, logged_in_client, db_session, admin_user, admin_role
+    ):
+        other = _make_user(db_session, admin_role, "other2@example.com")
+        resp = logged_in_client.put(
+            f"/api/user/accounts/{other.UserID}",
+            json=self._payload(admin_role, email=other.Email, status="Suspended"),
         )
         assert resp.status_code == 200
 

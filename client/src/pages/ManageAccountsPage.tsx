@@ -569,7 +569,9 @@ function EditAccountModal({
             <select
               value={form.status}
               onChange={(e) => setForm({ ...form, status: e.target.value as UserStatus })}
-              className={SELECT_CLASS}
+              disabled={user.isSuperAdmin}
+              title={user.isSuperAdmin ? 'The super admin account cannot be suspended or made inactive.' : undefined}
+              className={`${SELECT_CLASS} disabled:cursor-not-allowed disabled:opacity-50`}
             >
               {STATUS_OPTIONS.map((status) => (
                 <option key={status} value={status} className="bg-[var(--card)]">

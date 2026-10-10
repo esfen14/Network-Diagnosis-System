@@ -8,6 +8,14 @@ from app.system_models import User
 def get_user_by_id(user_id: int):
     return db.session.get(User, user_id)
 
+def get_super_admin():
+    """The super admin is the first account ever created (lowest UserID)."""
+    return db.session.scalar(sa.select(User).order_by(User.UserID).limit(1))
+
+def is_super_admin(user_id: int) -> bool:
+    super_admin = get_super_admin()
+    return super_admin is not None and super_admin.UserID == user_id
+
 def get_user_by_email(user_email: str):
     return db.session.scalar(
         sa.select(User)
