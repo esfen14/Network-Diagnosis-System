@@ -304,6 +304,16 @@ its network interfaces (read with `ip -4 -o addr`) as well as the addresses its
 hostname resolves to, so a second network card cannot get the server saved as a
 device.
 
+Discovery starts are serialized by an in-process lock around the running-thread
+check and worker launch, so simultaneous requests cannot both start a scan. For
+a scan observation at an existing address, reconciliation considers ACTIVE,
+MISSING, and ADDRESS_UNKNOWN records, preferring an ACTIVE holder when multiple
+records share the IP. An ADDRESS_UNKNOWN record is reactivated if the observed
+identifiers do not contradict its stored identity; a truly different MAC or
+host key remains an IP-reuse review case and is never silently merged. The SSH
+identity probe uses the configured SSH port and every port nmap names `ssh`,
+including alternate ports such as 2222.
+
 ## NCPA deployment
 
 The SSH command helpers accept `expected_exit_codes` for probes: the account

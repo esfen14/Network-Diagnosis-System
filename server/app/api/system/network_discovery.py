@@ -34,6 +34,7 @@ import sqlalchemy as sa
 
 discovery_thread = None
 discovery_thread_stop_event = threading.Event()
+discovery_start_lock = threading.Lock()
 
 
 def is_discovery_running():
@@ -53,21 +54,24 @@ def start_discovery_thread(user_id):
     """
     global discovery_thread
 
-    if discovery_thread is not None and discovery_thread.is_alive():
-        return False
+    # Reserve the worker while holding the lock: concurrent HTTP requests or
+    # the scheduler must not both observe an idle thread and launch two scans.
+    with discovery_start_lock:
+        if discovery_thread is not None and discovery_thread.is_alive():
+            return False
 
-    discovery_thread_stop_event.clear()
-    discovery_thread = threading.Thread(
-        daemon=True,
-        target=discover_network_create_hosts,
-        args=(app,
-              user_id,
-              discovery_thread_stop_event
-              )
-    )
+        discovery_thread_stop_event.clear()
+        discovery_thread = threading.Thread(
+            daemon=True,
+            target=discover_network_create_hosts,
+            args=(app,
+                  user_id,
+                  discovery_thread_stop_event
+                  )
+        )
 
-    discovery_thread.start()
-    return True
+        discovery_thread.start()
+        return True
 
 
 @system_bp.post('/discover/start')
