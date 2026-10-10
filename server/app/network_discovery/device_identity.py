@@ -345,22 +345,6 @@ def resolve_observation(ip, network, evidence):
 
     if len(owners) == 1:
         device = next(iter(owners.values()))
-        # Cloned hosts can share an SSH key. When a different known device at
-        # this very address owns the observed hardware MAC, keep its ports and
-        # history on that device instead of treating it as a second NIC of the
-        # key owner. Do not prefer a MAC at another address over the key: the
-        # original device may simply have changed its NIC.
-        mac_owners = find_identifier_owners(evidence, (IdentifierKind.MAC,))
-        mac_holder = next(iter(mac_owners.values()), None)
-        if (mac_holder is not None and mac_holder.NetDiscoveryID != device.NetDiscoveryID
-                and mac_holder.IP_Address == ip and mac_holder.Network == network):
-            return Decision(
-                "match", ip, network, evidence, device=mac_holder,
-                review_kind=ReviewKind.DUPLICATE_IDENTITY,
-                review_message=f"{ip}: SSH identity is shared with {device.Nagios_Host_Name}; "
-                               f"kept the known device {mac_holder.Nagios_Host_Name} by address and MAC.",
-                candidates=sorted((device.NetDiscoveryID, mac_holder.NetDiscoveryID)),
-            )
         if contradicts(device, evidence):
             return Decision(
                 "conflict", ip, network, evidence,
@@ -839,8 +823,6 @@ def reconcile_scan(discovered_hosts, discovery_status_id, skip_ips=()):
         if decision.action == "match":
             apply_match(decision.device, decision, data, discovery_status_id)
             device = decision.device
-            if decision.review_kind is not None:
-                add_review_item(decision, discovery_status_id)
         else:
             # A displaced device that this same scan matched elsewhere simply
             # moved; it must not be marked unknown after it was reactivated.

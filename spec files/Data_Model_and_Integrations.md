@@ -312,12 +312,7 @@ records share the IP. An ADDRESS_UNKNOWN record is reactivated if the observed
 identifiers do not contradict its stored identity; a truly different MAC or
 host key remains an IP-reuse review case and is never silently merged. The SSH
 identity probe uses the configured SSH port and every port nmap names `ssh`,
-including alternate ports such as 2222. A cloned SSH key can be shared by
-multiple targets: if a scan observes that key on a known, different device at
-its recorded address with its own matching hardware MAC, reconciliation keeps
-that device and its newly scanned ports rather than dropping the observation
-as a secondary address of the key owner. It records a duplicate-identity
-review item. A true second NIC of one device still belongs to its key owner.
+including alternate ports such as 2222.
 
 ## NCPA deployment
 
