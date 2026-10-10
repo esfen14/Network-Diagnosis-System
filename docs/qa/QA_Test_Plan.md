@@ -60,11 +60,11 @@ ISO/IEC 25010:2023 defines nine characteristics. The team decided to evaluate fi
 
 | Tag | Characteristic | What the loop checks | Cases |
 |---|---|---|---|
-| FS | Functional Suitability | The feature does what the spec says, completely and correctly | 45: J1-02, J1-06, J2-01, J2-03, J2-04, J2-07, J2-09, J3-01, J3-02, J4-01, J4-02, J4-03, J4-06, J4-07, J4-08, J5-02, J5-03, J5-04, J5-08, J6-01, J6-02, J6-03, J6-04, J7-01, J7-02, J7-03, J7-06, J7-07, J7-08, J8-01, J8-02, J8-03, J8-04, J9-01, J9-02, J9-09, X3-01, X3-02, X3-03, BB-01, BB-02, BB-03, BB-04, BB-06, BB-07 |
+| FS | Functional Suitability | The feature does what the spec says, completely and correctly | 46: J1-02, J1-06, J2-01, J2-03, J2-04, J2-07, J2-09, J3-01, J3-02, J4-01, J4-02, J4-03, J4-06, J4-07, J4-08, J5-02, J5-03, J5-04, J5-08, J6-01, J6-02, J6-03, J6-04, J7-01, J7-02, J7-03, J7-06, J7-07, J7-08, J7-09, J8-01, J8-02, J8-03, J8-04, J9-01, J9-02, J9-09, X3-01, X3-02, X3-03, BB-01, BB-02, BB-03, BB-04, BB-06, BB-07 |
 | PE | Performance Efficiency | Time behavior and stability under the paper's targets (Table 11, p.126) | 4: PT-01, PT-02, PT-03, PT-04 |
 | IC | Interaction Capability (the paper's "Usability") | A user can complete the task through the UI; messages, states, navigation | 9: J1-05, J2-06, J7-04, J7-05, J8-05, J8-07, J9-06, J9-08, X1-01 |
-| RE | Reliability | Faults are detected, failures stay contained, recovery works, the system stays up | 17: J1-01, J2-02, J2-05, J2-08, J2-10, J3-05, J3-07, J3-08, J3-09, J4-04, J5-01, J5-05, J5-06, J5-07, X5-01, PT-05, BB-05 |
-| SE | Security | Authentication, authorization, secret handling, audit trail | 16: J1-03, J1-04, J1-07, J3-03, J3-04, J3-06, J4-05, J5-09, J6-05, J8-06, J9-03, J9-04, J9-05, J9-07, X2-01, X4-01 |
+| RE | Reliability | Faults are detected, failures stay contained, recovery works, the system stays up | 19: J1-01, J2-02, J2-05, J2-08, J2-10, J2-11, J3-05, J3-07, J3-08, J3-09, J3-10, J4-04, J5-01, J5-05, J5-06, J5-07, X5-01, PT-05, BB-05 |
+| SE | Security | Authentication, authorization, secret handling, audit trail | 19: J1-03, J1-04, J1-07, J3-03, J3-04, J3-06, J4-05, J5-09, J6-05, J8-06, J9-03, J9-04, J9-05, J9-07, J9-10, J9-11, J9-12, X2-01, X4-01 |
 
 **Not evaluated, with reasons**
 
@@ -102,7 +102,7 @@ takes about 14 min (the default networks include the VirtualBox NAT range and TC
 `GET /api/system/discover/status` instead of starting a second scan. Hosts reach the
 Network Health list a few minutes after the scan ends. Narrowing TCP ports to `1-1024`
 cuts a scan to about 6 min but drops legacy01's SSH port 2222 (add it back as a range such
-as `2200-2299` only after J2-09 is fixed). If the appliance VM was built by another state
+as `2200-2299`; #66 is fixed, with J2-09 retained as a retest). If the appliance VM was built by another state
 folder (for example `pinpoint-appliance-45`), export `VMLAB_STATE_DIR` in the environment;
 it is not read from the config file.
 
@@ -180,7 +180,9 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 
 #### J1-07 First-login setup window (#61)
 `[SE]` · VM · agent
-- **Status:** `Skipped (not built: #61)`. When #61 lands: a fresh-install administrator is blocked by a setup window until a real email and a new password are set; a later-created administrator is not; the Nagios contact then uses the new address. Replace this case with the issue's tests.
+- **Pre:** owner-approved fresh appliance from `scripts/vmlab fresh`; do not run `setup-admin` before checking the setup window. Never print the generated login.
+- **Steps:** Sign in with the state-folder bootstrap credentials; try a protected page and `GET /api/user/accounts`; submit a reserved-domain email and then a valid non-reserved email with a different policy-compliant password through the setup window. Inspect `/api/user/me` and the sanitized config-apply result. For negative paths run `server/.venv/bin/python -m pytest -c server/pytest.ini server/tests/unit/test_admin_setup.py` from the repository root.
+- **Expect:** Setup cannot be skipped; protected API returns 403 before completion. Reserved domains and invalid passwords are rejected. Successful setup clears `needs_setup` and `must_change_password`, unlocks access and rebuilds the contact with the new email. Failed Nagios apply reports a warning without undoing the account change. Later-created administrators do not receive this bootstrap gate. No deliverability assertion. Record browser, API and MOCK results separately.
 
 ### J2. Discover the network
 
@@ -232,19 +234,25 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 `[RE]` · VM · agent
 - **Pre:** J2-01.
 - **Steps:** Run two rescans back to back; list `GET /api/system/network-health/hosts` and the device list; count records per IP.
-- **Expect:** Exactly one record per IP, none in "Address Unknown" while its target is up. **Known defect #59:** if a duplicate appears, comment on #59 with the sequence and `Skipped (known: #59)`; do not file a new issue.
+- **Expect:** Exactly one record per IP, none in "Address Unknown" while its target is up. #59 is fixed; #86 tracks remaining duplicate persistence observed on a build containing that fix. On the inherited #86 baseline record `Skipped (known gap: #86)`, not a clean-baseline pass. Link new evidence to #86 after checking its scope.
 
 #### J2-09 Discovery settings apply to the next scan
 `[FS]` · VM · agent
 - **Pre:** B0, `settings.discovery`.
 - **Steps:** In Settings > Network Discovery narrow TCP ports to `1-1024`, rescan, then add `8080`; save; rescan. (8080 is already inside the default range 1-10000, so adding it alone proves nothing.)
-- **Expect:** A Configuration Change entry records the edit; `app01` (HTTP on 8080) shows a 8080/tcp port after the rescan. Restore the ports afterwards. **Dry run 2026-10-09 failed this** (the port was never recorded): known defect #66.
+- **Expect:** A Configuration Change entry records the edit; `app01` (HTTP on 8080) shows a 8080/tcp port after the rescan. Restore the ports afterwards. Retest of closed #66: the original dry run failed; the port portion passed in [2026-10-10 issue-66](../test-runs/2026-10-10-issue-66/REPORT.md). A fresh port timestamp on an already-existing row proves refresh, not first insertion; record that limitation as Partial rather than claiming the full case passed.
 
 #### J2-10 Maintenance Mode suppresses scheduled scans
 `[RE]` · MOCK · agent
 - **Pre:** none.
 - **Steps:** `scripts/verify.sh backend`; read `server/tests/unit/test_automation.py` for the maintenance case. On the lab, turn Maintenance Mode on in Settings > System.
 - **Expect:** The unit test for maintenance passes. The UI shows the maintenance banner while the setting is on; turn it off afterwards. (Waiting for a 6-hour scheduled scan is not part of the loop.)
+
+#### J2-11 Removing a discovery network preserves device ownership (#67)
+`[RE]` · MOCK · agent
+- **Pre:** isolated backend test environment. The multi-network fixture is not permission to scan outside `10.77.0.0/28` on the VM lab.
+- **Steps:** Run `server/.venv/bin/python -m pytest -c server/pytest.ini server/tests/unit/test_device_identity.py -k 'removed_network_device_not_reassigned or devices_on_networks_that_were_not_scanned'` from the repository root.
+- **Expect:** Both regressions pass. A device from the removed network is not reassigned to a known host in a scanned network; devices in unscanned networks retain their ownership. See Device Inventory AC35. Any live follow-up needs a separately approved fixture and sanitized report; the earlier VM evidence is in `docs/test-runs/2026-10-10-issue-67-retest/REPORT.md`.
 
 ### J3. Deploy NCPA agents
 
@@ -304,7 +312,13 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 `[RE]` · VM · agent
 - **Pre:** J3-02, J2-08.
 - **Steps:** Count device records for 10.77.0.6.
-- **Expect:** One. **Known defect #59** applies exactly as in J2-08.
+- **Expect:** One. The known #86 baseline limitation applies exactly as in J2-08; the original #59 is closed.
+
+#### J3-10 Identity regressions on an isolated fixture
+`[RE]` · MOCK · agent
+- **Pre:** backend test environment installed; no lab or live Nagios required.
+- **Steps:** From the repository root run `server/.venv/bin/python -m pytest -c server/pytest.ini server/tests/unit/test_device_identity.py -k 'address_unknown_host_reactivates or a_rescan_at_the_same_address or known_clone_key_hosts_keep_new_tcp_ports'`.
+- **Expect:** All selected regressions pass: repeat discovery preserves identity and known cloned-key targets retain newly discovered ports. This is isolated regression evidence for #59/#66, not proof that the live #86 finding is fixed.
 
 ### J4. Enable a plugin and put it to work
 
@@ -500,6 +514,12 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 - **Steps:** On `app01` use Monitor, Ignore, Leave suggested, Set service and Remove pin on an HTTP-8080 port, confirming where asked; then repeat read-only as a user without `system.hosts.edit`.
 - **Expect:** Each action behaves as `Device_Inventory_Requirements.md` §5–§6 and criteria 6–23 describe; a view-only user sees no action and the view-only note.
 
+#### J7-09 Check interval validation, apply and rollback (#60)
+`[FS]` · MOCK · agent
+- **Pre:** isolated backend test environment; generated configurations and Nagios writer mocked.
+- **Steps:** Run `server/.venv/bin/python -m pytest -c server/pytest.ini server/tests/unit/test_settings_permissions.py server/tests/unit/test_create_host_cfg.py server/tests/unit/test_status.py server/tests/unit/test_plugin_services_api.py` from the repository root.
+- **Expect:** Tests pass: interval defaults to 5 minutes, accepts 1/2/5/10/15 only, needs `settings.system`, generates host/service intervals through the shared writer, and rolls back settings/version on failed validation or reload. Re-polling the same `Last_Check` adds no duplicate host/service history or performance row. A new check is not suppressed merely because state/output is unchanged. Plugin waiting/stale text follows the configured interval. Live cadence is a separate VM observation, not inferred from MOCK.
+
 ### J8. Report and export
 
 #### J8-01 Host Availability report
@@ -586,7 +606,7 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 `[SE]` · VM · agent
 - **Pre:** J9-02.
 - **Steps:** An administrator resets the user's password; sign in as the user.
-- **Expect:** The old password no longer works; the new one signs in and the user is forced to change it (`Must_Change_Password`); the stored value is a different hash. The first-sign-in checkbox on creation belongs to #61 and is not asserted.
+- **Expect:** The old password no longer works; the new one signs in and the user is forced to change it (`Must_Change_Password`); the stored value is a different hash. The creation checkbox defaults to checked; unchecking opts out only at creation, not after an administrator reset (J9-12).
 
 #### J9-08 Account list filters and export
 `[IC]` · VM · agent
@@ -599,6 +619,24 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 - **Pre:** two users, both able to open Settings.
 - **Steps:** User A changes theme and Dashboard refresh rate; administrator changes scan frequency; read both users' Settings.
 - **Expect:** Theme and refresh rate change only for user A; scan frequency changes for everyone, as the labels say.
+
+#### J9-10 Super administrator cannot be disabled (#72)
+`[SE]` · MOCK · agent
+- **Pre:** isolated backend test environment.
+- **Steps:** Run `server/.venv/bin/python -m pytest -c server/pytest.ini server/tests/unit/test_management.py -k 'super_admin_cannot_be_suspended_or_inactivated or other_accounts_can_still_be_suspended'`.
+- **Expect:** Both tests pass: changing the protected first account to Suspended/Inactive returns 400 and leaves it Active; another account can still be suspended. Do not attempt to disable the live lab administrator as a substitute for this fixture.
+
+#### J9-11 Email-alert opt-in and account permission (#80)
+`[SE]` · MOCK · agent
+- **Pre:** isolated backend test environment with mocked Nagios writer; no email sent.
+- **Steps:** Run `server/.venv/bin/python -m pytest -c server/pytest.ini server/tests/unit/test_email_alerts.py`.
+- **Expect:** New and migrated users default to alerts on. Creation with alerts off and changing the flag require `account.alerts`; resending the unchanged value does not. Only Active opted-in users become contacts; contact-affecting account changes rebuild config. Non-boolean flags are rejected. Failed apply keeps the saved account change and returns config failure information; flag changes are audited. No per-host recipient requirement (#79 excluded).
+
+#### J9-12 First-sign-in password choice and administrator-assisted recovery
+`[SE]` · MOCK · agent
+- **Pre:** isolated backend test environment, no real mail account.
+- **Steps:** Run `server/.venv/bin/python -m pytest -c server/pytest.ini server/tests/unit/test_admin_setup.py server/tests/unit/test_password_requests.py`.
+- **Expect:** Account creation defaults to requiring a password change; explicit false opts out, but an administrator reset forces it again. Public forgot-password requests create at most one Pending request for an active account; unknown/inactive addresses receive the same response. Only authorized administrators list/resolve requests; resolution validates the new password and forces change at next sign-in. A handled request cannot be reused (409). This is administrator-assisted recovery, not an emailed self-service reset link.
 
 ### Invariants
 

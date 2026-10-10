@@ -50,6 +50,7 @@ Status: in-progress
 
 | Round | Change made | Check run | Result |
 |---|---|---|---|
+| Phase 1 / 3 | Added isolated regression cases J2-11, J3-10, J7-09, J9-10..12; replaced first-run placeholder J1-07; corrected closed-defect references and coverage counts | `scripts/verify.sh docs`; header/BB coverage count script | docs check below; no unit or browser execution claimed; journey/SMTP reconciliation still pending |
 | Phase 1 / 2 | Resumed inventory; inspected regression coverage; corrected premature current-status claims to draft reconciliation pending | `scripts/verify.sh docs`; source/spec/test inspection | docs green; case changes next, no runtime pass inferred |
 | Phase 1 / 1 | Merged main at a55ae595, preserved report index rows | `scripts/verify.sh docs` | green; merge f9271feb, semantic drift remains for next steps |
 | Phase 0 / 2 | Guarded scan 6; restored settings; indexed second report; corrected J2-05; filed #86 | API ports/status/settings; merge-base ancestry; `scripts/verify.sh docs` | Partial lab evidence; docs verification recorded below |
@@ -65,7 +66,7 @@ Status: in-progress
 - Last check run (exact command): `scripts/verify.sh docs`
 - Result (first failing lines, or "green"): green (Phase 1 inventory resume, Linux; 61 documents).
 - Hypothesis: merged branch still has semantic documentation drift; source/test inventory identifies changes needed, not runtime passes.
-- Next action: implement step 1.3 case/journey updates from the inventory, inspect Forgot Password source before asserting its flow, then step 1.4 SMTP wording; retain owner questions and draft status.
+- Next action: finish step 1.3 journey wording and browser refresh/permission cases, then 1.4 SMTP ownership and cases. New MOCK cases have written commands but have not been executed; do not infer live coverage. Add PT-06 for #82 afterward.
 
 ## Decisions and notes
 
