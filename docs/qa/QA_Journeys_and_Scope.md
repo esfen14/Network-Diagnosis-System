@@ -7,7 +7,7 @@ six invariants, and the out-of-scope list. The cases that exercise them are in
 
 | | |
 |---|---|
-| **Status** | Current as of 2026-10-11 against `main` at `a55ae595`, aligned with the October 2026 paper draft. Team decisions are final where marked **DECIDED**; everything else is a recommendation the QA agent follows until the team changes it |
+| **Status** | Draft; reconciliation against `main` at `a55ae595` started 2026-10-11 (coverage updates pending), aligned with the October 2026 paper draft. Team decisions are final where marked **DECIDED**; everything else is a recommendation the QA agent follows until the team changes it |
 | **Sources** | The capstone paper, Chapters I-III, October 2026 draft (162 pages; "p." is the printed page number, which equals the PDF page; tables and figures are cited by page because several numbers repeat), the repository specs in `spec files/`, the application code, the installer repository (`lorraine-pangilinan/PinPoint-Installer`) and the lab run reports in `docs/test-runs/` |
 | **Quality model** | ISO/IEC 25010:2023, five characteristics in scope (**DECIDED**, §5 D-2) |
 | **Paper status** | The October 2026 draft was realigned with the repository (§5 lists which conflicts that closed), but it is still a draft and calls the prototype "not totally functional" (p.130). A fact that comes only from the paper may be outdated; the repository and team decisions win |
