@@ -14,6 +14,8 @@ export type User = {
   status: UserStatus
   // The first account (created by the installer). Its status cannot be changed.
   isSuperAdmin: boolean
+  // Whether the user is a Nagios contact and gets alert email (when Active).
+  receiveEmailAlerts: boolean
   createdAt: string
   updatedAt: string
 }
@@ -31,6 +33,7 @@ type AccountApiRecord = {
   role: string
   status: string
   is_super_admin?: boolean
+  receive_email_alerts?: boolean
   created_at: string
   updated_at: string
 }
@@ -45,6 +48,7 @@ export function fromAccountRecord(record: AccountApiRecord): User {
     role: record.role,
     status: record.status.toLowerCase() as UserStatus,
     isSuperAdmin: record.is_super_admin ?? false,
+    receiveEmailAlerts: record.receive_email_alerts ?? true,
     createdAt: record.created_at,
     updatedAt: record.updated_at,
   }

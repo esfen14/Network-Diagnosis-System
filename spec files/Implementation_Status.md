@@ -26,6 +26,7 @@ the normative behavior in the requirement specifications.
 - Alerts and Notifications History list/detail routes backed by Nagios archive
   events and Pinpoint acknowledgement history.
 - Header notification feed with per-user unread cursor.
+- Per-user email alert setting (`User.Receive_Email_Alerts`, permission `account.alerts`): only Active opted-in users become Nagios contacts, and account changes that affect a contact rebuild the Nagios config (#80). Verified on the VM lab: contacts follow account changes without a scan, and host and service notifications reach only opted-in users (#80).
 - Network discovery start/stop/status and Nagios host/service config generation. Repeat scans keep newly configured TCP ports on existing devices even when lab targets share a cloned SSH key: a matching hardware MAC at the device's current address prevents secondary-address suppression (#66; VM retest in `docs/test-runs/2026-10-10-issue-66/`). The #67 cross-network known-address matching fix passes isolated backend tests; an initial existing-appliance VM run was only partial evidence (`docs/test-runs/2026-10-10-issue-67/`). A fresh VM reproduction retained the NAT gateway and its ports on its own record after removing that network, and two J2-08 rescans left unique ACTIVE lab records (`docs/test-runs/2026-10-10-issue-67-retest/`).
 - NCPA eligibility, SSH fingerprint trust (approved key only), login checks,
   deployment with per-device outcomes, cancellation, status, run history and
@@ -51,6 +52,7 @@ the normative behavior in the requirement specifications.
 - Account and role management.
 - System Settings and per-user preferences.
 - Settings -> Plugins tab (`settings.plugins`): the SNMP OID table and the NCPA metric table, each editable once its plugin (`check_snmp`, `check_ncpa`) is installed; saving rebuilds the Nagios config. A metric's `fallback_path` (used when no partitions were recorded) is supported by the planner but not editable from the tab.
+- Settings -> Email tab (`settings.email`): Gmail over STARTTLS on port 587 with an app password, applied through the installer's root helper; a test email reports a rejected login, blocked port and unknown host separately. Gmail only; Google Workspace and Microsoft 365 (OAuth) and other TLS modes are out of scope. The helper exists only on installed appliances, so saving elsewhere returns "The mail helper is not installed on this server."
 - System Logs with five backend categories.
 - Reports UI for host availability and network services.
 - Plugin Manager inventory/running tabs, details, scan, custom plugin, and
@@ -67,6 +69,7 @@ the normative behavior in the requirement specifications.
 |---|---|---|
 | History frontend | `/history` is routed to `HistoryPage` with a sidebar entry and the `system.history` client permission, and calls the list and detail routes. It has not been audited against `Alerts_Notifications_History_Requirements.md` | Audit the page against the requirements and fix gaps |
 | Auto-resolved acknowledgements | `AckAction.AUTO_RESOLVED` and model contract exist; status polling does not clean resolved active acknowledgements | On UP/OK transition, delete the active acknowledgement and append an AUTO_RESOLVED history record |
+| Per-host alert recipients | Every contact is in one `system_users` group used by all hosts and services | Choose recipients per host (#79), after #80 is verified on the VM lab |
 | Discovery stop permission | Stop route checks `network.discovery`; seed data defines `system.discover` | Standardize the route on the seeded permission or deliberately introduce/seed the alternate permission |
 | System Status page and topology exclusion | `TopologyPage` at `/topology` is the **System Status** service-status page and is kept (team decision 2026-10-08). The network topology view is the excluded feature. The route, file and component names still say “topology” | Rename the route, file and component so they no longer say “topology” (filed separately); do not remove the page or its sidebar entry |
 | Email alerts and password recovery | Nagios contacts are built from user emails, but nothing configures a mail transport or SMTP relay, so no notification email is sent. The login page's “Forgot Password?” button has no handler and the server has no recovery route (the only reset is an administrator resetting a password). The first-login setup that replaces the installer's placeholder email is #61 (open); mail transport is the installer repository's work; the application-side design is the draft `SMTP_Admin_Email_Plan.md` on branch `docs/smtp-admin-email-plan` (not merged) | Land #61, the installer mail transport and the SMTP settings, then design password recovery on top |

@@ -20,14 +20,14 @@ The seed command currently defines these permissions:
 
 ```text
 role.edit, role.view, role.info, role.list
-account.view, account.edit, account.info
+account.view, account.edit, account.info, account.alerts
 system.discover, system.deploy.ncpa, system.hosts, system.hosts.edit, system.logs
 system.report, system.notifications, system.services, system.network_health
 system.acknowledge_alerts, system.dashboard, system.history
 plugin.scan, plugin.view, plugin.enable, plugin.disable
 plugin.command_override, plugin.command_restore, plugin.validate
 plugin.custom_add, plugin.custom_check, plugin.update, plugin.update_rollback
-settings.security, settings.system, settings.discovery, settings.plugins
+settings.security, settings.system, settings.discovery, settings.plugins, settings.email
 ```
 
 Some seeded permissions are not attached to a current route. That is tracked as
@@ -67,10 +67,10 @@ current-state inventory rather than treated as intended permission design.
 | `GET /api/user/roles/<id>` | `role.info` | Role detail and permission set |
 | `PUT /api/user/roles/<id>` | `role.edit` | Replace role metadata and permissions |
 | `PUT /api/user/roles/<id>/status` | `role.edit` | Change role active status |
-| `POST /api/user/accounts` | `account.edit` | Create a user account. Optional `require_password_change` (boolean, default true) sets `Must_Change_Password`; unticked, the user is not forced to change the admin-chosen password at first sign-in |
+| `POST /api/user/accounts` | `account.edit` | Create a user account. Optional `require_password_change` (boolean, default true) sets `Must_Change_Password`; unticked, the user is not forced to change the admin-chosen password at first sign-in. Optional `receive_email_alerts` (boolean, default true); sending `false` needs `account.alerts` (403 otherwise). An Active account with alerts on is a Nagios contact, so the config is rebuilt through `regenerate_and_apply_config_status()`; the response carries `config_applied`, `config_ok`, `config_message` (a failed apply does not undo the account) |
 | `GET /api/user/accounts` | `account.view` | Paginated account list |
-| `GET /api/user/accounts/<id>` | `account.info` | Account detail |
-| `PUT /api/user/accounts/<id>` | `account.edit` | Edit account details/status; users are not deleted. `password`/`confirm_password` are optional (omit to keep the password, so suspend/deactivate needs none). Setting a password on another account (always, regardless of the create-form option), or returning an account to Active from Suspended/Inactive, sets `Must_Change_Password` |
+| `GET /api/user/accounts/<id>` | `account.info` | Account detail, including `receive_email_alerts` (the list rows carry it too) |
+| `PUT /api/user/accounts/<id>` | `account.edit` | Edit account details/status; users are not deleted. `password`/`confirm_password` are optional (omit to keep the password, so suspend/deactivate needs none). Setting a password on another account (always, regardless of the create-form option), or returning an account to Active from Suspended/Inactive, sets `Must_Change_Password`. Optional `receive_email_alerts` (boolean): changing it needs `account.alerts` (403 otherwise; resending the current value is allowed) and is written to the activity log. When the account's Nagios contact changes (status, alerts setting, email or name of an Active alert user), the config is rebuilt as on create and the response carries `config_applied`, `config_ok`, `config_message` |
 | `GET /api/user/me` | Login | Return the current user, permissions, `must_change_password` and `needs_setup` |
 | `POST /api/user/complete-setup` | Login (`Needs_Setup` only) | First-run setup for the bootstrap administrator: `current_password`, `new_email`, `new_password`, `confirm_password`. Checks the current password and the password policy; rejects an invalid or already-used email, the installer's `pinpoint.lan` placeholder domain, and reserved/non-routable domains (`.local`, `.lan`, `.test`, `.example`, `.invalid`, `.localhost`, `.internal`, `home.arpa`). No deliverability check. Saves both, clears `Needs_Setup` and `Must_Change_Password`, writes an audit-log entry, then regenerates the Nagios config through `regenerate_and_apply_config_status()` (Nagios contacts are named and addressed by `User.Email`). Returns `config_applied`, `config_ok`, `config_message`; a failed apply does not undo the account change. 400 for any other account. While `Needs_Setup` is set, every `/api` route except login, logout, `/me` and this one returns 403 (`enforce_password_change`), including `change-password` |
 | `POST /api/user/change-password` | Login | Change the caller's own password (`current_password`, `new_password`, `confirm_password`); clears `Must_Change_Password`. While that flag is set every other `/api` route except login, logout and `/me` returns 403 (`enforce_password_change`). A user whose status is no longer Active is signed out on their next request |
@@ -193,6 +193,17 @@ this is a documented implementation mismatch, not a recommended convention.
 |---|---|---|
 | `GET /api/system/discovery-settings` | `settings.discovery` | Effective discovery settings, their `config.py` defaults, and whether a scan is running |
 | `PUT /api/system/discovery-settings` | `settings.discovery` | Save networks, TCP/UDP ports and the Port -> Service tables (`tcpPortServices`, `udpPortServices`: the service expected on each port); every field is required, the version must match. GET also returns `ncpaPort`, the derived NCPA entry in the TCP table (accepted back but never stored; mapping that port to anything but `ncpa` is a 400) and `resolution` (which check each entry leads to) |
+
+### `app/api/system/smtp_settings.py`
+
+Settings -> Email: the Gmail account notification mail is sent through (Gmail
+only, STARTTLS on port 587). Logic is in `app/smtp_settings.py`.
+
+| Method and path | Permission | Purpose |
+|---|---|---|
+| `GET /api/system/smtp-settings` | `settings.email` | `settings` (`provider`, `host`, `port`, `tls`, `username`, `sender`, `passwordSet`, `configured`, `version`, `updatedAt`) and `presets.gmail`. The password is never returned, only whether one is saved |
+| `PUT /api/system/smtp-settings` | `settings.email` | Save `{version, provider, host, port, tls, username, sender?, password?}`. Only `gmail`, `smtp.gmail.com`, 587 and `starttls` are accepted (`none`/`ssl` are 400); `username` and `sender` are email addresses (sender defaults to the username); `password` is printable ASCII, at most 200 characters, used exactly as sent (never trimmed or stripped of spaces) and may be left out or empty once one is saved. The settings go to the root helper (`sudo -n /usr/local/sbin/pinpoint-apply-smtp`, one JSON object on stdin) and are saved only if it exits 0; its stderr is returned as the message (400 when it rejected the input, 500 when it is missing or timed out). 409 on a stale version. Writes Configuration Change entries (`smtp_settings`, the password logged only as `changed`) when audit logging is on |
+| `POST /api/system/smtp-settings/test` | `settings.email` | Send a test message to the signed-in user's address over STARTTLS with the saved settings (400 when none are saved). Always 200 with `{ok, recipient}` or `{ok: false, code, message, explanation, details}`; `code` is `auth_failed` (535, `BadCredentials`, "Username and Password not accepted": friendly Gmail app-password message), `connect_failed` (blocked port 587), `host_not_found`, `tls_failed`, `rejected` or `send_failed`; `message` is plain language, `explanation` says technically what happened and what to check, and `details` is the mail server's own text |
 
 ### `app/api/system/plugin_settings.py`
 

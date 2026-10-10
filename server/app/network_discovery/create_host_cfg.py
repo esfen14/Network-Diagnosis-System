@@ -490,11 +490,17 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
         """
     )
 
+    # Only active users who have email alerts on are contacts.
     users = db.session.scalars(
         sa.select(User).where(
-            User.Status == UserStatus.ACTIVE
+            User.Status == UserStatus.ACTIVE,
+            User.Receive_Email_Alerts.is_(True),
         )
     ).all()
+
+    # Nagios rejects an empty contact group, so with no eligible user no group
+    # is written and hosts and services get no contact_groups line.
+    contact_group_name = "system_users" if users else ""
 
     for user in users:
         user_information = {
@@ -518,15 +524,16 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
         """
     )
 
-    contact_group = {
-        "group_name": "system_users",
-        "alias_name": "Nagios Users",
-        "member_list": ",".join(user.Email for user in users)
-    }
+    if users:
+        contact_group = {
+            "group_name": contact_group_name,
+            "alias_name": "Nagios Users",
+            "member_list": ",".join(user.Email for user in users)
+        }
 
-    host_config.append(create_contactgroup(contact_group))
+        host_config.append(create_contactgroup(contact_group))
 
-    host_config.append(_add_space(4))
+        host_config.append(_add_space(4))
 
 
     host_config.append(
@@ -608,7 +615,7 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
             host["host_name"] = host_data["data"]["hostname"]
             host["alias"] = "alias"
             host["address"] = ip
-            host["contact_groups"] = "system_users"
+            host["contact_groups"] = contact_group_name
             if not active_checks:
                 host["active_checks_enabled"] = False
                 host["notes"] = inactive_note
@@ -664,7 +671,7 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
                 service = {
                     "host_name": host_data["data"]["hostname"],
                     "service_name": service_name,
-                    "contact_groups": "system_users"
+                    "contact_groups": contact_group_name
                 }
                 if not active_checks:
                     service["active_checks_enabled"] = False
@@ -680,7 +687,7 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
                 service = {
                     "host_name": host_data["data"]["hostname"],
                     "service_name": service_name,
-                    "contact_groups": "system_users"
+                    "contact_groups": contact_group_name
                 }
                 if not active_checks:
                     service["active_checks_enabled"] = False
@@ -708,7 +715,7 @@ def _create_host_cfg_file(discovered_hosts, skipped=None):
             host_config.append(create_service({
                 "host_name": custom_checks.SERVER_HOST_NAME,
                 "service_name": service_name,
-                "contact_groups": "system_users",
+                "contact_groups": contact_group_name,
             }, command))
             host_config.append(_add_space(4))
 

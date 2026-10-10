@@ -80,6 +80,11 @@ class User(UserMixin, db.Model):
     Needs_Setup: so.Mapped[bool] = so.mapped_column(
         sa.Boolean(), default=False, server_default=sa.false()
     )
+    # Whether this user becomes a Nagios contact (and so gets alert email).
+    # Only Active users are ever contacts, whatever this says.
+    Receive_Email_Alerts: so.Mapped[bool] = so.mapped_column(
+        sa.Boolean(), default=True, server_default=sa.true()
+    )
     Created_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     Updated_At: so.Mapped[datetime] = so.mapped_column(default=lambda: datetime.now(timezone.utc),onupdate= lambda: datetime.now(timezone.utc))
 
@@ -821,6 +826,35 @@ class PluginSettings(db.Model):
     # {variable: value} saved from Settings -> Plugins, e.g. {"oids": [{"metric": ..., "oid": ...}]}.
     # A variable that is absent uses its config.py default.
     Variables: so.Mapped[dict] = so.mapped_column(sa.JSON())
+
+    # Concurrency + audit trail
+    Version: so.Mapped[int] = so.mapped_column(sa.Integer(), default=1)
+    Updated_At: so.Mapped[datetime] = so.mapped_column(
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    Updated_By: so.Mapped[Optional[int]] = so.mapped_column(sa.ForeignKey(User.UserID), index=True)
+
+
+class SmtpSettings(db.Model):
+    """
+    The singleton (Id 1) behind Settings -> Email: the SMTP account Nagios
+    notification mail is sent through. The password is kept encrypted
+    (app/secrets_store.py) so it can be re-applied without asking again, and
+    the API never returns it.
+    """
+    # Table Name
+    __tablename__ = "SMTP_SETTINGS"
+
+    # Table Fields
+    Id: so.Mapped[int] = so.mapped_column(primary_key=True)
+    Provider: so.Mapped[str] = so.mapped_column(sa.String(20), default="gmail")
+    Host: so.Mapped[str] = so.mapped_column(sa.String(255))
+    Port: so.Mapped[int] = so.mapped_column(sa.Integer())
+    Tls: so.Mapped[str] = so.mapped_column(sa.String(10), default="starttls")
+    Username: so.Mapped[str] = so.mapped_column(sa.String(255))
+    Sender: so.Mapped[str] = so.mapped_column(sa.String(255))
+    Password_Encrypted: so.Mapped[Optional[str]] = so.mapped_column(sa.Text())
 
     # Concurrency + audit trail
     Version: so.Mapped[int] = so.mapped_column(sa.Integer(), default=1)

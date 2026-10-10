@@ -35,6 +35,16 @@ type StatusFilter = 'all' | UserStatus
 
 const STATUS_OPTIONS: UserStatus[] = ['active', 'inactive', 'suspended']
 
+// Account saves that change a Nagios contact also rebuild the Nagios config.
+type AccountSaveResult = { config_ok?: boolean; config_message?: string } | null
+
+function configNotice(result: AccountSaveResult) {
+  if (result?.config_ok === false) {
+    return `The account was saved but Nagios was not updated: ${result.config_message}`
+  }
+  return null
+}
+
 async function fetchAccounts(): Promise<User[]> {
   const data = await apiGet<{ items: Parameters<typeof fromAccountRecord>[0][] }>(
     '/api/user/accounts?per_page=100'
@@ -60,6 +70,7 @@ export function ManageAccountsPage() {
 
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -190,6 +201,10 @@ export function ManageAccountsPage() {
 
         </div>
 
+        {notice && (
+          <p className="mb-4 text-sm text-red-500 dark:text-red-400">{notice}</p>
+        )}
+
         {isLoading ? (
           <div className="rounded-2xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-500 dark:border-white/10 dark:bg-[#171B20] dark:text-gray-400">
             Loading users…
@@ -209,9 +224,11 @@ export function ManageAccountsPage() {
         <AddAccountModal
           roleOptions={roleOptions}
           strongPasswordPolicy={settings.strongPasswordPolicy}
+          canEditAlerts={hasPermission('account.alerts')}
           onCancel={() => setShowAddModal(false)}
-          onCreated={() => {
+          onCreated={(result) => {
             setShowAddModal(false)
+            setNotice(configNotice(result))
             refreshUsers()
           }}
         />
@@ -223,9 +240,11 @@ export function ManageAccountsPage() {
           user={editingUser}
           roleOptions={roleOptions}
           strongPasswordPolicy={settings.strongPasswordPolicy}
+          canEditAlerts={hasPermission('account.alerts')}
           onCancel={() => setEditingUser(null)}
-          onSaved={() => {
+          onSaved={(result) => {
             setEditingUser(null)
+            setNotice(configNotice(result))
             refreshUsers()
           }}
         />
@@ -238,13 +257,15 @@ export function ManageAccountsPage() {
 function AddAccountModal({
   roleOptions,
   strongPasswordPolicy,
+  canEditAlerts,
   onCancel,
   onCreated,
 }: {
   roleOptions: RoleOption[]
   strongPasswordPolicy: boolean
+  canEditAlerts: boolean
   onCancel: () => void
-  onCreated: () => void
+  onCreated: (result: AccountSaveResult) => void
 }) {
   const [form, setForm] = useState({
     firstName: '',
@@ -255,6 +276,7 @@ function AddAccountModal({
     password: '',
     confirmPassword: '',
     requirePasswordChange: true,
+    receiveEmailAlerts: true,
   })
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -272,7 +294,7 @@ function AddAccountModal({
     setIsSaving(true)
     setError(null)
     try {
-      await apiPost('/api/user/accounts', {
+      const result = await apiPost<AccountSaveResult>('/api/user/accounts', {
         first_name: form.firstName.trim(),
         last_name: form.lastName.trim(),
         email: form.email.trim(),
@@ -281,8 +303,9 @@ function AddAccountModal({
         status: form.status,
         role_id: form.roleId,
         require_password_change: form.requirePasswordChange,
+        ...(canEditAlerts ? { receive_email_alerts: form.receiveEmailAlerts } : {}),
       })
-      onCreated()
+      onCreated(result)
     } catch (err) {
       setError(errorMessage(err, 'Unable to create the account.'))
     } finally {
@@ -432,6 +455,17 @@ function AddAccountModal({
           Require password change at first sign-in
         </label>
 
+        {canEditAlerts && (
+          <label className="mt-2 flex items-center justify-center gap-2 text-sm text-[var(--text)]">
+            <input
+              type="checkbox"
+              checked={form.receiveEmailAlerts}
+              onChange={(e) => setForm({ ...form, receiveEmailAlerts: e.target.checked })}
+            />
+            Send this user email alerts
+          </label>
+        )}
+
         {error && (
           <p className="mt-3 text-center text-sm text-red-500 dark:text-red-400">{error}</p>
         )}
@@ -453,14 +487,16 @@ function EditAccountModal({
   user,
   roleOptions,
   strongPasswordPolicy,
+  canEditAlerts,
   onCancel,
   onSaved,
 }: {
   user: User
   roleOptions: RoleOption[]
   strongPasswordPolicy: boolean
+  canEditAlerts: boolean
   onCancel: () => void
-  onSaved: () => void
+  onSaved: (result: AccountSaveResult) => void
 }) {
   const matchingRole = roleOptions.find((r) => r.name === user.role)
 
@@ -470,6 +506,7 @@ function EditAccountModal({
     email: user.email,
     roleId: matchingRole?.id ?? roleOptions[0]?.id ?? 0,
     status: user.status,
+    receiveEmailAlerts: user.receiveEmailAlerts,
   })
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -486,15 +523,16 @@ function EditAccountModal({
     setIsSaving(true)
     setError(null)
     try {
-      await apiPut(`/api/user/accounts/${user.id}`, {
+      const result = await apiPut<AccountSaveResult>(`/api/user/accounts/${user.id}`, {
         first_name: form.firstName.trim(),
         last_name: form.lastName.trim(),
         email: form.email.trim(),
         role_id: form.roleId,
         status: form.status,
+        ...(canEditAlerts ? { receive_email_alerts: form.receiveEmailAlerts } : {}),
         ...(changingPassword ? { password: newPassword, confirm_password: confirmPassword } : {}),
       })
-      onSaved()
+      onSaved(result)
     } catch (err) {
       setError(errorMessage(err, 'Unable to update the account.'))
     } finally {
@@ -580,6 +618,17 @@ function EditAccountModal({
               ))}
             </select>
           </div>
+
+          {canEditAlerts && (
+            <label className="flex items-center gap-2 self-end pb-2 text-sm text-[var(--text)]">
+              <input
+                type="checkbox"
+                checked={form.receiveEmailAlerts}
+                onChange={(e) => setForm({ ...form, receiveEmailAlerts: e.target.checked })}
+              />
+              Send this user email alerts
+            </label>
+          )}
 
         </div>
 

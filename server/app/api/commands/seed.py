@@ -29,6 +29,7 @@ PERMISSIONS = [
     "account.view",
     "account.edit",
     "account.info",
+    "account.alerts",
     "system.discover",
     "system.deploy.ncpa",
     "system.hosts",
@@ -56,6 +57,7 @@ PERMISSIONS = [
     "settings.system",
     "settings.discovery",
     "settings.plugins",
+    "settings.email",
 ]
 
 ROLES = [
