@@ -147,13 +147,21 @@ describe('SettingsPage tabs', () => {
   })
 
   it('shows all tabs with every settings permission', () => {
-    signIn(['settings.security', 'settings.system', 'settings.discovery', 'settings.plugins'])
+    signIn(['settings.security', 'settings.system', 'settings.discovery', 'settings.plugins', 'settings.email'])
     renderSettings()
 
     expect(screen.getByRole('button', { name: /security/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^system$/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /network discovery/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^plugins$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^email$/i })).toBeInTheDocument()
+  })
+
+  it('shows Email only with its own permission', () => {
+    signIn(['settings.system'])
+    renderSettings()
+
+    expect(screen.queryByRole('button', { name: /^email$/i })).not.toBeInTheDocument()
   })
 
   it('shows Plugins only with its own permission', () => {

@@ -51,6 +51,7 @@ the normative behavior in the requirement specifications.
 - Account and role management.
 - System Settings and per-user preferences.
 - Settings -> Plugins tab (`settings.plugins`): the SNMP OID table and the NCPA metric table, each editable once its plugin (`check_snmp`, `check_ncpa`) is installed; saving rebuilds the Nagios config. A metric's `fallback_path` (used when no partitions were recorded) is supported by the planner but not editable from the tab.
+- Settings -> Email tab (`settings.email`): Gmail over STARTTLS on port 587 with an app password, applied through the installer's root helper; a test email reports a rejected login, blocked port and unknown host separately. Gmail only; Google Workspace and Microsoft 365 (OAuth) and other TLS modes are out of scope. The helper exists only on installed appliances, so saving elsewhere returns "The mail helper is not installed on this server."
 - System Logs with five backend categories.
 - Reports UI for host availability and network services.
 - Plugin Manager inventory/running tabs, details, scan, custom plugin, and
