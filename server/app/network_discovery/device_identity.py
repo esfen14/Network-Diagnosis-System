@@ -56,7 +56,7 @@ STRONG_KINDS = (
 )
 
 # Device states in which an IP may still be treated as "this device's address".
-IP_MATCHABLE_STATES = (DeviceState.ACTIVE, DeviceState.MISSING)
+IP_MATCHABLE_STATES = (DeviceState.ACTIVE, DeviceState.MISSING, DeviceState.ADDRESS_UNKNOWN)
 
 
 def utcnow():
@@ -300,13 +300,19 @@ def find_identifier_owners(evidence, kinds):
 
 def find_ip_holder(ip, network, exclude_ids=()):
     """Return the device currently recorded at (ip, network) in a matchable state, if any."""
+    order_clause = sa.case(
+        (NetworkDiscovery.Device_State == DeviceState.ACTIVE, 1),
+        (NetworkDiscovery.Device_State == DeviceState.MISSING, 2),
+        (NetworkDiscovery.Device_State == DeviceState.ADDRESS_UNKNOWN, 3),
+        else_=4,
+    )
     return db.session.scalar(
         sa.select(NetworkDiscovery).where(
             NetworkDiscovery.IP_Address == ip,
             NetworkDiscovery.Network == network,
             NetworkDiscovery.Device_State.in_(IP_MATCHABLE_STATES),
             NetworkDiscovery.NetDiscoveryID.not_in(list(exclude_ids) or [-1]),
-        ).order_by(NetworkDiscovery.NetDiscoveryID)
+        ).order_by(order_clause, NetworkDiscovery.NetDiscoveryID)
     )
 
 

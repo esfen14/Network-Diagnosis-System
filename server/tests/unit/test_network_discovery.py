@@ -7,6 +7,7 @@ Endpoints tested:
   GET  /api/system/discover/status
 """
 import pytest
+from threading import Event, Thread
 from unittest.mock import patch, MagicMock
 
 from app.system_models import (
@@ -70,6 +71,45 @@ class TestDiscoverStart:
         assert resp.status_code == 202
         data = resp.get_json()
         assert "message" in data
+
+    def test_simultaneous_starts_reserve_one_scan(self, app):
+        """Two requests that both see an idle worker must not launch two scans."""
+        import app.api.system.network_discovery as nd_module
+
+        entered = Event()
+        release = Event()
+        results = []
+        old_thread = nd_module.discovery_thread
+        existing = MagicMock()
+
+        def check_idle():
+            entered.set()
+            assert release.wait(timeout=5)
+            return False
+
+        existing.is_alive.side_effect = check_idle
+        nd_module.discovery_thread = existing
+
+        def start():
+            with app.app_context():
+                results.append(nd_module.start_discovery_thread(1))
+
+        try:
+            with patch.object(nd_module.threading, "Thread") as worker_cls:
+                worker_cls.return_value.is_alive.return_value = True
+                workers = [Thread(target=start) for _ in range(2)]
+                workers[0].start()
+                assert entered.wait(timeout=5)
+                workers[1].start()
+                release.set()
+                for worker in workers:
+                    worker.join(timeout=5)
+                assert all(not worker.is_alive() for worker in workers)
+                assert sorted(results) == [False, True]
+                assert worker_cls.call_count == 1
+        finally:
+            release.set()
+            nd_module.discovery_thread = old_thread
 
     def test_discover_start_already_running(self, logged_in_client, db_session):
         """When discovery_thread.is_alive() is True, expect 400."""
