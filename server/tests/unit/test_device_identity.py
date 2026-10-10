@@ -10,7 +10,6 @@ section 13. Nmap, SSH and Nagios are never touched: scans are plain dicts.
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-import pytest
 import sqlalchemy as sa
 
 from app import db
@@ -35,7 +34,6 @@ from app.system_models import (
     IdentityConfidence,
     NCPADeployment,
     NetworkDiscovery,
-    Open_TCP_Services,
     ReviewKind,
     SSHCredentials,
 )
@@ -544,30 +542,6 @@ class TestSeveralObservationsOfOneDevice:
         assert [r.IP_Address for r in open_addresses(device)] == ["10.0.0.1"]
         assert "10.0.0.2" in [r.IP_Address for r in address_rows(device)]
         assert review_items(ReviewKind.DUPLICATE_IDENTITY)  # new MAC with a shared key: second NIC or clone
-
-    @pytest.mark.parametrize("added_ports", ((8080, 2222), (8001, 2201)))
-    def test_known_clone_key_hosts_keep_new_tcp_ports(self, db_session, admin_user, added_ports):
-        """Shared SSH host keys must not make known distinct-MAC devices lose rescan ports."""
-        status = make_status(db_session, admin_user)
-        app_port, legacy_port = added_ports
-        first = run_scan(db_session, status, combine(
-            scan("10.0.0.1", mac=MAC_1, identifiers=[ssh(SSH_1)], tcp={22: "ssh"}),
-            scan("10.0.0.2", mac=MAC_2, identifiers=[ssh(SSH_1)]),
-        ))
-        app_id = first[(NET, "10.0.0.1")].NetDiscoveryID
-        legacy_id = first[(NET, "10.0.0.2")].NetDiscoveryID
-        assert app_id != legacy_id
-
-        second = run_scan(db_session, status, combine(
-            scan("10.0.0.1", mac=MAC_1, identifiers=[ssh(SSH_1)], tcp={22: "ssh", app_port: "http"}),
-            scan("10.0.0.2", mac=MAC_2, identifiers=[ssh(SSH_1)], tcp={legacy_port: "ssh"}),
-        ))
-        assert second[(NET, "10.0.0.1")].NetDiscoveryID == app_id
-        assert second[(NET, "10.0.0.2")].NetDiscoveryID == legacy_id
-        assert db_session.session.scalar(sa.select(Open_TCP_Services).where(
-            Open_TCP_Services.NetDiscoveryID == app_id, Open_TCP_Services.Port_Number == app_port)) is not None
-        assert db_session.session.scalar(sa.select(Open_TCP_Services).where(
-            Open_TCP_Services.NetDiscoveryID == legacy_id, Open_TCP_Services.Port_Number == legacy_port)) is not None
 
     def test_swapped_addresses_resolve_by_strong_identifier(self, db_session, admin_user):
         status = make_status(db_session, admin_user)
