@@ -119,11 +119,10 @@ has the roles Administrator, Manager and Staff (§4A A16); where a journey says
      are refused and create no session.
   5. The stored password is a hash, never plaintext [PAPER p.64].
   6. Sign out asks for confirmation, then requires a new login [SHOT p.154].
-- **First-login setup (#61, open, not built).** The target behavior is that the
-  installer's administrator is blocked until it sets a real email and a new password;
-  later-created administrators are not blocked. Until #61 lands the agent asserts
-  none of this. When it lands, add the gate to J1 (and to the VM lab scripts, which
-  must complete the window).
+- **First-login setup (#61, implemented).** The bootstrap administrator must set a
+  non-reserved email and new password before protected pages become available.
+  Later-created administrators do not receive the bootstrap gate. J1-07 checks the
+  window before any lab setup helper completes it; a fresh reset still needs approval.
 - **Variants:** a failed install is rerun [PAPER p.96]. Credentials already removed:
   the credentials script says so and does nothing.
 
@@ -151,10 +150,12 @@ has the roles Administrator, Manager and Staff (§4A A16); where a journey says
   7. A paused device (`Include_Device_In_Scanning` false) is kept in the device list but
      left out of Nagios and out of Dashboard/Network Health counts
      (`Device_Inventory_Requirements.md` §12).
-  8. One device record per host. **Known defect #59 (open):** a duplicate
-     "Address Unknown" record can remain for one host (seen once, trigger unconfirmed).
-     The agent checks for duplicates, and if it finds one it comments on #59 instead of
-     filing a new issue.
+  8. One device record per host. #59/#66/#67 are closed; retain regression cases
+     J2-08/J2-09/J2-11/J3-10. #86 tracks duplicate persistence on a build containing
+     those fixes; the creation trigger remains unisolated. Do not infer a clean
+     baseline from the inherited database or file duplicate findings.
+  9. Removing a network preserves device ownership in unscanned networks. Newly
+     added scan-setting ports are recorded on known devices (J2-09/J2-11).
 - **Variants:**
   - A failed scan can be rerun [PAPER p.97].
   - Changes in Settings > Network Discovery (networks, TCP/UDP ports, service
@@ -244,10 +245,12 @@ has the roles Administrator, Manager and Staff (§4A A16); where a journey says
   3. An in-app notification appears (bell icon) [PAPER p.119; SHOT p.135].
   4. The alert appears in History > Alerts, and the notification in History >
      Notifications (`Alerts_Notifications_History_Requirements.md`).
-  5. **Email (B8): not built.** The paper promises email alerts through a Gmail SMTP relay
-     [PAPER pp.46, 60, 97, 99, 111, 118] and sets alert generation at 3 s or less
-     [PAPER p.126, PT-04]; it does not say that the 3 s covers email delivery. Do not
-     assert email (§4B B8).
+  5. **Email (B8): implemented application controls.** The installer owns mail
+     provisioning; this repository owns Settings > Email, SMTP settings routes and
+     the test-email action (J5-08/J5-10). Real inbox delivery is HUMAN (J5-11).
+     PT-04's three-second threshold does not apply to email delivery. Only Active
+     users opted into email alerts are Nagios contacts (J9-11); per-host recipients
+     (#79) remain outside this change.
   6. Alert types promised: server down, service failure, high CPU [PAPER p.99]. High CPU
      needs NCPA thresholds (J3).
   7. Restoring the service returns it to UP/OK on every page, and the History shows a
@@ -291,8 +294,12 @@ has the roles Administrator, Manager and Staff (§4A A16); where a journey says
      [SHOT p.135]. Graphs come from PNP4Nagios [PAPER pp.46, 111].
   3. NCPA hosts show CPU, memory, disk and processes. Ping-only hosts show availability
      and latency only [PAPER pp.10, 108].
-  4. Auto-refresh defaults to 5 minutes (`Dashboard_Refresh_Rate`) with a manual
-     refresh. A refresh completes in ≤3 s (PT-03).
+  4. Auto-refresh defaults to 5 minutes (`Dashboard_Refresh_Rate`) per user. Nagios
+     Check interval separately accepts 1/2/5/10/15 minutes (default 5), and the
+     poller runs every 60 seconds; the General tab hint distinguishes these clocks.
+     A manual refresh does not force a Nagios check. J7-09 covers interval validation
+     and rollback; PT-03 judges rendering and PT-06 measures history storage.
+     Deduplication is by `Last_Check`, not state/output changes.
   5. Counts reconcile across pages (X3).
   6. The Network Health network card shows IP range, gateway, subnet mask, DNS server,
      ISP and location, plus a "Last Scan" time [SHOT p.135]. The paper does not say
@@ -352,10 +359,14 @@ has the roles Administrator, Manager and Staff (§4A A16); where a journey says
      account. Scan frequency, notifications and export formats are system-wide
      [SHOT p.150]. Verify a change by one user does or does not reach another, as
      labelled; the "Mixed" scope note is on SHOT p.150.
-  8. For accounts created while #61 is open: a password reset forces a change at next
-     sign-in (`Must_Change_Password`). The "Require password change at first sign-in"
-     checkbox on account creation is part of #61 and is not asserted until it lands (SHOT p.148 already shows the checkbox,
-     but the checked-out client has none).
+  8. The first-sign-in password checkbox defaults to checked. Unchecking opts out
+     at creation, but an administrator reset still forces a change (J9-12).
+  9. The first administrator cannot be suspended or inactivated; other accounts
+     can (J9-10). Email alerts default on; changing the flag needs `account.alerts`
+     and contact-affecting changes rebuild Nagios configuration (J9-11).
+  10. Forgot Password submits an administrator-assisted request, not a self-service
+      email reset link. Unknown/inactive addresses receive the same response;
+      duplicate pending requests are suppressed (J9-12).
 
 ---
 
@@ -394,9 +405,9 @@ prototype is "not totally functional" [PAPER p.130].
 |----|------|--------|---------------------|
 | B4 | Reports. The paper once promised "downtime summary" and "alert history" reports | **DECIDED (team, 2026-10-08): ship the two current views** (Host Availability, Network Services). The backend has six report endpoints; the other four have no required screen | Tests the two views. Table 2 (p.100) now lists exactly these two, so the paper matches; its screenshots (pp.142-144) still show the other four views |
 | B5 | Monitoring Logs: the paper once promised service-check results, host status changes, alert history and downtime records | **DECIDED (team, 2026-10-08): History is enough.** It covers alert and notification history. Service-check results and downtime records get no page | Tests History only. Table 2 (p.100) now lists the History page and the log tabs, so the paper matches |
-| B8 | **Gmail SMTP email alerts** [PAPER pp.46, 54, 60, 97, 99, 111, 117-119] | **Not built.** SMTP configuration moves to the installer repository (mail transport on the appliance); the application side is the real-email requirement in #61 and `SMTP_Admin_Email_Plan.md` on branch `docs/smtp-admin-email-plan` (draft, not merged). Until both land the paper's email claims are unmet | Asserts only that a notification event appears in History > Notifications. Once built: mock SMTP server first, then real Gmail by hand (human case) |
+| B8 | **Gmail SMTP email alerts** | **DECIDED (owner, 2026-10-11):** installer owns mail provisioning; this repository owns Settings > Email, `/api/system/smtp-settings` and test-email controls (PR #81) | J5-08 MOCK, J5-10 permission/UI, J5-11 HUMAN inbox. Installer failures become sanitized notes for its owner, not defects here. No delivery-time threshold |
 | B9 | **"System Status" page** | **DECIDED (team, 2026-10-08): keep.** The paper now includes it (Table 1 Sprint 6, p.54; SHOT p.137). The repository implements it in `TopologyPage.tsx` at `/topology`, labelled "System Status" in the sidebar, and `Implementation_Status.md` still says to remove the route and entry | Treats the page as a core page (J5-J7). Does not remove it and does not file the `/topology` URL as a defect. Follow-up (filed separately): rename the route and file so they no longer say "topology" |
-| B10 | "Forgot Password?" on the login page | **Unhandled in code (checked 2026-10-09):** `LoginPage.tsx` renders a button with no click handler, and the server has no recovery route. The only reset is an administrator resetting a password in Manage Accounts. The recovery flow belongs to the SMTP work (it needs working email) | Asserts the button is present and does nothing harmful. Files at most one `needs-decision` issue. Does not assert recovery works |
+| B10 | "Forgot Password?" on the login page | **Implemented:** public request and administrator-assisted reset, not an emailed recovery link | J9-12 covers request deduplication, generic response and authorized resolution; browser execution remains pending |
 
 ### 4C. Lab artifacts, not requirements (ignore)
 
@@ -453,10 +464,8 @@ Not out of scope. The specs decide; the paper cannot be used to reject them.
 
 | Issue | What | Effect on journeys |
 |-------|------|--------------------|
-| #66, #67 (open) | Found by the 2026-10-09 dry run: ports added to the scan settings are not recorded on known devices (J2-09); removing a network reassigns its device and duplicates web01 | J2-09: Fail, comment on #66 |
-| #59 (open) | Discovery can leave a duplicate "Address Unknown" device record for one host; NCPA deployed to the dead record is never checked | J2 step 8, J3 step 7: comment on the issue |
-| #60 (open) | The Nagios check interval is hard-coded to 5 minutes and the poller stores repeated rows | J5 detection delay, PT-04 reporting, availability figures (D-9) |
-| #61 (open) | First-login setup is not built | J1 and J9 steps marked "not asserted" |
+| [#86](https://github.com/esfen14/Pinpoint/issues/86) | Duplicate Address Unknown records persist on the inherited lab despite #59/#66/#67 fixes; creation sequence not isolated | J2-08/J3-09: link persistence evidence, not a new duplicate issue; fresh reset still requires approval |
+| [#82](https://github.com/esfen14/Pinpoint/issues/82) | Full-hour controlled history measurement remains pending; #60 implementation is closed | PT-06 is a measurement follow-up, not a product failure |
 | `Implementation_Status.md` gaps | Auto-resolved acknowledgements, discovery stop permission, History audit and others | Do not file a gap that is listed there; file only when the behavior contradicts a requirement |
 
 ## 8. Repository facts checked on 2026-10-09

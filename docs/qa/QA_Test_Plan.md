@@ -60,9 +60,9 @@ ISO/IEC 25010:2023 defines nine characteristics. The team decided to evaluate fi
 
 | Tag | Characteristic | What the loop checks | Cases |
 |---|---|---|---|
-| FS | Functional Suitability | The feature does what the spec says, completely and correctly | 46: J1-02, J1-06, J2-01, J2-03, J2-04, J2-07, J2-09, J3-01, J3-02, J4-01, J4-02, J4-03, J4-06, J4-07, J4-08, J5-02, J5-03, J5-04, J5-08, J6-01, J6-02, J6-03, J6-04, J7-01, J7-02, J7-03, J7-06, J7-07, J7-08, J7-09, J8-01, J8-02, J8-03, J8-04, J9-01, J9-02, J9-09, X3-01, X3-02, X3-03, BB-01, BB-02, BB-03, BB-04, BB-06, BB-07 |
-| PE | Performance Efficiency | Time behavior and stability under the paper's targets (Table 11, p.126) | 4: PT-01, PT-02, PT-03, PT-04 |
-| IC | Interaction Capability (the paper's "Usability") | A user can complete the task through the UI; messages, states, navigation | 9: J1-05, J2-06, J7-04, J7-05, J8-05, J8-07, J9-06, J9-08, X1-01 |
+| FS | Functional Suitability | The feature does what the spec says, completely and correctly | 47: J1-02, J1-06, J2-01, J2-03, J2-04, J2-07, J2-09, J3-01, J3-02, J4-01, J4-02, J4-03, J4-06, J4-07, J4-08, J5-02, J5-03, J5-04, J5-08, J5-11, J6-01, J6-02, J6-03, J6-04, J7-01, J7-02, J7-03, J7-06, J7-07, J7-08, J7-09, J8-01, J8-02, J8-03, J8-04, J9-01, J9-02, J9-09, X3-01, X3-02, X3-03, BB-01, BB-02, BB-03, BB-04, BB-06, BB-07 |
+| PE | Performance Efficiency | Time behavior and stability under the paper's targets (Table 11, p.126) | 5: PT-01, PT-02, PT-03, PT-04, PT-06 |
+| IC | Interaction Capability (the paper's "Usability") | A user can complete the task through the UI; messages, states, navigation | 10: J1-05, J2-06, J5-10, J7-04, J7-05, J8-05, J8-07, J9-06, J9-08, X1-01 |
 | RE | Reliability | Faults are detected, failures stay contained, recovery works, the system stays up | 19: J1-01, J2-02, J2-05, J2-08, J2-10, J2-11, J3-05, J3-07, J3-08, J3-09, J3-10, J4-04, J5-01, J5-05, J5-06, J5-07, X5-01, PT-05, BB-05 |
 | SE | Security | Authentication, authorization, secret handling, audit trail | 19: J1-03, J1-04, J1-07, J3-03, J3-04, J3-06, J4-05, J5-09, J6-05, J8-06, J9-03, J9-04, J9-05, J9-07, J9-10, J9-11, J9-12, X2-01, X4-01 |
 
@@ -418,9 +418,23 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 - **Steps:** `scripts/vmlab targets load web01 --seconds 90`; poll the CPU service state for 5 minutes.
 - **Expect:** The NCPA CPU service moves to WARNING or CRITICAL while load is high and returns to OK afterwards. (Skipped in earlier runs; first lab run of this case.)
 
-#### J5-08 Email within 3 seconds
-`[FS]` · VM · agent
-- **Status:** `Blocked (B8, not built)`. Recorded every run so the gap stays visible. When SMTP exists: mock SMTP server first, then a real Gmail account by hand as a `HUMAN` case.
+#### J5-08 SMTP settings and test-email response
+`[FS]` · MOCK · agent
+- **Pre:** isolated backend environment; SMTP transport and installer helper mocked. Installer owns mail provisioning; this repository owns Settings > Email, `/api/system/smtp-settings`, and the test-email action.
+- **Steps:** Run `server/.venv/bin/python -m pytest -c server/pytest.ini server/tests/unit/test_smtp_settings.py` from the repository root.
+- **Expect:** Tests pass for permission enforcement, Gmail-only `smtp.gmail.com`/587/STARTTLS, optimistic-version conflict (409), helper failure without saving, password secrecy and preservation of an existing password on blank input. A successful send returns `ok:true`; a failed send can be HTTP 200 with `ok:false`, a useful error code and explanation. HTTP 200 alone is not send success. No three-second email-delivery threshold is specified.
+
+#### J5-10 Email tab permissions and error presentation
+`[IC]` · VM · agent (UI)
+- **Pre:** an existing configured lab, administrator with `settings.email`, and a second user without it; do not provision a real mail account for this case.
+- **Steps:** Open Settings as each user. As the permitted user inspect the locked Gmail preset, blank password field and saved/not-saved indicator. As the restricted user call `GET /api/system/smtp-settings`. If no SMTP settings exist, press Send test email and inspect the error; otherwise leave live sending to J5-11. Do not overwrite existing SMTP secrets.
+- **Expect:** Email tab is available only with `settings.email`; restricted API request returns 403. Saved passwords are never displayed. An unconfigured test action reports that settings must be saved. Record which branch was exercised; configured send/error branches are covered by J5-08 MOCK or J5-11 HUMAN, not inferred from this read-only UI check.
+
+#### J5-11 Real email delivery
+`[FS]` · VM · HUMAN
+- **Pre:** owner-provisioned mail transport and owner-controlled sender/recipient accounts, authorization to send a test message; no credentials in evidence.
+- **Steps:** A person saves the Gmail settings through Settings > Email, checks saved-state feedback, sends one test email and confirms arrival in the signed-in recipient's inbox. Record the result without message contents or addresses. Retain or restore settings as agreed with the owner.
+- **Expect:** Save succeeds and the app reports successful sending; the intended inbox receives the message. Transport/provisioning failures go to the installer owner as sanitized notes, not application defects unless the in-repo contract fails. No delivery-time threshold asserted.
 
 #### J5-09 Alert path for a Staff user without acknowledge permission
 `[SE]` · MOCK · agent
@@ -487,8 +501,8 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 #### J7-04 Refresh behavior
 `[IC]` · VM · agent
 - **Pre:** B0.
-- **Steps:** Read the Dashboard refresh rate in Settings > General (default 5 min); press the manual refresh and measure the time to render.
-- **Expect:** The default is 5 minutes; manual refresh updates the data. The 3-second budget is judged in PT-03.
+- **Steps:** Read the Dashboard refresh rate in Settings > General (default 5 min), the system Check interval in Settings > System, and the General tab's refresh hint; press manual refresh and measure render time.
+- **Expect:** Browser refresh defaults to 5 minutes and is per user. The hint names the configured Nagios check interval and independent 60-second poll. Manual refresh fetches data, not a discovery scan or forced Nagios check. The 3-second budget is judged separately in PT-03.
 
 #### J7-05 Network card and "Not configured" tiles
 `[IC]` · VM · agent
@@ -717,6 +731,51 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 - **Pre:** B0 with F-ENABLE and F-NCPA; no other VMs competing for RAM (the appliance has 4 GB, below the paper's 8 GB minimum; journeys D-6).
 - **Steps:** 1. Record the start time, appliance `uptime`, the Gunicorn and Nagios PIDs and free memory. 2. Every 5 minutes for 4 hours: `GET /api/user/me` (after login), `GET /api/system/dashboard/summary`, free memory, and the count of new log lines containing a traceback or HTTP 500 in the Gunicorn journal. 3. At the end repeat step 1.
 - **Expect:** No Gunicorn or Nagios restart (same PIDs, uptime unbroken); no traceback or unhandled HTTP 500 in the journal; the API answered 200 at every sample; fresh status rows were added in each hour (scheduler alive); free memory did not fall by more than 30% from start to end without recovering. Any miss is a `Fail` with the sample time.
+
+#### PT-06 Controlled status-history rows per object per hour (#82)
+`[PE]` · VM · agent
+- **Status:** pending the controlled run; not satisfied by the short [#60 VM comparison](../test-runs/2026-10-10-issue-60/REPORT.md).
+- **Pre:** owner-approved fresh/reverted appliance for each phase, one appliance at a time; equivalent target/plugin configuration and selected host/service set. Baseline is `27ebe46d0b3658820927740ccb9ebfd6f79a4613` (main immediately before PR #83); after is `a55ae595` or a recorded later main SHA. Use five-minute Nagios check intervals in both phases (baseline default); do not change baseline product code to add the later setting. Confirm actual generated intervals and `interval_length=60`. Finish discovery and first checks before starting; no pending selected objects.
+- **Steps:** With reset approval, use `scripts/vmlab fresh <pushed-baseline-branch>` for baseline and `scripts/vmlab fresh <pushed-after-branch>` for after; record the exact app SHA from each deployment. Complete setup and approved lab-only discovery before timing. On each appliance record a UTC start and end separated by at least 3600 seconds. Between boundaries make no config/discovery changes, reloads or restarts. Record selected hostnames and `(hostname, service)` pairs before the window, and separately record host and service counts. Run the read-only extraction below on each appliance with its actual history database path and boundaries. Retain extracts outside git; summarize rates and after/before ratios per matching object. If generated names differ across fresh builds, explicitly map them to the same target/service rather than comparing by name alone.
+- **Expect:** After-phase stored rows equal distinct `Last_Check` values per selected object in the window; repeated polls of an unchanged check are not duplicated. A new check can have unchanged output/state and still creates a row. Report rows/hour and after/before ratios; no numeric reduction threshold is specified (owner decision if required). A shorter window, missing selected object, unmatched interval, pending first check, or config/restart confounder is not a controlled pass. Record and repeat the invalid phase. The aggregate query measures stored samples, not checks Nagios executed but the poller missed.
+
+Read-only extraction (run on the appliance; substitute the measured UTC boundaries and
+actual history DB path, not a guessed file). Inspect the output locally, choose the
+pre-recorded objects, and keep raw output outside the repository:
+
+```bash
+python3 - /absolute/path/to/history.db '2026-10-11T00:00:00+00:00' '2026-10-11T01:00:00+00:00' <<'PY'
+import datetime as dt
+import json
+import pathlib
+import sqlite3
+import sys
+path, start, end = sys.argv[1:]
+a, b = (dt.datetime.fromisoformat(v) for v in (start, end))
+assert a.utcoffset() == b.utcoffset() == dt.timedelta(0), 'UTC boundaries required'
+hours = (b - a).total_seconds() / 3600
+assert hours >= 1, 'At least one complete hour per phase'
+conn = sqlite3.connect(pathlib.Path(path).resolve().as_uri() + '?mode=ro', uri=True)
+conn.execute('PRAGMA query_only=ON')
+print(json.dumps({'start': start, 'end': end, 'hours': hours}))
+for table, columns in [('HOST_STATUS', 'Hostname'), ('SERVICE_STATUS', 'Hostname, Service')]:
+    # Only fixed table/column names above are interpolated. Boundaries are parameters.
+    rows = conn.execute(f'''SELECT {columns}, count(*), count(DISTINCT Last_Check)
+        FROM {table} WHERE julianday(Timestamp) >= julianday(?)
+        AND julianday(Timestamp) < julianday(?) GROUP BY {columns} ORDER BY {columns}''',
+        (start, end)).fetchall()
+    print(json.dumps({'table': table, 'observed_objects': len(rows)}))
+    for row in rows:
+        print(json.dumps({'object': row[:-2], 'rows': row[-2],
+                          'distinct_last_check': row[-1], 'rows_per_hour': row[-2] / hours}))
+conn.close()
+PY
+```
+
+Use `[start,end)` based on insertion `Timestamp` in both phases. Record service counts
+separately from host counts; exclude stock localhost objects if they are not part of
+the matched fixture, explicitly and consistently. Record window clock offsets and
+any scheduled discovery, restart or reload observed during the window.
 
 ### Black-box acceptance (paper pp.124-125)
 
