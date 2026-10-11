@@ -18,12 +18,15 @@ This directory is the authoritative documentation set for Pinpoint. The root
 | [`Implementation_Status.md`](Implementation_Status.md) | Current implemented surface, incomplete work, exclusions, and known code/spec mismatches |
 | [`Display_Requirements.md`](Display_Requirements.md) | Normative Dashboard, Network Health, and alert-acknowledgement behavior and API shapes |
 | [`Alerts_Notifications_History_Requirements.md`](Alerts_Notifications_History_Requirements.md) | Normative Alerts and Notifications History page behavior |
+| [`Device_Inventory_Requirements.md`](Device_Inventory_Requirements.md) | Normative Device Inventory behavior: a device's ports and why each is or is not monitored, pin/hold/ignore actions, the monitoring-state label, and pause/resume, with acceptance criteria |
 | [`Plugins_List.md`](Plugins_List.md) | Nagios Plugins 2.4.12 capability, argument, output, and performance-data reference |
+| [`../docs/qa/QA_Test_Plan.md`](../docs/qa/QA_Test_Plan.md) | QA test cases, coverage model, and methodology |
 
 ## Document types
 
-- **Normative requirements** define what the product must do. The two page
-  requirement documents are authoritative for their named user experiences.
+- **Normative requirements** define what the product must do. The three page
+  requirement documents (Dashboard/Network Health, Alerts/Notifications History,
+  Device Inventory) are authoritative for their named user experiences.
 - **Architecture specifications** define boundaries and invariants that changes
   must preserve.
 - **Inventories** describe the currently implemented code and must be refreshed

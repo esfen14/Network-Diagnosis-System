@@ -7,7 +7,7 @@ What the cases are *for* (journeys, invariants, scope, decisions) is in
 (out of scope) and §7 (known defects). Results go in
 [`docs/test-runs/`](../test-runs/README.md), never in this file.
 
-**Status:** current as of 2026-10-09 against `main` at `13076192`. Sources are named
+**Status:** draft; reconciliation against `main` at `a55ae595` started 2026-10-11 (coverage updates pending), aligned with the October 2026 paper draft (162 pages). Sources are named
 per case; where the journeys file and a spec disagree, the journeys file §0 order applies.
 
 ---
@@ -60,17 +60,17 @@ ISO/IEC 25010:2023 defines nine characteristics. The team decided to evaluate fi
 
 | Tag | Characteristic | What the loop checks | Cases |
 |---|---|---|---|
-| FS | Functional Suitability | The feature does what the spec says, completely and correctly | 45: J1-02, J1-06, J2-01, J2-03, J2-04, J2-07, J2-09, J3-01, J3-02, J4-01, J4-02, J4-03, J4-06, J4-07, J4-08, J5-02, J5-03, J5-04, J5-08, J6-01, J6-02, J6-03, J6-04, J7-01, J7-02, J7-03, J7-06, J7-07, J7-08, J8-01, J8-02, J8-03, J8-04, J9-01, J9-02, J9-09, X3-01, X3-02, X3-03, BB-01, BB-02, BB-03, BB-04, BB-06, BB-07 |
-| PE | Performance Efficiency | Time behavior and stability under the paper's targets | 4: PT-01, PT-02, PT-03, PT-04 |
-| IC | Interaction Capability | A user can complete the task through the UI; messages, states, navigation | 9: J1-05, J2-06, J7-04, J7-05, J8-05, J8-07, J9-06, J9-08, X1-01 |
-| RE | Reliability | Faults are detected, failures stay contained, recovery works, the system stays up | 17: J1-01, J2-02, J2-05, J2-08, J2-10, J3-05, J3-07, J3-08, J3-09, J4-04, J5-01, J5-05, J5-06, J5-07, X5-01, PT-05, BB-05 |
-| SE | Security | Authentication, authorization, secret handling, audit trail | 16: J1-03, J1-04, J1-07, J3-03, J3-04, J3-06, J4-05, J5-09, J6-05, J8-06, J9-03, J9-04, J9-05, J9-07, X2-01, X4-01 |
+| FS | Functional Suitability | The feature does what the spec says, completely and correctly | 47: J1-02, J1-06, J2-01, J2-03, J2-04, J2-07, J2-09, J3-01, J3-02, J4-01, J4-02, J4-03, J4-06, J4-07, J4-08, J5-02, J5-03, J5-04, J5-08, J5-11, J6-01, J6-02, J6-03, J6-04, J7-01, J7-02, J7-03, J7-06, J7-07, J7-08, J7-09, J8-01, J8-02, J8-03, J8-04, J9-01, J9-02, J9-09, X3-01, X3-02, X3-03, BB-01, BB-02, BB-03, BB-04, BB-06, BB-07 |
+| PE | Performance Efficiency | Time behavior and stability under the paper's targets (Table 11, p.126) | 5: PT-01, PT-02, PT-03, PT-04, PT-06 |
+| IC | Interaction Capability (the paper's "Usability") | A user can complete the task through the UI; messages, states, navigation | 10: J1-05, J2-06, J5-10, J7-04, J7-05, J8-05, J8-07, J9-06, J9-08, X1-01 |
+| RE | Reliability | Faults are detected, failures stay contained, recovery works, the system stays up | 19: J1-01, J2-02, J2-05, J2-08, J2-10, J2-11, J3-05, J3-07, J3-08, J3-09, J3-10, J4-04, J5-01, J5-05, J5-06, J5-07, X5-01, PT-05, BB-05 |
+| SE | Security | Authentication, authorization, secret handling, audit trail | 19: J1-03, J1-04, J1-07, J3-03, J3-04, J3-06, J4-05, J5-09, J6-05, J8-06, J9-03, J9-04, J9-05, J9-07, J9-10, J9-11, J9-12, X2-01, X4-01 |
 
 **Not evaluated, with reasons**
 
 | Characteristic | Why it is excluded from the QA loop |
 |---|---|
-| Compatibility | One supported stack: the Ubuntu 22.04.5 appliance with Nagios Core 4.5.11 and Ubuntu targets (paper Table 5, journeys A9). Interoperability with other systems is not a stated requirement |
+| Compatibility | One supported stack: the Ubuntu 22.04.5 appliance with Nagios Core 4.5.11 and Ubuntu targets (paper Tables 4 and 5, p.108; journeys A9). Interoperability with other systems is not a stated requirement |
 | Maintainability | Code quality is enforced by CI (`scripts/verify.sh`: tests, lint, drift checks), not by exercising the running system |
 | Flexibility | Scalability and adaptability beyond the test tables are out of scope (journeys A10, A11); installability is covered functionally by J1 |
 | Safety | A monitoring dashboard has no physical-harm or hazard scenario; remediation is excluded (A4) |
@@ -102,7 +102,7 @@ takes about 14 min (the default networks include the VirtualBox NAT range and TC
 `GET /api/system/discover/status` instead of starting a second scan. Hosts reach the
 Network Health list a few minutes after the scan ends. Narrowing TCP ports to `1-1024`
 cuts a scan to about 6 min but drops legacy01's SSH port 2222 (add it back as a range such
-as `2200-2299` for J2-09). If the appliance VM was built by another state
+as `2200-2299`; #66 is fixed, with J2-09 retained as a retest). If the appliance VM was built by another state
 folder (for example `pinpoint-appliance-45`), export `VMLAB_STATE_DIR` in the environment;
 it is not read from the config file.
 
@@ -148,7 +148,7 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 - **Steps:** 1. `scripts/vmlab fresh`. 2. Read the final healthcheck summary.
 - **Expect:** 1. The command exits 0. 2. The healthcheck reports **0 failed** (60 passed on `main` after #45; a different pass count is recorded but is not a failure if failed is 0).
 
-#### J1-02 Services are wired as the paper and installer say
+#### J1-02 Services are wired as the installer says
 `[FS]` · VM · agent
 - **Pre:** J1-01 passed.
 - **Steps:** 1. On the appliance, list listeners (`ss -ltnp`) and unit states (`systemctl is-active nagios nginx apache2 pinpoint*`; use the unit names the healthcheck prints). 2. `curl -sI http://127.0.0.1:18080/` from the host.
@@ -180,7 +180,9 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 
 #### J1-07 First-login setup window (#61)
 `[SE]` · VM · agent
-- **Status:** `Skipped (not built: #61)`. When #61 lands: a fresh-install administrator is blocked by a setup window until a real email and a new password are set; a later-created administrator is not; the Nagios contact then uses the new address. Replace this case with the issue's tests.
+- **Pre:** owner-approved fresh appliance from `scripts/vmlab fresh`; do not run `setup-admin` before checking the setup window. Never print the generated login.
+- **Steps:** Sign in with the state-folder bootstrap credentials; try a protected page and `GET /api/user/accounts`; submit a reserved-domain email and then a valid non-reserved email with a different policy-compliant password through the setup window. Inspect `/api/user/me` and the sanitized config-apply result. For negative paths run `server/.venv/bin/python -m pytest -c server/pytest.ini server/tests/unit/test_admin_setup.py` from the repository root.
+- **Expect:** Setup cannot be skipped; protected API returns 403 before completion. Reserved domains and invalid passwords are rejected. Successful setup clears `needs_setup` and `must_change_password`, unlocks access and rebuilds the contact with the new email. Failed Nagios apply reports a warning without undoing the account change. Later-created administrators do not receive this bootstrap gate. No deliverability assertion. Record browser, API and MOCK results separately.
 
 ### J2. Discover the network
 
@@ -212,9 +214,9 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 
 #### J2-05 Changed network is applied and reloaded; unchanged is not
 `[RE]` · VM · agent
-- **Pre:** J2-01 passed.
-- **Steps:** 1. Run a rescan with no change to the lab. 2. Run `scripts/vmlab targets ssh-port web02 2222`, wait one minute, rescan. 3. Restore with `scripts/vmlab targets ssh-port web02 22`. Read System Logs > Network Discovery after each.
-- **Expect:** 1. "Host configuration unchanged; Nagios was not reloaded." 2. A changed configuration is written ("New host.cfg successfully applied") and Nagios reloads; the web02 port record updates. 3. Restored. Mark `destructive`: restore step 3 even on failure.
+- **Pre:** J2-01 passed; identities have settled with one active device per target; TCP scan settings include 22 and 2222. Record the plugin state and existing port states first.
+- **Steps:** 1. Run a rescan with no change to the lab. 2. Run `scripts/vmlab targets ssh-port web02 2222`, wait one minute, rescan once. Inspect the port rows and System Logs > Network Discovery. 3. Restore with `scripts/vmlab targets ssh-port web02 22` even on failure; rescan only after the preceding scan is terminal and confirm the live listener and port observations are restored.
+- **Expect:** 1. "Host configuration unchanged; Nagios was not reloaded." 2. The newly found SSH port is recorded, but one missed scan does not remove the old port or force an SSH-port switch. An unchanged config is valid when no enabled plugin changes the generated services. The old port is preferred until its lifecycle excludes it: after 5 missed scans a Suggested port archives, while a Monitored port becomes Missing and retains its Nagios service. Judge reload versus no reload against an actual generated-config change, not the physical move alone (`Data_Model_and_Integrations.md`, port lifecycle; `port_lifecycle.py`, `age_unseen_port` and `device_ssh_port`). 3. The live SSH listener is back on 22. A separate five-scan lifecycle run is not implied by this one-rescan case. Mark `destructive`: always restore step 3.
 
 #### J2-06 Cancel a scan
 `[IC]` · VM · agent
@@ -232,19 +234,25 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 `[RE]` · VM · agent
 - **Pre:** J2-01.
 - **Steps:** Run two rescans back to back; list `GET /api/system/network-health/hosts` and the device list; count records per IP.
-- **Expect:** Exactly one record per IP, none in "Address Unknown" while its target is up. **Known defect #59:** if a duplicate appears, comment on #59 with the sequence and `Skipped (known: #59)`; do not file a new issue.
+- **Expect:** Exactly one record per IP, none in "Address Unknown" while its target is up. #59 is fixed; #86 tracks remaining duplicate persistence observed on a build containing that fix. On the inherited #86 baseline record `Skipped (known gap: #86)`, not a clean-baseline pass. Link new evidence to #86 after checking its scope.
 
 #### J2-09 Discovery settings apply to the next scan
 `[FS]` · VM · agent
 - **Pre:** B0, `settings.discovery`.
 - **Steps:** In Settings > Network Discovery narrow TCP ports to `1-1024`, rescan, then add `8080`; save; rescan. (8080 is already inside the default range 1-10000, so adding it alone proves nothing.)
-- **Expect:** A Configuration Change entry records the edit; `app01` (HTTP on 8080) shows a 8080/tcp port after the rescan. Restore the ports afterwards. The 2026-10-09 dry run failed; the port portion passed on the VM lab in [`2026-10-10 issue-66`](../test-runs/2026-10-10-issue-66/REPORT.md). The Configuration Change row was observed in the appliance database; the browser UI was not driven.
+- **Expect:** A Configuration Change entry records the edit; `app01` (HTTP on 8080) shows a 8080/tcp port after the rescan. Restore the ports afterwards. Retest of closed #66: the original dry run failed; the port portion passed in [2026-10-10 issue-66](../test-runs/2026-10-10-issue-66/REPORT.md). A fresh port timestamp on an already-existing row proves refresh, not first insertion; record that limitation as Partial rather than claiming the full case passed.
 
 #### J2-10 Maintenance Mode suppresses scheduled scans
 `[RE]` · MOCK · agent
 - **Pre:** none.
 - **Steps:** `scripts/verify.sh backend`; read `server/tests/unit/test_automation.py` for the maintenance case. On the lab, turn Maintenance Mode on in Settings > System.
 - **Expect:** The unit test for maintenance passes. The UI shows the maintenance banner while the setting is on; turn it off afterwards. (Waiting for a 6-hour scheduled scan is not part of the loop.)
+
+#### J2-11 Removing a discovery network preserves device ownership (#67)
+`[RE]` · MOCK · agent
+- **Pre:** isolated backend test environment. The multi-network fixture is not permission to scan outside `10.77.0.0/28` on the VM lab.
+- **Steps:** Run `server/.venv/bin/python -m pytest -c server/pytest.ini server/tests/unit/test_device_identity.py -k 'removed_network_device_not_reassigned or devices_on_networks_that_were_not_scanned'` from the repository root.
+- **Expect:** Both regressions pass. A device from the removed network is not reassigned to a known host in a scanned network; devices in unscanned networks retain their ownership. See Device Inventory AC35. Any live follow-up needs a separately approved fixture and sanitized report; the earlier VM evidence is in `docs/test-runs/2026-10-10-issue-67-retest/REPORT.md`.
 
 ### J3. Deploy NCPA agents
 
@@ -280,7 +288,7 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 `[RE]` · VM · agent
 - **Pre:** J3-02; `check_ncpa` (listed as `check_ncpa.py`) enabled in Plugin Manager (J4); wait for one Nagios check cycle.
 - **Steps:** Read the NCPA services from `GET /api/system/network-health/services` or Nagios `status.dat`.
-- **Expect:** Three NCPA services per deployed host (CPU, root disk, memory in the 2026-10-08 run; the paper also lists processes, which that run did not show), each with real output, normally OK (a WARNING is a genuine threshold hit, for example memory near 50 %); none CRITICAL with exit code 127. If 127 appears, the installer fix for #45 is missing: reopen #45.
+- **Expect:** Three NCPA services per deployed host (CPU, root disk, memory in the 2026-10-08 run; the paper also lists running processes, p.10, which that run did not show), each with real output, normally OK (a WARNING is a genuine threshold hit, for example memory near 50 %); none CRITICAL with exit code 127. If 127 appears, the installer fix for #45 is missing: reopen #45.
 
 #### J3-06 Deployment is logged
 `[SE]` · VM · agent
@@ -304,7 +312,13 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 `[RE]` · VM · agent
 - **Pre:** J3-02, J2-08.
 - **Steps:** Count device records for 10.77.0.6.
-- **Expect:** One. **Known defect #59** applies exactly as in J2-08.
+- **Expect:** One. The known #86 baseline limitation applies exactly as in J2-08; the original #59 is closed.
+
+#### J3-10 Identity regressions on an isolated fixture
+`[RE]` · MOCK · agent
+- **Pre:** backend test environment installed; no lab or live Nagios required.
+- **Steps:** From the repository root run `server/.venv/bin/python -m pytest -c server/pytest.ini server/tests/unit/test_device_identity.py -k 'address_unknown_host_reactivates or a_rescan_at_the_same_address or known_clone_key_hosts_keep_new_tcp_ports'`.
+- **Expect:** All selected regressions pass: repeat discovery preserves identity and known cloned-key targets retain newly discovered ports. This is isolated regression evidence for #59/#66, not proof that the live #86 finding is fixed.
 
 ### J4. Enable a plugin and put it to work
 
@@ -404,9 +418,23 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 - **Steps:** `scripts/vmlab targets load web01 --seconds 90`; poll the CPU service state for 5 minutes.
 - **Expect:** The NCPA CPU service moves to WARNING or CRITICAL while load is high and returns to OK afterwards. (Skipped in earlier runs; first lab run of this case.)
 
-#### J5-08 Email within 3 seconds
-`[FS]` · VM · agent
-- **Status:** `Blocked (B8, not built)`. Recorded every run so the gap stays visible. When SMTP exists: mock SMTP server first, then a real Gmail account by hand as a `HUMAN` case.
+#### J5-08 SMTP settings and test-email response
+`[FS]` · MOCK · agent
+- **Pre:** isolated backend environment; SMTP transport and installer helper mocked. Installer owns mail provisioning; this repository owns Settings > Email, `/api/system/smtp-settings`, and the test-email action.
+- **Steps:** Run `server/.venv/bin/python -m pytest -c server/pytest.ini server/tests/unit/test_smtp_settings.py` from the repository root.
+- **Expect:** Tests pass for permission enforcement, Gmail-only `smtp.gmail.com`/587/STARTTLS, optimistic-version conflict (409), helper failure without saving, password secrecy and preservation of an existing password on blank input. A successful send returns `ok:true`; a failed send can be HTTP 200 with `ok:false`, a useful error code and explanation. HTTP 200 alone is not send success. No three-second email-delivery threshold is specified.
+
+#### J5-10 Email tab permissions and error presentation
+`[IC]` · VM · agent (UI)
+- **Pre:** an existing configured lab, administrator with `settings.email`, and a second user without it; do not provision a real mail account for this case.
+- **Steps:** Open Settings as each user. As the permitted user inspect the locked Gmail preset, blank password field and saved/not-saved indicator. As the restricted user call `GET /api/system/smtp-settings`. If no SMTP settings exist, press Send test email and inspect the error; otherwise leave live sending to J5-11. Do not overwrite existing SMTP secrets.
+- **Expect:** Email tab is available only with `settings.email`; restricted API request returns 403. Saved passwords are never displayed. An unconfigured test action reports that settings must be saved. Record which branch was exercised; configured send/error branches are covered by J5-08 MOCK or J5-11 HUMAN, not inferred from this read-only UI check.
+
+#### J5-11 Real email delivery
+`[FS]` · VM · HUMAN
+- **Pre:** owner-provisioned mail transport and owner-controlled sender/recipient accounts, authorization to send a test message; no credentials in evidence.
+- **Steps:** A person saves the Gmail settings through Settings > Email, checks saved-state feedback, sends one test email and confirms arrival in the signed-in recipient's inbox. Record the result without message contents or addresses. Retain or restore settings as agreed with the owner.
+- **Expect:** Save succeeds and the app reports successful sending; the intended inbox receives the message. Transport/provisioning failures go to the installer owner as sanitized notes, not application defects unless the in-repo contract fails. No delivery-time threshold asserted.
 
 #### J5-09 Alert path for a Staff user without acknowledge permission
 `[SE]` · MOCK · agent
@@ -473,8 +501,8 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 #### J7-04 Refresh behavior
 `[IC]` · VM · agent
 - **Pre:** B0.
-- **Steps:** Read the Dashboard refresh rate in Settings > General (default 5 min); press the manual refresh and measure the time to render.
-- **Expect:** The default is 5 minutes; manual refresh updates the data. The 3-second budget is judged in PT-03.
+- **Steps:** Read the Dashboard refresh rate in Settings > General (default 5 min), the system Check interval in Settings > System, and the General tab's refresh hint; press manual refresh and measure render time.
+- **Expect:** Browser refresh defaults to 5 minutes and is per user. The hint names the configured Nagios check interval and independent 60-second poll. Manual refresh fetches data, not a discovery scan or forced Nagios check. The 3-second budget is judged separately in PT-03.
 
 #### J7-05 Network card and "Not configured" tiles
 `[IC]` · VM · agent
@@ -499,6 +527,12 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 - **Pre:** J7-07, `system.hosts.edit`.
 - **Steps:** On `app01` use Monitor, Ignore, Leave suggested, Set service and Remove pin on an HTTP-8080 port, confirming where asked; then repeat read-only as a user without `system.hosts.edit`.
 - **Expect:** Each action behaves as `Device_Inventory_Requirements.md` §5–§6 and criteria 6–23 describe; a view-only user sees no action and the view-only note.
+
+#### J7-09 Check interval validation, apply and rollback (#60)
+`[FS]` · MOCK · agent
+- **Pre:** isolated backend test environment; generated configurations and Nagios writer mocked.
+- **Steps:** Run `server/.venv/bin/python -m pytest -c server/pytest.ini server/tests/unit/test_settings_permissions.py server/tests/unit/test_create_host_cfg.py server/tests/unit/test_status.py server/tests/unit/test_plugin_services_api.py` from the repository root.
+- **Expect:** Tests pass: interval defaults to 5 minutes, accepts 1/2/5/10/15 only, needs `settings.system`, generates host/service intervals through the shared writer, and rolls back settings/version on failed validation or reload. Re-polling the same `Last_Check` adds no duplicate host/service history or performance row. A new check is not suppressed merely because state/output is unchanged. Plugin waiting/stale text follows the configured interval. Live cadence is a separate VM observation, not inferred from MOCK.
 
 ### J8. Report and export
 
@@ -586,19 +620,37 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 `[SE]` · VM · agent
 - **Pre:** J9-02.
 - **Steps:** An administrator resets the user's password; sign in as the user.
-- **Expect:** The old password no longer works; the new one signs in and the user is forced to change it (`Must_Change_Password`); the stored value is a different hash. The first-sign-in checkbox on creation belongs to #61 and is not asserted.
+- **Expect:** The old password no longer works; the new one signs in and the user is forced to change it (`Must_Change_Password`); the stored value is a different hash. The creation checkbox defaults to checked; unchecking opts out only at creation, not after an administrator reset (J9-12).
 
 #### J9-08 Account list filters and export
 `[IC]` · VM · agent
 - **Pre:** J9-02.
 - **Steps:** Use the Active, Inactive and Suspended filters; press Export.
-- **Expect:** Each filter shows only that status; Export downloads a file. Record the format and whether an Export Log entry appears (the paper does not say).
+- **Expect:** Each filter shows only that status; Export downloads a file. Record the format and whether an Export Log entry appears (the paper does not say; SHOT p.147 only shows the button).
 
 #### J9-09 Settings scope
 `[FS]` · VM · agent
 - **Pre:** two users, both able to open Settings.
 - **Steps:** User A changes theme and Dashboard refresh rate; administrator changes scan frequency; read both users' Settings.
 - **Expect:** Theme and refresh rate change only for user A; scan frequency changes for everyone, as the labels say.
+
+#### J9-10 Super administrator cannot be disabled (#72)
+`[SE]` · MOCK · agent
+- **Pre:** isolated backend test environment.
+- **Steps:** Run `server/.venv/bin/python -m pytest -c server/pytest.ini server/tests/unit/test_management.py -k 'super_admin_cannot_be_suspended_or_inactivated or other_accounts_can_still_be_suspended'`.
+- **Expect:** Both tests pass: changing the protected first account to Suspended/Inactive returns 400 and leaves it Active; another account can still be suspended. Do not attempt to disable the live lab administrator as a substitute for this fixture.
+
+#### J9-11 Email-alert opt-in and account permission (#80)
+`[SE]` · MOCK · agent
+- **Pre:** isolated backend test environment with mocked Nagios writer; no email sent.
+- **Steps:** Run `server/.venv/bin/python -m pytest -c server/pytest.ini server/tests/unit/test_email_alerts.py`.
+- **Expect:** New and migrated users default to alerts on. Creation with alerts off and changing the flag require `account.alerts`; resending the unchanged value does not. Only Active opted-in users become contacts; contact-affecting account changes rebuild config. Non-boolean flags are rejected. Failed apply keeps the saved account change and returns config failure information; flag changes are audited. No per-host recipient requirement (#79 excluded).
+
+#### J9-12 First-sign-in password choice and administrator-assisted recovery
+`[SE]` · MOCK · agent
+- **Pre:** isolated backend test environment, no real mail account.
+- **Steps:** Run `server/.venv/bin/python -m pytest -c server/pytest.ini server/tests/unit/test_admin_setup.py server/tests/unit/test_password_requests.py`.
+- **Expect:** Account creation defaults to requiring a password change; explicit false opts out, but an administrator reset forces it again. Public forgot-password requests create at most one Pending request for an active account; unknown/inactive addresses receive the same response. Only authorized administrators list/resolve requests; resolution validates the new password and forces change at next sign-in. A handled request cannot be reused (409). This is administrator-assisted recovery, not an emailed self-service reset link.
 
 ### Invariants
 
@@ -648,7 +700,7 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 
 #### PT-01 Initialisation ≤ 10 s
 `[PE]` · VM · agent
-- **Definition [INFER, confirm with paper p.68]:** from starting the web service to the first successful authenticated response of `GET /api/system/dashboard/summary`.
+- **Definition [INFER; the paper says only "System initialization ≤ 10 seconds", p.126]:** from starting the web service to the first successful authenticated response of `GET /api/system/dashboard/summary`.
 - **Pre:** B0.
 - **Steps:** On the appliance, restart the Pinpoint service (unit name from the healthcheck output); time until `GET /api/user/me` with a fresh session returns 200 and the dashboard summary returns data; repeat three times.
 - **Expect:** The median of three runs is ≤ 10 s.
@@ -675,23 +727,69 @@ in `server/tests/plans/` are referenced as **Detail:** and are not copied (§8).
 
 #### PT-05 Stability over a 4-hour soak
 `[RE]` · VM · agent
-- **Pre:** B0 with F-ENABLE and F-NCPA; no other VMs competing for RAM (the appliance has 4 GB).
+- **Definition:** the paper lists PT-05 as "Continuous" "System stability" with no threshold (p.126); the criteria below are the team's.
+- **Pre:** B0 with F-ENABLE and F-NCPA; no other VMs competing for RAM (the appliance has 4 GB, below the paper's 8 GB minimum; journeys D-6).
 - **Steps:** 1. Record the start time, appliance `uptime`, the Gunicorn and Nagios PIDs and free memory. 2. Every 5 minutes for 4 hours: `GET /api/user/me` (after login), `GET /api/system/dashboard/summary`, free memory, and the count of new log lines containing a traceback or HTTP 500 in the Gunicorn journal. 3. At the end repeat step 1.
 - **Expect:** No Gunicorn or Nagios restart (same PIDs, uptime unbroken); no traceback or unhandled HTTP 500 in the journal; the API answered 200 at every sample; fresh status rows were added in each hour (scheduler alive); free memory did not fall by more than 30% from start to end without recovering. Any miss is a `Fail` with the sample time.
 
-### Black-box acceptance (paper pp.67–68)
+#### PT-06 Controlled status-history rows per object per hour (#82)
+`[PE]` · VM · agent
+- **Status:** pending the controlled run; not satisfied by the short [#60 VM comparison](../test-runs/2026-10-10-issue-60/REPORT.md).
+- **Pre:** owner-approved fresh/reverted appliance for each phase, one appliance at a time; equivalent target/plugin configuration and selected host/service set. Baseline is `27ebe46d0b3658820927740ccb9ebfd6f79a4613` (main immediately before PR #83); after is `a55ae595` or a recorded later main SHA. Use five-minute Nagios check intervals in both phases (baseline default); do not change baseline product code to add the later setting. Confirm actual generated intervals and `interval_length=60`. Finish discovery and first checks before starting; no pending selected objects.
+- **Steps:** With reset approval, use `scripts/vmlab fresh <pushed-baseline-branch>` for baseline and `scripts/vmlab fresh <pushed-after-branch>` for after; record the exact app SHA from each deployment. Complete setup and approved lab-only discovery before timing. On each appliance record a UTC start and end separated by at least 3600 seconds. Between boundaries make no config/discovery changes, reloads or restarts. Record selected hostnames and `(hostname, service)` pairs before the window, and separately record host and service counts. Run the read-only extraction below on each appliance with its actual history database path and boundaries. Retain extracts outside git; summarize rates and after/before ratios per matching object. If generated names differ across fresh builds, explicitly map them to the same target/service rather than comparing by name alone.
+- **Expect:** After-phase stored rows equal distinct `Last_Check` values per selected object in the window; repeated polls of an unchanged check are not duplicated. A new check can have unchanged output/state and still creates a row. Report rows/hour and after/before ratios; no numeric reduction threshold is specified (owner decision if required). A shorter window, missing selected object, unmatched interval, pending first check, or config/restart confounder is not a controlled pass. Record and repeat the invalid phase. The aggregate query measures stored samples, not checks Nagios executed but the poller missed.
 
-The black-box cases restate the paper's acceptance tests as aggregates of the cases above, so there is one definition of each behavior. **The mapping is the author's reading of the paper through the journeys file; the paper's own wording of BB-01 to BB-07 is not in the repository. The paper owner must confirm it, and BB-03 in particular is an inference (journeys §6).**
+Read-only extraction (run on the appliance; substitute the measured UTC boundaries and
+actual history DB path, not a guessed file). Inspect the output locally, choose the
+pre-recorded objects, and keep raw output outside the repository:
 
-| ID | Passes when | ISO | Env |
-|---|---|---|---|
-| BB-01 Install and first login | J1-01, J1-02, J1-03 pass (J1-06 by a human before release) | FS | VM |
-| BB-02 NCPA deployment | J3-02 and J3-05 pass | FS | VM |
-| BB-03 Plugin enablement (inferred) | J4-03 and J4-04 pass | FS | VM |
-| BB-04 Dashboard display | J7-01 and J7-02 pass | FS | VM |
-| BB-05 Fault alert | J5-01 and J5-03 pass (J5-08 stays `Blocked` until B8) | RE | VM |
-| BB-06 Network discovery | J2-01 and J2-03 pass | FS | VM |
-| BB-07 Monitoring detail | J7-03 and J7-06 pass | FS | VM |
+```bash
+python3 - /absolute/path/to/history.db '2026-10-11T00:00:00+00:00' '2026-10-11T01:00:00+00:00' <<'PY'
+import datetime as dt
+import json
+import pathlib
+import sqlite3
+import sys
+path, start, end = sys.argv[1:]
+a, b = (dt.datetime.fromisoformat(v) for v in (start, end))
+assert a.utcoffset() == b.utcoffset() == dt.timedelta(0), 'UTC boundaries required'
+hours = (b - a).total_seconds() / 3600
+assert hours >= 1, 'At least one complete hour per phase'
+conn = sqlite3.connect(pathlib.Path(path).resolve().as_uri() + '?mode=ro', uri=True)
+conn.execute('PRAGMA query_only=ON')
+print(json.dumps({'start': start, 'end': end, 'hours': hours}))
+for table, columns in [('HOST_STATUS', 'Hostname'), ('SERVICE_STATUS', 'Hostname, Service')]:
+    # Only fixed table/column names above are interpolated. Boundaries are parameters.
+    rows = conn.execute(f'''SELECT {columns}, count(*), count(DISTINCT Last_Check)
+        FROM {table} WHERE julianday(Timestamp) >= julianday(?)
+        AND julianday(Timestamp) < julianday(?) GROUP BY {columns} ORDER BY {columns}''',
+        (start, end)).fetchall()
+    print(json.dumps({'table': table, 'observed_objects': len(rows)}))
+    for row in rows:
+        print(json.dumps({'object': row[:-2], 'rows': row[-2],
+                          'distinct_last_check': row[-1], 'rows_per_hour': row[-2] / hours}))
+conn.close()
+PY
+```
+
+Use `[start,end)` based on insertion `Timestamp` in both phases. Record service counts
+separately from host counts; exclude stock localhost objects if they are not part of
+the matched fixture, explicitly and consistently. Record window clock offsets and
+any scheduled discovery, restart or reload observed during the window.
+
+### Black-box acceptance (paper pp.124-125)
+
+The black-box cases restate the paper's acceptance tests (Core Functionality Test Cases, pp.124-125) as aggregates of the cases above, so there is one definition of each behavior. The module, input and expected output columns are the paper's words; the *Passes when* column is the mapping to cases. The paper owner should confirm the mapping.
+
+| ID | Paper module / input → expected output | Passes when | ISO | Env |
+|---|---|---|---|---|
+| BB-01 | Automated Nagios Deployment: administrator initiates deployment → Nagios Core installed and configured | J1-01, J1-02, J1-03 pass (J1-06 by a human before release) | FS | VM |
+| BB-02 | Agent Installation: deployment commands sent to hosts → monitoring agent installed and configured automatically | J3-02 and J3-05 pass | FS | VM |
+| BB-03 | Device Monitoring: client device connected to the monitoring server → system detects host availability and status | J2-03 and J7-07 pass | FS | VM |
+| BB-04 | Service Monitoring: monitoring service enabled → system displays service health and status | J4-03 and J4-04 pass | FS | VM |
+| BB-05 | Alert Notification System: service failure detected → system generates alert notification | J5-05 and J5-03 pass (J5-01 covers a host; J5-08 stays `Blocked` until B8) | RE | VM |
+| BB-06 | Network Discovery: discovered devices → structured view of the network | J2-01 and J2-03 pass | FS | VM |
+| BB-07 | Dashboard Visualization: data collected from devices → summarized network health information | J7-01 and J7-02 pass (J7-03 and J7-06 add detail) | FS | VM |
 
 ---
 
